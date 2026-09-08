@@ -126,6 +126,10 @@ impl DockPaneScene {
         self.render_chrome(frame);
         self.render_header(frame, painter);
 
+        if matches!(self.content, DockContentKind::Terminal) {
+            crate::panels::terminal::render_tabs(frame, painter, model, chrome);
+        }
+
         frame.push_clip(self.content_rect);
         match &self.content {
             DockContentKind::Outline => {

@@ -212,6 +212,10 @@ pub enum HitTarget {
         position: crate::panel::DockPosition,
         panel_id: crate::panel::PanelId,
     },
+    TerminalAction {
+        position: crate::panel::DockPosition,
+        action: crate::terminal::TabAction,
+    },
 
     /// Empty area of a dock's tab bar (no specific tab)
     DockTabBarEmpty {
@@ -333,6 +337,7 @@ impl HitTarget {
             }
             HitTarget::DockResize { position } => HoverRegion::DockResize(*position),
             HitTarget::DockTab { position, .. }
+            | HitTarget::TerminalAction { position, .. }
             | HitTarget::DockTabBarEmpty { position }
             | HitTarget::DockContent { position, .. } => HoverRegion::Dock(*position),
             HitTarget::BinaryPlaceholderButton { group_id } => HoverRegion::Button(*group_id),
@@ -890,6 +895,17 @@ fn hit_test_docks_in(
     // Everything else: the topmost solved element at the point, mapped
     // exhaustively onto hit targets — the same geometry the renderer paints.
     match chrome.hit(pt.x as f32, pt.y as f32)? {
+        UiKey::TerminalAction(action) => Some(HitTarget::TerminalAction {
+            position: model
+                .dock_layout
+                .active_panel_position(crate::panel::PanelId::Terminal)?,
+            action,
+        }),
+        UiKey::TerminalTabs | UiKey::TerminalTabViewport => Some(HitTarget::DockTabBarEmpty {
+            position: model
+                .dock_layout
+                .active_panel_position(crate::panel::PanelId::Terminal)?,
+        }),
         UiKey::DockTab(position, panel_id) => Some(HitTarget::DockTab { position, panel_id }),
         UiKey::DockHeader(position) => Some(HitTarget::DockTabBarEmpty { position }),
         UiKey::PanelContent(_) | UiKey::PanelRows(_) => {

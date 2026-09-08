@@ -404,14 +404,27 @@ fn spawn_terminal_command_adds_session_to_model() {
         std::thread::sleep(Duration::from_millis(10));
     };
 
-    assert_eq!(session.size, (12, 34));
+    let content = token::layout::chrome::chrome(&app.model)
+        .rect(token::layout::UiKey::PanelContent(
+            token::panel::PanelId::Terminal,
+        ))
+        .unwrap();
+    let size = token::panels::terminal::grid_size_for_rect(
+        content,
+        app.model.char_width,
+        app.model.line_height,
+    );
+    assert_eq!(
+        session.size,
+        (usize::from(size.rows), usize::from(size.cols))
+    );
     assert_eq!(app.model.terminal.active, 0);
 
     session.pty.write(b"exit\n".to_vec());
 }
 
 #[test]
-fn terminal_spawn_result_is_discarded_when_terminal_is_closed() {
+fn terminal_spawn_result_is_discarded_when_request_is_cancelled() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     let (spawn_tx, spawn_rx) = mpsc::channel();
     let (pty, _pty_rx) = token::terminal::PtyHandle::new_for_test();
@@ -426,6 +439,7 @@ fn terminal_spawn_result_is_discarded_when_terminal_is_closed() {
         .expect("test spawn result should send");
     app.terminal_spawn_rx = Some((99, spawn_rx));
     app.model.terminal.mark_spawn_pending(99);
+    app.model.terminal.clear_spawn_pending(99);
 
     let needs_redraw = app.process_terminal_spawn_results();
 
@@ -454,6 +468,47 @@ fn pending_terminal_spawn_is_kept_after_the_panel_moves_docks() {
     app.model.terminal.mark_spawn_pending(99);
 
     assert!(app.should_keep_terminal_spawn_result(99));
+    app.model.dock_layout.right.close();
+    assert!(
+        app.should_keep_terminal_spawn_result(99),
+        "hiding a panel must not cancel a requested terminal"
+    );
+}
+
+#[test]
+fn closing_terminal_tab_preserves_other_session_and_does_not_reuse_identity() {
+    use token::terminal::{PtyHandle, TabAction, TerminalSession};
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model
+        .dock_layout
+        .bottom
+        .activate(token::panel::PanelId::Terminal);
+    for id in 0..2 {
+        app.model.terminal.mark_spawn_pending(id);
+        app.model.terminal.clear_spawn_pending(id);
+        let (pty, _) = PtyHandle::new_for_test();
+        let mut session = TerminalSession::new(id, 4, 20, pty, app.msg_tx.clone());
+        session.apply_bytes(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n");
+        app.model.terminal.sessions.push(session);
+    }
+    app.model.terminal.sessions[0].scroll_offset = 1;
+    app.model.terminal.active = 1;
+    app.process_cmd(Cmd::CloseTerminal { session_id: 1 });
+    assert_eq!(app.model.terminal.sessions.len(), 1);
+    assert_eq!(app.model.terminal.active_session().unwrap().id, 0);
+    // The pane resize may consume available history, but never resets the
+    // surviving process identity or replaces its grid with a fresh session.
+    assert!(!app.model.terminal.active_session().unwrap().exited);
+    app.process_cmd(Cmd::CloseTerminal { session_id: 0 });
+    assert!(app.model.terminal.sessions.is_empty());
+    assert!(!app.model.dock_layout.bottom.is_open);
+    assert!(matches!(
+        update(
+            &mut app.model,
+            Msg::Terminal(token::messages::TerminalMsg::Tab(TabAction::New))
+        ),
+        Some(Cmd::SpawnTerminal { session_id: 2, .. })
+    ));
 }
 
 #[test]

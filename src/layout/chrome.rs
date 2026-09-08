@@ -242,6 +242,9 @@ fn declare_dock(
 
         // Content area of the active panel.
         let Some(active) = active_panel else { return };
+        if active == PanelId::Terminal {
+            crate::panels::terminal::declare_tabs(t, model);
+        }
         t.node(
             ElementDecl {
                 key: Some(UiKey::PanelContent(active)),

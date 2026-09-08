@@ -6,7 +6,7 @@
 //! state are delegated to `alacritty_terminal`, wrapped by `TerminalSession`
 //! so the dependency can be swapped later without touching callers.
 //!
-//! See `docs/feature/embedded-terminal.md` for the full design.
+//! See `docs/archived/embedded-terminal.md` for the original MVP design.
 
 mod pty;
 mod session;
@@ -15,6 +15,16 @@ pub mod translate_keys;
 pub use pty::{spawn_pty, PtyHandle};
 pub use session::{TerminalEventProxy, TerminalSession};
 pub use translate_keys::{translate_key, TerminalKeyModifiers};
+
+/// Actions shared by terminal tab buttons, keyboard commands and updates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TabAction {
+    New,
+    Close,
+    Previous,
+    Next,
+    Select(usize),
+}
 
 /// Result returned by a background PTY spawn, consumed on the main thread to
 /// build a [`TerminalSession`]. Kept outside the `Msg` enum because `PtyHandle`
@@ -36,6 +46,10 @@ pub struct TerminalState {
     pub sessions: Vec<TerminalSession>,
     /// Index of the active session (into `sessions`).
     pub active: usize,
+    /// Horizontal tab-strip offset in physical pixels.
+    pub tab_scroll: f32,
+    pub hovered_tab: Option<TabAction>,
+    next_session_id: usize,
     /// Session ids whose PTY spawn command has been issued but whose
     /// `TerminalSession` has not been installed yet.
     pending_spawn_ids: Vec<usize>,
@@ -82,6 +96,7 @@ impl TerminalState {
 
     /// Record that a PTY spawn has been requested for this session id.
     pub fn mark_spawn_pending(&mut self, session_id: usize) {
+        self.next_session_id = self.next_session_id.max(session_id.saturating_add(1));
         if !self.is_spawn_pending(session_id) {
             self.pending_spawn_ids.push(session_id);
         }
@@ -90,5 +105,16 @@ impl TerminalState {
     /// Clear the pending marker for a completed or discarded spawn.
     pub fn clear_spawn_pending(&mut self, session_id: usize) {
         self.pending_spawn_ids.retain(|id| *id != session_id);
+    }
+
+    /// Reserve a never-reused identity; the runtime serializes PTY startup.
+    pub fn begin_spawn(&mut self) -> Option<usize> {
+        if self.has_pending_spawn() {
+            return None;
+        }
+        let id = self.next_session_id;
+        self.next_session_id = id.checked_add(1)?;
+        self.mark_spawn_pending(id);
+        Some(id)
     }
 }

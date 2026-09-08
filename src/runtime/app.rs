@@ -2506,6 +2506,45 @@ impl App {
                     result,
                 }));
             }
+            Cmd::CloseTerminal { session_id } => {
+                if let Some(index) = self
+                    .model
+                    .terminal
+                    .sessions
+                    .iter()
+                    .position(|s| s.id == session_id)
+                {
+                    let mut session = self.model.terminal.sessions.remove(index);
+                    session.pty.kill();
+                    let remaining = self.model.terminal.sessions.len();
+                    self.model.terminal.active = if index < self.model.terminal.active {
+                        self.model.terminal.active - 1
+                    } else {
+                        self.model.terminal.active.min(remaining.saturating_sub(1))
+                    };
+                    if let Some(active) = self.model.terminal.active_session() {
+                        let action = token::terminal::TabAction::Select(active.id);
+                        if let Some(cmd) = update(
+                            &mut self.model,
+                            Msg::Terminal(token::messages::TerminalMsg::Tab(action)),
+                        ) {
+                            self.process_cmd(cmd);
+                        }
+                    } else {
+                        self.model.terminal.tab_scroll = 0.0;
+                        if let Some(position) = self
+                            .model
+                            .dock_layout
+                            .active_panel_position(token::panel::PanelId::Terminal)
+                        {
+                            self.model.dock_layout.close_dock(position);
+                            self.model.ui.focus_editor();
+                            self.model.recalculate_viewports();
+                        }
+                    }
+                    self.pending_damage.merge(Cmd::Redraw.damage());
+                }
+            }
             Cmd::SpawnTerminal {
                 session_id,
                 rows,
@@ -5154,6 +5193,7 @@ impl App {
     fn process_terminal_spawn_results(&mut self) -> bool {
         let mut needs_redraw = false;
         let mut clear_receiver = false;
+        let mut installed_session = None;
 
         {
             let Some((spawn_session_id, rx)) = self.terminal_spawn_rx.as_ref() else {
@@ -5182,6 +5222,7 @@ impl App {
                             self.model.terminal.sessions.push(session);
                             self.model.terminal.active =
                                 self.model.terminal.sessions.len().saturating_sub(1);
+                            installed_session = Some(result.session_id);
                             self.pending_damage.merge(Cmd::Redraw.damage());
                             needs_redraw = true;
                         } else {
@@ -5212,16 +5253,25 @@ impl App {
             self.terminal_spawn_rx = None;
         }
 
+        if let Some(id) = installed_session {
+            // Startup can finish after the user has focused another surface.
+            // Sync/reveal the new tab without taking keyboard focus back.
+            let focus = self.model.ui.focus;
+            let action = token::terminal::TabAction::Select(id);
+            if let Some(cmd) = update(
+                &mut self.model,
+                Msg::Terminal(token::messages::TerminalMsg::Tab(action)),
+            ) {
+                self.process_cmd(cmd);
+            }
+            self.model.ui.focus = focus;
+        }
+
         needs_redraw
     }
 
     fn should_keep_terminal_spawn_result(&self, session_id: usize) -> bool {
         self.model.terminal.is_spawn_pending(session_id)
-            && self
-                .model
-                .dock_layout
-                .active_panel_position(token::panel::PanelId::TERMINAL)
-                .is_some()
     }
 }
 

@@ -5,9 +5,180 @@ use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor};
 
+use crate::layout::{
+    Dir, ElementDecl, LayoutSnapshot, Padding, ScrollDecl, Sizing, SizingAxes, UiKey, UiTree,
+};
 use crate::model::editor_area::Rect;
 use crate::model::AppModel;
+use crate::terminal::TabAction;
 use crate::view::frame::{Frame, TextPainter};
+
+/// Declare terminal controls in the same snapshot used for dock hit testing
+/// and PTY sizing. The tab viewport clips overflow; cycle buttons stay visible.
+pub(crate) fn declare_tabs(tree: &mut UiTree, model: &AppModel) {
+    let height = model.metrics.tab_bar_height as f32;
+    tree.node(
+        ElementDecl {
+            key: Some(UiKey::TerminalTabs),
+            dir: Dir::Row,
+            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height)),
+            clip: true,
+            ..Default::default()
+        },
+        |tree| {
+            let button = |tree: &mut UiTree, action| {
+                tree.leaf(ElementDecl {
+                    key: Some(UiKey::TerminalAction(action)),
+                    sizing: SizingAxes::fixed(height, height),
+                    ..Default::default()
+                });
+            };
+            button(tree, TabAction::Previous);
+            button(tree, TabAction::Next);
+            tree.node(
+                ElementDecl {
+                    key: Some(UiKey::TerminalTabViewport),
+                    sizing: SizingAxes::grow(),
+                    clip: true,
+                    ..Default::default()
+                },
+                |tree| {
+                    tree.node(
+                        ElementDecl {
+                            dir: Dir::Row,
+                            sizing: SizingAxes::grow(),
+                            scroll: Some(ScrollDecl {
+                                offset_x: model.terminal.tab_scroll,
+                                offset_y: 0.0,
+                            }),
+                            ..Default::default()
+                        },
+                        |tree| {
+                            for session in &model.terminal.sessions {
+                                tree.leaf(ElementDecl {
+                                    key: Some(UiKey::TerminalAction(TabAction::Select(session.id))),
+                                    sizing: SizingAxes::new(
+                                        Sizing::Fixed(model.char_width * 22.0),
+                                        Sizing::GROW,
+                                    ),
+                                    padding: Padding::xy(model.metrics.padding_medium as f32, 0.0),
+                                    ..Default::default()
+                                });
+                            }
+                        },
+                    );
+                },
+            );
+            button(tree, TabAction::New);
+            button(tree, TabAction::Close);
+        },
+    );
+}
+
+/// Reveal the active tab using solved bounds, including after dock/font resize.
+pub(crate) fn reveal_active_tab(model: &mut AppModel) {
+    let Some(session) = model.terminal.active_session() else {
+        return;
+    };
+    let chrome = crate::layout::chrome::chrome(model);
+    let (Some(view), Some(tab)) = (
+        chrome.rect(UiKey::TerminalTabViewport),
+        chrome.rect(UiKey::TerminalAction(TabAction::Select(session.id))),
+    ) else {
+        return;
+    };
+    let delta = if tab.x < view.x || tab.x + tab.width > view.x + view.width {
+        tab.x - view.x
+    } else {
+        0.0
+    };
+    model.terminal.tab_scroll = (model.terminal.tab_scroll + delta).max(0.0);
+}
+
+pub(crate) fn render_tabs(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    chrome: &LayoutSnapshot,
+) {
+    use crate::view::button::{render_button, ButtonState};
+    let Some(bar) = chrome.rect(UiKey::TerminalTabs) else {
+        return;
+    };
+    let theme = &model.theme.sidebar;
+    frame.push_clip(bar);
+    frame.fill_rect(bar, theme.background.to_argb_u32());
+    for action in [
+        TabAction::Previous,
+        TabAction::Next,
+        TabAction::New,
+        TabAction::Close,
+    ] {
+        let Some(rect) = chrome.rect(UiKey::TerminalAction(action)) else {
+            continue;
+        };
+        let label = match action {
+            TabAction::Previous => "<",
+            TabAction::Next => ">",
+            TabAction::New if model.terminal.has_pending_spawn() => "...",
+            TabAction::New => "+",
+            _ => "x",
+        };
+        let state = if model.terminal.hovered_tab == Some(action) {
+            ButtonState::Hovered
+        } else {
+            ButtonState::Normal
+        };
+        render_button(frame, painter, &model.theme, rect, label, state, false);
+    }
+    if let Some(view) = chrome.rect(UiKey::TerminalTabViewport) {
+        frame.push_clip(view);
+        for (index, session) in model.terminal.sessions.iter().enumerate() {
+            let action = TabAction::Select(session.id);
+            let Some(node) = chrome.node(UiKey::TerminalAction(action)) else {
+                continue;
+            };
+            if node.rect.x + node.rect.width <= view.x || node.rect.x >= view.x + view.width {
+                continue;
+            }
+            let active = index == model.terminal.active;
+            if active || model.terminal.hovered_tab == Some(action) {
+                frame.fill_rect_blended(node.rect, theme.selection_background.to_argb_u32());
+            }
+            frame.push_clip(node.content_rect);
+            let title: String = session
+                .title
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(20)
+                .collect();
+            let title = format!(
+                "{}: {}{}",
+                index + 1,
+                if session.exited { "[exited] " } else { "" },
+                title
+            );
+            let x = node.content_rect.x.max(0.0) as usize;
+            let y = (node.rect.y + (node.rect.height - painter.line_height() as f32).max(0.0) / 2.0)
+                as usize;
+            painter.draw(
+                frame,
+                x,
+                y,
+                &title,
+                if active {
+                    theme.selection_foreground
+                } else {
+                    theme.foreground
+                }
+                .to_argb_u32(),
+            );
+            frame.pop_clip();
+        }
+        frame.pop_clip();
+    }
+    frame.pop_clip();
+}
 
 const ANSI_COLORS: [u32; 16] = [
     0xFF00_0000, // black

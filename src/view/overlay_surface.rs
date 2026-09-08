@@ -1527,6 +1527,7 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
             | UiKey::EditorArea
             | UiKey::StatusBar,
         )
+        | Some(UiKey::TerminalTabs | UiKey::TerminalTabViewport | UiKey::TerminalAction(_))
         | None => OverlayHit::Outside,
     }
 }

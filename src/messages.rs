@@ -790,13 +790,11 @@ pub enum ContextMenuMsg {
 /// Terminal panel messages.
 ///
 /// Toggle/focus/panel switching is handled by the existing `DockMsg` --
-/// not duplicated here. See `docs/feature/embedded-terminal.md`.
+/// not duplicated here. See `docs/archived/embedded-terminal.md`.
 #[derive(Debug, Clone)]
 pub enum TerminalMsg {
-    /// Spawn a new terminal session.
-    NewSession,
-    /// Close the active terminal session.
-    CloseSession,
+    /// Create, select, cycle or close a terminal tab.
+    Tab(crate::terminal::TabAction),
     /// Raw bytes received from the PTY (sent by the reader worker thread).
     PtyOutput {
         session_id: usize,

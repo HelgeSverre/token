@@ -33,6 +33,10 @@ pub enum UiKey {
     DockHeader(DockPosition),
     /// One panel tab inside a dock header.
     DockTab(DockPosition, PanelId),
+    /// Terminal session strip, separate from the dock's panel tabs.
+    TerminalTabs,
+    TerminalTabViewport,
+    TerminalAction(crate::terminal::TabAction),
     /// The content area below a dock header, for the active panel.
     PanelContent(PanelId),
     /// The virtualized row list inside a panel's content area.

@@ -265,6 +265,13 @@ pub enum Command {
     ToggleFileExplorer,
     /// Toggle terminal panel (bottom dock)
     ToggleTerminal,
+    /// Create and focus a terminal tab.
+    NewTerminal,
+    /// Close the active terminal tab.
+    CloseTerminal,
+    /// Cycle terminal tabs.
+    NextTerminal,
+    PreviousTerminal,
     /// Toggle outline panel (right dock)
     ToggleOutline,
     /// Toggle problems panel (bottom dock)
@@ -549,6 +556,16 @@ impl Command {
                 PanelId::FILE_EXPLORER,
             ))],
             ToggleTerminal => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::TERMINAL))],
+            NewTerminal | CloseTerminal | NextTerminal | PreviousTerminal => {
+                use crate::terminal::TabAction;
+                let action = match self {
+                    NewTerminal => TabAction::New,
+                    CloseTerminal => TabAction::Close,
+                    NextTerminal => TabAction::Next,
+                    _ => TabAction::Previous,
+                };
+                vec![Msg::Terminal(crate::messages::TerminalMsg::Tab(action))]
+            }
             ToggleOutline => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::OUTLINE))],
             ToggleProblems => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::PROBLEMS))],
             ToggleUsages => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(PanelId::Usages))],
@@ -678,6 +695,10 @@ impl Command {
                 | Command::FuzzyFileFinder
                 | Command::ToggleFileExplorer
                 | Command::ToggleTerminal
+                | Command::NewTerminal
+                | Command::CloseTerminal
+                | Command::NextTerminal
+                | Command::PreviousTerminal
                 | Command::ToggleOutline
                 | Command::ToggleProblems
                 | Command::ToggleUsages
@@ -786,6 +807,10 @@ impl Command {
 
             ToggleFileExplorer => "View: Toggle File Explorer",
             ToggleTerminal => "View: Toggle Terminal",
+            NewTerminal => "Terminal: New Tab",
+            CloseTerminal => "Terminal: Close Tab",
+            NextTerminal => "Terminal: Next Tab",
+            PreviousTerminal => "Terminal: Previous Tab",
             ToggleOutline => "View: Toggle Outline",
             ToggleProblems => "View: Toggle Problems",
             ToggleUsages => "View: Toggle Usages",

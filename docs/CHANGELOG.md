@@ -6,6 +6,15 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Terminal tabs
+
+- Create, switch and close terminal tabs using the session strip or the
+  `Terminal: New/Close/Next/Previous Tab` commands. Each tab retains its shell
+  and scrollback; previous/next controls keep overflowed tabs reachable.
+- Terminal tabs share dock layout for rendering, hit testing and PTY sizing.
+  Session IDs are no longer reused after closing a tab, so late output cannot
+  land in a replacement session. Hiding a dock does not cancel a pending shell.
+
 ### Performance investigation
 
 - Shared edit transactions reuse coordinate conversions when a caret and its

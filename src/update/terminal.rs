@@ -7,53 +7,62 @@
 use crate::commands::Cmd;
 use crate::messages::TerminalMsg;
 use crate::model::AppModel;
+use crate::terminal::TabAction;
 
-/// Default terminal grid size for a newly spawned session, before the dock
-/// panel has a resolved content rect to derive real rows/cols from (wired
-/// later; see `docs/feature/embedded-terminal.md`.
+/// Fallback only when the terminal is not registered in a visible dock.
 const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_COLS: u16 = 80;
 
-/// Monotonically increasing id for newly spawned terminal sessions.
-fn next_session_id(model: &AppModel) -> usize {
-    model
-        .terminal
-        .sessions
-        .iter()
-        .map(|s| s.id)
-        .max()
-        .map(|max| max + 1)
-        .unwrap_or(0)
-}
-
 pub(super) fn update_terminal(model: &mut AppModel, msg: TerminalMsg) -> Option<Cmd> {
     match msg {
-        TerminalMsg::NewSession => {
-            if model.terminal.has_pending_spawn() {
-                return None;
+        TerminalMsg::Tab(TabAction::New) => {
+            let session_id = model.terminal.begin_spawn()?;
+            if let Some(position) = model
+                .dock_layout
+                .find_panel(crate::panel::PanelId::Terminal)
+            {
+                model
+                    .dock_layout
+                    .dock_mut(position)
+                    .activate(crate::panel::PanelId::Terminal);
+                model.ui.focus_dock(position);
             }
-
-            let session_id = next_session_id(model);
-            model.terminal.mark_spawn_pending(session_id);
+            model.recalculate_viewports();
+            let size = super::dock::terminal_grid_size_for_model(model).unwrap_or(
+                crate::panels::terminal::TerminalGridSize {
+                    rows: DEFAULT_ROWS,
+                    cols: DEFAULT_COLS,
+                },
+            );
             Some(Cmd::SpawnTerminal {
                 session_id,
-                rows: DEFAULT_ROWS,
-                cols: DEFAULT_COLS,
+                rows: size.rows,
+                cols: size.cols,
             })
         }
 
-        TerminalMsg::CloseSession => {
-            if model.terminal.sessions.is_empty() {
+        TerminalMsg::Tab(TabAction::Close) => Some(Cmd::CloseTerminal {
+            session_id: model.terminal.active_session()?.id,
+        }),
+
+        TerminalMsg::Tab(action) => {
+            let count = model.terminal.sessions.len();
+            if count == 0 {
                 return None;
             }
-            let idx = model.terminal.active.min(model.terminal.sessions.len() - 1);
-            let mut removed = model.terminal.sessions.remove(idx);
-            removed.pty.kill();
-            model.terminal.active = model
-                .terminal
-                .active
-                .min(model.terminal.sessions.len().saturating_sub(1));
-            Some(Cmd::redraw_editor())
+            model.terminal.active = match action {
+                TabAction::Select(id) => model.terminal.sessions.iter().position(|s| s.id == id)?,
+                TabAction::Next => (model.terminal.active + 1) % count,
+                TabAction::Previous => (model.terminal.active + count - 1) % count,
+                TabAction::New | TabAction::Close => unreachable!(),
+            };
+            if let Some(position) = model
+                .dock_layout
+                .active_panel_position(crate::panel::PanelId::Terminal)
+            {
+                model.ui.focus_dock(position);
+            }
+            Some(super::dock::with_terminal_sync(model, Cmd::Redraw))
         }
 
         TerminalMsg::PtyOutput { session_id, data } => {
@@ -99,7 +108,7 @@ pub(super) fn update_terminal(model: &mut AppModel, msg: TerminalMsg) -> Option<
                     title
                 };
             }
-            Some(Cmd::redraw_status_bar())
+            Some(super::dock::with_terminal_sync(model, Cmd::Redraw))
         }
 
         TerminalMsg::Bell { session_id: _ } => {
@@ -183,10 +192,53 @@ mod tests {
     }
 
     #[test]
+    fn switching_terminal_tabs_keeps_history_and_reveals_the_active_tab() {
+        let mut model = test_model();
+        model
+            .dock_layout
+            .bottom
+            .activate(crate::panel::PanelId::Terminal);
+        let size = super::super::dock::terminal_grid_size_for_model(&model).unwrap();
+        for id in 0..10 {
+            push_test_session(&mut model, size.rows as usize, size.cols as usize);
+            let session = model.terminal.sessions.last_mut().unwrap();
+            session.id = id;
+            session.apply_bytes("history\r\n".repeat(size.rows as usize + 8).as_bytes());
+            session.scroll_offset = id;
+        }
+        update_terminal(&mut model, TerminalMsg::Tab(TabAction::Select(9)));
+        assert_eq!(model.terminal.active_session().unwrap().scroll_offset, 9);
+        assert!(model.terminal.tab_scroll > 0.0);
+        let chrome = crate::layout::chrome::chrome(&model);
+        let rect = chrome
+            .rect(crate::layout::UiKey::TerminalAction(TabAction::Select(9)))
+            .unwrap();
+        assert!(matches!(
+            crate::view::hit_test::hit_test_docks(
+                &model,
+                crate::view::hit_test::Point::new(
+                    (rect.x + rect.width / 2.0) as f64,
+                    (rect.y + rect.height / 2.0) as f64
+                )
+            ),
+            Some(crate::view::hit_test::HitTarget::TerminalAction {
+                action: TabAction::Select(9),
+                ..
+            })
+        ));
+        update_terminal(&mut model, TerminalMsg::Tab(TabAction::Next));
+        assert_eq!(model.terminal.active, 0);
+        assert_eq!(model.terminal.tab_scroll, 0.0);
+        assert_eq!(model.terminal.sessions[9].scroll_offset, 9);
+        update_terminal(&mut model, TerminalMsg::Tab(TabAction::Previous));
+        assert_eq!(model.terminal.active, 9);
+    }
+
+    #[test]
     fn new_session_returns_spawn_terminal_command_with_incrementing_ids() {
         let mut model = test_model();
 
-        let cmd = update_terminal(&mut model, TerminalMsg::NewSession);
+        let cmd = update_terminal(&mut model, TerminalMsg::Tab(TabAction::New));
         assert!(matches!(
             cmd,
             Some(Cmd::SpawnTerminal { session_id: 0, .. })
@@ -195,8 +247,13 @@ mod tests {
         // No session was actually pushed yet (that happens once the
         // runtime layer executes Cmd::SpawnTerminal and the PTY spawns
         // successfully), but the pending spawn marker prevents issuing a
-        // second overlapping spawn for the same MVP terminal slot.
-        assert!(update_terminal(&mut model, TerminalMsg::NewSession).is_none());
+        // second overlapping spawn.
+        assert!(update_terminal(&mut model, TerminalMsg::Tab(TabAction::New)).is_none());
+        model.terminal.clear_spawn_pending(0);
+        assert!(matches!(
+            update_terminal(&mut model, TerminalMsg::Tab(TabAction::New)),
+            Some(Cmd::SpawnTerminal { session_id: 1, .. })
+        ));
     }
 
     #[test]

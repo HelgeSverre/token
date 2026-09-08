@@ -89,6 +89,10 @@ pub enum CommandId {
     // Panels/Docks
     ToggleFileExplorer,
     ToggleTerminal,
+    NewTerminal,
+    CloseTerminal,
+    NextTerminal,
+    PreviousTerminal,
     ToggleOutline,
     ToggleProblems,
     ToggleUsages,
@@ -461,6 +465,30 @@ pub static COMMANDS: &[CommandDef] = &[
         action: Some(KeymapCommand::ToggleOutline),
         category: CommandCategory::Panel,
         label: "View: Toggle Outline",
+    },
+    CommandDef {
+        id: CommandId::NewTerminal,
+        action: Some(KeymapCommand::NewTerminal),
+        category: CommandCategory::Panel,
+        label: "Terminal: New Tab",
+    },
+    CommandDef {
+        id: CommandId::CloseTerminal,
+        action: Some(KeymapCommand::CloseTerminal),
+        category: CommandCategory::Panel,
+        label: "Terminal: Close Tab",
+    },
+    CommandDef {
+        id: CommandId::NextTerminal,
+        action: Some(KeymapCommand::NextTerminal),
+        category: CommandCategory::Panel,
+        label: "Terminal: Next Tab",
+    },
+    CommandDef {
+        id: CommandId::PreviousTerminal,
+        action: Some(KeymapCommand::PreviousTerminal),
+        category: CommandCategory::Panel,
+        label: "Terminal: Previous Tab",
     },
     CommandDef {
         id: CommandId::ToggleProblems,
@@ -985,6 +1013,10 @@ pub enum Cmd {
     },
 
     // === Terminal Commands ===
+    /// Terminate and remove only the named terminal session.
+    CloseTerminal {
+        session_id: usize,
+    },
     /// Spawn a PTY + shell for a new terminal session. The runtime spawns
     /// the PTY reader/writer threads (see `terminal::spawn_pty`) and routes
     /// `Msg::Terminal(PtyOutput)`/`ProcessExited` back through the update
@@ -1333,9 +1365,8 @@ impl Cmd {
             | Cmd::ReloadConfiguration
             | Cmd::LoadTheme { .. }
             | Cmd::PrepareKeymap { .. } => Damage::Areas(vec![]),
-            // Spawning doesn't need immediate redraw; the PtyOutput that
-            // follows shortly after will request one.
-            Cmd::SpawnTerminal { .. } => Damage::Areas(vec![]),
+            // Creating/closing a session also changes dock chrome immediately.
+            Cmd::SpawnTerminal { .. } | Cmd::CloseTerminal { .. } => Damage::Full,
             // Spawning/restarting a server has no immediate visual effect;
             // ServerStateChanged (once it arrives) requests its own redraw.
             Cmd::LspEnsureServer { .. } => Damage::Areas(vec![]),

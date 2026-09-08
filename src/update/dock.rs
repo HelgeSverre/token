@@ -16,17 +16,6 @@ fn sync_workspace_with_dock(model: &mut AppModel) {
     }
 }
 
-fn next_terminal_session_id(model: &AppModel) -> usize {
-    model
-        .terminal
-        .sessions
-        .iter()
-        .map(|session| session.id)
-        .max()
-        .map(|session_id| session_id + 1)
-        .unwrap_or(0)
-}
-
 fn is_terminal_panel_open(model: &AppModel) -> bool {
     model
         .dock_layout
@@ -34,7 +23,7 @@ fn is_terminal_panel_open(model: &AppModel) -> bool {
         .is_some()
 }
 
-fn terminal_grid_size_for_model(model: &AppModel) -> Option<TerminalGridSize> {
+pub(super) fn terminal_grid_size_for_model(model: &AppModel) -> Option<TerminalGridSize> {
     let content_rect = crate::layout::chrome::chrome(model)
         .rect(crate::layout::UiKey::PanelContent(PanelId::Terminal))?;
 
@@ -60,12 +49,7 @@ fn terminal_sync_command(model: &mut AppModel) -> Option<Cmd> {
 
     let grid_size = terminal_grid_size_for_model(model)?;
     if model.terminal.sessions.is_empty() {
-        if model.terminal.has_pending_spawn() {
-            return None;
-        }
-
-        let session_id = next_terminal_session_id(model);
-        model.terminal.mark_spawn_pending(session_id);
+        let session_id = model.terminal.begin_spawn()?;
         return Some(Cmd::SpawnTerminal {
             session_id,
             rows: grid_size.rows,
@@ -73,6 +57,7 @@ fn terminal_sync_command(model: &mut AppModel) -> Option<Cmd> {
         });
     }
 
+    crate::panels::terminal::reveal_active_tab(model);
     let desired_size = (grid_size.rows as usize, grid_size.cols as usize);
     let needs_resize = model
         .terminal

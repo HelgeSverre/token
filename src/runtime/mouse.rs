@@ -31,6 +31,11 @@ use token::view::Renderer;
 /// Returns whether row highlights changed, so idle popup hover requests repaint.
 pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarget>) -> bool {
     let previous_modal = model.ui.modal_hover_row;
+    let previous_terminal = model.terminal.hovered_tab;
+    model.terminal.hovered_tab = match target {
+        Some(HitTarget::TerminalAction { action, .. }) => Some(*action),
+        _ => None,
+    };
     let previous_popup = model
         .ui
         .cursor_overlay
@@ -48,7 +53,8 @@ pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarge
             _ => None,
         };
     }
-    previous_modal != model.ui.modal_hover_row
+    previous_terminal != model.terminal.hovered_tab
+        || previous_modal != model.ui.modal_hover_row
         || previous_popup
             != model
                 .ui
@@ -1943,6 +1949,11 @@ fn handle_left_click(
         }
 
         // Dock tab click - activate panel (never toggles the dock closed)
+        HitTarget::TerminalAction { action, position } => EventResult::Consumed {
+            redraw: true,
+            focus: Some(FocusTarget::Dock(*position)),
+            cmd: update(model, Msg::Terminal(TerminalMsg::Tab(*action))),
+        },
         HitTarget::DockTab { panel_id, .. } => {
             update(
                 model,
@@ -2299,6 +2310,7 @@ fn handle_middle_click(
         // Dock targets - consume, no special middle-click action
         HitTarget::DockResize { .. }
         | HitTarget::DockTab { .. }
+        | HitTarget::TerminalAction { .. }
         | HitTarget::DockTabBarEmpty { .. }
         | HitTarget::DockContent { .. } => EventResult::consumed_no_redraw(),
 
