@@ -214,7 +214,7 @@ fn jump_diagnostic(model: &mut AppModel, forward: bool) -> Option<Cmd> {
         .set_status(crate::model::status_bar::truncate_status_message(
             message.lines().next().unwrap_or_default(),
         ));
-    navigation::combine(cmd, Some(Cmd::redraw_status_bar()))
+    super::merge_cmds(cmd, Some(Cmd::redraw_status_bar()))
 }
 
 /// `Cmd::LspRequestSignatureHelp` at the caret of the focused, file-backed
@@ -380,7 +380,7 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                 }
             }
             if then_save && model.try_document().and_then(|d| d.id) == Some(document_id) {
-                cmd = navigation::combine(cmd, super::app::save_document(model));
+                cmd = super::merge_cmds(cmd, super::app::save_document(model));
                 if edits.is_none() {
                     // After `save_document`'s own "Saving..." so it shows.
                     model
@@ -388,7 +388,7 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                         .set_status("Formatter unavailable, saved unformatted");
                 }
             }
-            navigation::combine(cmd, Some(Cmd::redraw_status_bar()))
+            super::merge_cmds(cmd, Some(Cmd::redraw_status_bar()))
         }
         LspMsg::FormattingResponseFromServer { .. } => None,
         LspMsg::ShowSignatureHelp => request_signature_help(model, None, false),

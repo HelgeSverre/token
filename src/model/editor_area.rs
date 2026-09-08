@@ -131,6 +131,57 @@ pub struct SplitContainer {
     pub min_sizes: Vec<f32>,
 }
 
+impl SplitContainer {
+    /// Shared child geometry for layout, hit testing and splitter dragging.
+    /// Missing ratios retain the equal-share fallback; empty splits yield no rectangles.
+    pub(crate) fn child_rects(&self, rect: Rect) -> impl Iterator<Item = (&LayoutNode, Rect)> {
+        let total_size = match self.direction {
+            SplitDirection::Horizontal => rect.width,
+            SplitDirection::Vertical => rect.height,
+        };
+        let mut offset = 0.0;
+        self.children.iter().enumerate().map(move |(index, child)| {
+            let ratio = self
+                .ratios
+                .get(index)
+                .copied()
+                .unwrap_or_else(|| 1.0 / self.children.len() as f32);
+            let size = total_size * ratio;
+            let child_rect = match self.direction {
+                SplitDirection::Horizontal => Rect::new(rect.x + offset, rect.y, size, rect.height),
+                SplitDirection::Vertical => Rect::new(rect.x, rect.y + offset, rect.width, size),
+            };
+            offset += size;
+            (child, child_rect)
+        })
+    }
+
+    fn splitter_after(&self, index: usize, child: Rect, width: f32) -> Option<SplitterBar> {
+        if index + 1 >= self.children.len() {
+            return None;
+        }
+        let rect = match self.direction {
+            SplitDirection::Horizontal => Rect::new(
+                child.x + child.width - width / 2.0,
+                child.y,
+                width,
+                child.height,
+            ),
+            SplitDirection::Vertical => Rect::new(
+                child.x,
+                child.y + child.height - width / 2.0,
+                child.width,
+                width,
+            ),
+        };
+        Some(SplitterBar {
+            direction: self.direction,
+            rect,
+            index,
+        })
+    }
+}
+
 /// Unique identifier for a preview pane
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PreviewId(pub u64);
@@ -791,67 +842,13 @@ impl EditorArea {
                 }
             }
             LayoutNode::Split(container) => {
-                let children = &container.children;
-                let ratios = &container.ratios;
-
-                if children.is_empty() {
-                    return;
-                }
-
-                // Calculate child rects based on direction and ratios
-                let mut offset = 0.0;
-                let total_size = match container.direction {
-                    SplitDirection::Horizontal => rect.width,
-                    SplitDirection::Vertical => rect.height,
-                };
-
-                for (i, child) in children.iter().enumerate() {
-                    let ratio = ratios
-                        .get(i)
-                        .copied()
-                        .unwrap_or(1.0 / children.len() as f32);
-                    let child_size = total_size * ratio;
-
-                    let child_rect = match container.direction {
-                        SplitDirection::Horizontal => {
-                            Rect::new(rect.x + offset, rect.y, child_size, rect.height)
-                        }
-                        SplitDirection::Vertical => {
-                            Rect::new(rect.x, rect.y + offset, rect.width, child_size)
-                        }
-                    };
-
-                    // Add splitter bar between children (not after last child)
-                    if i < children.len() - 1 {
-                        let splitter = match container.direction {
-                            SplitDirection::Horizontal => SplitterBar {
-                                direction: container.direction,
-                                rect: Rect::new(
-                                    rect.x + offset + child_size - splitter_width / 2.0,
-                                    rect.y,
-                                    splitter_width,
-                                    rect.height,
-                                ),
-                                index: i,
-                            },
-                            SplitDirection::Vertical => SplitterBar {
-                                direction: container.direction,
-                                rect: Rect::new(
-                                    rect.x,
-                                    rect.y + offset + child_size - splitter_width / 2.0,
-                                    rect.width,
-                                    splitter_width,
-                                ),
-                                index: i,
-                            },
-                        };
+                for (index, (child, child_rect)) in container.child_rects(rect).enumerate() {
+                    if let Some(splitter) =
+                        container.splitter_after(index, child_rect, splitter_width)
+                    {
                         splitters.push(splitter);
                     }
-
-                    // Recursively layout child
                     self.compute_layout_node(child, child_rect, splitters, splitter_width);
-
-                    offset += child_size;
                 }
             }
         }
@@ -884,62 +881,11 @@ impl EditorArea {
             return;
         };
 
-        let children = &container.children;
-        let ratios = &container.ratios;
-        if children.is_empty() {
-            return;
-        }
-
-        let mut offset = 0.0;
-        let total_size = match container.direction {
-            SplitDirection::Horizontal => rect.width,
-            SplitDirection::Vertical => rect.height,
-        };
-
-        for (i, child) in children.iter().enumerate() {
-            let ratio = ratios
-                .get(i)
-                .copied()
-                .unwrap_or(1.0 / children.len() as f32);
-            let child_size = total_size * ratio;
-
-            let child_rect = match container.direction {
-                SplitDirection::Horizontal => {
-                    Rect::new(rect.x + offset, rect.y, child_size, rect.height)
-                }
-                SplitDirection::Vertical => {
-                    Rect::new(rect.x, rect.y + offset, rect.width, child_size)
-                }
-            };
-
-            if i < children.len() - 1 {
-                let splitter = match container.direction {
-                    SplitDirection::Horizontal => SplitterBar {
-                        direction: container.direction,
-                        rect: Rect::new(
-                            rect.x + offset + child_size - splitter_width / 2.0,
-                            rect.y,
-                            splitter_width,
-                            rect.height,
-                        ),
-                        index: i,
-                    },
-                    SplitDirection::Vertical => SplitterBar {
-                        direction: container.direction,
-                        rect: Rect::new(
-                            rect.x,
-                            rect.y + offset + child_size - splitter_width / 2.0,
-                            rect.width,
-                            splitter_width,
-                        ),
-                        index: i,
-                    },
-                };
+        for (index, (child, child_rect)) in container.child_rects(rect).enumerate() {
+            if let Some(splitter) = container.splitter_after(index, child_rect, splitter_width) {
                 splitters.push(splitter);
             }
-
             self.compute_splitters_node(child, child_rect, splitters, splitter_width);
-            offset += child_size;
         }
     }
 

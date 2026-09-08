@@ -469,7 +469,7 @@ fn test_splitter_exact_position_horizontal() {
 
 #[test]
 fn test_compute_splitters_matches_mutating_layout_computation() {
-    use token::model::Rect;
+    use token::model::{LayoutNode, Rect};
 
     // hit_test_ui used to clone the entire EditorArea (every open document's
     // undo/redo stacks included) just to get a `&mut self` receiver for
@@ -482,12 +482,29 @@ fn test_compute_splitters_matches_mutating_layout_computation() {
         Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
     );
 
-    let available = Rect::new(0.0, 0.0, 800.0, 600.0);
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Vertical)),
+    );
+    // Unequal outer panes and missing inner ratios exercise the same
+    // child-rectangle fallback from both layout and read-only hit testing.
+    let LayoutNode::Split(outer) = &mut model.editor_area.layout else {
+        panic!("outer split")
+    };
+    outer.ratios = vec![0.25, 0.75];
+    let LayoutNode::Split(inner) = &mut outer.children[1] else {
+        panic!("inner split")
+    };
+    inner.ratios.clear();
+    let available = Rect::new(10.0, 20.0, 800.0, 600.0);
     let mutating = model.editor_area.compute_layout(available);
     let read_only = model
         .editor_area
         .compute_splitters(available, token::model::SPLITTER_WIDTH);
 
+    assert_eq!(mutating.len(), 2);
+    assert_eq!(mutating[0].rect.x + mutating[0].rect.width / 2.0, 210.0);
+    assert_eq!(mutating[1].rect.y + mutating[1].rect.height / 2.0, 320.0);
     assert_eq!(mutating.len(), read_only.len());
     for (a, b) in mutating.iter().zip(read_only.iter()) {
         assert_eq!(a.direction, b.direction);

@@ -28,7 +28,7 @@ pub(super) fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
     if before != (model.ui.is_saving, model.ui.is_loading)
         && result.as_ref().is_none_or(|cmd| !cmd.needs_redraw())
     {
-        super::navigation::combine(result, Some(Cmd::redraw_status_bar()))
+        super::merge_cmds(result, Some(Cmd::redraw_status_bar()))
     } else {
         result
     }

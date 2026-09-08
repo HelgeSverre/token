@@ -58,18 +58,23 @@ pub fn problems_rows(model: &AppModel) -> Vec<ProblemsRow> {
 /// The shared group traversal behind materialized rows and layout row
 /// counts. Keeping the scope predicate here prevents rendering,
 /// hit-testing, and update-layer capacity from drifting apart.
-fn problem_groups(model: &AppModel) -> Vec<(&PathBuf, &[lsp_types::Diagnostic])> {
-    let (mut focused, rest): (Vec<_>, Vec<_>) = model
+fn problem_groups(model: &AppModel) -> impl Iterator<Item = (&PathBuf, &[lsp_types::Diagnostic])> {
+    let groups = model
         .lsp
         .diagnostics
         .iter()
         .filter(|(_, diagnostics)| !diagnostics.is_empty())
-        .map(|(path, diagnostics)| (path, diagnostics.as_slice()))
-        .partition(|(path, _)| model.document().matches_file_path(path));
-    if !model.problems_panel.current_file_only {
-        focused.extend(rest);
-    }
-    focused
+        .map(|(path, diagnostics)| (path, diagnostics.as_slice()));
+    let document = model.document();
+    let focused = groups
+        .clone()
+        .filter(move |(path, _)| document.matches_file_path(path));
+    let rest = (!model.problems_panel.current_file_only)
+        .then_some(groups)
+        .into_iter()
+        .flatten()
+        .filter(move |(path, _)| !document.matches_file_path(path));
+    focused.chain(rest)
 }
 
 /// Dock tab title: plain "Problems" in current-file scope, with the
@@ -78,7 +83,7 @@ pub fn problems_panel_title(model: &AppModel) -> String {
     if model.problems_panel.current_file_only {
         return "Problems".to_owned();
     }
-    let files = problem_groups(model).len();
+    let files = problem_groups(model).count();
     let noun = if files == 1 { "file" } else { "files" };
     format!("Problems \u{b7} {files} {noun}")
 }
@@ -96,7 +101,6 @@ pub fn problems_empty_text(model: &AppModel) -> &'static str {
 /// `PathBuf` clones) — feeds the chrome layout's `RowList` declaration.
 pub fn problems_row_count(model: &AppModel) -> usize {
     problem_groups(model)
-        .into_iter()
         .map(|(path, diagnostics)| {
             if model.problems_panel.collapsed.contains(path) {
                 1
@@ -177,8 +181,7 @@ fn reveal_problems_selection(model: &mut AppModel) {
 /// Retain raw LSP coordinates until the actual destination is installed, then
 /// convert and clamp against that document.
 fn open_diagnostic(model: &mut AppModel, path: &std::path::Path, index: usize) -> Option<Cmd> {
-    let diagnostic = model.lsp.diagnostics.get(path)?.get(index)?.clone();
-    let start = diagnostic.range.start;
+    let start = model.lsp.diagnostics.get(path)?.get(index)?.range.start;
     navigation::jump_to_location(model, None, path, start)
 }
 

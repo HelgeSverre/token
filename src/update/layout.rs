@@ -687,7 +687,7 @@ fn reject_file_open(model: &mut AppModel, request_id: u64, status: Option<String
     if let Some(status) = status {
         model.ui.set_status(status);
     }
-    super::navigation::combine(
+    super::merge_cmds(
         Some(Cmd::Batch(vec![
             Cmd::redraw_status_bar(),
             Cmd::FileOpenFinished {
@@ -1402,40 +1402,9 @@ fn find_container_for_splitter(
 
             *current_index += splitter_count;
 
-            // Recurse into children with their calculated rects
-            let total_size = match container.direction {
-                SplitDirection::Horizontal => rect.width,
-                SplitDirection::Vertical => rect.height,
-            };
-            let mut offset = 0.0;
-
-            for (i, child) in container.children.iter().enumerate() {
-                let ratio = container
-                    .ratios
-                    .get(i)
-                    .copied()
-                    .unwrap_or(1.0 / container.children.len() as f32);
-                let child_size = total_size * ratio;
-
-                let child_rect = match container.direction {
-                    SplitDirection::Horizontal => {
-                        Rect::new(rect.x + offset, rect.y, child_size, rect.height)
-                    }
-                    SplitDirection::Vertical => {
-                        Rect::new(rect.x, rect.y + offset, rect.width, child_size)
-                    }
-                };
-
-                if let Some(result) =
-                    find_container_for_splitter(child, target_index, current_index, child_rect)
-                {
-                    return Some(result);
-                }
-
-                offset += child_size;
-            }
-
-            None
+            container.child_rects(rect).find_map(|(child, child_rect)| {
+                find_container_for_splitter(child, target_index, current_index, child_rect)
+            })
         }
     }
 }

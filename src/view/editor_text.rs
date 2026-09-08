@@ -8,7 +8,8 @@ use crate::model::{collect_line_marks, AppModel, Document, EditorState, Mark, Te
 use crate::perf::{PerfStage, PerfStats};
 
 use super::frame::{Frame, TextPainter};
-use super::geometry::{self, char_col_to_visual_col, column_to_pixel_x, expand_tabs_for_display};
+use super::geometry::{self, column_to_pixel_x, expand_tabs_for_display};
+use crate::util::text::char_col_to_visual_col;
 
 /// Cursor width in pixels.
 const CURSOR_WIDTH: usize = 2;

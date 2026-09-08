@@ -30,17 +30,6 @@ pub(crate) fn clamp_to_document(model: &AppModel, line: usize, col: usize) -> (u
     (clamped_line, clamped_col)
 }
 
-/// Combines two optional `Cmd`s from a two-step navigation (open, then
-/// place cursor) into one.
-pub(crate) fn combine(a: Option<Cmd>, b: Option<Cmd>) -> Option<Cmd> {
-    match (a, b) {
-        (Some(a), Some(b)) => Some(Cmd::Batch(vec![a, b])),
-        (Some(a), None) => Some(a),
-        (None, Some(b)) => Some(b),
-        (None, None) => None,
-    }
-}
-
 /// Captures the focused document's current position as a `JumpEntry`, or
 /// `None` for documents with no file path — untitled/scratch buffers
 /// aren't LSP-synced (design doc's "Untitled documents are not synced")

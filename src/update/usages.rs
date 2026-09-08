@@ -49,7 +49,7 @@ pub(super) fn request(model: &mut AppModel, panel: bool) -> Option<Cmd> {
         }
         return opened.or(Some(Cmd::Redraw));
     };
-    super::navigation::combine(
+    super::merge_cmds(
         opened,
         Some(Cmd::LspRequestReferences {
             target,

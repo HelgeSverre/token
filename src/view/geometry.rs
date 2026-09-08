@@ -10,16 +10,7 @@
 use crate::model::editor_area::{EditorGroup, Rect};
 use crate::model::{AppModel, Document, EditorState};
 
-// ============================================================================
-// Layout Constants
-// ============================================================================
-
-// Re-export TABULATOR_WIDTH from util::text for single source of truth
-pub use crate::util::text::TABULATOR_WIDTH;
-
-// ============================================================================
-// Viewport Sizing Helpers
-// ============================================================================
+use crate::util::text::TABULATOR_WIDTH;
 
 // ============================================================================
 // Tab Expansion Helpers
@@ -66,67 +57,6 @@ pub fn expand_tabs_for_display(text: &str) -> Cow<'_, str> {
     }
 
     Cow::Owned(result)
-}
-
-/// Convert a character column index to a visual (screen) column position.
-///
-/// Accounts for tab expansion when calculating the screen position.
-/// A character column is an index into the string's characters, while
-/// a visual column is the screen position accounting for variable-width tabs.
-///
-/// # Arguments
-/// * `text` - The line of text containing possible tab characters
-/// * `char_col` - The character index to convert
-///
-/// # Returns
-/// The visual column (screen position) for the given character index.
-pub fn char_col_to_visual_col(text: &str, char_col: usize) -> usize {
-    let mut visual_col = 0;
-    for (i, ch) in text.chars().enumerate() {
-        if i >= char_col {
-            break;
-        }
-        if ch == '\t' {
-            visual_col += TABULATOR_WIDTH - (visual_col % TABULATOR_WIDTH);
-        } else {
-            visual_col += 1;
-        }
-    }
-    visual_col
-}
-
-/// Convert a visual (screen) column position to a character column index.
-///
-/// This is the inverse of `char_col_to_visual_col`. Given a screen position,
-/// it returns the character index that would be at that position, accounting
-/// for tab expansion.
-///
-/// # Arguments
-/// * `text` - The line of text containing possible tab characters
-/// * `visual_col` - The screen column position to convert
-///
-/// # Returns
-/// The character index corresponding to the given visual column.
-/// If the visual column is past the end of the line, returns the line length.
-pub fn visual_col_to_char_col(text: &str, visual_col: usize) -> usize {
-    let mut current_visual = 0;
-    let mut char_col = 0;
-
-    for ch in text.chars() {
-        if current_visual >= visual_col {
-            return char_col;
-        }
-
-        if ch == '\t' {
-            let tab_width = TABULATOR_WIDTH - (current_visual % TABULATOR_WIDTH);
-            current_visual += tab_width;
-        } else {
-            current_visual += 1;
-        }
-        char_col += 1;
-    }
-
-    char_col
 }
 
 /// Convert a visual column into a viewport-relative pixel x-coordinate.
@@ -699,6 +629,7 @@ pub fn binary_placeholder_layout(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::text::{char_col_to_visual_col, visual_col_to_char_col};
 
     #[test]
     fn test_expand_tabs() {

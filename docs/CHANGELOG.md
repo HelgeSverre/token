@@ -6,6 +6,14 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Internal cleanup
+
+- Rendering and editing now share tab-column conversion, and split-pane layout,
+  hit testing and resize handling share child-rectangle calculations.
+- Removed the duplicate navigation command-merging helper. Problems-panel
+  grouping uses borrowed traversal without temporary group lists, and opening
+  a diagnostic no longer clones its full payload.
+
 ### Context menus
 
 - Context menus size to their labels and shortcuts, up to 520 logical pixels
