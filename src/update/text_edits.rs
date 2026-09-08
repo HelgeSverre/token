@@ -224,11 +224,23 @@ impl EditPositions {
                         .cursors
                         .iter()
                         .zip(&editor.selections)
-                        .map(|(cursor, selection)| CursorOffsets {
-                            cursor: doc.cursor_to_offset(cursor.line, cursor.column),
-                            anchor: doc
-                                .cursor_to_offset(selection.anchor.line, selection.anchor.column),
-                            head: doc.cursor_to_offset(selection.head.line, selection.head.column),
+                        .map(|(cursor, selection)| {
+                            let position = cursor.to_position();
+                            let offset = doc.cursor_to_offset(position.line, position.column);
+                            // Collapsed selections share all three positions; even
+                            // nonempty selections usually share the caret and head.
+                            let endpoint = |pos: Position| {
+                                if pos == position {
+                                    offset
+                                } else {
+                                    doc.cursor_to_offset(pos.line, pos.column)
+                                }
+                            };
+                            CursorOffsets {
+                                cursor: offset,
+                                anchor: endpoint(selection.anchor),
+                                head: endpoint(selection.head),
+                            }
                         })
                         .collect();
                     (id, offsets)
@@ -328,9 +340,16 @@ impl EditPositions {
                 .zip(offsets)
             {
                 let pos = position(offsets.cursor);
+                let endpoint = |offset| {
+                    if offset == offsets.cursor {
+                        pos
+                    } else {
+                        position(offset)
+                    }
+                };
                 *cursor = Cursor::at(pos.line, pos.column);
                 *selection =
-                    Selection::from_anchor_head(position(offsets.anchor), position(offsets.head));
+                    Selection::from_anchor_head(endpoint(offsets.anchor), endpoint(offsets.head));
             }
             editor.occurrence_state = None;
             editor.clear_selection_history();

@@ -3,6 +3,7 @@
 //! native sampler using the `sample` / `sample-find` modes (12 seconds).
 //! `find-cold` measures uncached matches and worker computation separately;
 //! `sample-find-cold` / `sample-find-worker` keep those stages busy for sampling.
+//! `sample-edit-history` samples forward line duplication with 1,000 cursors/two panes.
 
 use std::hint::black_box;
 use std::time::{Duration, Instant};
@@ -194,7 +195,7 @@ fn movement() {
 }
 
 /// Time mutation, Undo and Redo separately, with exact pane-state assertions.
-fn edit_history() {
+fn edit_history(sample_forward: bool) {
     use token::messages::{DocumentMsg, LayoutMsg};
     use token::model::{Position, Selection, SplitDirection};
 
@@ -217,6 +218,9 @@ fn edit_history() {
     ] {
         for panes in [1, 2] {
             for count in [1, 100, 1000] {
+                if sample_forward && (name != "duplicate_lines" || panes != 2 || count != 1000) {
+                    continue;
+                }
                 let text = format!("{}tail\n", "a🙂b\n".repeat(count));
                 let expected = format!("{}tail\n", result_line.repeat(count));
                 let mut m = model(&text, false);
@@ -248,7 +252,17 @@ fn edit_history() {
                 let mut edit_times = Vec::with_capacity(100);
                 let mut undo_times = Vec::with_capacity(100);
                 let mut redo_times = Vec::with_capacity(100);
-                for sample in 0..110 {
+                let sampling_start = Instant::now();
+                if sample_forward {
+                    println!(
+                        "sampling forward line duplication: pid={}",
+                        std::process::id()
+                    );
+                }
+                for sample in 0..if sample_forward { usize::MAX } else { 110 } {
+                    if sample_forward && sampling_start.elapsed() >= Duration::from_secs(12) {
+                        break;
+                    }
                     m.document_mut().buffer = pristine.clone();
                     m.document_mut().undo_stack.clear();
                     m.document_mut().redo_stack.clear();
@@ -260,11 +274,12 @@ fn edit_history() {
                     for (stage, action) in [message.clone(), DocumentMsg::Undo, DocumentMsg::Redo]
                         .into_iter()
                         .enumerate()
+                        .take(if sample_forward { 1 } else { 3 })
                     {
                         let start = Instant::now();
                         black_box(token::update::update(&mut m, Msg::Document(action)));
                         let elapsed = start.elapsed();
-                        if sample >= 10 {
+                        if !sample_forward && sample >= 10 {
                             match stage {
                                 0 => edit_times.push(elapsed),
                                 1 => undo_times.push(elapsed),
@@ -318,6 +333,9 @@ fn edit_history() {
                             }
                         }
                     }
+                }
+                if sample_forward {
+                    continue;
                 }
                 for (stage, times) in [
                     ("edit", edit_times),
@@ -576,8 +594,10 @@ fn main() {
         settings_scrolling();
         return;
     }
-    if std::env::args().any(|arg| arg == "edit-history") {
-        edit_history();
+    if let Some(mode) =
+        std::env::args().find(|arg| matches!(arg.as_str(), "edit-history" | "sample-edit-history"))
+    {
+        edit_history(mode == "sample-edit-history");
         return;
     }
     if std::env::args().any(|arg| arg == "replacements") {
