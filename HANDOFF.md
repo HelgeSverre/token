@@ -66,6 +66,10 @@ The macOS file-tree context-menu pointer check is now verified, including hover,
 separator clearing and click-to-open; see the
 [native record](docs/dev/refactoring-audit-2026-09-06.md#native-context-menu-acceptance-and-exit-diagnosis--2026-09-08).
 
+Workspace-symbol search and both Usages surfaces are now verified against a real
+rust-analyzer on macOS, including Unicode navigation and retained dock results;
+see the [live-server record](docs/dev/refactoring-audit-2026-09-06.md#live-workspace-symbols-and-usages--2026-09-08).
+
 - Native Windows/Linux keymap chips, contexts, capture and persistence; launcher
   detachment and per-instance port files on Windows; managed llama-server
   startup/teardown on Windows/Linux.
@@ -73,9 +77,8 @@ separator clearing and click-to-open; see the
   completion native-input matrix. Existing unit/macOS evidence is not a full
   platform certification.
 - Live hosted model/provider compatibility, retrieval-context relevance,
-  Tabby service/model behavior, and
-  workspace-symbol/Usages live-server interaction. Fixture coverage is not live
-  service verification.
+  and Tabby service/model behavior. Fixture coverage is not live service
+  verification.
 - Resolve intermittent nextest process-exit warnings. The September 8 theme
   suite flagged `settings_page_keeps_spacious_categories_and_shared_control_hits`
   as leaky. The Find overview full run also flagged

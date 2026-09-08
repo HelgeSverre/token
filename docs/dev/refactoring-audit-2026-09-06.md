@@ -1,5 +1,52 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Live workspace symbols and Usages — 2026-09-08
+
+The existing debug executable in `/tmp/token-managed-server-check.5prvI4`
+(last production change `f0e1c4e`, subsequent managed-test diagnostics `aa27e5e`)
+was checked on macOS against installed rust-analyzer
+`1.98.0 (88d9e12a 2026-08-18)`. The dependency-free temporary Rust workspace,
+configuration and build output were isolated under
+`/tmp/token-live-symbols.nkUaxY/`; Cargo was offline and completion disabled.
+No hosted service or prepared LSP response was used.
+
+The workspace contained a public `café` function and two calls across `lib.rs`
+and `calls.rs`. The latter used `/* 🙂 */ crate::café(2)` so that the server's
+UTF-16 column differs from the editor's character column. All coordinates below
+are zero-based unless explicitly described as displayed labels.
+
+| Interaction | Observed result |
+| --- | --- |
+| Search Everywhere, All tab, query `café` | Exactly one Symbols row, `café`; searching status cleared |
+| Enter on the symbol | Opened `lib.rs`, line 2, character 7 |
+| Show Usages on the definition | Three locations: the definition and both calls |
+| Enter on the first reference, in previously unopened `calls.rs` | Opened line 1, character 19, correctly converting server UTF-16 column 20 |
+| Find Usages on that call | Finished with three usages grouped under `calls.rs (1)` and `lib.rs (2)` |
+| CloseFocusedDock, then ToggleUsages | Retained all rows, selection and scroll offset; not loading |
+| ArrowDown to the final usage and Enter | Opened `lib.rs`, line 7, character 4; dock results remained visible |
+| Search Everywhere, three Tab presses to Symbols, query `café` | Exactly one row; Enter again opened the definition at line 2, character 7 |
+
+Usages displayed the loaded emoji-prefixed reference as `2:20`, consistent with
+one-based character coordinates. Before that file was opened, the Show Usages
+automation snapshot reported its fallback protocol column 20; the actual
+navigation converted correctly to character 19. This check does not claim that
+unloaded-file display coordinates are already character-normalized.
+
+Commands and query setup used the fixed automation socket; Enter, Tab and arrow
+events were posted to the owned editor PID through CoreGraphics after checking
+its executable path. This verifies the real input/update/server/navigation flow,
+not hardware keyboard layout, IME or pointer behavior. Both documents remained
+unchanged. Explicit Quit returned successfully, the editor session exited 0,
+and subsequent process inspection showed editor PID 10378 and its owned server
+PIDs 10561/10585 absent. Unrelated editor/server processes were untouched.
+
+This closes the macOS live workspace-symbol/Usages interaction gate. It does not
+close other platforms, hosted completion/Tabby quality, or intermittent startup
+failures. No production code, tests or dependencies changed, so the Rust suite
+was not rerun for this evidence-only update. Scoped documentation review:
+**Approve**, no outstanding findings. No additional feature plan is fully
+eligible for archival from this check alone.
+
 ## Native context-menu acceptance and exit diagnosis — 2026-09-08
 
 On source checkpoint `050b9a9`, an isolated macOS debug editor used a temporary
