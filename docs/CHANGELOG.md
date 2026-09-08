@@ -13,8 +13,16 @@ All notable changes to rust-editor are documented in this file.
   creating a previously missing file cancel the save without replacing either
   version. Ordered saves from Token remain supported.
 - Save As can replace a different destination chosen in the native dialog;
-  symlink aliases of the original file retain its conflict check. Automatic
-  reload and the conflict-resolution UI are still being implemented.
+  symlink aliases of the original file retain its conflict check.
+- Open text files are checked after filesystem changes and window refocus,
+  including files outside the workspace. Clean buffers reload by default;
+  `auto_reload` in Settings → Editor disables silent reload. CSV grids retain
+  their view mode, and in-progress cell edits are not replaced.
+- External conflicts show a persistent `!` in the tab title. The resolution
+  dialog defaults to Keep Editing and offers explicit Reload, Overwrite,
+  Recreate (for deleted files), or Save As actions as appropriate. Save and the
+  Resolve External File Change command reopen deferred conflicts. Overwrite
+  rechecks the approved disk version before replacing it.
 
 ### Documentation cards
 

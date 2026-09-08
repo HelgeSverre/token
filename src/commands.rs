@@ -22,6 +22,7 @@ pub enum CommandId {
     FuzzyFileFinder,
     SaveFile,
     SaveFileAs,
+    ResolveFileChange,
 
     // Edit operations
     Undo,
@@ -213,6 +214,12 @@ pub static COMMANDS: &[CommandDef] = &[
         action: Some(KeymapCommand::SaveFileAs),
         category: CommandCategory::File,
         label: "Save File As...",
+    },
+    CommandDef {
+        id: CommandId::ResolveFileChange,
+        action: None,
+        category: CommandCategory::File,
+        label: "Resolve External File Change…",
     },
     CommandDef {
         id: CommandId::Undo,
@@ -897,6 +904,7 @@ pub enum Cmd {
         target: crate::model::FileRequest,
         path: PathBuf,
     },
+    ObserveFile(crate::model::FileRequest),
     /// Prepare a file or configuration resource off the UI thread.
     PrepareFileOpen(crate::model::FileOpenRequest),
     /// Notify runtime waiters after installation (or rejection), not after reading.
@@ -1321,6 +1329,7 @@ impl Cmd {
             // File operations may cause full redraw (file load changes content)
             Cmd::SaveFile { .. } => Damage::Full,
             Cmd::LoadFile { .. } => Damage::Full,
+            Cmd::ObserveFile(_) => Damage::None,
             Cmd::PrepareFileOpen(_) => Damage::status_bar(),
             Cmd::FileOpenFinished { .. } => Damage::None,
             Cmd::OpenInExplorer { .. } => Damage::Full,

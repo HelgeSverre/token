@@ -486,6 +486,22 @@ pub(crate) struct OverlayRowSnapshot {
 
 fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot> {
     match modal {
+        token::model::ModalState::FileConflict(state) => Some(OverlaySnapshot {
+            context: "file_conflict".to_owned(),
+            query: String::new(),
+            active_tab: None,
+            rows: state
+                .actions()
+                .iter()
+                .map(|&action| OverlayRowSnapshot {
+                    label: state.label(action).to_owned(),
+                    section: None,
+                })
+                .collect(),
+            selected: state.selected_index,
+            status: Some(state.path.display().to_string()),
+            options: Vec::new(),
+        }),
         token::model::ModalState::Settings(state) => Some(OverlaySnapshot {
             context: "settings".to_owned(),
             query: state.input(),

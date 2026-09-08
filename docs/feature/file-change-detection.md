@@ -2,7 +2,7 @@
 
 Detect and respond to external file modifications
 
-> **Status:** In progress — save-time content guard implemented; watcher/reload and conflict UI remain (2026-09-08)
+> **Status:** In progress — watching, protected reload and conflict actions implemented; native end-to-end verification remains (2026-09-08)
 > **Priority:** P2
 > **Effort:** M
 > **Created:** 2025-12-19
@@ -26,12 +26,23 @@ compare-and-swap against uncooperative concurrent writers, nor a crash-safe
 atomic-save implementation. In-place writes retain the existing I/O-failure
 limitations after a successful precondition check.
 
-Still required for the requested feature: open-document watching (including
-files outside a workspace and editor-external replacement), clean-buffer reload
-with viewport/caret preservation, dirty/deleted-file resolution actions and
-persistent conflict indication. The compare/merge UI remains outside the initial
-protective slice recommended in the plan reconciliation. Do not archive this
-plan or mark file-change detection complete at this checkpoint.
+The next implementation step now adds open-document directory subscriptions
+independent of workspace ignore rules, 200 ms runtime event batching, refocus
+checks, bounded text observations, clean-buffer reload and a persistent tab `!`.
+The conflict dialog defaults to Keep Editing and offers Reload, checked Overwrite,
+Recreate for deletion, and native Save As. The actual implementation uses
+`auto_reload: true` in the existing editor configuration, not the proposed nested
+mode enum below. Turning it off asks even for clean buffers. CSV grids retain
+their mode; unresolved cell editing defers the dialog and blocks replacement.
+Image/binary placeholder tabs are not routed into text reload.
+
+Native macOS directory notifications are tested with atomic file and containing-
+directory replacements; model tests cover shared panes, stale replies, dirty and
+deleted buffers, CSV edits, explicit overwrite preconditions, and alias retargeting.
+Still required before closing this slice: live application interaction checks
+through the watcher → model → UI path, including Save As and refocus behavior.
+The compare/merge UI remains outside the initial protective slice recommended
+in the plan reconciliation. Do not archive the plan at this checkpoint.
 
 ## Table of Contents
 
@@ -52,9 +63,9 @@ plan or mark file-change detection complete at this checkpoint.
 The editor currently:
 - Uses `notify` crate for workspace file tree watching (`src/fs_watcher.rs`)
 - Refreshes file tree on external changes
-- Does NOT detect changes to open documents
+- Detects external changes to open text documents through independent watches
 - Rejects ordinary saves when disk bytes differ from the loaded/saved snapshot
-  (save-time protection implemented; resolution UI still pending)
+  (save-time protection and explicit resolution actions implemented)
 
 ### Goals
 

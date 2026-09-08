@@ -189,6 +189,8 @@ pub struct FileRequest {
     pub source_identity: Option<crate::util::FileIdentity>,
     /// Disk precondition for writes; unused by reads and dialogs.
     pub write_guard: FileWriteGuard,
+    /// An explicit external reload retains the existing editor view mode.
+    pub external_reload: bool,
     pub(crate) sequence: u64,
 }
 
@@ -205,11 +207,74 @@ pub struct FileWriteGuard {
     pub save_as: bool,
 }
 
+/// A bounded worker observation, distinct from the editor's saved snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DiskContent {
+    Text(ropey::Rope),
+    Missing,
+    Unavailable(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObservedFile {
+    pub content: DiskContent,
+    pub identity: Option<crate::util::FileIdentity>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExternalFileChange {
+    pub observed: ObservedFile,
+    pub notified: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct FileConflictState {
+    pub document_id: DocumentId,
+    pub path: PathBuf,
+    pub revision: u64,
+    pub observed: ObservedFile,
+    pub selected_index: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum FileConflictAction {
+    KeepEditing,
+    Reload,
+    Overwrite,
+    SaveAs,
+}
+
+impl FileConflictState {
+    pub fn actions(&self) -> &'static [FileConflictAction] {
+        use FileConflictAction::*;
+        match self.observed.content {
+            DiskContent::Text(_) => &[KeepEditing, Reload, Overwrite, SaveAs],
+            DiskContent::Missing => &[KeepEditing, Overwrite, SaveAs],
+            DiskContent::Unavailable(_) => &[KeepEditing, SaveAs],
+        }
+    }
+
+    pub fn label(&self, action: FileConflictAction) -> &'static str {
+        match action {
+            FileConflictAction::KeepEditing => "Keep Editing (leave disk unchanged)",
+            FileConflictAction::Reload => "Reload from Disk (discard local edits)",
+            FileConflictAction::Overwrite
+                if matches!(self.observed.content, DiskContent::Missing) =>
+            {
+                "Recreate File with My Version"
+            }
+            FileConflictAction::Overwrite => "Overwrite Disk with My Version",
+            FileConflictAction::SaveAs => "Save My Version As…",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FileRequestKind {
     Read,
     Write,
     SaveDialog,
+    Observe,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -217,18 +282,25 @@ pub(crate) struct FileIoState {
     next: u64,
     latest_read: u64,
     latest_dialog: u64,
+    latest_observe: u64,
     last_saved: u64,
     pending: BTreeMap<u64, FileRequestKind>,
     last_queued_write: Option<(PathBuf, ropey::Rope)>,
+    pub check_again: bool,
 }
 
 impl FileIoState {
     pub fn begin(&mut self, kind: FileRequestKind) -> u64 {
         self.next += 1;
         match kind {
-            FileRequestKind::Read => self.latest_read = self.next,
+            FileRequestKind::Read => {
+                self.latest_read = self.next;
+                self.invalidate_observation();
+            }
+            FileRequestKind::Observe => self.latest_observe = self.next,
             FileRequestKind::SaveDialog => self.latest_dialog = self.next,
             FileRequestKind::Write => {
+                self.invalidate_observation();
                 self.latest_dialog = 0;
                 // A save issued after a pending read commits the still-visible
                 // buffer. Do not subsequently mark the read's different bytes
@@ -248,6 +320,7 @@ impl FileIoState {
             self.last_queued_write = None;
         }
         match kind {
+            FileRequestKind::Observe => request.sequence == self.latest_observe,
             FileRequestKind::Read => request.sequence == self.latest_read,
             FileRequestKind::SaveDialog => request.sequence == self.latest_dialog,
             FileRequestKind::Write => request.sequence > self.last_saved,
@@ -256,6 +329,11 @@ impl FileIoState {
 
     pub fn saved(&mut self, request: &FileRequest) {
         self.last_saved = request.sequence;
+    }
+
+    fn invalidate_observation(&mut self) {
+        self.check_again |= self.pending(FileRequestKind::Observe);
+        self.latest_observe = 0;
     }
 
     pub fn invalidate(&mut self) {

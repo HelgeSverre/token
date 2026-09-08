@@ -52,6 +52,9 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
         }
 
         AppMsg::SaveFile => {
+            if model.document().external_change.is_some() {
+                return super::file_change::show_focused(model, true);
+            }
             // `format_on_save`: the formatting resolution (or its
             // gate/timeout fallback in the runtime) performs the save.
             if model.config.format_on_save && model.config.lsp.enabled {
@@ -70,6 +73,12 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             model.ui.set_status("Loading...");
             Some(Cmd::LoadFile { target, path })
         }
+
+        AppMsg::FilesChanged(paths) => super::file_change::changed(model, &paths),
+        AppMsg::FileObserved { target, observed } => {
+            super::file_change::observed(model, target, observed)
+        }
+        AppMsg::ResolveFileChange => super::file_change::show_focused(model, true),
 
         AppMsg::NewFile => {
             // TODO: Implement new file
@@ -324,7 +333,7 @@ pub(super) fn save_document(model: &mut AppModel) -> Option<Cmd> {
     }
 }
 
-fn begin_save(
+pub(super) fn begin_save(
     model: &mut AppModel,
     document_id: crate::model::DocumentId,
     path: PathBuf,
@@ -381,12 +390,14 @@ fn finish_save(
         return None;
     }
     if let Err(error) = result {
+        doc.file_io.check_again = true;
         model
             .ui
             .set_status(format!("Error saving {}: {error}", path.display()));
         return Some(Cmd::redraw_status_bar());
     }
     doc.file_io.saved(&target);
+    doc.file_io.check_again = true;
     let old_uri = doc.file_identity().map(|identity| identity.uri().clone());
     let old_path = doc.file_path.replace(path.clone());
     doc.set_file_identity(identity);
@@ -426,19 +437,23 @@ fn finish_save(
     Some(Cmd::Batch(cmds))
 }
 
-fn finish_load(
+pub(super) fn finish_load(
     model: &mut AppModel,
     target: crate::model::FileRequest,
     path: PathBuf,
     identity: Option<crate::util::FileIdentity>,
     result: Result<String, String>,
 ) -> Option<Cmd> {
+    let external = target.external_reload;
     let document_id = target.document_id;
+    let pending_cell_edit =
+        external && super::file_change::has_pending_cell_edit(model, document_id);
     let doc = model.editor_area.documents.get_mut(&document_id)?;
     if !doc.file_io.finish(&target, FileRequestKind::Read) {
         return None;
     }
-    if doc.revision != target.revision || doc.file_path != target.source_path {
+    if doc.revision != target.revision || doc.file_path != target.source_path || pending_cell_edit {
+        doc.file_io.check_again |= external;
         model.ui.set_status(format!(
             "Load discarded: {} changed while loading",
             path.display()
@@ -448,6 +463,7 @@ fn finish_load(
     let content = match result {
         Ok(content) => content,
         Err(error) => {
+            doc.file_io.check_again |= external;
             model
                 .ui
                 .set_status(format!("Error loading {}: {error}", path.display()));
@@ -478,22 +494,62 @@ fn finish_load(
         doc.diagnostics.clear();
     }
 
-    // Every pane sharing this document must leave image/CSV/binary mode and
-    // clamp its caret against the replacement, without changing global focus.
+    // External reloads retain each pane's view and position. Explicit loads of
+    // another file retain the existing reset-to-text behavior.
     for editor in model
         .editor_area
         .editors
         .values_mut()
         .filter(|editor| editor.document_id == Some(document_id))
     {
-        editor.view_mode = crate::model::editor::ViewMode::Text;
-        editor.tab_content = crate::model::editor::TabContent::Text;
-        editor.collapse_to_primary();
-        let cursor = &mut editor.cursors[0];
-        cursor.line = cursor.line.min(doc.line_count().saturating_sub(1));
-        cursor.column = cursor.column.min(doc.line_length(cursor.line));
-        cursor.desired_column = None;
-        editor.collapse_selections_to_cursors();
+        editor.clear_selection_history();
+        if external {
+            if let Some(csv) = editor.view_mode.as_csv_mut() {
+                match crate::csv::parse_csv(&doc.buffer.to_string(), csv.delimiter) {
+                    Ok(data) => {
+                        let mut replacement = crate::csv::CsvState::new(data, csv.delimiter);
+                        replacement.has_header_row = csv.has_header_row;
+                        replacement.selected_cell = csv.selected_cell;
+                        replacement.viewport = csv.viewport.clone();
+                        replacement.clamp_selection();
+                        replacement.viewport.top_row = replacement.viewport.top_row.min(
+                            replacement
+                                .data
+                                .row_count()
+                                .saturating_sub(replacement.viewport.visible_rows),
+                        );
+                        replacement.viewport.left_col = replacement.viewport.left_col.min(
+                            replacement
+                                .data
+                                .column_count()
+                                .saturating_sub(replacement.viewport.visible_cols),
+                        );
+                        *csv = replacement;
+                    }
+                    Err(_) => editor.view_mode = crate::model::ViewMode::Text,
+                }
+            }
+        } else {
+            editor.view_mode = crate::model::ViewMode::Text;
+            editor.tab_content = crate::model::TabContent::Text;
+            editor.collapse_to_primary();
+        }
+        for cursor in &mut editor.cursors {
+            cursor.line = cursor.line.min(doc.line_count().saturating_sub(1));
+            cursor.column = cursor.column.min(doc.line_length(cursor.line));
+            cursor.desired_column = None;
+        }
+        if external {
+            for selection in &mut editor.selections {
+                for position in [&mut selection.anchor, &mut selection.head] {
+                    position.line = position.line.min(doc.line_count().saturating_sub(1));
+                    position.column = position.column.min(doc.line_length(position.line));
+                }
+            }
+            editor.set_top_line_clamped(doc, editor.viewport.top_line);
+        } else {
+            editor.collapse_selections_to_cursors();
+        }
     }
     let mut cmds = vec![Cmd::Redraw];
     if !renamed {
@@ -507,15 +563,18 @@ fn finish_load(
     cmds.extend(super::schedule_syntax_parse(model, document_id));
     model.resync_viewports();
     model.ui.set_status(format!("Loaded: {}", path.display()));
-    model.record_file_opened(document_id);
-    cmds.push(Cmd::SaveRecentFiles {
-        recent: model.recent_files.clone(),
-    });
+    if !external {
+        model.record_file_opened(document_id);
+        cmds.push(Cmd::SaveRecentFiles {
+            recent: model.recent_files.clone(),
+        });
+    }
     Some(Cmd::Batch(cmds))
 }
 
 pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
     match cmd_id {
+        CommandId::ResolveFileChange => super::file_change::show_focused(model, true),
         CommandId::ShowContextMenu => {
             crate::update::context_menu::open_editor_menu_at_caret(model, false)
         }

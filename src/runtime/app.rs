@@ -222,6 +222,9 @@ pub struct App {
     syntax_tx: Sender<SyntaxWorkerRequest>,
     /// File system watcher for workspace directory (if workspace is open)
     fs_watcher: Option<FileSystemWatcher>,
+    document_watch_paths: Vec<PathBuf>,
+    pending_file_changes: std::collections::BTreeSet<PathBuf>,
+    file_change_due: Option<Instant>,
     /// Workspace watcher initialization is deferred until after first paint.
     pending_fs_watcher_root: Option<PathBuf>,
     /// Deadline for nonessential startup work scheduled after first paint.
@@ -1096,6 +1099,9 @@ impl App {
             perf: PerfStats::default(),
             syntax_tx,
             fs_watcher: None,
+            document_watch_paths: Vec::new(),
+            pending_file_changes: Default::default(),
+            file_change_due: None,
             pending_fs_watcher_root: workspace_root,
             deferred_startup_at: None,
             deferred_startup_complete: false,
@@ -1474,7 +1480,7 @@ impl App {
                     ));
                     (!commands.is_empty()).then_some(Cmd::Batch(commands))
                 } else {
-                    None
+                    update(&mut self.model, Msg::App(AppMsg::FilesChanged(Vec::new())))
                 }
             }
             WindowEvent::ModifiersChanged(mods) => {
@@ -2457,6 +2463,9 @@ impl App {
             Cmd::LoadFile { target, path } => {
                 self.enqueue_file_job(super::file_io::FileJob::Read { target, path });
             }
+            Cmd::ObserveFile(target) => {
+                self.enqueue_file_job(super::file_io::FileJob::Observe(target));
+            }
             Cmd::PrepareFileOpen(request) => {
                 self.enqueue_file_job(super::file_io::FileJob::Open(request));
             }
@@ -3210,6 +3219,12 @@ impl App {
         let mut needs_redraw = self.process_terminal_spawn_results();
         let mut messages: Vec<Msg> = Vec::new();
         while let Ok(msg) = self.msg_rx.try_recv() {
+            if let Msg::App(AppMsg::FilesChanged(paths)) = msg {
+                self.pending_file_changes.extend(paths);
+                self.file_change_due
+                    .get_or_insert_with(|| Instant::now() + Duration::from_millis(200));
+                continue;
+            }
             messages.push(msg);
         }
         messages = self.intercept_definition_replies(messages);
@@ -5464,6 +5479,20 @@ impl ApplicationHandler for App {
         if self.process_async_messages() {
             needs_redraw = true;
         }
+        self.sync_document_watches();
+        if self
+            .file_change_due
+            .is_some_and(|due| Instant::now() >= due)
+        {
+            self.file_change_due = None;
+            let paths = std::mem::take(&mut self.pending_file_changes)
+                .into_iter()
+                .collect();
+            if let Some(cmd) = update(&mut self.model, Msg::App(AppMsg::FilesChanged(paths))) {
+                needs_redraw |= cmd.needs_redraw();
+                self.process_cmd(cmd);
+            }
+        }
         self.refresh_workspace_symbol_providers();
         self.check_workspace_symbols();
 
@@ -5570,6 +5599,9 @@ impl App {
     pub(super) fn next_wake(&self, now: Instant) -> Instant {
         let blink_interval = self.cursor_tick_interval();
         let mut next_wake = self.last_tick + blink_interval;
+        if let Some(due) = self.file_change_due {
+            next_wake = next_wake.min(due);
+        }
         if let Some(deadline) = self.reference_previews.deadline() {
             next_wake = next_wake.min(deadline);
         }
@@ -6094,8 +6126,26 @@ impl App {
         }
     }
 
-    /// Poll file system watcher and dispatch events
-    /// Returns true if any events were processed
+    /// Keep open-document subscriptions independent of workspace ignore rules.
+    fn sync_document_watches(&mut self) {
+        let mut paths = Vec::new();
+        for document in self.model.editor_area.documents.values() {
+            if let Some(path) = &document.file_path {
+                paths.push(path.clone());
+                if let Some(identity) = document.file_identity() {
+                    paths.push(identity.path().to_path_buf());
+                }
+            }
+        }
+        paths.sort();
+        paths.dedup();
+        if paths != self.document_watch_paths {
+            self.document_watch_paths.clone_from(&paths);
+            self.enqueue_file_job(super::file_io::FileJob::Watch(paths));
+        }
+    }
+
+    /// Poll the workspace tree watcher and report whether events were processed.
     fn poll_fs_watcher(&mut self) -> bool {
         let Some(watcher) = &self.fs_watcher else {
             return false;

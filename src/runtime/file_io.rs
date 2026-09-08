@@ -14,6 +14,8 @@ use token::model::{
 
 #[derive(Debug)]
 pub(super) enum FileJob {
+    Watch(Vec<PathBuf>),
+    Observe(FileRequest),
     Keymap {
         session: Arc<()>,
         save: Option<Box<token::keymap::preferences::KeymapSave>>,
@@ -114,6 +116,11 @@ impl Drop for FileWorker {
 impl FileJob {
     fn run(self, config_dir: Option<&Path>) -> Msg {
         match self {
+            Self::Watch(paths) => Msg::App(AppMsg::FilesChanged(paths)),
+            Self::Observe(target) => {
+                let observed = observe_file(target.source_path.as_deref());
+                Msg::App(AppMsg::FileObserved { target, observed })
+            }
             Self::Keymap { session, save } => Msg::Ui(token::messages::UiMsg::Settings(
                 token::messages::SettingsMsg::KeymapResult {
                     session,
@@ -161,11 +168,13 @@ impl FileJob {
                 })
             }
             Self::Read { target, path } => {
-                let result = std::fs::read_to_string(&path).map_err(|error| error.to_string());
-                let identity = result
-                    .as_ref()
-                    .ok()
-                    .map(|_| token::util::FileIdentity::resolve(path.clone()));
+                let observed = observe_file(Some(&path));
+                let identity = observed.identity;
+                let result = match observed.content {
+                    token::model::DiskContent::Text(text) => Ok(text.to_string()),
+                    token::model::DiskContent::Missing => Err("File no longer exists".into()),
+                    token::model::DiskContent::Unavailable(error) => Err(error),
+                };
                 Msg::App(AppMsg::FileLoaded {
                     target,
                     path,
@@ -178,6 +187,17 @@ impl FileJob {
 
     pub fn failed(self, error: String) -> Msg {
         match self {
+            Self::Watch(_) => Msg::Ui(token::messages::UiMsg::SetTransientMessage {
+                text: error,
+                duration_ms: 5000,
+            }),
+            Self::Observe(target) => Msg::App(AppMsg::FileObserved {
+                target,
+                observed: token::model::ObservedFile {
+                    content: token::model::DiskContent::Unavailable(error),
+                    identity: None,
+                },
+            }),
             Self::Keymap { session, save } => Msg::Ui(token::messages::UiMsg::Settings(
                 token::messages::SettingsMsg::KeymapResult {
                     session,
@@ -211,6 +231,43 @@ impl FileJob {
             }),
         }
     }
+}
+
+fn observe_file(path: Option<&Path>) -> token::model::ObservedFile {
+    use token::model::{DiskContent, ObservedFile};
+    let Some(path) = path else {
+        return ObservedFile {
+            content: DiskContent::Unavailable("Document has no path".into()),
+            identity: None,
+        };
+    };
+    let result = (|| -> io::Result<String> {
+        let file = File::open(path)?;
+        let max = token::util::file_validation::MAX_FILE_SIZE;
+        let metadata = file.metadata()?;
+        if !metadata.is_file() || metadata.len() > max.as_u64() {
+            return Err(io::Error::other(format!(
+                "Not a text file within the {max} limit"
+            )));
+        }
+        let mut text = String::new();
+        file.take(max.as_u64() + 1).read_to_string(&mut text)?;
+        if text.len() > max.as_usize() || text.contains('\0') {
+            return Err(io::Error::other(
+                "File is binary or exceeds the text-file limit",
+            ));
+        }
+        Ok(text)
+    })();
+    let (content, identity) = match result {
+        Ok(text) => (
+            DiskContent::Text(text.into()),
+            Some(token::util::FileIdentity::resolve(path.to_path_buf())),
+        ),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => (DiskContent::Missing, None),
+        Err(error) => (DiskContent::Unavailable(error.to_string()), None),
+    };
+    ObservedFile { content, identity }
 }
 
 /// Check the already-open file before truncating it. Reading and writing the
@@ -417,7 +474,25 @@ fn start_worker_resolving_config(
         .name("file-io".to_owned())
         .spawn(move || {
             let config_dir = config_dir();
+            let mut watcher = None;
             for job in receiver {
+                if let FileJob::Watch(paths) = &job {
+                    if watcher.is_none() {
+                        match super::file_watch::DocumentWatcher::new(replies.clone(), wake.clone())
+                        {
+                            Ok(value) => watcher = Some(value),
+                            Err(error) => tracing::warn!("Open-file watcher unavailable: {error}"),
+                        }
+                    }
+                    if let Some(watcher) = &mut watcher {
+                        watcher.sync(paths);
+                    }
+                }
+                if let (Some(watcher), FileJob::Observe(target)) = (&mut watcher, &job) {
+                    if let Some(path) = &target.source_path {
+                        watcher.rearm_parent(path);
+                    }
+                }
                 let _ = replies.send(job.run(config_dir.as_deref()));
                 if let Some(wake) = &wake {
                     wake();
@@ -750,6 +825,58 @@ mod tests {
             path,
             content,
         }
+    }
+
+    #[test]
+    fn external_change_observation_bounds_reads_and_overwrite_rechecks_the_approved_version() {
+        use token::model::DiskContent;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("observed.txt");
+        assert!(matches!(
+            observe_file(Some(&path)).content,
+            DiskContent::Missing
+        ));
+        std::fs::write(&path, [0xff, 0]).unwrap();
+        assert!(matches!(
+            observe_file(Some(&path)).content,
+            DiskContent::Unavailable(_)
+        ));
+        File::create(&path)
+            .unwrap()
+            .set_len(token::util::file_validation::MAX_FILE_SIZE.as_u64() + 1)
+            .unwrap();
+        assert!(matches!(
+            observe_file(Some(&path)).content,
+            DiskContent::Unavailable(_)
+        ));
+
+        std::fs::write(&path, "original").unwrap();
+        let mut model = AppModel::new(800, 600, 1.0);
+        prepare_startup_files(&mut model, vec![path.clone()]);
+        let FileJob::Write {
+            mut target,
+            content,
+            ..
+        } = write_job(&mut model, path.clone(), "mine")
+        else {
+            panic!("write")
+        };
+        std::fs::write(&path, "approved outside version").unwrap();
+        let DiskContent::Text(approved) = observe_file(Some(&path)).content else {
+            panic!("text")
+        };
+        target.write_guard.saved = Some(approved);
+        target.write_guard.queued = None;
+        target.write_guard.save_as = false;
+        std::fs::write(&path, "newer outside version").unwrap();
+        assert!(write_checked(&path, &content, &target).is_err());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "newer outside version"
+        );
+        std::fs::write(&path, "approved outside version").unwrap();
+        write_checked(&path, &content, &target).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "mine");
     }
 
     #[test]

@@ -10,6 +10,7 @@ pub mod app;
 mod clipboard;
 mod configuration;
 mod file_io;
+mod file_watch;
 mod find_worker;
 mod inline_cache;
 mod inline_context;

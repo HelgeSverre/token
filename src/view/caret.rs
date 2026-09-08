@@ -168,9 +168,10 @@ fn modal_caret_rect(
                 TextFieldOptions::for_modal(content, &rect, line_height, char_width, scale_factor),
             )
         }
-        ModalState::ThemePicker(_) | ModalState::LspServers(_) | ModalState::LanguagePicker(_) => {
-            return None
-        }
+        ModalState::ThemePicker(_)
+        | ModalState::LspServers(_)
+        | ModalState::LanguagePicker(_)
+        | ModalState::FileConflict(_) => return None,
     };
 
     TextFieldRenderer::caret_rect(content, &options)

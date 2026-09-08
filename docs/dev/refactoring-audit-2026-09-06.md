@@ -1,5 +1,50 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## External-file watching and conflict actions — 2026-09-08
+
+The ordered file worker now owns open-document directory subscriptions, separate
+from the workspace tree watcher and ignore rules. Notifications exclude read-only
+access events and are batched for 200 ms by the runtime. Observations use bounded
+text reads; model reconciliation rejects invalidated replies and schedules a
+fresh check after writes or window refocus. Parent subscriptions survive atomic
+file replacement and can be rearmed after directory replacement.
+
+Clean buffers reload by default (`auto_reload` in Settings → Editor); text panes
+retain clamped carets/selections/scroll, and CSV panes retain their grid mode.
+Active CSV cell edits defer conflict actions. Dirty, deleted and unreadable files
+keep their editor content and show a persistent tab `!`. The shared modal surface
+provides Keep Editing, Reload, checked Overwrite/Recreate, and native Save As.
+Actions retain the originating document identity, revision and observed snapshot.
+The default is nondestructive; a newer disk version fails the overwrite guard.
+
+Verification on macOS:
+
+- Final `CARGO_BUILD_JOBS=1 just test`: 2,600 passed, five skipped in 24.015 s
+  excluding compilation; two doctests passed, six ignored.
+- Strict `just lint`, `just fmt-check` and `git diff --check` passed.
+- Added focused coverage for shared panes, dirty/manual/deleted-file policy,
+  pending CSV editing, observation/save ordering, unchanged-byte alias
+  retargeting, bounded reads and overwrite precondition rechecking.
+- A real native watcher test passed atomic file replacement and containing-
+  directory replacement/recreation. This does not prove the full live UI path.
+- Inspected the shared-renderer `file-conflict.yaml` screenshot at 1800×1200/2×:
+  default selection, action labels, persistent tab marker and footer fit.
+  Builds, screenshots and logs remain under the normal `target/` directory.
+
+Diff-based self-review (Rust/code-review skills):
+
+| Severity | Finding | Resolution |
+| --- | --- | --- |
+| High | Reload reset CSV panes and could lose an uncommitted cell edit | Preserve grid mode and defer/reject replacement during cell editing |
+| High | An older observation or approved overwrite could replace newer state | Request invalidation/retry plus existing exact-byte write precondition |
+| Medium | Same-byte symlink retargeting left the old watch/LSP identity | Refresh resolved identity independently of content reload; regression checked |
+| Medium | Access notifications could trigger observation loops | Filter access events before runtime batching |
+
+Verdict: **Approve** for this implementation checkpoint. Live application checks
+of watcher-to-UI interaction, refocus and Save As remain before closing the
+initial external-file slice. No new Linux/Windows or performance claims. The
+feature plan stays active; session restore has not started.
+
 ## External-file protection: save-time guard — 2026-09-08
 
 First step toward the requested external-file feature; watching, automatic

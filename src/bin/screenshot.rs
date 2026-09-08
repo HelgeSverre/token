@@ -213,6 +213,7 @@ fn default_true() -> bool {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 enum ModalId {
+    FileConflict,
     Settings,
     CommandPalette,
     GotoLine,
@@ -575,6 +576,23 @@ fn apply_workspace(model: &mut AppModel, config: &WorkspaceConfig, scale: f64) {
 
 fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
     let modal_state = match config.id {
+        ModalId::FileConflict => {
+            let observed = token::model::ObservedFile {
+                content: token::model::DiskContent::Text("An externally changed version".into()),
+                identity: None,
+            };
+            model.document_mut().external_change = Some(token::model::ExternalFileChange {
+                observed: observed.clone(),
+                notified: true,
+            });
+            ModalState::FileConflict(token::model::FileConflictState {
+                document_id: model.document().id.expect("fixture document"),
+                path: model.document().file_path.clone().expect("fixture path"),
+                revision: model.document().revision,
+                observed,
+                selected_index: config.selected_index.unwrap_or(0).min(3),
+            })
+        }
         ModalId::Settings => {
             use token::messages::{ModalMsg, Msg, UiMsg};
             token::update::update(

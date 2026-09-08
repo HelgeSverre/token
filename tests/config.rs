@@ -88,6 +88,10 @@ fn test_default_config() {
     assert_eq!(legacy.ui_font, config.ui_font);
     assert!(config.indent_guides);
     assert!(legacy.indent_guides);
+    assert!(config.auto_reload);
+    assert!(legacy.auto_reload);
+    let manual: EditorConfig = serde_yaml::from_str("auto_reload: false").unwrap();
+    assert!(!manual.auto_reload);
 }
 
 #[test]
@@ -111,6 +115,7 @@ fn test_config_serialize_deserialize() {
         bracket_matching: true,
         show_scrollbar: true,
         indent_guides: false,
+        auto_reload: true,
         status_bar_font_size: 12.0,
         hover_on_mouse: true,
         hover_delay_ms: 300,

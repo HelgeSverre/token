@@ -438,6 +438,13 @@ pub enum AppMsg {
     SaveFile,
     /// Load a file
     LoadFile(PathBuf),
+    /// Filesystem notifications; empty paths request a focus/startup recheck.
+    FilesChanged(Vec<PathBuf>),
+    FileObserved {
+        target: crate::model::FileRequest,
+        observed: crate::model::ObservedFile,
+    },
+    ResolveFileChange,
     /// Create a new file
     NewFile,
     /// An ordered save/write completed. Content is the snapshot actually written,
@@ -500,7 +507,9 @@ pub enum AppMsg {
     /// User requested "Open Folder..." dialog
     OpenFolderDialog,
     /// Open Folder dialog returned folder (or None if cancelled)
-    OpenFolderDialogResult { folder: Option<PathBuf> },
+    OpenFolderDialogResult {
+        folder: Option<PathBuf>,
+    },
 
     /// Paste text retrieved from system clipboard
     PasteFromClipboard(String),

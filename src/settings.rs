@@ -30,6 +30,7 @@ pub(crate) enum Setting {
     Hover,
     HoverDelay,
     FormatOnSave,
+    AutoReload,
     InlineStatistics,
 }
 
@@ -104,6 +105,13 @@ pub(crate) static DESCRIPTORS: &[Descriptor] = &[
         labels: &["Fast", "Normal", "Slow"],
     },
     Descriptor {
+        setting: Setting::AutoReload,
+        section: "Editor",
+        name: "Reload external changes",
+        description: "auto_reload · reload clean buffers; always protect local edits",
+        labels: BOOL_LABELS,
+    },
+    Descriptor {
         setting: Setting::FormatOnSave,
         section: "Editor",
         name: "Format on save",
@@ -144,6 +152,7 @@ impl Descriptor {
             Setting::IndentGuides => usize::from(config.indent_guides),
             Setting::Hover => usize::from(config.hover_on_mouse),
             Setting::FormatOnSave => usize::from(config.format_on_save),
+            Setting::AutoReload => usize::from(config.auto_reload),
             Setting::InlineStatistics => usize::from(config.completion.inline.statistics),
         })
     }
@@ -164,6 +173,7 @@ impl Descriptor {
             Setting::IndentGuides => config.indent_guides = choice != 0,
             Setting::Hover => config.hover_on_mouse = choice != 0,
             Setting::FormatOnSave => config.format_on_save = choice != 0,
+            Setting::AutoReload => config.auto_reload = choice != 0,
             Setting::InlineStatistics => config.completion.inline.statistics = choice != 0,
         }
         true

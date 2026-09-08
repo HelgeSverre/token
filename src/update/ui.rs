@@ -103,6 +103,7 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             }
             // Open the requested modal
             let state = match modal_id {
+                ModalId::FileConflict => return super::file_change::show_focused(model, true),
                 ModalId::Settings => {
                     ModalState::Settings(crate::settings::SettingsState::default())
                 }
@@ -261,7 +262,9 @@ fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<Strin
         ModalState::ThemePicker(_) => None,
         ModalState::FileFinder(state) => Some(&mut state.editable),
         ModalState::RecentFiles(state) => Some(&mut state.editable),
-        ModalState::LspServers(_) | ModalState::LanguagePicker(_) => None,
+        ModalState::LspServers(_) | ModalState::LanguagePicker(_) | ModalState::FileConflict(_) => {
+            None
+        }
     }
 }
 
@@ -291,7 +294,8 @@ fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
         | ModalState::FindReplace(_)
         | ModalState::ThemePicker(_)
         | ModalState::LspServers(_)
-        | ModalState::LanguagePicker(_) => {}
+        | ModalState::LanguagePicker(_)
+        | ModalState::FileConflict(_) => {}
     }
 }
 
@@ -360,7 +364,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     ModalState::FileFinder(state) => state.set_input(&text),
                     ModalState::RecentFiles(state) => state.editable.set_content(&text),
                     ModalState::LspServers(_) => {} // No text input for the servers picker
-                    ModalState::LanguagePicker(_) => {} // No text input for the language picker
+                    ModalState::LanguagePicker(_) | ModalState::FileConflict(_) => {}
                 }
                 on_modal_input_changed(modal, &model.command_history);
                 Some(Cmd::Redraw)
@@ -911,6 +915,9 @@ fn activate_search_tab(model: &mut AppModel, index: usize) -> Option<Cmd> {
 /// A no-op for `Fields`/no-list contexts.
 fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
     match modal {
+        ModalState::FileConflict(state) => {
+            state.selected_index = row.min(state.actions().len() - 1)
+        }
         ModalState::Settings(state) => state.selected_index = row.min(state.rows.len()),
         ModalState::CommandPalette(state) => match state.active_tab {
             SearchTab::Commands => state.selected_index = row.min(state.matches.len()),
@@ -946,6 +953,7 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
     let modal = model.ui.active_modal.clone();
     if let Some(modal) = modal {
         match modal {
+            ModalState::FileConflict(state) => super::file_change::resolve(model, state),
             ModalState::CommandPalette(state) => confirm_search_everywhere(model, state),
             ModalState::Settings(state)
                 if state.tab == crate::settings::keymap::SettingsTab::Keymap =>
@@ -1566,6 +1574,11 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
             );
             None
         }
+        ModalState::FileConflict(state) => {
+            state.selected_index =
+                offset_selection(state.selected_index, state.actions().len(), delta);
+            None
+        }
         ModalState::GotoLine(_) | ModalState::RenameSymbol(_) | ModalState::FindReplace(_) => None,
     };
     if let Some(theme_id) = preview_theme_id {
@@ -1693,6 +1706,13 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
                 forward,
             );
         }
+        ModalState::FileConflict(state) => {
+            state.selected_index = if forward {
+                state.actions().len() - 1
+            } else {
+                0
+            };
+        }
         ModalState::GotoLine(_) | ModalState::RenameSymbol(_) | ModalState::FindReplace(_) => {}
     }
     Some(Cmd::Redraw)
@@ -1721,7 +1741,7 @@ fn modal_scroll_to(model: &mut AppModel, position: Option<usize>, delta: isize) 
     let capacity = COMMAND_PALETTE_MAX_VISIBLE;
     let modal = model.ui.active_modal.as_mut()?;
     let (scroll, shapes): (&mut usize, Vec<SectionShape>) = match modal {
-        ModalState::Settings(_) => return None,
+        ModalState::Settings(_) | ModalState::FileConflict(_) => return None,
         ModalState::CommandPalette(state) => match state.active_tab {
             SearchTab::Commands => {
                 let shapes = commands_tab_shapes(state);

@@ -96,6 +96,7 @@ pub struct Document {
     /// cannot transfer an unrelated file's overwrite permission.
     saved_path: Option<PathBuf>,
     pub(crate) file_io: super::FileIoState,
+    pub external_change: Option<super::ExternalFileChange>,
 
     // === Syntax Highlighting ===
     /// Detected language for syntax highlighting
@@ -140,6 +141,7 @@ impl Document {
             saved_buffer: Some(Rope::new()),
             saved_path: None,
             file_io: Default::default(),
+            external_change: None,
             language: LanguageId::PlainText,
             language_pinned: false,
             syntax_highlights: None,
@@ -226,12 +228,9 @@ impl Document {
             revision: self.revision,
             source_path: self.file_path.clone(),
             source_identity: self.file_identity().cloned(),
+            external_reload: false,
             write_guard: super::FileWriteGuard {
-                saved: self
-                    .saved_buffer
-                    .as_ref()
-                    .filter(|_| self.saved_path.is_some() && self.saved_path == self.file_path)
-                    .cloned(),
+                saved: self.saved_disk_content().cloned(),
                 queued: self
                     .file_path
                     .as_deref()
@@ -245,7 +244,14 @@ impl Document {
     pub(crate) fn record_saved_buffer(&mut self, buffer: Rope) {
         self.saved_buffer = Some(buffer);
         self.saved_path = self.file_path.clone();
+        self.external_change = None;
         self.refresh_modified();
+    }
+
+    pub(crate) fn saved_disk_content(&self) -> Option<&Rope> {
+        self.saved_buffer
+            .as_ref()
+            .filter(|_| self.saved_path.is_some() && self.saved_path == self.file_path)
     }
 
     pub(crate) fn refresh_modified(&mut self) {

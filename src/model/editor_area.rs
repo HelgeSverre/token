@@ -248,7 +248,13 @@ impl EditorArea {
             .get(&tab.editor_id)
             .and_then(|editor| editor.document_id)
             .and_then(|document_id| self.documents.get(&document_id))
-            .map(Document::display_name)
+            .map(|document| {
+                let mut name = document.display_name();
+                if document.external_change.is_some() {
+                    name.push_str(" !");
+                }
+                name
+            })
             .unwrap_or_else(|| "Untitled".to_owned())
     }
 

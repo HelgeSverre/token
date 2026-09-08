@@ -55,6 +55,9 @@ pub struct EditorConfig {
     /// Show vertical guides at inferred indentation steps (default: true).
     #[serde(default = "default_true")]
     pub indent_guides: bool,
+    /// Reload unmodified text files when their contents change on disk.
+    #[serde(default = "default_true")]
+    pub auto_reload: bool,
 
     /// Status bar font size in logical px (default: 12, editor text is 14)
     #[serde(default = "default_status_bar_font_size")]
@@ -443,6 +446,7 @@ impl Default for EditorConfig {
             bracket_matching: true,
             show_scrollbar: true,
             indent_guides: true,
+            auto_reload: true,
             status_bar_font_size: default_status_bar_font_size(),
             hover_on_mouse: true,
             hover_delay_ms: default_hover_delay_ms(),

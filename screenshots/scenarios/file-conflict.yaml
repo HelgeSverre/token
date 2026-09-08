@@ -1,0 +1,9 @@
+name: file-conflict
+width: 1800
+height: 1200
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: samples/syntax/sample.sema
+modal:
+  id: file_conflict

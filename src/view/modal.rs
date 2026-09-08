@@ -1456,6 +1456,10 @@ pub(crate) fn with_modal_overlay_layout<R>(
 
     let modal = model.ui.active_modal.as_ref()?;
     match modal {
+        ModalState::FileConflict(state) => Some(with_file_conflict_spec(state, |spec| {
+            let layout = overlay_surface::layout(spec, window_width, window_height, scale_factor);
+            f(spec, &layout)
+        })),
         ModalState::CommandPalette(state) => {
             use crate::model::SearchTab;
             use crate::update::search_everywhere_sections;
@@ -1716,6 +1720,53 @@ pub(crate) fn with_modal_overlay_layout<R>(
     }
 }
 
+/// One conflict specification for painting, row hit testing and keyboard order.
+fn with_file_conflict_spec<R>(
+    state: &crate::model::FileConflictState,
+    f: impl FnOnce(&OverlaySpec) -> R,
+) -> R {
+    let rows: Vec<_> = state
+        .actions()
+        .iter()
+        .map(|&action| Row {
+            icon: RowIcon::None,
+            label: state.label(action),
+            match_indices: &[],
+            detail: None,
+            detail_style: None,
+            accessory: Accessory::None,
+        })
+        .collect();
+    let title = match &state.observed.content {
+        crate::model::DiskContent::Text(_) => "File changed outside Token",
+        crate::model::DiskContent::Missing => "File deleted outside Token",
+        crate::model::DiskContent::Unavailable(_) => {
+            "File could not be checked — local version retained"
+        }
+    };
+    let sections = [Section {
+        title: Some(title),
+        rows: &rows,
+    }];
+    let path = state.path.to_string_lossy();
+    let mut spec = list_shape_spec(
+        (0.6, 420.0, 640.0),
+        None,
+        &sections,
+        state.selected_index,
+        0,
+        true,
+    );
+    if let Some(header) = &mut spec.header {
+        header.text = &path;
+    }
+    spec.footer = Some(Footer {
+        leading: "Esc: keep editing",
+        trailing: "Enter: choose",
+    });
+    f(&spec)
+}
+
 /// Placeholder rows for a shape-only spec — layout only depends on row
 /// count/height, not content.
 fn placeholder_rows(count: usize) -> Vec<Row<'static>> {
@@ -1854,6 +1905,19 @@ pub fn render_modals(
     };
 
     match modal {
+        ModalState::FileConflict(state) => with_file_conflict_spec(state, |spec| {
+            overlay_surface::render(
+                frame,
+                painter,
+                overlay_mask_cache,
+                &model.theme,
+                spec,
+                window_width,
+                window_height,
+                ctx.scale_factor,
+                false,
+            );
+        }),
         ModalState::ThemePicker(state) => {
             render_theme_picker_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }

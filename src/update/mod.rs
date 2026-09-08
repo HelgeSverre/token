@@ -21,6 +21,7 @@ mod csv;
 mod dock;
 mod document;
 mod editor;
+mod file_change;
 mod image;
 pub mod inline;
 mod layout;
@@ -116,6 +117,7 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     #[cfg(not(debug_assertions))]
     let result = update_inner(model, msg);
     let result = merge_cmds(result, usages::reconcile(model));
+    let result = merge_cmds(result, file_change::reconcile(model));
     // This wrapper also covers early returns in special-tab dispatch.
     let completion_cleanup = completion::reconcile_pending_commit(model);
     let path_cleanup = completion::reconcile_paths(model);

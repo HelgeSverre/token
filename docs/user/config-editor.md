@@ -51,6 +51,27 @@ edit (`lsp.servers.<id>.command`). They are read-only, as are the live process-s
 rows; Left/Right and Enter cannot change them. Status updates without reopening
 Settings. The existing Language Servers picker remains available.
 
+### External file changes
+
+`auto_reload: true` (the default) reloads open, unmodified text files when they
+change outside Token. Turn off **Editor → Reload external changes** to ask before
+reloading even clean buffers. Checks run on filesystem notifications and window
+refocus, including files outside the workspace and ignored files.
+
+Unsaved edits are never silently replaced. A `!` in the tab title indicates an
+unresolved outside change or deletion. The dialog defaults to **Keep Editing**;
+**Reload from Disk** discards local edits, while **Overwrite Disk with My Version**
+requires the disk still to match the version the dialog detected. Deleted files
+offer **Recreate File with My Version** instead. **Save My Version As…** saves to
+another destination through the normal native dialog. Save or the **Resolve
+External File Change** command reopens a deferred conflict.
+
+CSV grids retain their mode on reload. Finish or cancel an active cell edit
+before resolving a conflict. Unreadable, binary, or oversized replacements leave
+the buffer intact and offer Keep Editing / Save As; text reads retain the normal
+50 MiB limit. Image and binary-placeholder tabs do not participate in automatic
+text reload. These checks are not an atomic lock against concurrent writers.
+
 ### Workspace symbol search
 
 With a workspace open and a running language server that supports workspace
