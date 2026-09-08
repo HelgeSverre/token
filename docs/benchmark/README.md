@@ -5,7 +5,7 @@ This document describes how to run benchmarks and profile the Token editor.
 ## Reports
 
 - [2026-09-08: Settings scrolling](2026-09-08-settings-scroll.md) — debug versus
-  optimized CPU costs, plus the shared backdrop-dimming before/after comparison.
+  optimized CPU costs, shared backdrop dimming and the opaque-panel follow-up.
 - [2026-09-07: current optimized working tree](2026-09-07-current.md) — fresh
   edit/history, Find, CPU-rendering and completion measurements, with raw output
   and a separately identified later dropdown-keystroke refresh.

@@ -1,0 +1,19 @@
+settings scroll: debug_assertions=true (CPU only; excludes native input/presentation)
+settings_scroll_update 1100x720@1: median=8.959us p95=9.125us n=120
+settings_hit_layout 1100x720@1: median=27.584us p95=33.459us n=120
+settings_backdrop_dim 1100x720@1: median=6901.417us p95=7182.417us n=80
+settings_modal_paint 1100x720@1: median=7606.834us p95=7838.667us n=80
+settings_scroll_and_paint 1100x720@1: median=7678.458us p95=8301.875us n=80
+settings_editor_and_modal_paint 1100x720@1: median=12278.417us p95=13164.459us n=80
+settings_scroll_update 400x750@1: median=8.875us p95=9.500us n=120
+settings_hit_layout 400x750@1: median=27.042us p95=30.375us n=120
+settings_backdrop_dim 400x750@1: median=2616.000us p95=2761.750us n=80
+settings_modal_paint 400x750@1: median=3168.875us p95=3341.584us n=80
+settings_scroll_and_paint 400x750@1: median=3192.750us p95=3357.791us n=80
+settings_editor_and_modal_paint 400x750@1: median=7626.417us p95=8090.334us n=80
+settings_scroll_update 2200x1440@2: median=9.042us p95=9.167us n=120
+settings_hit_layout 2200x1440@2: median=27.667us p95=37.250us n=120
+settings_backdrop_dim 2200x1440@2: median=27752.250us p95=29374.875us n=80
+settings_modal_paint 2200x1440@2: median=28215.334us p95=29041.834us n=80
+settings_scroll_and_paint 2200x1440@2: median=28264.250us p95=29126.708us n=80
+settings_editor_and_modal_paint 2200x1440@2: median=38346.417us p95=38984.625us n=80

@@ -47,6 +47,15 @@ were about 2.2–2.3 ms, with no established optimized speedup. See the
 [Settings report](docs/benchmark/2026-09-08-settings-scroll.md) for raw results,
 measurement boundaries and remaining debug rendering costs.
 
+Follow-up `05136be` makes Settings opaque and skips backdrop work hidden by
+opaque panels through one shared private helper. The fresh high-DPI debug modal
+comparison is 49.5 → 28.2 ms; see the report's opaque-panel follow-up. All 2,574
+tests and two doctests, strict lint, formatting and debug build passed; default
+Settings/palette screenshot files match their pre-change versions byte-for-byte.
+Optimized modal paint measured 0.95–0.99 ms at high DPI (previous snapshot about
+2.25 ms); the combined editor/modal probe was 1.45–1.49 ms. These remain CPU-only
+measurements, not native presentation checks.
+
 ## Remaining implementation
 
 - Autocomplete: edit prediction, workspace retrieval context, and supervised

@@ -5,6 +5,9 @@ report investigates the separate complaint that scrolling feels sluggish in
 debug builds. It measures production CPU paths, not native input-to-display
 latency or a promised frame rate.
 
+The later [opaque-panel follow-up](#opaque-panel-follow-up) records the current
+implementation; the original measurements below remain historical evidence.
+
 ## Findings
 
 - Scroll math is not the dominant cost: approximately 9 µs per update in debug
@@ -141,3 +144,53 @@ latency and presentation remain separate verification work.
   categories and footer stay fixed. This is headless evidence, not a native
   trackpad or cross-platform acceptance session.
 - Diff-based self-review: **Approve**; no outstanding critical/high findings.
+
+## Opaque-panel follow-up
+
+Commit `05136be` makes Settings opaque (theme RGB is preserved) and shares one
+private backdrop helper with centered overlays. The helper dims four disjoint
+bands around a conservative opaque interior, using the existing rectangle-blend
+primitive. Rounded edges still see a dimmed backdrop; translucent overlays retain
+full backdrop blending. No cache, public API or configuration option was added.
+
+Fresh debug medians, in milliseconds, before/after this follow-up:
+
+| Physical window / scale | Modal paint before → after | Editor + modal before → after |
+| ----------------------- | -------------------------- | ----------------------------- |
+| 1100×720 / 1×           | 12.868 → 7.607             | 17.487 → 12.278               |
+| 400×750 / 1×            | 5.196 → 3.169              | 9.417 → 7.626                 |
+| 2200×1440 / 2×          | 49.488 → 28.215            | 59.490 → 38.346               |
+
+[Debug before](data/2026-09-08/settings-opaque-debug-before.txt),
+[debug after](data/2026-09-08/settings-opaque-debug-after.txt).
+The before source is `3900c95`; the after source is `05136be`. The workload
+harness and measurement boundaries are unchanged. The standalone
+`settings_backdrop_dim` probe intentionally remains a full-frame control;
+the culled production backdrop is included in modal/combined paint measurements.
+Debug high-DPI painting still exceeds a 16.7 ms frame budget.
+
+Optimized medians, in milliseconds. The before column is the previous optimized
+repeat recorded above (`8516dc2`), not a new paired baseline run. Both after
+columns use `05136be` and separate benchmark processes:
+
+| Physical window / scale | Modal before → after | Modal after repeat | Editor + modal before → after |
+| ----------------------- | -------------------- | ------------------ | ----------------------------- |
+| 1100×720 / 1×           | 0.635 → 0.319        | 0.328              | 0.859 → 0.548                 |
+| 400×750 / 1×            | 0.216 → 0.117        | 0.117              | 0.461 → 0.343                 |
+| 2200×1440 / 2×          | 2.247 → 0.952        | 0.990              | 2.807 → 1.453                 |
+
+[Optimized after](data/2026-09-08/settings-opaque-release-after.txt),
+[optimized repeat](data/2026-09-08/settings-opaque-release-repeat.txt).
+The combined high-DPI repeat was 1.487 ms. This is an observed CPU-paint
+improvement in both profiles, unlike the earlier dimmer-only consolidation.
+The same active-desktop, warm-cache and presentation exclusions apply; these
+are not native scrolling latency or FPS claims. The existing release-only
+`revision` warning remains unrelated and unsuppressed.
+
+Verification: 2,574 tests and two doctests passed (seven tests skipped and six
+doctests ignored), nextest run `f5b789b5-59b9-44fa-9bb9-0dcbdbf6958e`.
+Strict lint, formatting and debug build passed. Wide/compact Settings and
+command-palette screenshot PNGs matched their pre-change files byte-for-byte
+under the default opaque theme. Two focused regression tests cover opaque
+Settings and backdrop compositing. Diff-based self-review: **Approve**, no
+outstanding critical/high findings. Native presentation remains unmeasured.
