@@ -1,5 +1,60 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Managed local llama-server — 2026-09-08
+
+Commit `31e3ff4` implements opt-in child ownership on the existing inline worker.
+`local_server` supplies literal executable/model paths, a startup deadline and
+context/GPU limits. Startup is demand-driven and loopback-only. The server uses
+offline mode; inherited `LLAMA_*` settings are removed except the explicitly
+referenced credential, passed through the child environment. No downloads,
+shell command expansion, new generation thread or second HTTP provider path.
+
+Configuration lifetime is separate from request cancellation: typing can cancel
+HTTP work without unloading the model. Disable/configuration changes and window
+exit kill and reap the owned child; startup timeout and crash handling require
+explicit retry instead of a restart loop. The worker owner joins cleanup during
+shutdown. The port preflight rejects an existing listener; externally managed
+providers retain their existing behavior. Details and constraints are in the
+[user guide](../user/config-editor.md#managed-local-llama-server).
+
+Two focused tests cover configuration boundaries and a real-child lifecycle.
+The latter shares the existing HTTP fixture parser and verifies startup,
+generation, reuse, cancellation during loading, deadline enforcement, explicit
+retry, reaping and occupied-port refusal. Review caught and corrected a fixture
+issue: closing a health probe mid-header must not crash the fixture and falsely
+appear to prove timeout cleanup. No extra test was added for that correction.
+
+Fresh verification, with `CARGO_BUILD_JOBS=1`:
+
+- **2,577 tests passed**, five skipped; **two doctests passed**, six ignored
+  (`e082ece7-0af1-4241-8e31-24af02178241`). No process-exit warnings.
+- Five repetitions of both managed-server tests passed
+  (`1608feec-42d3-4a02-b7a9-47a28b91a92c`).
+- Strict all-target/all-feature lint, debug build, formatting and diff checks
+  passed. Scoped code review: **Approve**, no outstanding findings.
+
+The initial full suite also passed, but its following doctest build failed when
+the repository's entire `target/` directory disappeared. No cleanup command was
+run by this task. All final checks above used a fresh isolated `CARGO_TARGET_DIR`;
+the missing-artifact failure was not treated as a test or code failure.
+
+An isolated native macOS window then used llama-server 0.3.0, build 10621
+(`c1d0e7a00`) and the already-cached Qwen2.5-Coder-1.5B-Instruct Q8_0 GGUF.
+Temporary configuration selected CPU execution, a 4,096-token context and a
+24-token response cap. No server was started merely by opening the window.
+An explicit request spawned a child whose parent was the test editor and
+returned a suggestion. Accept Line inserted `a + b`; Undo restored the original
+buffer. The same child remained loaded. Native Enter on Reload Configuration
+applied an inline-disable change and removed the child/listener; re-enabling
+and requesting again started a new child, and Quit removed both editor and child.
+The pre-existing external llama-server remained alive. Normal user configuration
+and documents were not changed.
+
+This is a local compatibility/lifecycle check, not a model-quality or performance
+benchmark: the suggestion continued beyond `a + b` into an unnecessary example
+program. Windows/Linux process behavior and broader provider/model quality remain
+open. No other plan became archive-eligible, and `HANDOFF.md` remains required.
+
 ## Spawn-test cleanup — 2026-09-08
 
 Removed the ignored shell-script LSP handshake test: the existing

@@ -37,6 +37,16 @@ shell-script LSP handshake duplicate was removed; the existing real-process
 integration scenario retains that coverage. Twenty repeated runs and the full
 suite passed on macOS (2,575 tests, five skipped). See the refactoring audit.
 
+Managed local llama-server ownership is committed in `31e3ff4`: opt-in,
+on-demand startup and owned-child cleanup on the existing inline worker.
+Real-child fixtures and an isolated macOS run verified generation, partial
+acceptance/Undo, disable/re-enable and quit cleanup without touching an external
+server. The fresh suite passed 2,577 tests and two doctests, plus strict lint,
+formatting and build. Broader model/platform verification remains below.
+The verified local build cache is `/tmp/token-managed-server-check.5prvI4`;
+the default `target/` disappeared during verification. Reuse that directory via
+`CARGO_TARGET_DIR` for subsequent local checks if it still exists.
+
 ## Settings scrolling correction
 
 Preserve the separate Settings page, category navigation and form controls.
@@ -48,7 +58,7 @@ follow-up are in `8516dc2`.
 
 The final scrolling/rendering suite passed 2,572 tests and two doctests
 (`f462df76-3cca-4c02-8ab7-29836f9ebab2`), strict lint, formatting and debug build.
-Seven tests and six doctests remain skipped/ignored. Wide and compact headless
+That checkpoint skipped seven tests and six doctests. Wide and compact headless
 screenshots confirm partial-row clipping; native trackpad presentation is not
 measured by those checks.
 
@@ -69,8 +79,8 @@ measurements, not native presentation checks.
 
 ## Remaining implementation
 
-- Autocomplete: edit prediction, workspace retrieval context, and supervised
-  local llama-server ownership. See [autocomplete](docs/feature/autocomplete.md).
+- Autocomplete: edit prediction and workspace retrieval context.
+  See [autocomplete](docs/feature/autocomplete.md).
 - Address measured performance targets as warranted: cold explicit Find scans,
   completion-response allocations, larger recency refreshes and forward
   multi-cursor edits. Existing measurements are in
@@ -79,7 +89,8 @@ measurements, not native presentation checks.
 ## Remaining verification
 
 - Native Windows/Linux keymap chips, contexts, capture and persistence; launcher
-  detachment and per-instance port files on Windows.
+  detachment and per-instance port files on Windows; managed llama-server
+  startup/teardown on Windows/Linux.
 - Actual IME composition/candidate windows, CJK/emoji positioning and the remaining
   completion native-input matrix. Existing unit/macOS evidence is not a full
   platform certification.
@@ -89,7 +100,7 @@ measurements, not native presentation checks.
 - Native context-menu pointer acceptance; automated runtime/pixel checks already pass.
 - Resolve intermittent nextest process-exit warnings. The September 8 theme
   suite flagged `settings_page_keeps_spacious_categories_and_shared_control_hits`
-  as leaky. The subsequent spawn-test cleanup suite passed all 2,575 tests without
+  as leaky. Subsequent spawn-test and managed-server suites passed without
   warnings, but did not establish their cause. Do not suppress or call that resolved.
 
 ## Archival and closeout
