@@ -42,6 +42,19 @@ The default `target/` previously disappeared outside this task.
 
 ## Remaining implementation
 
+- Terminal enhancements (requested 2026-09-08):
+  - Add terminal tabs with create, switch and close controls. Build on the
+    existing session collection and dock; preserve each session's running
+    process and scrollback when switching, and clean up only the closed session.
+  - Support mouse text selection and copying to the system clipboard, including
+    scrollback, wrapped lines and Unicode. Preserve normal shell interrupt keys.
+  - Make links clickable while a modifier is held, with a visible hover cue.
+    Follow the app's platform modifier conventions; ordinary clicks must not
+    open links or interfere with selection. Reuse existing URL-opening effects.
+  - Share terminal geometry between rendering and pointer interaction; verify
+    these behaviors with live PTYs before marking them complete. Keep the shipped
+    [terminal MVP plan](docs/archived/embedded-terminal.md) archived; these are
+    follow-on features, not already delivered functionality.
 - Autocomplete: edit prediction (anchored edits, deletion/diff preview and jump
   targets). The plan names candidate providers but no selected backend contract;
   a backend/model preference has been requested. See
