@@ -14,7 +14,56 @@ User keymaps are stored at:
 | Linux | `~/.config/token-editor/keymap.yaml` |
 | Windows | `%APPDATA%\token-editor\keymap.yaml` |
 
-Create this file to add or override keybindings.
+Create this file to add or override keybindings, then restart Token or reopen
+Settings → Keymap to load it. Automatic file watching is not implemented.
+Palette and context-menu shortcut hints
+come from the loaded bindings, including overrides, unbinding and conditions;
+they are not a separate list of default shortcuts.
+
+---
+
+## Editing in Settings
+
+Open the separate Settings page and select the **Keymap** category (Tab/Shift+Tab cycles categories). Search matches
+command names, shortcuts and context details in the merged embedded/user list;
+unassigned commands are listed separately. Click a binding row or press Enter to
+record up to four keystrokes. Recording consumes shortcuts, including Quit and
+debug keys, without running their commands. Repeated key-down events are ignored.
+
+macOS menu accelerators (such as Cmd+Q/Cmd+H) and debug-build reserved function
+keys are consumed with an explanatory error, not recorded as unusable overrides.
+Native menu remapping is separate from this keymap editor. OS-reserved shortcuts
+that never reach Token cannot be captured.
+
+**Ctrl+Enter** or **Save** commits; **Escape** or **Cancel** discards the capture.
+Backspace removes the last stroke. **Literal** records the next reserved control
+literally, including Escape, Backspace and Ctrl+Enter. Conflict warnings compare
+typed sequences, including prefixes, only in overlapping contexts on this OS.
+Saving does not automatically resolve every conflict: a shorter prefix can still
+shadow a chord, and overlapping conditions can still compete. Edit `keymap.yaml`
+directly to remove such conflicts or change conditions.
+
+The **Token** base uses embedded defaults. **Common** (`base: conventional`) changes only `cmd+p`
+to File Finder, `cmd+shift+p` to Command Palette and `cmd+d` to Select Next
+Occurrence; it is not a full emulation of another editor. Base chips save
+immediately, and user overrides always win—including a legacy keymap containing
+a full copy of the defaults.
+
+Saves write only overrides and the optional `base: conventional`/`base: token`
+choice to the user keymap, never to `config.yaml`. Rebinding preserves the selected
+binding's conditions and other bindings at its old sequence. Generated overrides
+are OS-local; portable and foreign-platform entries remain intact. Unknown YAML
+keys are retained, but comments and formatting are not. Successful saves apply
+immediately. Invalid, unreadable, stale or read-only files show an error without
+changing the loaded keymap. Close/reopen Settings after an external edit.
+
+The editor accepts at most 1 MiB and 2,048 merged bindings for this workflow.
+Settings refuses symlink keymaps (and hard-linked keymaps on Unix), since atomic
+replacement would change their identity; edit those directly. Saves use a
+sidecar advisory lock, bounded reads, temporary-file replacement and an exact
+text recheck. The lock coordinates Token writers, not arbitrary external editors;
+avoid simultaneous external edits during a save. `plus` and `literal_space`
+encode literal character keys, while `space` denotes the named Space key.
 
 ---
 
@@ -65,7 +114,40 @@ bindings:
 
 ---
 
+## Chord Sequences
+
+Use spaces between keystrokes in the `key` string:
+
+```yaml
+bindings:
+  - key: "ctrl+k ctrl+c"
+    command: Copy
+    when: ["has_selection"]
+```
+
+The editor waits for the next stroke after a chord prefix. A single-stroke
+binding on that prefix takes precedence; an earlier complete chord can also
+make a longer chord unreachable. Such shadowed chords are not shown as hints.
+An unmatched next stroke clears the pending sequence. There is no chord timeout
+yet. Chords currently start in editor keymap routing; modals and docks retain
+their own key handling and single-stroke global shortcuts.
+
+Palette hints describe editor conditions after the palette closes; context-menu
+hints use the underlying menu target. Temporary popup/inline-suggestion states
+are excluded. Hints are shortcuts to the command, not promises that the same
+keys will bypass an open menu's navigation handling.
+
 ## Modifier Keys
+
+`OpenInlineStatistics` is a bindable action for “Open Inline Completion
+Statistics”; it has no default shortcut. It dismisses the current inline offer
+before queuing the statistics file open, so that outcome is included in the read.
+
+Inline alternatives use `alt+]` / `alt+[` while ghost text is visible. The named
+actions are `NextInlineSuggestion` and `PrevInlineSuggestion`. On macOS, Option
+shortcuts try the typed character first, then the current keyboard layout's
+unmodified key. If neither interpretation has a binding, normal text input
+retains its composed character. A chord advances only once per key event.
 
 | Modifier | macOS | Windows/Linux |
 |----------|-------|---------------|
@@ -120,8 +202,8 @@ Bindings can be conditional using the `when` field:
 
 | Condition | Description |
 |-----------|-------------|
-| `has_selection` | One or more cursors have active selection |
-| `no_selection` | No cursor has selection |
+| `has_selection` | The active cursor has a selection |
+| `no_selection` | The active cursor has no selection |
 | `has_multiple_cursors` | More than one cursor active |
 | `single_cursor` | Exactly one cursor |
 | `modal_active` | A modal dialog is open |

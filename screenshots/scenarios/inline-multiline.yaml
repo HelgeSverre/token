@@ -1,0 +1,13 @@
+name: inline-multiline
+width: 1100
+height: 720
+scale: 1.0
+theme: default-dark
+files:
+  - path: samples/soft-wrap.txt
+    soft_wrap: true
+    cursor_line: 0
+    cursor_column: 31
+inline_suggestion:
+  - " and previews an insertion\n\twith real virtual rows,\nincluding a shifted suffix"
+  - " with an alternative"

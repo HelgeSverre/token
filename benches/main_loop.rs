@@ -167,7 +167,7 @@ fn full_loop_cursor_move_and_render(iterations: usize) {
             Msg::Editor(EditorMsg::MoveCursor(Direction::Right)),
         );
         if cmd.as_ref().is_some_and(|c| c.needs_redraw()) {
-            renderer.render_frame(&model);
+            renderer.render_frame(&mut model);
         }
     }
 
@@ -183,7 +183,7 @@ fn full_loop_insert_char_and_render(iterations: usize) {
         let ch = (b'a' + (i % 26) as u8) as char;
         let cmd = update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)));
         if cmd.as_ref().is_some_and(|c| c.needs_redraw()) {
-            renderer.render_frame(&model);
+            renderer.render_frame(&mut model);
         }
     }
 
@@ -198,7 +198,7 @@ fn full_loop_scroll_and_render(iterations: usize) {
     for _ in 0..iterations {
         let cmd = update(&mut model, Msg::Editor(EditorMsg::PageDown));
         if cmd.as_ref().is_some_and(|c| c.needs_redraw()) {
-            renderer.render_frame(&model);
+            renderer.render_frame(&mut model);
         }
     }
 
@@ -213,7 +213,7 @@ fn full_loop_resize_and_render(size: (u32, u32)) {
 
     let cmd = update(&mut model, Msg::App(AppMsg::Resize(w, h)));
     if cmd.as_ref().is_some_and(|c| c.needs_redraw()) {
-        renderer.render_frame(&model);
+        renderer.render_frame(&mut model);
     }
 
     divan::black_box(&model);
@@ -394,7 +394,7 @@ fn realistic_typing_paragraph() {
         };
 
         if cmd.as_ref().is_some_and(|c| c.needs_redraw()) {
-            renderer.render_frame(&model);
+            renderer.render_frame(&mut model);
         }
     }
 
@@ -417,7 +417,7 @@ fn realistic_typing_with_newlines() {
             };
 
             if cmd.as_ref().is_some_and(|c| c.needs_redraw()) {
-                renderer.render_frame(&model);
+                renderer.render_frame(&mut model);
             }
         }
     }

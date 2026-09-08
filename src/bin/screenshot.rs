@@ -86,12 +86,14 @@ struct Scenario {
     modal: Option<ModalConfig>,
     /// Ghost text shown at the first file's cursor (autocomplete.md Phase 2).
     #[serde(default)]
-    inline_suggestion: Option<String>,
+    inline_suggestion: Option<InlineFixture>,
 }
 
 #[derive(Deserialize, Debug)]
 struct ScenarioFile {
     path: PathBuf,
+    #[serde(default)]
+    soft_wrap: bool,
     #[serde(default)]
     scroll_to: Option<usize>,
     #[serde(default)]
@@ -125,6 +127,13 @@ enum ScenarioViewMode {
 struct CursorPos {
     line: usize,
     column: usize,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+enum InlineFixture {
+    Single(String),
+    Alternatives(Vec<String>),
 }
 
 #[derive(Deserialize, Debug)]
@@ -379,27 +388,37 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         apply_modal(&mut model, modal_config);
     }
 
-    if let Some(text) = &scenario.inline_suggestion {
+    if let Some(fixture) = &scenario.inline_suggestion {
+        let texts = match fixture {
+            InlineFixture::Single(text) => vec![text.clone()],
+            InlineFixture::Alternatives(texts) => texts.clone(),
+        };
         let cursor = model.editor().cursors[0];
         let document = model.document();
         if let Some(document_id) = document.id {
             let revision = document.revision;
-            model.ui.inline_suggestion = Some(token::completion::inline::InlineSuggestionState {
-                snapshot: token::completion::inline::RequestSnapshot {
+            model.ui.inline_suggestion = token::completion::inline::InlineSuggestionState::new(
+                token::completion::inline::RequestSnapshot {
                     document_id,
                     revision,
                     line: cursor.line,
                     column: cursor.column,
                     request_id: 1,
                 },
-                text: text.clone(),
-                consumed: 0,
-                valid_revision: revision,
-            });
+                texts,
+            );
         }
     }
 
-    model.resize(scenario.width, scenario.height);
+    // Use the production lifecycle after installing fixture state so derived
+    // wrap/ghost geometry is synchronized exactly as it is for a native resize.
+    update(
+        &mut model,
+        token::messages::Msg::App(token::messages::AppMsg::Resize(
+            scenario.width,
+            scenario.height,
+        )),
+    );
 
     Ok(model)
 }
@@ -541,33 +560,21 @@ fn apply_workspace(model: &mut AppModel, config: &WorkspaceConfig, scale: f64) {
 fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
     let modal_state = match config.id {
         ModalId::Settings => {
-            let mut state = token::model::ui::SettingsState::default();
+            use token::messages::{ModalMsg, Msg, UiMsg};
+            token::update::update(
+                model,
+                Msg::Ui(UiMsg::ToggleModal(token::model::ModalId::Settings)),
+            );
             if let Some(input) = &config.input {
-                state.editable.set_content(input);
-                state.refilter();
-            }
-            if let Some(index) = config.selected_index {
-                state.selected_index = index.min(state.rows.len().saturating_sub(1));
-                let sections: Vec<_> = state
-                    .sections()
-                    .into_iter()
-                    .map(|(_, range)| token::view::overlay_surface::SectionShape {
-                        has_title: true,
-                        len: range.len(),
-                    })
-                    .collect();
-                state.scroll_offset = token::view::overlay_surface::resolve_scroll_for_selection(
-                    &sections,
-                    state.selected_index,
-                    token::view::overlay_surface::settings_visible_count(
-                        model.window_size.0 as usize,
-                        model.window_size.1 as usize,
-                        model.metrics.scale_factor,
-                    ),
-                    0,
+                token::update::update(
+                    model,
+                    Msg::Ui(UiMsg::Modal(ModalMsg::SetInput(input.clone()))),
                 );
             }
-            ModalState::Settings(state)
+            for _ in 0..config.selected_index.unwrap_or(0).min(100) {
+                token::update::update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)));
+            }
+            return;
         }
         ModalId::CommandPalette => {
             let mut state = CommandPaletteState::default();
@@ -667,6 +674,7 @@ fn set_parent_ratio(
 
 fn apply_cursor_and_scroll(editor: &mut EditorState, file: &ScenarioFile) {
     use token::model::editor::Cursor;
+    editor.soft_wrap = file.soft_wrap;
 
     if let Some(line) = file.scroll_to {
         editor.viewport.top_line = line;

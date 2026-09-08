@@ -13,8 +13,10 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
+
+const SCALE_FACTOR: f64 = 2.0;
 
 #[derive(Parser, Debug)]
 #[command(name = "profile_render")]
@@ -28,7 +30,7 @@ struct Args {
     #[arg(long, default_value = "3")]
     splits: usize,
 
-    /// Files to open (will cycle through if fewer than splits)
+    /// UTF-8 text/CSV files (cycle through independent copies if fewer than splits)
     #[arg(long)]
     files: Vec<PathBuf>,
 
@@ -36,7 +38,7 @@ struct Args {
     #[arg(long, default_value = "10000")]
     lines: usize,
 
-    /// Include a CSV file in the splits
+    /// Use a synthetic CSV grid in the final split (without --files)
     #[arg(long)]
     include_csv: bool,
 
@@ -59,6 +61,10 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    anyhow::ensure!(
+        args.frames > 0 && args.splits > 0,
+        "frames and splits must be nonzero"
+    );
 
     eprintln!("Profile Render - Multi-Split Performance Test");
     eprintln!("==============================================");
@@ -79,7 +85,19 @@ fn main() -> Result<()> {
             if let Some(editor) = model.editor_area.editors.get(&editor_id) {
                 if let Some(doc_id) = editor.document_id {
                     if let Some(doc) = model.editor_area.documents.get(&doc_id) {
-                        eprintln!("  Group {:?}: {} lines", id, doc.line_count());
+                        let mode = if editor.view_mode.is_csv() {
+                            "CSV grid"
+                        } else {
+                            "text"
+                        };
+                        eprintln!(
+                            "  Group {:?}: document {:?}, {} ({mode}, {:?}), {} lines",
+                            id,
+                            doc_id,
+                            doc.display_name(),
+                            doc.language,
+                            doc.line_count()
+                        );
                     }
                 }
             }
@@ -89,6 +107,9 @@ fn main() -> Result<()> {
 
     // Set up rendering infrastructure (headless)
     let (font, line_height, char_width, font_size, ascent) = setup_font(args.height);
+    model.line_height = line_height;
+    model.status_bar_height = line_height;
+    model.set_char_width(char_width);
 
     let width = args.width as usize;
     let height = args.height as usize;
@@ -98,7 +119,7 @@ fn main() -> Result<()> {
     // Pre-warm the glyph cache with ASCII characters
     for ch in ' '..='~' {
         let (metrics, bitmap) = font.rasterize(ch, font_size);
-        glyph_cache.insert(ch, (metrics, bitmap));
+        glyph_cache.insert((ch, font_size.to_bits()), (metrics, bitmap));
     }
 
     eprintln!(
@@ -114,6 +135,7 @@ fn main() -> Result<()> {
     let splitters = model
         .editor_area
         .compute_layout_scaled(available_rect, model.metrics.splitter_width);
+    model.resync_viewports();
 
     eprintln!("Starting render loop ({} frames)...", args.frames);
     eprintln!();
@@ -126,47 +148,30 @@ fn main() -> Result<()> {
 
         // Simulate scrolling to exercise different code paths
         if args.scroll && frame % 10 == 0 {
-            for editor in model.editor_area.editors.values_mut() {
-                let max_scroll = 100;
-                editor.viewport.top_line = (frame / 10) % max_scroll;
-            }
+            scroll_model(&mut model, (frame / 10) % 100);
         }
 
         // Clear the buffer (as real renderer does)
         buffer.fill(0xFF1E1E2E);
 
-        // Render each editor group (the hot path we're profiling)
-        for (&group_id, group) in &model.editor_area.groups {
-            render_editor_group(
-                &mut buffer,
-                width,
-                height,
-                &model,
-                group_id,
-                group.rect,
-                &font,
-                &mut glyph_cache,
-                font_size,
-                ascent,
-                line_height,
-                char_width,
-            );
-        }
-
-        // Render splitters
-        for splitter in &splitters {
-            let rect = splitter.rect;
-            let x0 = rect.x as usize;
-            let y0 = rect.y as usize;
-            let x1 = (rect.x + rect.width) as usize;
-            let y1 = (rect.y + rect.height) as usize;
-            let color = 0xFF45475A;
-            for y in y0..y1.min(height) {
-                for x in x0..x1.min(width) {
-                    buffer[y * width + x] = color;
-                }
-            }
-        }
+        let mut render_frame = token::view::Frame::new(&mut buffer, width, height);
+        let mut painter = token::view::TextPainter::new(
+            &font,
+            &mut glyph_cache,
+            font_size,
+            ascent,
+            char_width,
+            line_height,
+        );
+        let mut perf = token::perf::PerfStats::default();
+        token::view::Renderer::render_editor_area_with_preview_mode(
+            &mut render_frame,
+            &mut painter,
+            &model,
+            &splitters,
+            token::view::PreviewRenderMode::NativeMarkdown,
+            &mut perf,
+        );
 
         frame_times.push(frame_start.elapsed());
 
@@ -187,7 +192,10 @@ fn main() -> Result<()> {
     } else {
         let avg_ms = total_time.as_secs_f64() * 1000.0 / args.frames as f64;
         let fps = args.frames as f64 / total_time.as_secs_f64();
-        eprintln!("Average: {:.2}ms/frame ({:.1} FPS)", avg_ms, fps);
+        eprintln!(
+            "Average CPU editor-area render: {:.2}ms ({:.1} iterations/s; excludes window/present)",
+            avg_ms, fps
+        );
     }
 
     // Prevent the buffer from being optimized away
@@ -199,7 +207,6 @@ fn main() -> Result<()> {
 fn create_model(args: &Args) -> Result<token::model::AppModel> {
     use token::config::EditorConfig;
     use token::messages::{LayoutMsg, Msg};
-    use token::model::document::Document;
     use token::model::editor::EditorState;
     use token::model::editor_area::EditorArea;
     use token::model::ui::UiState;
@@ -210,32 +217,17 @@ fn create_model(args: &Args) -> Result<token::model::AppModel> {
     let line_height = 20usize;
     let char_width = 10.0f32;
 
-    // Generate content for all splits
-    let mut doc_contents: Vec<String> = Vec::new();
-
-    if !args.files.is_empty() {
-        for path in &args.files {
-            let content = std::fs::read_to_string(path)
-                .unwrap_or_else(|_| format!("// Failed to load {}\n", path.display()));
-            doc_contents.push(content);
-        }
-    } else {
-        doc_contents.push(generate_code_content(args.lines));
-        doc_contents.push(generate_rust_content(args.lines));
-        if args.include_csv || args.splits >= 3 {
-            doc_contents.push(generate_csv_content(args.lines));
-        }
-    }
-
-    while doc_contents.len() < args.splits {
-        let idx = doc_contents.len();
-        doc_contents.push(generate_code_content(args.lines / 2 + idx * 100));
-    }
+    anyhow::ensure!(args.splits > 0, "splits must be nonzero");
+    anyhow::ensure!(
+        args.files.is_empty() || !args.include_csv,
+        "--include-csv is for synthetic fixtures; pass a .csv or .tsv in --files instead"
+    );
+    let fixtures = load_fixtures(args)?;
 
     // Create initial model with first document
-    let first_content = doc_contents.remove(0);
-    let document = Document::with_text(&first_content);
-    let editor = EditorState::with_viewport(1, 1);
+    let document = fixture_document(&fixtures[0]);
+    let mut editor = EditorState::with_viewport(1, 1);
+    editor.view_mode = fixture_view_mode(&document)?;
     let editor_area = EditorArea::single_document(document, editor);
 
     let mut model = AppModel {
@@ -245,11 +237,9 @@ fn create_model(args: &Args) -> Result<token::model::AppModel> {
         config: EditorConfig::default(),
         window_size: (args.width, args.height),
         line_height,
-        // ponytail: profiling tool draws its own bar; parity with the real
-        // formula doesn't matter here
         status_bar_height: line_height,
         char_width,
-        metrics: token::model::ScaledMetrics::default(),
+        metrics: token::model::ScaledMetrics::new(SCALE_FACTOR),
         workspace: None,
         dock_layout: token::panel::DockLayout::default(),
         terminal: token::terminal::TerminalState::default(),
@@ -266,7 +256,7 @@ fn create_model(args: &Args) -> Result<token::model::AppModel> {
     };
 
     // Add more splits using the layout system
-    for content in doc_contents.into_iter().take(args.splits - 1) {
+    for index in 1..args.splits {
         // Split the current focused group horizontally (side by side)
         update(
             &mut model,
@@ -275,15 +265,118 @@ fn create_model(args: &Args) -> Result<token::model::AppModel> {
             )),
         );
 
-        // Replace the document content in the new split
-        if let Some(doc) = model.editor_area.focused_document_mut() {
-            doc.buffer = ropey::Rope::from_str(&content);
-        }
+        // SplitFocused intentionally shares its source document. Give this
+        // fixture its own document identity before attaching any new content.
+        let mut doc = fixture_document(&fixtures[index % fixtures.len()]);
+        let view_mode = fixture_view_mode(&doc)?;
+        let document_id = model.editor_area.next_document_id();
+        doc.id = Some(document_id);
+        model.editor_area.documents.insert(document_id, doc);
+        let editor = model
+            .editor_area
+            .focused_editor_mut()
+            .context("split has no editor")?;
+        editor.document_id = Some(document_id);
+        editor.view_mode = view_mode;
     }
 
+    // Parsing is setup, not measured rendering work. Use real highlight spans
+    // for code files, as the running editor does once its worker has finished.
+    let mut parser = token::syntax::ParserState::new();
+    for (&id, doc) in &mut model.editor_area.documents {
+        if doc.language.has_highlighting() {
+            doc.syntax_highlights = Some(parser.parse_and_highlight(
+                &doc.buffer.to_string(),
+                doc.language,
+                id,
+                doc.revision,
+            ));
+        }
+    }
     model.resize(args.width, args.height);
 
     Ok(model)
+}
+
+fn load_fixtures(args: &Args) -> Result<Vec<(PathBuf, String)>> {
+    if !args.files.is_empty() {
+        return args
+            .files
+            .iter()
+            .map(|path| {
+                let content = std::fs::read_to_string(path).with_context(|| {
+                    format!(
+                        "cannot load profiling input {} as UTF-8 text",
+                        path.display()
+                    )
+                })?;
+                Ok((path.clone(), content))
+            })
+            .collect();
+    }
+    Ok((0..args.splits)
+        .map(|index| {
+            if args.include_csv && index + 1 == args.splits {
+                (
+                    PathBuf::from("profile-data.csv"),
+                    generate_csv_content(args.lines),
+                )
+            } else {
+                let text = if index % 2 == 0 {
+                    generate_code_content(args.lines)
+                } else {
+                    generate_rust_content(args.lines)
+                };
+                (PathBuf::from(format!("profile-code-{index}.rs")), text)
+            }
+        })
+        .collect())
+}
+
+fn fixture_document((path, content): &(PathBuf, String)) -> token::model::Document {
+    let mut doc = token::model::Document::with_text(content);
+    doc.language = token::syntax::LanguageId::from_path(path);
+    doc.file_path = Some(path.clone());
+    doc
+}
+
+fn fixture_view_mode(doc: &token::model::Document) -> Result<token::model::editor::ViewMode> {
+    use token::csv::{parse_csv, CsvState, Delimiter};
+    use token::model::editor::ViewMode;
+    let extension = doc
+        .file_path
+        .as_ref()
+        .and_then(|path| path.extension())
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("");
+    if extension.eq_ignore_ascii_case("csv") || extension.eq_ignore_ascii_case("tsv") {
+        let delimiter = Delimiter::from_extension(&extension.to_ascii_lowercase());
+        let data = parse_csv(&doc.buffer.to_string(), delimiter)
+            .with_context(|| format!("cannot parse CSV profiling input {}", doc.display_name()))?;
+        anyhow::ensure!(
+            !data.is_empty() && data.column_count() > 0,
+            "CSV profiling input {} has no cells",
+            doc.display_name()
+        );
+        Ok(ViewMode::Csv(Box::new(CsvState::new(data, delimiter))))
+    } else {
+        Ok(ViewMode::Text)
+    }
+}
+
+fn scroll_model(model: &mut token::model::AppModel, target: usize) {
+    for editor in model.editor_area.editors.values_mut() {
+        if let Some(csv) = editor.view_mode.as_csv_mut() {
+            csv.scroll_vertical(target as i32 - csv.viewport.top_row as i32);
+        } else if editor.is_plain_text_mode() {
+            if let Some(doc) = editor
+                .document_id
+                .and_then(|id| model.editor_area.documents.get(&id))
+            {
+                editor.set_top_line_clamped(doc, target);
+            }
+        }
+    }
 }
 
 fn setup_font(_window_height: u32) -> (fontdue::Font, usize, f32, f32, f32) {
@@ -295,8 +388,7 @@ fn setup_font(_window_height: u32) -> (fontdue::Font, usize, f32, f32, f32) {
     )
     .expect("Failed to load font");
 
-    let scale_factor = 2.0f64; // Simulate retina
-    let font_size = 14.0 * scale_factor as f32;
+    let font_size = 14.0 * SCALE_FACTOR as f32;
 
     let line_metrics = font
         .horizontal_line_metrics(font_size)
@@ -311,10 +403,10 @@ fn setup_font(_window_height: u32) -> (fontdue::Font, usize, f32, f32, f32) {
 }
 
 fn generate_code_content(lines: usize) -> String {
-    let mut content = String::with_capacity(lines * 80);
+    let mut content = String::with_capacity(token::util::ByteSize::bytes(80).as_usize() * lines);
     for i in 0..lines {
         content.push_str(&format!(
-            "    fn process_document_{}(&mut self, doc: &Document) -> Result<(), Error> {{\n",
+            "fn process_document_{}(doc: &Document) -> Result<(), Error> {{ Ok(()) }}\n",
             i
         ));
     }
@@ -322,22 +414,26 @@ fn generate_code_content(lines: usize) -> String {
 }
 
 fn generate_rust_content(lines: usize) -> String {
-    let mut content = String::with_capacity(lines * 80);
+    let mut content = String::with_capacity(token::util::ByteSize::bytes(80).as_usize() * lines);
     content.push_str("use std::collections::HashMap;\n\n");
     for i in 0..lines {
         match i % 5 {
-            0 => content.push_str(&format!("pub struct Handler{} {{\n", i)),
+            0 => content.push_str(&format!("pub struct Handler{} {{\n", i / 5)),
             1 => content.push_str(&format!("    field_{}: String,\n", i)),
             2 => content.push_str(&format!("    data_{}: Vec<u8>,\n", i)),
-            3 => content.push_str("}\n\n"),
-            _ => content.push_str(&format!("impl Handler{} {{\n", i.saturating_sub(1))),
+            3 => content.push_str("}\n"),
+            _ => content.push_str(&format!(
+                "impl Handler{} {{ fn name(&self) -> &str {{ &self.field_{} }} }}\n",
+                i / 5,
+                i - 3
+            )),
         }
     }
     content
 }
 
 fn generate_csv_content(rows: usize) -> String {
-    let mut content = String::with_capacity(rows * 150);
+    let mut content = String::with_capacity(token::util::ByteSize::bytes(150).as_usize() * rows);
     content.push_str(
         "id,first_name,last_name,email,company,department,job_title,salary,hire_date,country\n",
     );
@@ -348,284 +444,6 @@ fn generate_csv_content(rows: usize) -> String {
         ));
     }
     content
-}
-
-type GlyphCache = std::collections::HashMap<char, (fontdue::Metrics, Vec<u8>)>;
-
-#[allow(clippy::too_many_arguments)]
-fn render_editor_group(
-    buffer: &mut [u32],
-    width: usize,
-    height: usize,
-    model: &token::model::AppModel,
-    group_id: token::model::editor_area::GroupId,
-    group_rect: token::model::editor_area::Rect,
-    font: &fontdue::Font,
-    glyph_cache: &mut GlyphCache,
-    font_size: f32,
-    ascent: f32,
-    line_height: usize,
-    char_width: f32,
-) {
-    let group = match model.editor_area.groups.get(&group_id) {
-        Some(g) => g,
-        None => return,
-    };
-
-    let editor_id = match group.active_editor_id() {
-        Some(id) => id,
-        None => return,
-    };
-
-    let editor = match model.editor_area.editors.get(&editor_id) {
-        Some(e) => e,
-        None => return,
-    };
-
-    let doc_id = match editor.document_id {
-        Some(id) => id,
-        None => return,
-    };
-
-    let document = match model.editor_area.documents.get(&doc_id) {
-        Some(d) => d,
-        None => return,
-    };
-
-    let rect_x = group_rect.x as usize;
-    let rect_y = group_rect.y as usize;
-    let rect_w = group_rect.width as usize;
-    let rect_h = group_rect.height as usize;
-
-    // Fill background
-    let bg_color = 0xFF1E1E2E;
-    for y in rect_y..rect_y + rect_h {
-        if y >= height {
-            break;
-        }
-        for x in rect_x..rect_x + rect_w {
-            if x >= width {
-                break;
-            }
-            buffer[y * width + x] = bg_color;
-        }
-    }
-
-    // Tab bar
-    let tab_bar_height = 28usize;
-    let tab_bar_color = 0xFF181825;
-    for y in rect_y..rect_y + tab_bar_height.min(rect_h) {
-        if y >= height {
-            break;
-        }
-        for x in rect_x..rect_x + rect_w {
-            if x >= width {
-                break;
-            }
-            buffer[y * width + x] = tab_bar_color;
-        }
-    }
-
-    // Content area
-    let content_y = rect_y + tab_bar_height;
-    let content_h = rect_h.saturating_sub(tab_bar_height);
-    let gutter_width = 60usize;
-    let text_x = rect_x + gutter_width;
-
-    let visible_lines = content_h / line_height;
-    let visible_columns = ((rect_w - gutter_width) as f32 / char_width).floor() as usize;
-    let end_line = (editor.viewport.top_line + visible_lines).min(document.line_count());
-
-    // Current line highlight
-    let current_line = editor.cursors.first().map(|c| c.line).unwrap_or(0);
-    if current_line >= editor.viewport.top_line && current_line < end_line {
-        let screen_line = current_line - editor.viewport.top_line;
-        let y = content_y + screen_line * line_height;
-        let highlight_color = 0xFF2A2A3A;
-        for py in y..y + line_height {
-            if py >= height {
-                break;
-            }
-            for px in rect_x..rect_x + rect_w {
-                if px >= width {
-                    break;
-                }
-                buffer[py * width + px] = highlight_color;
-            }
-        }
-    }
-
-    // Render text - THIS IS THE HOT PATH WE'RE PROFILING
-    let text_color = 0xFFCDD6F4;
-    let mut display_text_buf = String::with_capacity(visible_columns + 16);
-
-    for (screen_line, doc_line) in (editor.viewport.top_line..end_line).enumerate() {
-        // Use the optimized get_line_cow method
-        if let Some(line_text) = document.get_line_cow(doc_line) {
-            let y = content_y + screen_line * line_height;
-            if y >= content_y + content_h || y >= height {
-                break;
-            }
-
-            // Expand tabs (using Cow to avoid allocation when no tabs)
-            let expanded = expand_tabs(&line_text);
-
-            // Build display text with buffer reuse
-            display_text_buf.clear();
-            for ch in expanded
-                .chars()
-                .skip(editor.viewport.left_column)
-                .take(visible_columns)
-            {
-                display_text_buf.push(ch);
-            }
-
-            // Draw text
-            let mut x = text_x as f32;
-            let baseline_y = y + (ascent as usize);
-
-            for ch in display_text_buf.chars() {
-                let (metrics, bitmap) = glyph_cache
-                    .entry(ch)
-                    .or_insert_with(|| font.rasterize(ch, font_size));
-
-                let glyph_x = x as i32 + metrics.xmin;
-                let glyph_y = baseline_y as i32 - metrics.ymin - metrics.height as i32;
-
-                for gy in 0..metrics.height {
-                    for gx in 0..metrics.width {
-                        let alpha = bitmap[gy * metrics.width + gx];
-                        if alpha > 0 {
-                            let px = (glyph_x + gx as i32) as usize;
-                            let py = (glyph_y + gy as i32) as usize;
-                            if px < width && py < height {
-                                let idx = py * width + px;
-                                buffer[idx] = blend_pixel(buffer[idx], text_color, alpha);
-                            }
-                        }
-                    }
-                }
-
-                x += metrics.advance_width;
-            }
-        }
-    }
-
-    // Render gutter (line numbers)
-    let gutter_color = 0xFF6C7086;
-    for (screen_line, doc_line) in (editor.viewport.top_line..end_line).enumerate() {
-        let y = content_y + screen_line * line_height;
-        if y >= height {
-            break;
-        }
-
-        let num_str = (doc_line + 1).to_string();
-        let num_x = rect_x + gutter_width - (num_str.len() as f32 * char_width) as usize - 8;
-
-        let baseline_y = y + (ascent as usize);
-        let mut x = num_x as f32;
-
-        for ch in num_str.chars() {
-            let (metrics, bitmap) = glyph_cache
-                .entry(ch)
-                .or_insert_with(|| font.rasterize(ch, font_size));
-
-            let glyph_x = x as i32 + metrics.xmin;
-            let glyph_y = baseline_y as i32 - metrics.ymin - metrics.height as i32;
-
-            for gy in 0..metrics.height {
-                for gx in 0..metrics.width {
-                    let alpha = bitmap[gy * metrics.width + gx];
-                    if alpha > 0 {
-                        let px = (glyph_x + gx as i32) as usize;
-                        let py = (glyph_y + gy as i32) as usize;
-                        if px < width && py < height {
-                            let idx = py * width + px;
-                            buffer[idx] = blend_pixel(buffer[idx], gutter_color, alpha);
-                        }
-                    }
-                }
-            }
-
-            x += metrics.advance_width;
-        }
-    }
-
-    // Cursor
-    let cursor_color = 0xFFF5E0DC;
-    for cursor in &editor.cursors {
-        if cursor.line >= editor.viewport.top_line && cursor.line < end_line {
-            let screen_line = cursor.line - editor.viewport.top_line;
-            let cursor_x = text_x + (cursor.column as f32 * char_width) as usize;
-            let cursor_y = content_y + screen_line * line_height;
-
-            for py in cursor_y..cursor_y + line_height {
-                if py >= height {
-                    break;
-                }
-                for px in cursor_x..cursor_x + 2 {
-                    if px >= width {
-                        break;
-                    }
-                    buffer[py * width + px] = cursor_color;
-                }
-            }
-        }
-    }
-}
-
-fn expand_tabs(text: &str) -> std::borrow::Cow<'_, str> {
-    use std::borrow::Cow;
-
-    if !text.contains('\t') {
-        return Cow::Borrowed(text);
-    }
-
-    let mut result = String::with_capacity(text.len() * 2);
-    let mut visual_col = 0;
-    const TAB_WIDTH: usize = 4;
-
-    for ch in text.chars() {
-        if ch == '\t' {
-            let spaces = TAB_WIDTH - (visual_col % TAB_WIDTH);
-            for _ in 0..spaces {
-                result.push(' ');
-            }
-            visual_col += spaces;
-        } else {
-            result.push(ch);
-            visual_col += 1;
-        }
-    }
-
-    Cow::Owned(result)
-}
-
-#[inline]
-fn blend_pixel(bg: u32, fg: u32, alpha: u8) -> u32 {
-    if alpha == 0 {
-        return bg;
-    }
-    if alpha == 255 {
-        return fg;
-    }
-
-    let a = alpha as u32;
-    let inv_a = 255 - a;
-
-    let bg_r = (bg >> 16) & 0xFF;
-    let bg_g = (bg >> 8) & 0xFF;
-    let bg_b = bg & 0xFF;
-
-    let fg_r = (fg >> 16) & 0xFF;
-    let fg_g = (fg >> 8) & 0xFF;
-    let fg_b = fg & 0xFF;
-
-    let r = (fg_r * a + bg_r * inv_a) / 255;
-    let g = (fg_g * a + bg_g * inv_a) / 255;
-    let b = (fg_b * a + bg_b * inv_a) / 255;
-
-    0xFF000000 | (r << 16) | (g << 8) | b
 }
 
 fn print_stats(frame_times: &[Duration], total_time: Duration, frame_count: usize) {
@@ -640,7 +458,7 @@ fn print_stats(frame_times: &[Duration], total_time: Duration, frame_count: usiz
     let avg = total_time / frame_count as u32;
     let fps = frame_count as f64 / total_time.as_secs_f64();
 
-    eprintln!("Frame Time Statistics:");
+    eprintln!("CPU editor-area timings (excludes window/present):");
     eprintln!("  Min:    {:>8.2}ms", min.as_secs_f64() * 1000.0);
     eprintln!("  Max:    {:>8.2}ms", max.as_secs_f64() * 1000.0);
     eprintln!("  Avg:    {:>8.2}ms", avg.as_secs_f64() * 1000.0);
@@ -648,6 +466,161 @@ fn print_stats(frame_times: &[Duration], total_time: Duration, frame_count: usiz
     eprintln!("  P95:    {:>8.2}ms", p95.as_secs_f64() * 1000.0);
     eprintln!("  P99:    {:>8.2}ms", p99.as_secs_f64() * 1000.0);
     eprintln!();
-    eprintln!("  FPS:    {:>8.1}", fps);
+    eprintln!("  Iterations/s: {:>8.1}", fps);
     eprintln!("  Total:  {:>8.2}s", total_time.as_secs_f64());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use token::model::DocumentId;
+
+    fn args(extra: &[&str]) -> Args {
+        Args::parse_from(
+            ["profile_render", "--lines", "20"]
+                .into_iter()
+                .chain(extra.iter().copied()),
+        )
+    }
+
+    #[test]
+    fn profiler_splits_have_independent_documents_and_real_csv_mode() {
+        let mut model = create_model(&args(&["--splits", "4", "--include-csv"])).unwrap();
+        assert_eq!(model.editor_area.groups.len(), 4);
+        assert_eq!(model.editor_area.editors.len(), 4);
+        assert_eq!(model.editor_area.documents.len(), 4);
+        let ids: std::collections::HashSet<_> = model
+            .editor_area
+            .editors
+            .values()
+            .map(|editor| editor.document_id.unwrap())
+            .collect();
+        assert_eq!(ids.len(), 4);
+        for editor in model.editor_area.editors.values() {
+            let doc = &model.editor_area.documents[&editor.document_id.unwrap()];
+            if doc.file_path.as_ref().unwrap().extension().unwrap() == "csv" {
+                let csv = editor.view_mode.as_csv().expect("CSV grid, not text");
+                assert_eq!(csv.data.row_count(), 21); // header plus 20 generated rows
+                assert_eq!(csv.data.column_count(), 10);
+                assert!(csv.viewport.visible_rows > 1);
+                assert!(!editor.is_plain_text_mode());
+            } else {
+                assert!(editor.is_plain_text_mode());
+                assert_eq!(doc.language, token::syntax::LanguageId::Rust);
+                assert!(!doc.syntax_highlights.as_ref().unwrap().lines.is_empty());
+            }
+        }
+        let first = model.editor_area.documents[&DocumentId(1)]
+            .buffer
+            .to_string();
+        model
+            .editor_area
+            .documents
+            .get_mut(&DocumentId(4))
+            .unwrap()
+            .buffer
+            .insert(0, "changed");
+        assert_eq!(
+            model.editor_area.documents[&DocumentId(1)]
+                .buffer
+                .to_string(),
+            first
+        );
+        model.editor_area.assert_invariants();
+    }
+
+    #[test]
+    fn profiler_file_inputs_cycle_in_order_without_sharing_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let rust = dir.path().join("one.rs");
+        let csv = dir.path().join("two.tsv");
+        std::fs::write(&rust, "fn first() {}\n").unwrap();
+        std::fs::write(&csv, "name\tvalue\nsecond\t2\n").unwrap();
+        let mut args = args(&["--splits", "3"]);
+        args.files = vec![rust.clone(), csv.clone()];
+        let mut model = create_model(&args).unwrap();
+        let docs = &model.editor_area.documents;
+        for (index, path) in [rust.clone(), csv, rust].into_iter().enumerate() {
+            assert_eq!(
+                docs[&DocumentId(index as u64 + 1)].file_path.as_ref(),
+                Some(&path)
+            );
+        }
+        let csv_editor = model
+            .editor_area
+            .editors
+            .values()
+            .find(|editor| editor.document_id == Some(DocumentId(2)))
+            .unwrap();
+        assert_eq!(
+            csv_editor.view_mode.as_csv().unwrap().data.column_count(),
+            2
+        );
+        model
+            .editor_area
+            .documents
+            .get_mut(&DocumentId(3))
+            .unwrap()
+            .buffer
+            .insert(0, "other");
+        assert_eq!(
+            model.editor_area.documents[&DocumentId(1)]
+                .buffer
+                .to_string(),
+            "fn first() {}\n"
+        );
+    }
+
+    #[test]
+    fn profiler_missing_or_non_utf8_inputs_fail_instead_of_profiling_error_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.rs");
+        let mut args = args(&[]);
+        args.files = vec![path.clone()];
+        assert!(create_model(&args)
+            .unwrap_err()
+            .to_string()
+            .contains("cannot load profiling input"));
+        std::fs::write(&path, [0xff, 0xfe]).unwrap();
+        assert!(create_model(&args).is_err());
+    }
+
+    #[test]
+    fn profiler_csv_flag_is_explicit_and_works_with_one_split() {
+        let model = create_model(&args(&["--splits", "1", "--include-csv"])).unwrap();
+        assert!(model.editor().view_mode.is_csv());
+        let model = create_model(&args(&["--splits", "3"])).unwrap();
+        assert!(model
+            .editor_area
+            .editors
+            .values()
+            .all(|editor| editor.is_plain_text_mode()));
+        assert!(create_model(&args(&["--splits", "0"])).is_err());
+        assert!(create_model(&args(&["--files", "unused.csv", "--include-csv"])).is_err());
+    }
+
+    #[test]
+    fn profiler_scrolls_the_active_mode_and_clamps_short_documents() {
+        let mut args = args(&["--splits", "2", "--include-csv"]);
+        args.lines = 200;
+        let mut model = create_model(&args).unwrap();
+        scroll_model(&mut model, 40);
+        for editor in model.editor_area.editors.values_mut() {
+            if let Some(csv) = editor.view_mode.as_csv_mut() {
+                assert_eq!(csv.viewport.top_row, 40);
+                assert_eq!(editor.viewport.top_line, 0);
+                csv.viewport.visible_rows = 1000;
+            } else {
+                assert_eq!(editor.viewport.top_line, 40);
+                editor.viewport.visible_lines = 1000;
+            }
+        }
+        scroll_model(&mut model, 99);
+        for editor in model.editor_area.editors.values() {
+            assert_eq!(editor.viewport.top_line, 0);
+            if let Some(csv) = editor.view_mode.as_csv() {
+                assert_eq!(csv.viewport.top_row, 0);
+            }
+        }
+    }
 }

@@ -8,6 +8,15 @@ For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Recently Completed
 
+### Soft Wrap (unreleased)
+
+**Design:** [soft-wrap.md](archived/soft-wrap.md) | **Implemented:** 2026-09-05
+
+Per-pane Alt+Z wrapping shares visual-row geometry across rendering, navigation,
+selection, scrolling, mouse hit testing, and caret anchors. Incremental caches
+reuse unaffected lines after edits. Multi-row inline suggestions can now build
+on this mapping; they are not part of soft wrap itself.
+
 ### Code Outline Panel ✅
 
 **Design:** [feature/code-outline.md](archived/code-outline.md) | **Completed:** 2026-02-19 (v0.3.19)

@@ -1,9 +1,10 @@
 name: settings
-width: 1600
-height: 1100
-scale: 2.0
+width: 1100
+height: 720
+scale: 1.0
 theme: default-dark
 files:
-  - path: samples/sample_code.rs
+  - path: samples/soft-wrap.txt
 modal:
   id: settings
+  selected_index: 2

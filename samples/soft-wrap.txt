@@ -1,0 +1,11 @@
+Soft wrap keeps the document unchanged while long logical lines flow across visual rows. Select this paragraph and move the cursor up and down to see how the selection follows each continuation row in this pane.
+
+Short line.
+
+	Tabs expand at the same stops used by the text renderer, including tabs that appear on a continuation row. Words remain together whenever they fit within the pane.
+
+LongIdentifierWithoutWhitespace_abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789_abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ
+
+Unicode stays in character coordinates: café, naïve, 終わり, and 🙂 retain their logical positions while the pane changes width.
+
+The same file can be shown in two splits with independent wrap settings. Resizing either pane rebuilds only that pane's width-dependent layout, while edits to the shared document refresh both layouts.

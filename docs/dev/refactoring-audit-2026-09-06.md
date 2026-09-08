@@ -545,6 +545,50 @@ passed. These broader results include still-uncommitted features and must not be
 confused with the isolated commit's 2,133-test suite. Remaining source groups,
 whole-plan completion and native/platform verification are still open.
 
+## Completion menu configuration — 2026-09-07
+
+`completion.menu` now groups automatic dropdown opening, minimum candidate word
+length and local-word policy. The existing top-level `completion.enabled` remains
+the master switch for menu and inline requests, including explicit requests.
+`menu.enabled: false` prevents new automatic dropdowns on word typing, server
+trigger characters and paths. Ctrl+Space and refinement of an open session still
+work, without disabling signature help or configured inline suggestions.
+
+`menu.min_word_length` replaces the local source's hardcoded three-character
+candidate minimum, preserving three as the default. It counts Unicode scalar
+characters, has an effective floor of one, and does not change the two-character
+typed-prefix trigger, snippets, filenames or server results. Syntax restrictions,
+nearest-first scanning and scan/result caps remain shared and unchanged. The
+collector has one explicit minimum argument, not parallel configurable/default
+entry points; its benchmark retains the default-three fixture without a new
+timing claim.
+
+Legacy `completion.words` is accepted only at deserialization. Runtime policy has
+one nested field; an explicitly supplied nested value takes precedence, while a
+partial menu block retains the legacy word preference. Saving emits the canonical
+nested key and removes the recognized legacy key before unknown-key preservation.
+Tests cover repeated saves, unknown nested settings, invalid-file preservation,
+defaulting and YAML/JSON round trips. No dependencies or configuration I/O were
+added to update handlers.
+
+Nine new regressions also cover character counts and identifier restrictions,
+candidate versus typed-prefix length, manual refinement/dismissal, member requests,
+signature help, inline acceptance/Undo and manual path continuation. The path test
+exposed that folder acceptance reset the request's explicit flag; continuation
+now preserves that provenance. No acceptance/history machinery was duplicated.
+
+Final verification: **2,463 tests passed**, 7 skipped; **2 doctests passed**,
+6 ignored. Full nextest run `9bb31d07-8432-4afa-a0bc-afa146ca0a09`; targeted run
+`f933f35d-e371-4064-8c8d-0bb5d80999b2` passed all nine configuration regressions.
+Strict all-target/all-feature lint, formatting and diff checks passed. Scoped
+review: **Approve**, with no outstanding critical/high findings. Native input,
+cross-platform behavior and performance were not newly measured.
+
+Changelog, user semantics and active autocomplete checklist were updated. This
+closes the menu-configuration gap, not the complete autocomplete plan. Source
+changes remain with the uncommitted completion/editor foundations and require
+dependency-ordered grouping; this is not a claim that the feature is committed.
+
 ## Isolated hover commit and process checks — 2026-09-07
 
 Commit `e08ecb4` isolates popup hover from the broader dirty tree: popup-owned

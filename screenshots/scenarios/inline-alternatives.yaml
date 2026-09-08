@@ -1,0 +1,13 @@
+name: inline-alternatives
+width: 1100
+height: 720
+scale: 1.0
+theme: default-dark
+files:
+  - path: samples/soft-wrap.txt
+    cursor_line: 1
+    cursor_column: 0
+inline_suggestion:
+  - "hello_world();"
+  - "hello_again();"
+  - "another_choice();"

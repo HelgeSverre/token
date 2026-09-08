@@ -34,6 +34,11 @@ Automatically reload keymap when the configuration file changes:
 
 ## Chord Sequences
 
+**2026-09-06 checkpoint:** user-defined space-separated chord strings now parse
+and dispatch in editor routing, and shortcut hints resolve complete sequences.
+Example: `key: "ctrl+k ctrl+c"`. The proposed default chord set, timeout,
+status-bar feedback and broader focus routing below remain future work.
+
 **Priority:** Low  
 **Effort:** Low (infrastructure exists)
 
@@ -50,11 +55,11 @@ Define default multi-key chord sequences:
 - Infrastructure already exists: `KeyAction::AwaitMore`, `pending_chord_display()`
 - Add chord timeout (e.g., 1.5s) to abandon incomplete sequences
 - Show pending chord in status bar
-- Add to `keymap.yaml` with chord syntax
+- Add the proposed default sequences to `keymap.yaml`
 
 **YAML syntax example:**
 ```yaml
-- key: ["cmd+k", "cmd+c"]
+- key: "cmd+k cmd+c"
   command: CommentLines
 ```
 

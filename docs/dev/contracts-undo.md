@@ -12,7 +12,7 @@ This document defines the invariants and expected behavior for undo/redo operati
 pub enum EditOperation {
     /// Text insertion
     Insert {
-        position: usize,      // Byte offset in buffer
+        position: usize,      // Character offset in the document rope
         text: String,         // Inserted text
         cursor_before: Cursor,
         cursor_after: Cursor,
@@ -20,7 +20,7 @@ pub enum EditOperation {
 
     /// Text deletion
     Delete {
-        position: usize,      // Byte offset where deletion starts
+        position: usize,      // Character offset where deletion starts
         text: String,         // Deleted text (for redo)
         cursor_before: Cursor,
         cursor_after: Cursor,
@@ -38,8 +38,8 @@ pub enum EditOperation {
     /// Batch for multi-cursor operations
     Batch {
         operations: Vec<EditOperation>,
-        cursors_before: Vec<Cursor>,
-        cursors_after: Vec<Cursor>,
+        editors_before: Vec<EditorEditState>,
+        editors_after: Vec<EditorEditState>,
     },
 }
 ```
@@ -76,6 +76,28 @@ Edit C → Redo stack is now empty
 ### INV-UNDO-03: Cursor Restoration
 
 > Undo/redo restores cursor positions exactly as they were before/after the operation.
+
+Document transactions retain lossless before/after selection snapshots for every
+editor showing that document: cursor order/count, desired columns, directional
+selection anchors/heads and active cursor index. Snapshot identity is the editor
+ID, not the pane currently invoking Undo. No focus or layout change is implied.
+This also restores peer positions clipped inside deleted text and the original
+overlapping selections before typing normalized them.
+
+Editors created after an operation have no historical snapshot: their live
+positions are mapped through the inverse/forward edits. Closed editors are not
+recreated, and a snapshot is never applied to an editor showing another document.
+Restoration clears derived occurrence/selection-expansion state; it does not
+restore viewport geometry, speculative text or an in-progress pointer gesture.
+
+Forward batches use an indexed pristine-offset map for live pane positions.
+The contract is the same as sequential application: insertions have right
+affinity, replacement interiors retain their relative offset clamped to the new
+length, and replacement ends follow the new end. Equal-point insertions preserve
+their application/text order and each duplicate's caret belongs to its own copy.
+Selection-only Find's start has left affinity and remains sequentially mapped;
+it cannot be substituted with the caret mapping. Undo/Redo still follows actual
+history order for panes without snapshots, then restores recorded panes exactly.
 
 ```
 Before edit: cursor at (5, 10)
@@ -148,18 +170,18 @@ Result: "hello"
 
 For multi-cursor operations:
 
-**Undo:** Apply all operations in reverse order, restore cursors_before
-**Redo:** Apply all operations in forward order, restore cursors_after
+**Undo:** Apply all operations in reverse order, restore editors_before
+**Redo:** Apply all operations in forward order, restore editors_after
 
 ```
 Batch {
     operations: [Insert at 0, Insert at 10, Insert at 20],
-    cursors_before: [Cursor(0,0), Cursor(10,0), Cursor(20,0)],
-    cursors_after: [Cursor(0,1), Cursor(11,0), Cursor(21,0)],
+    editors_before: [/* per-editor cursors, selections and active index */],
+    editors_after: [/* corresponding state after the edit */],
 }
 
 Undo: Reverse operations [Delete at 20, Delete at 10, Delete at 0]
-      Restore 3 cursors to cursors_before positions
+      Restore each surviving editor's own pre-edit selection state
 ```
 
 ---
@@ -188,8 +210,8 @@ fn insert_at_all_cursors(text: &str, cursors: &[Cursor]) -> EditOperation {
         operations: cursors.iter().rev().map(|c| {
             EditOperation::Insert { /* ... */ }
         }).collect(),
-        cursors_before: cursors.to_vec(),
-        cursors_after: /* adjusted cursor positions */,
+        editors_before: /* snapshots captured before selection normalization */,
+        editors_after: /* snapshots after caret placement/deduplication */,
     }
 }
 ```
@@ -218,7 +240,9 @@ Save → is_modified = false
 
 ### Implementation Note
 
-Current implementation uses simple dirty flag. Future: may track "clean" stack position for accurate dirty detection after undo.
+The document compares content with a cheaply shared snapshot of the last
+successfully saved rope. Equal undo-stack depth alone does not establish clean
+state, since a new edit branch can reuse the same depth.
 
 ---
 
@@ -303,6 +327,9 @@ If file changes externally and user has undo history:
 2. Selection restored on undo
 3. Multiple cursors restored on undo
 4. desired_column restored on undo
+5. Reversed/overlapping selections and active index restored after cursor merging
+6. Clipped peer positions restored when Undo is invoked from another split
+7. New panes retain mapped live positions; closed panes remain closed
 
 ### Content Integrity
 
@@ -318,4 +345,4 @@ If file changes externally and user has undo history:
 - `src/model/document.rs` - Document and EditOperation definitions
 - `src/update/document.rs` - Undo/redo implementation
 - `tests/text_editing.rs` - Undo/redo test suite
-
+- `tests/undo_pane_state.rs` - Lossless per-pane history regressions

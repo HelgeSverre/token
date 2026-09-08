@@ -1,0 +1,17 @@
+name: soft-wrap
+width: 1100
+height: 720
+scale: 1.0
+theme: default-dark
+files:
+  - path: samples/soft-wrap.txt
+    soft_wrap: true
+    selections:
+      - anchor_line: 0
+        anchor_column: 10
+        head_line: 0
+        head_column: 150
+  - path: samples/soft-wrap.txt
+    soft_wrap: false
+    cursor_line: 0
+    cursor_column: 4

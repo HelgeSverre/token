@@ -1,8 +1,8 @@
 # Sprint Roadmap
 
-Implementation sequence across the current design docs: [overlay-surface](archived/overlay-surface.md), [editor-decorations](archived/editor-decorations.md), [find-enhancements](archived/find-enhancements.md), [autocomplete](feature/autocomplete.md), [lsp-integration](archived/lsp-integration.md), [soft-wrap](feature/soft-wrap.md), [context-menu](archived/context-menu.md), [settings-page](feature/settings-page.md).
+Implementation sequence across the current design docs: [overlay-surface](overlay-surface.md), [editor-decorations](editor-decorations.md), [find-enhancements](find-enhancements.md), [autocomplete](../feature/autocomplete.md), [lsp-integration](lsp-integration.md), [soft-wrap](soft-wrap.md), [context-menu](context-menu.md), [settings-page](settings-page.md).
 
-> **Created:** 2026-08-11 · **Updated:** 2026-09-02
+> **Created:** 2026-08-11 · **Updated:** 2026-09-06
 > **Status:** steps 1–11 and the whole August queue shipped in v0.6.0; current queue below.
 
 ## Shipped
@@ -22,7 +22,7 @@ Implementation sequence across the current design docs: [overlay-surface](archiv
 | 11 ✅ | LSP completion source into the menu | autocomplete P4 = lsp-integration P5 |
 | — ✅ | Problems panel (⌘4, scope switch, next/previous diagnostic) | queue item 1 |
 | — ✅ | Show Usages popup + multi-location go-to-definition | queue item 2 |
-| — ✅ | Context menu (editor, tabs, file tree) | queue item 3 / [context-menu](archived/context-menu.md) |
+| — ✅ | Context menu (editor, tabs, file tree) | queue item 3 / [context-menu](context-menu.md) |
 | — ✅ | Signature help, Rename Symbol, Show Code Actions, Format Document/Selection | lsp-integration "Phase 6+" |
 | — ✅ | CLI detach, single-instance handoff, `--wait`; per-instance automation and MCP instance targeting | v0.6.0 |
 | — ✅ | Find options/status chrome + selection scope | find-enhancements P5+P7 |
@@ -30,12 +30,26 @@ Implementation sequence across the current design docs: [overlay-surface](archiv
 
 Shipped alongside (not in the original sequence): status-bar overhaul (border, font size, centering, expiring flash messages); theme-picker swatches; JetBrains keybinds (⌘B/⇧⌘D/⌘[/⌘]) + ⌘-click + mouse back/forward; Toggle LSP + Language Servers picker modal; Reveal in File Explorer; ZonePlan hover layouting; decoration-preserving cursor fast path; live LSP stress-testing against rust-analyzer / sema / phpantom / laravel-lsp (upstream bugs filed/found: sema#151 cross-file definitions; phpantom 0.9.0 builtin stubs unresolved — repro ready, issue not yet filed).
 
+## Implemented, unreleased
+
+**Soft wrap** ([archived plan](soft-wrap.md)) — all eight phases complete;
+the shared mapping now also supports the implemented multi-line ghost projection.
+
+**Settings v1** ([archived plan](settings-page.md)) — preserving saves,
+searchable preset controls and the LSP section are implemented and verified,
+including isolated macOS native keyboard/persistence checks. The keymap tab is
+separate future work; Windows/Linux GUI and physical-pointer checks remain.
+
 ## Current queue (in order)
 
-1. **Soft wrap** ([soft-wrap.md](feature/soft-wrap.md)) — the XL item; unblocks multi-line ghost text.
-2. **Inline completion maturity** — autocomplete P3 (more transports, recency-ring context, partial accept, LRU cache). P2 (ghost text + llama.cpp `/infill`) shipped 2026-09-03; see [HANDOFF.md](../HANDOFF.md) for the gaps it left.
-3. **Settings page** ([settings-page.md](feature/settings-page.md)) — `keep_unknown` config merge is its shippable Phase 1.
-4. LSP workspace-symbols → Search Everywhere Symbols tab; usages panel (popup shipped).
+1. **Inline completion Phase 5+** — [autocomplete](../feature/autocomplete.md#phase-5-future): complete the remaining native IME/platform verification, then edit prediction, retrieval/provider and completion work. Multi-row/mid-line ghost projection has automated geometry/lifecycle/pixel coverage, isolated macOS keyboard/pointer/resize checks and release-stage profiling recorded in the audit. Phase 3's opt-in idle recency context, raw FIM formats/inference, partial acceptance, alternative cycling, bounded LRU reuse, conservative post-cache filters and cancelable transports are implemented. Recency-stage profiling identified the implemented token-index optimization. Live model/server validation and the full native language/platform matrix remain unverified.
+2. **Settings Keymap Tab** ([follow-up plan](../future/settings-keymap.md)) — merged binding list, conflict detection, chord capture/rebinding, override persistence and base-keymap choice remain future work.
+3. LSP workspace-symbols → Search Everywhere Symbols tab; usages panel (popup shipped).
+
+The [refactoring audit](../dev/refactoring-audit-2026-09-06.md) tracks the parallel
+consolidation/performance work and remaining file-effect boundary. Completed
+damage tracking and palette history plans are in the [documentation index](../README.md#completed-features);
+deferred history ideas remain in [command-history follow-ups](../future/command-history-followups.md).
 
 ## Known debt
 

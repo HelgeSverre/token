@@ -307,6 +307,12 @@ Scroll wheel: no scroll behavior needed for V1 (menus fit without scrolling); th
 
 ## Shortcut Hint Integration
 
+**2026-09-06 implementation update:** static command-registry hint strings have
+been removed. The runtime and menu builders share the active `UiState::keymap`;
+builders resolve command hints using the underlying target's conditions.
+Palette rendering uses the same resolver, and platform keycap text is derived
+from the actual binding. Earlier implementation notes below are historical.
+
 Unchanged in shape from the original spec: a `ShortcutHintProvider<'a> { keymap: &'a Keymap }` with `hint_for(command: Command) -> Option<String>`, built in the same place menus are built (see [Menu Building Location](#menu-building-location-unchanged) below), feeding `MenuItem.shortcut_hint`. The only change from the original doc: the hint string is no longer painted as raw text — it's converted to keycap chips via `overlay_surface::binding_chips(&hint)` at spec-build time (the same function the command palette already uses for its own keycap accessories), and the existing **>4-chip → `DimText` fallback** rule (Visual Language > Keycaps) applies unmodified. `format_keystroke`/`key_to_string` (or equivalent) is whatever the palette's existing hint-formatting path already uses — this doc does not re-specify it, only points at reuse.
 
 ### Menu Building Location (unchanged)

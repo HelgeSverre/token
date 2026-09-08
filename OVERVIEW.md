@@ -4,6 +4,13 @@ Quick reference for navigating the codebase. Press F7 in debug builds to dump ap
 
 ## Architecture: Elm Pattern
 
+`AppModel::new(width, height, scale)` creates an empty model with in-memory
+defaults; `AppModel::with_document` accepts already prepared text. Neither reads
+configuration, histories or file paths. Runtime application preparation loads
+configuration/history and routes startup files through the same file preparation
+and message-based tab installation used by later opens. Initial syntax/LSP work
+is dispatched after the startup session is prepared.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                     EVENT LOOP (src/runtime/app.rs)                      │
@@ -28,7 +35,6 @@ Quick reference for navigating the codebase. Press F7 in debug builds to dump ap
 │  Msg::Syntax(SyntaxMsg)     - Tree-sitter syntax highlighting           │
 │  Msg::Csv(CsvMsg)           - CSV viewer/editor operations              │
 │  Msg::Workspace(WorkspaceMsg) - File tree, sidebar operations           │
-│  Msg::TextEdit(...)         - Unified text editing (editable system)    │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼

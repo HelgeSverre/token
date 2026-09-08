@@ -158,6 +158,10 @@ profile-memory: sample-large
     @echo "Generated: dhat-heap.json"
     @echo "Open https://nnethercote.github.io/dh_view/dh_view.html to inspect it"
 
+[group('profile')]
+profile-render *args:
+    cargo run --release --bin profile_render -- {{args}}
+
 [group('bench')]
 bench:
     cargo bench
@@ -179,8 +183,21 @@ bench-loop:
     cargo bench --bench main_loop
 
 [group('bench')]
+bench-completion *args:
+    cargo bench --bench completion -- {{args}}
+
+# Warm production-path timings; accepts find, sample, or sample-find.
+[group('profile')]
+profile-workloads *args:
+    cargo bench --bench editor_workloads -- {{args}}
+
+[group('bench')]
 bench-search:
     cargo bench --bench search
+
+[group('bench')]
+bench-wrap:
+    cargo bench --bench wrap
 
 [group('bench')]
 bench-layout:

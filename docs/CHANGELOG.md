@@ -19,10 +19,10 @@ All notable changes to rust-editor are documented in this file.
 
 ### Settings design correction
 
-- Preserve the dedicated Settings page with category navigation, spacious form
-  rows and responsive controls. Regression tests protect the page layout and
-  control hit targets; the Theme picker action now shares its painted button
-  geometry with pointer handling. Settings must not be replaced by a palette UI.
+- Restored the separate Settings page: category navigation, spacious preference
+  rows, descriptions beneath labels, right-aligned controls and boolean switches.
+  Small windows use compact categories. The command-palette-style replacement
+  is removed; keybinding controls live in the page's Keymap category.
 
 ### Performance
 
@@ -31,6 +31,60 @@ All notable changes to rust-editor are documented in this file.
   previews fall back to navigable file/line entries after 250 ms. Results retain
   unsaved-buffer previews, deduplicate identical locations before the 200-row
   limit, and discard previews from superseded queries.
+
+- Forward edit batches index pristine offsets once per mapped position set,
+  replacing per-cursor scans through every edit with binary searches. Typing,
+  deletion, duplication, completion and peer-pane selections share this mapper;
+  duplication records each copy's final start instead of repeatedly scanning
+  later edits. Insertion affinity, replacement clipping and exact undo snapshots
+  are unchanged. Selection-only Find keeps its distinct boundary behavior.
+
+- Undo/Redo skips per-edit cursor mapping for panes restored from exact history
+  snapshots. Newly opened panes and selection-only Find scopes still follow the
+  edits. Position capture now uses one filtered path shared with ordinary edits.
+  Release probes cover deletion, selection/line duplication and their separate
+  Undo/Redo stages at up to 1,000 cursors in one or two panes.
+
+- Completion benchmarks now cover multi-row ghost arrival, cycling, blink,
+  type-through, width reflow and on-screen CPU rendering. Fixtures assert that
+  previews remain projected and visible after viewport initialization; source
+  rewrapping is measured separately from ordinary projection updates.
+
+- Idle completion-context deduplication indexes each captured snippet once and
+  compares retained token ranges, eliminating repeated token-tree construction
+  for every pair. The exact similarity rule, recency order and capture limits
+  are unchanged. Token indexes stay runtime-local; request/cache payloads remain
+  text only. Completion benchmarks now cover idle fill/refresh, ordinary
+  observation and attachment at 8- and 32-snippet sizes.
+
+- Inline suggestions reuse normalized results from a worker-local LRU cache,
+  bounded to 256 entries and 8 MiB of retained source/result payload. Matching
+  context can replay after backspace/retype or return a compatible alternative's
+  remainder after typing/acceptance. Document, file, language, provider settings,
+  prefix and suffix are checked; cached replies use the current request snapshot.
+  Explicit requests still fetch a fresh result. Errors and empty results are not
+  cached, and no cache data is written to disk.
+
+- Find display scans for documents of at least 256 KiB run on a coalescing
+  background worker. Pending searches show “Searching…” and hide stale marks;
+  replies are checked against the document, buffer revision, query and scope.
+  Explicit navigation and replacement retain a fresh synchronous fallback when
+  current results are not ready.
+
+- Range decorations reuse visible-row geometry and lazily prepared text across
+  highlights and diagnostics, visiting only intersecting wrapped rows. Tint and
+  stroke order is unchanged. The existing text-decoration timing stage now also
+  includes the range-decoration pass.
+
+- Shared edit transactions skip old-position mapping for a pane whose carets
+  already have explicit final offsets. Typing and completion avoid mapping those
+  positions only to overwrite them. Paste distribution checks allocate no line
+  vector for one cursor and bound it by cursor count for multiple cursors.
+
+- Find computes overview lines only when needed, walking adjacent matches without
+  repeated whole-rope position lookups. Scrollbar marks from Find and diagnostics
+  share a per-pane pixel-row cache across full and caret-only redraws, refreshed
+  when search inputs, document content, diagnostics, wrapping or track size change.
 
 ### Changed
 
@@ -52,9 +106,16 @@ All notable changes to rust-editor are documented in this file.
   independently of server response order. This protocol foundation does not yet
   enable the Search Everywhere Symbols tab on its own.
 
-- Rust integration callers must send messages through `update(model, Msg)`;
-  individual message handlers and internal LSP/syntax scheduling exports are no
-  longer public. Runtime/view helpers with existing callers remain available.
+- Startup files use the same preparation and tab installation as later opens:
+  images get image tabs, binaries get placeholders, and duplicate/symlink paths
+  reuse one document. Successful tabs keep CLI order; failed paths remain visible
+  in the status message. CLI cursor positions clamp to the first successful file.
+  Workspace startup also records the workspace with recent files; recent entries
+  reuse prepared document identities without another filesystem lookup.
+
+- Model construction no longer reads configuration, histories or file paths.
+  Rust callers use `AppModel::new(width, height, scale)` for an empty model or
+  `with_document` for prepared text. Runtime startup owns disk preparation.
 
 - Removed the unused `TextEditMsg`/`EditContext` routing API and `RopeBuffer`
   wrapper. Document, modal and CSV input continue through their existing message
@@ -64,10 +125,36 @@ All notable changes to rust-editor are documented in this file.
   types. Duplicate definitions were removed while preserving selection direction,
   half-open ranges, Unicode text extraction and desired-column behavior.
 
+- Dropdown settings now live under `completion.menu`: automatic opening,
+  minimum candidate word length and local-word policy. Turning automatic menus
+  off still allows Ctrl+Space, manual path continuation, signature help and
+  configured inline suggestions. The existing `completion.enabled` master switch
+  is unchanged. Legacy `completion.words` loads compatibly and is migrated on
+  save; explicit nested values win and unknown settings remain preserved.
+
+- Completion documentation scrolls independently from the suggestion list,
+  including long signatures and code examples. The card shows its row range;
+  its footer or F1 expands/collapses it, and Alt+PageUp/PageDown scrolls a page.
+  Cards wrap into available side space without covering the menu. Selection
+  changes reset the view; late local-path results preserve an unchanged server
+  item's position. Wheel events use current hit-test geometry after resizing.
+
 - Completion, hover and signature documentation use the preview's Markdown
   parser for nested formatting, matching code fences, escaped text, reference
   links, lists, quotes and tables. Code examples retain literal links and markup;
   cards remain native text with no HTML execution or remote resource loading.
+
+- Context-aware file-path suggestions use the existing completion dropdown and
+  Undo transaction, alongside language-server results. Relative paths resolve
+  from the current file or workspace; directories continue into their children.
+  Markdown links encode spaces, Unicode filenames retain exact prefix matching,
+  and duplicate local/server insertions are shown once. Directory reads use a
+  bounded, replaceable worker separate from ordered saves; stale replies cannot
+  reopen a dismissed menu or edit a different document or pane.
+
+- Find and path completion share the latest-request worker lifecycle, including
+  cancellation, non-blocking shutdown and panic-to-failure replies. Find's
+  synchronous fallback and mid-scan interruption remain separate follow-ups.
 
 - Performance documentation is consolidated under `docs/benchmark/`, with a
   report index, the preserved August baseline and a fresh September working-tree
@@ -76,6 +163,179 @@ All notable changes to rust-editor are documented in this file.
   the guide now uses repository recipes and documents comparison limits.
   A separately labeled completion-keystroke refresh covers the later working
   tree without overwriting the broader snapshot or claiming a controlled speedup.
+
+- Undo and Redo restore each existing pane's exact selections, cursor order,
+  active cursor and desired columns, including positions clipped by deletions
+  and overlapping selections merged while typing. History is tied to editor
+  identity rather than whichever split invokes Undo. Newly opened panes keep
+  mapped live positions; closed panes are not recreated.
+
+- Inline suggestions occupy real visual rows, including wrapped continuations,
+  and shift existing text after the cursor instead of painting over it. Explicit
+  requests can preview mid-line insertions; automatic requests retain the
+  configured end-of-line gate. Rendering, mouse placement, IME anchors and
+  scrolling share the same projection. Ghost clicks map to the insertion point;
+  source selections and diagnostics do not include the speculative text.
+  Compatible type-through keeps the inline suggestion instead of opening a
+  competing automatic dropdown. Escape and navigation remove the projection;
+  acceptance remains an undoable document edit.
+
+- Inline providers can opt into idle recency context from open text buffers.
+  File switches, saves and large cursor jumps queue bounded snippets; the ring
+  updates after 750 ms of editor inactivity and removes near-duplicates by token
+  similarity. llama.cpp receives native extra context; other transports receive
+  commented snippets for supported languages. Context is disabled by default,
+  stays in memory, and participates in result-cache identity and memory bounds.
+  Provider/workspace changes clear the ring; closed and renamed sources are evicted.
+
+- Inline providers can opt into raw FIM prompts with `prompt_format`: Qwen,
+  StarCoder, CodeLlama, DeepSeek, Codestral or Mellum, plus conservative model-name
+  inference. Ollama bypasses its template in raw mode; OpenAI-compatible requests
+  send the rendered prompt without a native suffix field. Native behavior remains
+  the default. Prompt construction and leaked-token cleanup share vocabulary data,
+  including DeepSeek's Unicode tokens. Unsupported combinations fail explicitly.
+
+- Inline suggestions apply syntax-aware bracket sanity and indentation filters
+  after cache lookup. Recognized strings/comments are preserved; ambiguous
+  parser recovery leaves candidates unchanged. Rust, Go, JavaScript, C and C++
+  indentation follows the document's tab/space tendency, retaining visual columns.
+  Other languages keep their indentation unchanged. Analysis uses a bounded,
+  local-only snapshot and a shared cooperative work budget, not extra HTTP context.
+  Partial cache replay matches the normalized text actually shown to the user.
+  Empty/rejected refreshes remove an older cached answer at the same context.
+
+- Completion rows distinguish methods (`M`) from functions (`f`) and modules
+  (`m`), preserving the language server's kind. Sources and rendering now share
+  one completion-kind type instead of mirrored enums and a conversion table.
+
+- Inline suggestions retain and cycle multiple provider results. OpenAI-compatible
+  providers accept `n: 1..8` (default 1); unsupported transports reject `n > 1`.
+  Alt+]/Alt+[ cycle compatible alternatives without editing or making a request.
+  Empty/duplicate results are omitted, and already typed or accepted text is
+  preserved when cycling. Ghost text shows the compatible choice position/count.
+  macOS Option shortcuts try the typed character first, then the layout's
+  unmodified key; unbound character input keeps its composed text. Chord state
+  advances once even when the event has both interpretations.
+
+- Archived implemented Soft Wrap, Damage Tracking, Command Palette and Settings
+  v1 plans, with updated documentation links. Deferred work stays in active
+  follow-ups; the incomplete autocomplete plan and temporary handoff remain active.
+  Clarified the older, partially implemented Line Operations archive and linked
+  its unfinished join-line and whitespace commands from the active feature index.
+
+- Inline suggestions support OpenAI-compatible native-suffix completions and
+  Mistral FIM through the existing cancelable HTTP/TLS worker. Optional bearer
+  credentials are referenced by environment-variable name (required for Mistral),
+  never stored as resolved values in editor configuration. Authenticated remote
+  endpoints require HTTPS; redirects remain disabled.
+
+- Settings now includes LSP master/per-server switches, read-only command
+  overrides with their YAML keys, and live server states. Switches share the
+  existing configuration/lifecycle effects; unchanged choices do not save.
+  Process-state updates refresh an open Settings or Language Servers modal
+  without changing the query or selection.
+  Archived the completed Settings v1 plan; the unfinished keymap tab is preserved
+  in a separate active follow-up. Shared overlay rows keep a gap between their
+  text and right-hand accessories.
+
+- Added searchable Settings (`Cmd+,` / “Open Settings”) on the shared modal
+  surface. Preset chips support keyboard cycling and direct clicks, save changes
+  immediately, and leave hand-written off-preset values untouched until a choice
+  is made. Theme selection opens the existing picker. Cursor blink “Off” keeps a
+  steady caret without a zero-delay event-loop wake cycle.
+  Sectioned overlays retain their first heading at the top; narrow footers fit
+  navigation hints and hide secondary text instead of overlapping it.
+
+- Find replacements now share ordinary editing's undo transaction and position
+  mapping. Replace All is one undo step, keeps split-pane carets aligned and
+  places the primary caret at the actual first replacement, including multiline
+  Unicode text. Selection-only bounds track edits and undo/redo, and
+  Replace-and-Find no longer skips adjacent matches. Identical replacements
+  preserve dirty state and redo history.
+
+- Character/word deletion, cut, line deletion, duplication and indentation now
+  use the shared edit transaction. Overlapping removals delete text once; all
+  carets follow same-line and multiline edits, and no-op deletes add no undo
+  entry. Backspace/Delete join CRLF lines in one operation. Non-contiguous line
+  deletion retains the active caret, and duplication captures every source before
+  editing so one cursor cannot change another's copied text. Copy/cut preserve
+  per-selection clipboard order and report character counts rather than bytes.
+
+- Typing, newline insertion and paste share one multi-cursor edit planner. They
+  replace each selection, keep same-line sibling carets aligned, and apply a batch
+  as one undo step. Surround preserves peer positions inside the selected text
+  and places the accepting caret correctly after Unicode text. Paste character
+  counts now report characters rather than UTF-8 bytes.
+
+- Ordinary edits now map other split panes' cursors and selection endpoints from
+  the actual edit operations, sharing completion and undo/redo mapping. This
+  fixes multiline paste columns, newline joins, selection replacement and batch
+  edits leaving peer positions behind. No-op edits preserve peer navigation state.
+
+- Open documents now share a boundary-resolved file identity across tab reuse,
+  navigation, LSP diagnostics and Problems scope. Differently named symlinks no
+  longer lose current-file Problems, and lookups do not recanonicalize files.
+  Successful saves/reloads refresh identity; stale replies and path changes
+  cannot keep using aliases belonging to an old file.
+
+- Configuration directory preparation, default-keymap creation and log selection
+  now run on the ordered file worker, sharing the normal file-open request/reply
+  path. Delayed config-file opens retain their original split and respect newer
+  tab choices; closed groups and duplicate replies cannot reveal a directory.
+
+- New-tab file reads, validation, alias lookup and image decoding run on the
+  ordered background file worker. Delayed opens retain their requesting split;
+  navigation converts and clamps coordinates only after the destination loads.
+  Newer tab/cursor choices are not displaced by an older open reply. Reusing an
+  image or binary file in another split preserves its viewer/placeholder mode.
+  Split image views share immutable decoded pixels instead of copying them.
+- Native file-dialog selections open in their original group, even if focus
+  moves while the dialog is open. CLI/automation open acknowledgements wait for
+  tab installation; `--wait` still waits for those documents to close.
+- Workspace edits prepare closed text files in the background before applying
+  edits or acknowledging success. Changed/closed targets and load failures
+  reject the deferred operation; code-action follow-up commands wait for edits.
+
+- Archived the implemented damage-tracking and superseded command-palette plans,
+  retaining unfinished history ideas in a follow-up note. Documentation indexes
+  now separate implemented soft wrap and selection features from active work.
+
+- Save, Save As and explicit reload replies are tied to the initiating document.
+  Switching tabs cannot apply them to another buffer, and a stale reload cannot
+  replace intervening edits. Save As keeps the document selected when its dialog
+  opened and changes its path only after a successful write.
+- Save and Save As share an ordered background writer, preventing older writes
+  from overtaking newer ones within a window. Save completion and undo/redo use
+  the saved text snapshot, preserving edits made during a save and distinguishing
+  different undo branches at the same history depth. LSP save notifications carry
+  the actual saved text.
+  File-reply tracing excludes buffer contents.
+- Save/Save As reject image and binary placeholders instead of writing their
+  placeholder text buffer over the file. Text-backed CSV editing remains savable.
+
+- Configuration-opening actions share one runtime preparation command. Keyboard
+  and palette log actions now follow the same path; preparation failures appear
+  in the status bar. Log selection ignores backup files and directories and
+  reports when no log is available.
+- Opening keybindings or logs now opens/reuses a normal tab, preserving the
+  previously focused buffer and unsaved edits in an already-open resource.
+  Default keymap creation uses exclusive creation and never replaces an existing
+  file, including an empty keymap or a symlink to a custom keymap.
+
+- Palette and context-menu shortcut hints now come from the loaded keymap,
+  respecting rebindings, unbinding, conditions and shadowed sequences. Keycaps
+  support platform modifier symbols/text.
+- User keymaps accept space-separated chords such as `ctrl+k ctrl+c`. Editor
+  dispatch resolves each keystroke once, fixing lost non-global chord completions.
+  Manual keymap changes load when reopening Settings → Keymap or restarting;
+  automatic file watching is not implemented.
+
+- Document cursor movement now shares one internal target/selection-policy path
+  for arrows, words, line/document boundaries and paging. Existing shortcuts,
+  selection behavior and wrapped navigation are unchanged.
+- Rust integration callers must send messages through `update(model, Msg)`;
+  individual message handlers and internal LSP/syntax scheduling exports are no
+  longer public. Runtime/view helpers with existing callers remain available.
 
 ### Added
 
@@ -86,6 +346,41 @@ All notable changes to rust-editor are documented in this file.
   character keys, literal `plus`/`literal_space` aliases and F1–F24, with bounded
   keymap-file reads. Bindable names and the unassigned-command list derive from
   the command enum rather than another registry.
+
+- Settings has a Keymap category with searchable merged bindings, shared
+  shortcut chips, context-aware exact/prefix conflict warnings, and explicit
+  four-stroke capture/save/cancel. Captured shortcuts do not execute editor or
+  debug commands. Saves update the live keymap and persist OS-local overrides;
+  sibling contexts, foreign-platform entries and unknown YAML keys are preserved.
+  Stale, invalid, read-only and linked files are not overwritten. The optional
+  Common base changes only Command+P, Shift+Command+P and Command+D;
+  user overrides retain precedence. YAML comments/formatting are not retained.
+
+- Search Everywhere searches workspace symbols from running, capable language
+  servers. The Symbols tab (or `@` on an empty query) offers keyboard/mouse
+  navigation; All includes a capped symbol group. Queries are debounced and
+  cancelled on change, with stale/restarted-server replies rejected. Results
+  are deduplicated, capped, and opened through shared UTF-16-aware navigation;
+  loading, partial failure and result-limit states are visible.
+
+- TabbyML inline completions through `transport: tabby`, using its native segments
+  API and the shared cancellation, bounded-response, credential, filtering and
+  acceptance pipeline. Model selection and generation limits stay server-side.
+
+- **Durable Amp conversation archive**: the 171 conversations referenced by
+  the AI-assisted development write-up now live in the repository, with an
+  inventory, chronological index, and provenance notes. README and website
+  links now point to the archive instead of the retired Amp profile and thread
+  URLs. Superseded roadmap and refactoring documents have also moved under
+  `docs/archived/`.
+
+- Local inline completion statistics record one outcome per offered response:
+  accepted (including partial acceptance), dismissed, or fully typed through.
+  Only configured provider names and aggregate counts are stored; no source,
+  suggestion text, connection settings, or network telemetry. Counts are merged
+  on the background file worker. “Open Inline Completion Statistics” opens the
+  JSON file; `completion.inline.statistics` and the corresponding Settings
+  control can disable collection.
 
 - Find Usages opens persistent, file-grouped results in the Usages dock panel.
   Results stay available while navigating; Show Usages retains the transient
@@ -101,22 +396,29 @@ All notable changes to rust-editor are documented in this file.
   with an explanation. Other code fences retain syntax highlighting. See
   `samples/mermaid.md`, including diagram-local spacing for self-loop labels.
 
-- **Durable Amp conversation archive**: the 171 conversations referenced by
-  the AI-assisted development write-up now live in the repository, with an
-  inventory, chronological index, and provenance notes. README and website
-  links now point to the archive instead of the retired Amp profile and thread
-  URLs. Superseded roadmap and refactoring documents have also moved under
-  `docs/archived/`.
+- **Cancelable inline providers:** Ollama `/api/generate` joins llama.cpp
+  `/infill`, with model selection, configurable `keep_alive` (default `-1`),
+  and a clear error for models without suffix support. Both transports support
+  HTTPS with certificate validation. Superseding, dismissing, changing panes,
+  moving/selecting, disabling or reconfiguring the provider, losing focus, and
+  quitting cancel pending work. Replies are size-bounded and redirects are not
+  followed; canceled requests do not count toward failure backoff.
 
-- Settings now uses a spacious, Zed-inspired preferences form with category
-  navigation, descriptions beneath labels, right-aligned controls, and boolean
-  switches. Tab/Shift+Tab cycles categories; small windows use compact categories.
+- **Partial inline acceptance:** Cmd+Right (Ctrl+Right on Windows/Linux) accepts
+  the next leading word run while a suggestion is visible. “Accept Inline
+  Suggestion Line” accepts through the next newline and is available in the
+  palette, automation, and custom keybindings. Each portion is one undo step;
+  the remaining ghost text stays visible without another backend request.
+  Acceptance uses the active cursor and preserves other cursors and selections
+  in split panes. Full accept and dismiss are now palette-visible as well.
 
-- Searchable Settings modal (`Cmd+,` / `Ctrl+,` or “Open Settings” in the
-  command palette), with preset chips for appearance, editing, status bar,
-  completion, and language servers. Left/Right or a chip click applies and
-  saves a preset immediately; custom YAML values remain unchanged until selected.
-  Theme opens the existing picker. Server commands and live status are read-only.
+- **Per-pane soft wrap**: Alt+Z or “Toggle Soft Wrap” in the command palette
+  wraps at whitespace without changing document text. Rendering, selection,
+  mouse placement, caret anchors, arrow/page movement, and scrolling use the
+  shared visual-row mapping. Continuation rows have gutter markers; wrapped
+  panes disable horizontal scrolling. Layout updates reuse unaffected lines
+  after edits, including edits seen by another split. Automation reports
+  `soft_wrap` and `visual_row_count`; screenshot files accept `soft_wrap`.
 
 - **Inline suggestions (ghost text)** (autocomplete Phase 2): a
   `completion.inline` config block plus a `completion.providers` entry point
@@ -154,19 +456,58 @@ All notable changes to rust-editor are documented in this file.
   alive; eligible alternatives and existing precedence are preserved. The
   documented `sidebar_focused` keymap condition is now accepted by YAML parsing.
 
+- Typing a server-declared commit character accepts the selected LSP completion
+  and inserts the character in one Undo step, including auto-imports and snippet
+  caret placement. Punctuation remains visible during item resolution; later
+  typing, navigation, focus or file changes invalidate the pending acceptance.
+  Paste and multi-character keyboard text do not accept highlighted items.
+  Navigating the menu also withdraws an older Enter acceptance, and synchronous
+  resolve fallback preserves the final syntax-update revision.
+
+- LSP completion now retains auto-import and other `additionalTextEdits` sent
+  in the initial completion response, including when the server cannot resolve
+  items or a later resolve fails. Those edits apply with the primary completion
+  in the existing single-cursor transaction and undo step.
+
 - Context menus now highlight the row under the pointer and repaint immediately
   when it changes or the pointer leaves. Completion, code-action and reference
   popups share this hover state without changing keyboard selection. Separators
   remain unselectable.
 
-- Keep the selected setting visible in short windows, reflow categories before
-  they overlap the footer, and retain theme and command values in compact rows.
+- Multi-split render profiling now uses independent documents, cycles supplied
+  files correctly, activates CSV/TSV grid mode, and uses real syntax highlights
+  and mode-specific scrolling. Invalid input files fail setup instead of yielding
+  misleading measurements. Run it with `just profile-render`.
 
-- Configuration saves preserve unknown YAML keys without restoring removed known
-  settings. Invalid or unreadable existing files remain untouched; YAML comments
-  and formatting are not retained.
-- The cursor blink “Off” preset keeps the caret visible without spinning the
-  blink timer.
+- Dropdown completion no longer mixes buffer words or generic snippets into
+  member access (`.`, `::`, `->`). Local suggestions require a matching prefix;
+  code fallback excludes syntax-highlighted comments, strings and keywords,
+  ignores numbers/symbols, and prefers nearby identifiers. Empty local results
+  no longer prevent language-server requests or intercept editing keys. Server
+  relevance and preferred selection are retained, and method parameters/return
+  metadata are displayed when supplied by the server.
+
+- Completion now places every same-line cursor correctly and keeps split-pane
+  cursors and selections aligned. Overlapping word prefixes complete once.
+  LSP boundary inserts no longer get swallowed by the primary completion;
+  snippet caret placement is retained through redo. Planned edits preserve
+  selection direction, and undo/redo transform live positions in peer panes.
+
+- Cursor movement no longer copies undo/redo history. Find navigation, status,
+  highlights and overview marks share revision-checked search results; visible
+  highlights are filtered before position conversion. Wrapped rendering copies
+  only the current visual segment, avoiding repeated whole-line allocations.
+- Resize and font changes now size split-pane viewports from their actual group
+  rectangles. Configuration save failures are reported in the status bar.
+
+- Inline suggestions now show a status-bar progress glyph while a provider
+  request is running. Explicit requests obey the same paint-time tail limit
+  as automatic requests, hidden suggestions cannot intercept Tab, and debug
+  builds render ghost text on full redraws. Superseded replies cannot clear
+  a newer request's progress or replace its suggestion.
+- Configuration saves preserve unknown YAML keys, including nested keys,
+  without restoring deliberately removed known settings. Invalid or unreadable
+  existing files are left untouched. YAML comments and formatting are not retained.
 
 ## v0.6.0 - 2026-09-02
 

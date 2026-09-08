@@ -2,14 +2,70 @@
 
 A pluggable completion system with two rendering surfaces — a popup menu at the cursor and ghost-text inline suggestions — fed by swappable providers: buffer words and snippets first, LSP when it lands, and LLM fill-in-the-middle backends (local or remote) behind one backend abstraction.
 
-> **Status:** 🚧 In Progress — Phase 1 (menu: words + snippets), Phase 4 (LSP source), and Phase 2 (inline ghost text + llama.cpp `/infill`) shipped; Phase 3 (inline maturity: more transports, context ring, partial accept, cache) and Phase 5+ not started.
+> **Status:** 🚧 In Progress — Phase 1 (menu: words + snippets), Phase 4 (LSP source), and Phase 2 (inline ghost text + llama.cpp `/infill`) shipped. Phase 3 now includes partial acceptance, cancellation, the provider trait, Ollama, OpenAI-compatible native-suffix completions, Mistral FIM, alternative cycling, bounded LRU reuse, conservative syntax/indentation filters, explicit raw FIM formats/inference and opt-in idle recency context (2026-09-07). Phase 5 multi-row/mid-line projection is implemented, with isolated macOS keyboard/pointer/resize checks and release profiling recorded; IME/platform verification and the rest of Phase 5+ remain open. Fixture tests do not prove live model/server compatibility.
 > **Priority:** P2 (Important)
 > **Effort:** XL (phased — each phase ships independently)
 > **Created:** 2026-08-11
-> **Updated:** 2026-09-03
+> **Updated:** 2026-09-07
 > **Milestone:** 4 - Hard Problems
 
 ---
+
+## Dropdown context policy — implemented 2026-09-06
+
+The `build.rs` screenshot's `ar_flag`, `archiver`, `asm_flag`, `cargo_*` and
+`ccbin` entries are actual `cc::Build` methods (verified against locked cc 1.2.67).
+Their bare names and alphabetical ordering looked arbitrary. Separately, local
+buffer-word/snippet fallback really could pollute member completion, and an
+empty local match set prevented the LSP request altogether.
+
+The current implementation supersedes the original Phase 1 ranking sketch below:
+
+- Code member access is LSP-only, including multiline chains. An empty query does not
+  dump every buffer word or generic snippet into the popup.
+- Local candidates require a case-insensitive ASCII prefix. Plain text/Markdown
+  retain word suggestions; code waits for fresh syntax highlights, excludes
+  comments, strings and non-identifier captures, and accepts uncolored Unicode
+  identifier-shaped words (Rust does not color ordinary local variables).
+  This is conservative fallback, **not** lexical-scope or type inference.
+- Nearby lines win local word ties. Filtering precedes the 500-word cap.
+- LSP `sortText` leads server ordering; `preselect` chooses the initial row,
+  without overriding deliberate navigation. Structured `labelDetails` displays
+  parameters and return/owner metadata without changing insertion or matching.
+  A full legacy signature is retained when structured data contains only an owner.
+  See the [LSP completion contract](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion).
+- A completion session can wait invisibly for LSP or syntax. Only visible rows
+  claim navigation/accept keys, appear in automation snapshots, or suppress inline
+  suggestions. Escape cancels the pending session. Parse completion refreshes local
+  candidates without postponing the LSP debounce or reviving dismissed sessions.
+- Syntax remains the shared code/literal classifier; the language server remains
+  responsible for receiver types and scope. No language-specific method whitelist
+  or second lexer was introduced. Word shape uses Unicode XID properties through
+  [unicode-ident](https://docs.rs/unicode-ident/1.0.22/unicode_ident/).
+
+Verification covers chained member access, prefix noise, comment/string exclusion,
+stale syntax/caret replies, deferred local results, server preference vs navigation,
+metadata conversion/render rows, and hidden-session input/inline behavior. Runtime
+tests use the existing fake server; the live rust-analyzer GUI check remains manual.
+`just bench-completion` measures response conversion, LSP filtering, typing with
+carried items, and fresh syntax-filtered fallback independently of parser setup.
+
+Optimized local CPU measurements (2026-09-06, 100 samples, allocation profiler
+enabled; medians, not application frame times):
+
+| Workload | Median |
+| --- | ---: |
+| Convert 1,000 server items | 971.8 µs |
+| Filter/sort 1,000 LSP items | 79.62 µs |
+| Type with 1,000 carried LSP items | 103.7 µs |
+| Collect/filter 500 code words from fresh syntax | 310.7 µs |
+
+The word-fallback fixture has 2,000 declaration/comment lines and asserts that
+comment words are excluded. The typing fixture uses a 5,000-line document with
+syntax pending. Debouncing, language-server round trips, parsing and rendering
+are outside these measured operations. No before/after speedup is claimed.
+Final suite: 2,153 passed, 7 skipped; 6 ignored doctests; strict all-target,
+all-feature Clippy and formatting checks passed.
 
 ## Overview
 
@@ -128,7 +184,7 @@ Reference latencies: JetBrains' fully-local FLCC (100M params, ONNX INT8) ≈ 75
 | **Ollama** | `POST /api/generate` with `suffix` | ❌ (inline into prompt) | `suffix` support is per-model (template must reference `.Suffix` — base tags yes, instruct mostly no); `keep_alive: -1` mandatory (cold load is seconds). Its OpenAI-compat `/v1/completions` also honors `suffix`. |
 | **OpenAI-compatible** | `POST /v1/completions` with `suffix` | ❌ | Covers vLLM, DeepSeek `/beta`, and most self-hosted gateways. |
 | **Mistral** | `POST /v1/fim/completions` | ❌ | `temperature` capped at 0.7; response is chat-completion-shaped. |
-| **TabbyML** | `POST /v1/completions` (segments) | ✅ declarations + snippet lists + server-side search | Does all prompt building and post-processing server-side; also defines the acceptance-telemetry schema worth copying (`view`/`select`/`dismiss` events keyed on completion id). Future adapter, not v1. |
+| **TabbyML** | `POST /v1/completions` (segments) | Server supports declarations + snippet lists + search; current adapter uses recency comment fallback | Native segments adapter implemented. Prompt building and generation limits stay server-side. Declaration/search attachment and event transmission are not enabled. |
 
 ---
 
@@ -305,7 +361,10 @@ Tab (context: inline_suggestion_visible)
   → immediately schedule a follow-up request (chained-accept flow, Zed/llama.vim pattern)
 ```
 
-Damage note: ghost text on the cursor row rides the existing `DamageArea::CursorLines` fast path only if the row count doesn't change; the `+N lines` collapse indicator keeps it single-row, so it does. The menu popup overlaps arbitrary rows → it forces `DamageArea::EditorArea` while visible (documented ceiling: no rectangle-granularity damage; acceptable because the popup is short-lived).
+Damage note: changing a ghost projection redraws the editor area because source
+rows can move. An unchanged projection participates in the existing cursor-line
+blink fast path, which repaints all visible rows belonging to that source line.
+The menu popup overlaps arbitrary rows and also requires editor-area damage.
 
 ### Rendering
 
@@ -318,9 +377,18 @@ Damage note: ghost text on the cursor row rides the existing `DamageArea::Cursor
 
 **Ghost text** (inside `editor_text.rs`'s per-line stage pipeline — the `VisibleTextLine` doc comment explicitly invites decorations to plug into these stages):
 
-- After `render_line_text_stage` for the cursor line, if `InlineSuggestionState` is current: take `text[consumed..]`, split at first `\n`. Draw the first segment at `column_to_pixel_x(cursor_visual_col)` in the theme's ghost color (a dimmed foreground — new theme key `syntax.ghost_text` with a computed fallback). If more lines exist, append a ` ⏎ +N lines` badge in the same dim color.
-- Mid-line case: v1 draws ghost text only when the rest of the line after the cursor is empty or whitespace/closers — matching the trigger gate, so the "shift the following text right" problem (Neovim's `inline` vs `overlay` distinction) never arises. When soft-wrap's visual-row infrastructure lands, both mid-line shifting and true multi-row ghost text become one follow-up feature.
-- Cursor stays a bar *before* the ghost text; ghost text never affects `TextViewportMap`, scrollbars, or hit-testing (it is paint-only — clicking "through" it targets the real buffer position).
+- The focused pane's derived `GhostText` reflows only the anchor logical line as
+  prefix + remaining suggestion + suffix, using the same segmentation as soft
+  wrap. `TextViewportMap` splices these rows into the existing document map.
+- `render_line_text_stage` draws source fragments and `render_ghost_text_stage`
+  draws inserted glyphs once in `editor.ghost_text`, with shared tab expansion.
+  Source syntax, selections, brackets and diagnostics exclude ghost fragments.
+- The cursor stays before the insertion; suffix glyphs at that same source
+  column appear after it. Hit testing, IME, scrollbars and reveal use the shared
+  projection. Ghost hits map to the source anchor. Navigation dismisses before
+  computing source movement; rectangle anchors are rebased on dismissal.
+- Explicit requests may insert mid-line. The automatic suffix gate is unchanged.
+  Compatible typing consumes the preview before automatic dropdown collection.
 
 ### Key handling
 
@@ -370,6 +438,20 @@ Not a trait for v1 (two hardcoded sources; a trait with one call site is specula
 Filtering and ranking (all client-side, uniform across sources): nucleo-matcher over `filter_text`, sort by (exact match, word-start match tier, score desc, source tier LSP > Snippets > Words, `sort_key`, label). Blink.cmp's frizbee and Zed's tiering agree this ordering is right; nucleo is already in-tree and is what Lapce ships.
 
 ### Inline providers
+
+**Implementation checkpoint (2026-09-06):** the sketch below describes the
+intended capability, not the current Rust signature. The real `InlineProvider`
+in `src/completion/provider.rs` returns a cancelable boxed future. Dropping it
+cancels local work; there is no separate cancel-token API. `InlineRequest` is
+provider-neutral, and `InlineJob` carries configuration separately. A non-HTTP
+heuristic test uses the same response/postprocess path. Feedback hooks await
+the cache/statistics work, where they gain a consumer.
+
+The runtime has one latest-value request slot and one focused-pane debounce.
+New requests, dismissal, edits, selection/pane/focus changes, provider changes
+and shutdown invalidate the session and cancel outstanding waits. Tests verify
+TCP disconnection, not just stale-response filtering. Whether a remote server
+also stops GPU generation on disconnect is server-dependent.
 
 ```rust
 pub enum InlineProviderId { Fim(String /*backend name from config*/), /* future: Heuristic, EditPrediction */ }
@@ -470,6 +552,7 @@ This section amends `docs/feature/lsp-integration.md` (its Phase 5 sketched a st
 
 ```yaml
 completion:
+  enabled: true              # master switch, including explicit and inline requests
   menu:
     enabled: true            # auto-trigger on typing; Ctrl+Space always works
     min_word_length: 3
@@ -481,18 +564,66 @@ completion:
     max_line_suffix: 8       # suppress auto-trigger with more chars right of cursor
   providers:
     local:
-      transport: llama_cpp   # llama_cpp | ollama | openai_compat | mistral
+      transport: llama_cpp   # llama_cpp | ollama | open_ai_compat | mistral_fim
       url: http://127.0.0.1:8012
-      prompt_format: infer
+      prompt_format: native  # raw formats are opt-in on Ollama/OpenAI-compatible
       max_tokens: 128
-      context: recency_ring
+      context:
+        strategy: recency_ring  # opt-in; omitted defaults to none
+        max_chunks: 8
+        chunk_lines: 64
     mistral:
-      transport: mistral
+      transport: mistral_fim
+      url: https://api.mistral.ai
       model: codestral-latest
       api_key_env: MISTRAL_API_KEY   # env var name — never the key itself in config
 ```
 
 Status bar: completion state joins the planned `SegmentId` set — a small spinner/glyph while an inline request is in flight, provider name on error (transient). No segment when disabled.
+
+The menu block above is implemented. `min_word_length` controls local candidate
+identifier length (default three, effective floor one), not the two-character
+auto-trigger prefix. Disabling automatic menus still allows Ctrl+Space and
+refinement of an open session; signature help and inline suggestions remain
+independent. Legacy `completion.words` migrates into `menu.words` on save, with
+explicit nested values taking precedence and unknown keys preserved.
+
+Currently supported Ollama configuration:
+
+```yaml
+completion:
+  enabled: true
+  inline:
+    enabled: true
+    provider: ollama
+  providers:
+    ollama:
+      transport: ollama
+      url: http://127.0.0.1:11434
+      model: your-fim-model
+      keep_alive: -1
+      max_tokens: 128
+      timeout_ms: 5000
+```
+
+In native mode, the model must already be installed and its template must support
+suffix insertion. Explicit raw formats instead bypass that template and serialize
+both prefix and suffix; see the [user guide](../user/config-editor.md#raw-fim-prompts).
+Token does not pull models or silently retry with prefix-only generation.
+`keep_alive` is seconds (`-1` keeps the model resident; `0` allows unloading).
+See Ollama's [generate API](https://docs.ollama.com/api/generate) and
+[residency documentation](https://docs.ollama.com/faq#how-do-i-keep-a-model-loaded-in-memory-or-make-it-unload-immediately).
+
+The implemented transports accept HTTP or HTTPS base URLs, including a reverse
+proxy base path. The shared reqwest/rustls client validates certificates, uses
+one total request deadline and limits response bodies to 1 MiB (also for
+chunked replies). URL credentials/query/fragment are rejected; redirects and
+automatic system/environment proxies are disabled to keep source context on the
+configured direct connection. Named credential references are implemented;
+raw-format implementation and verification status are tracked in Phase 3 below.
+TLS behavior follows the
+[reqwest client contract](https://docs.rs/reqwest/0.12.28/reqwest/struct.ClientBuilder.html);
+no hosted endpoint or native HTTPS UI flow has been exercised in this checkpoint.
 
 Automation/MCP: all commands (`TriggerMenu`, `AcceptInline`, …) are `is_simple()` `Command`s → invokable via `execute_action` for free; the automation snapshot gains `completion: { menu_visible, item_count, selected, inline_visible, inline_text }` so end-to-end tests can assert open → filter → accept without pixel scraping.
 
@@ -510,14 +641,14 @@ Automation/MCP: all commands (`TriggerMenu`, `AcceptInline`, …) are `is_simple
 - [x] Popup rendering: build the `OverlaySpec` for the overlay-surface Completion context; `EditorArea` damage while visible (for free — `view::mod::compute_effective_damage` already forces `Damage::Full` whenever `ui.cursor_overlay.is_some()`, generically for every cursor-anchored popup kind since overlay-p5). Rows carry real `match_indices` from `Matcher::fuzzy_indices` (`filter_and_sort`'s `filtered` now stores `(score, index, indices)`), so the typed substring is bolded, matching this section's spec. (A verifier fix-up: the version that first shipped this checkbox passed `match_indices: &[]`, ticked here without recording the gap.)
 - [x] Key routing: Ctrl+Space (`Command::TriggerCompletionMenu`, keymap-bindable) opens explicitly; arrows/Enter/Tab/Escape are claimed by the existing pre-keymap `handle_cursor_overlay_key` dispatch (overlay-p5's `overlay_routes_keys` mechanism) when `cursor_overlay.kind == Completion`, exactly as this doc's Key Handling section specified ("this document does not introduce a separate `completion_menu_visible` field ... `menu_visible` compiles to `overlay_routes_keys` + the active overlay context being Completion") — no new `Condition` variant needed. Tab falls through to `InsertTab` when the menu isn't open, resolving the standing keymap TODO for this one case.
 - [x] Accept via `EditOperation::Batch` at all cursors; single undo step; multi-byte-safe (tested with an emoji elsewhere on the line and rope char-offsets throughout, never byte offsets).
-- [~] Config block (menu), automation snapshot fields, palette entries. Automation (`EditorSnapshot.completion`) and a palette entry (`Trigger Completion`) are done. **Not done:** no `completion.menu.*` YAML config block — Phase 1 menu completion is always-on with the constants in `completion/sources.rs` (`MIN_WORD_LEN`, `WINDOW_LINES`, `MAX_WORDS`) hardcoded, not user-configurable. Add `src/config.rs` wiring when a real need for tuning surfaces.
+- [x] Config block (menu), automation snapshot fields, palette entries. `completion.menu` controls automatic opening, minimum candidate word length and local-word policy; legacy word settings migrate on save. Automation (`EditorSnapshot.completion`) and the palette's `Trigger Completion` entry are implemented. Scan-window and count caps stay internal bounds rather than additional configuration surface.
 - [x] **Gate:** covered by unit tests in `src/update/completion.rs` driving the exact same `update()` entry point automation uses (type → menu opens → filter → `MenuNext` wraps → `AcceptMenuItem` → `Undo`), including a multi-cursor case (one undo reverts both cursors) and a multi-byte case (emoji elsewhere on the line, char-offset correctness). Plus `runtime::app::tests::automation_flow_triggers_menu_and_reports_completion_snapshot` in `src/runtime/app.rs`, which pushes real `AutomationRequest`s (`SetCursor`, `ExecuteAction("TriggerCompletionMenu")`, `State`) through `automation_tx` → `process_automation_requests` — the same path the socket/MCP server feeds — and asserts on `EditorSnapshot.completion`.
 
 ### Phase 2: Inline suggestions — infrastructure + first FIM backend
 
 **Effort:** L — **shipped 2026-09-03.**
 
-- [x] `InlineSuggestionState` on `UiState` (`src/completion/inline.rs`); ghost-text paint stage `render_ghost_text_stage` inside `render_line_content_stages` so both the full and the cursor-lines-only paths draw it; first line + `⏎ +N lines` badge; theme key `editor.ghost_text` (derived when absent); paint-only.
+- [x] `InlineSuggestionState` on `UiState` (`src/completion/inline.rs`); ghost-text paint stage `render_ghost_text_stage` inside `render_line_content_stages` so both full and cursor-lines-only paths draw it; theme key `editor.ghost_text` (derived when absent). The initial paint-only first-line/`+N` badge implementation was superseded by Phase 5 projected rows on 2026-09-07.
 - [x] Completion worker thread (`src/runtime/inline_worker.rs`, syntax-worker pattern) + `inline_deadlines` map replayed from `about_to_wait` and folded into `next_wake`; newest request per document wins. **Deviation:** an in-flight std socket cannot be aborted, so supersession drops queued requests and the revision guard discards late replies — no cancel token until a slow remote transport needs one.
 - [x] `RequestSnapshot` guards (document, revision, cursor) on every arrival; trigger gates: end-of-line rule (`max_line_suffix`, closers ignored), menu suppression, plain-text mode, backend configured.
 - [x] Prefix consumption on typing; Backspace un-consumes; any other edit clears; cursor moves hide it (the state lingers until the next edit or Escape — paint and accept check `applies_to`).
@@ -527,15 +658,21 @@ Automation/MCP: all commands (`TriggerMenu`, `AcceptInline`, …) are `is_simple
 - [x] Config (`completion.inline`, `completion.providers`), error transients, pause after `MAX_CONSECUTIVE_FAILURES` until an explicit trigger. **Not done:** the in-flight status-bar glyph (`ui.inline_in_flight` exists; no segment draws it yet).
 - [x] **Gate (fake backend):** `runtime::app::tests::inline_suggestion_round_trips_through_the_worker_and_accepts` runs the real worker thread against an in-process `/infill` server: type → debounce → request → ghost text → type-through → Tab accept → one undo step; `..._backend_failure_is_a_transient` covers a dead server. **Gate (live llama-server):** run 2026-09-03 against `llama-server -hf Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q8_0` through the automation socket: ghost text ` + b` 500 ms after typing, type-through consumed it, Tab produced `a + b`, Undo restored the line in one step, and killing the server mid-request left the editor responsive with no modal. Not in CI (needs the model).
 
+**Phase 2 follow-up:** shared visibility guards cover explicit requests and Tab acceptance, the status bar draws request progress, superseded request IDs cannot overwrite current state, and debug full redraws paint ghost text. Automation reports `inline_in_flight`. Cancellation and the provider trait were added on 2026-09-06 with Ollama; the original std-only transport notes above are historical.
+
 ### Phase 3: Inline maturity
 
 **Effort:** M
 
-- [ ] Remaining transports: Ollama (+`keep_alive`, per-model suffix-capability error surfaced clearly), OpenAI-compatible, Mistral FIM. `PromptFormat` rendering for raw-prompt paths; `Infer` from model name.
-- [ ] RecencyRing context strategy (+ inline-as-comments fallback for transports without `input_extra`); idle-only ring updates.
-- [ ] Partial accept (Word/Line granularity — Zed's leading-run rule), alternative cycling when `n > 1` returned.
-- [ ] LRU completion cache with pre/post-cache filter split; postprocess filters 5–6.
-- [ ] Automation coverage: suggestion visible → partial accept → full accept assertions.
+- [x] Cancelable provider boundary and Ollama (`keep_alive`, clear suffix-capability errors), shared with llama.cpp over HTTP/TLS. One bounded latest-request slot; generation-tagged debounces; cancellation on supersession/dismissal/edit/pane/focus/config changes and shutdown.
+- [x] OpenAI-compatible native-suffix completions and Mistral FIM share the existing HTTP/TLS worker, cancellation, deadlines and response bounds. Credentials use an explicit `api_key_env` reference resolved in the worker, with no credential values in model/config serialization. Authenticated remote endpoints require HTTPS; redirects stay disabled. Local fixtures cover wire shapes, auth validation and worker acceptance. Hosted service/model compatibility has not been exercised with live credentials.
+- [x] Raw `PromptFormat` rendering and conservative `infer`: native remains the backward-compatible default; Qwen, StarCoder, CodeLlama, DeepSeek, Codestral and Mellum formats opt into raw Ollama/OpenAI-compatible requests. Canonical PSM/SPM layouts, tokenizer marker spaces, stop strings and leaked-token cleanup share one definition table. Raw mode is rejected for server-formatted llama.cpp/Mistral paths. Golden, HTTP, config, cache and worker acceptance/Undo tests pass, with the full suite and strict lint. This is not a silent fallback, arbitrary chat-model support or proof of live model compatibility.
+- [x] Opt-in `RecencyRing`: runtime queues open-buffer positions on activation/file switch, save and large cursor jumps, committing bounded snippets after 750 ms without cursor/document changes. Strict >0.9 token-set similarity evicts older duplicates; order is stable between idle updates, without retrieval/ranking. Provider/workspace changes clear the ring; close/path changes evict old sources. Native llama.cpp receives `input_extra`; other transports use commented prefixes, with explicit errors for unsupported comment languages. Raw FIM checks include extra context; active prefix/suffix remain separate. Context order/text participates in cache equality and payload accounting. Config, idle/lifecycle, bounds, wire, cache and worker acceptance/Undo tests cover the implementation. See the [user guide](../user/config-editor.md#extra-context-from-recently-visited-buffers) for limits and transmission scope; native GUI and live model quality remain unverified. [Release-stage profiling](../dev/refactoring-audit-2026-09-06.md#recency-release-profiling-and-token-index-consolidation--2026-09-07) measured and removed repeated token-set construction; retained indexes preserve exact deduplication decisions.
+- [x] Partial accept (Word/Line granularity — leading alphabetic/non-alphabetic run; line includes newline). Cmd+Right (Ctrl+Right off macOS) accepts a word run while ghost text is visible; `AcceptInlineLine` is palette/automation-invokable and user-bindable without a default shortcut. Every accepted portion is one undo batch; the remainder stays visible without another backend request. Acceptance now uses the active cursor and preserves other cursors and split-pane selection ranges.
+- [x] Alternative cycling when multiple results are returned. `open_ai_compat` accepts `n: 1..8` (default 1); unsupported transports reject larger counts. Worker filtering and bounded, deduplicated state preserve provider order. Alt+]/Alt+[ cycle only choices matching the already typed/accepted prefix, without editing or requesting; backspace can restore eligibility. Painting and automation share the compatible position/count. Named actions and tests cover cycling, partial/full acceptance, Unicode/CRLF, no-op/invisible guards and undo. An isolated native Norwegian-layout macOS check verified both shortcuts, selected-result Tab acceptance, undo and unbound composed text. Option lookup is logical-first with an unmodified-layout fallback and one chord-state transition. US-layout fallback is unit-tested; broader IME and other native platforms remain unverified. See the [verification audit](../dev/refactoring-audit-2026-09-06.md#inline-alternatives-and-option-key-dispatch--2026-09-06).
+- [x] Worker-local LRU completion cache: at most 256 entries and 8 MiB retained source/result payload, plus bounded metadata. Filters 1–4 run before storage. Exact-context hits and typed/accepted-prefix replay retain provider order, with full bounded prefix/suffix, document/file, language and provider configuration checks. Hashes are never sufficient proof of equality. Hits carry the current snapshot; errors/empty results are not cached. Explicit requests bypass reuse. Unit/worker tests cover Unicode, CRLF, sliding prefix windows, eviction, limits and invalidation; an isolated native backspace/retype check replayed after the backend closed and accepted/undid the result. This adds no cache setting or persistent data.
+- [x] Post-cache filters 5–6: registry-parser bracket sanity and conservative leading-whitespace normalization run on every serve. A bounded local-only document snapshot supplies context beyond the provider window, without entering HTTP requests or cache entries. Recognized literals/comments are opaque; quote/comment-bearing parser recovery, unsupported or oversized input and exhausted cooperative budgets preserve the original result. Tab/space majority inference preserves visual columns in Rust, Go, JavaScript, C and C++, skips tied styles, and leaves other languages' indentation untouched. Exact cache hits use fresh context; prefix replay matches the served, normalized text. This is not semantic validation or general formatting; native language/platform coverage remains incomplete.
+- [x] Automation coverage: fake-backend suggestion visible → named `AcceptInlineWord` → `AcceptInlineLine` → `AcceptInlineSuggestion`, asserting document text and remaining ghost text at each step. Additional tests cover UTF-8 runs, CRLF/blank lines, undo, stale replies, active multi-cursor acceptance, peer selections and conditional keybinding fallbacks.
 
 ### Phase 4: LSP menu source *(sequenced with lsp-integration.md Phases 1–2)*
 
@@ -543,17 +680,30 @@ Automation/MCP: all commands (`TriggerMenu`, `AcceptInline`, …) are `is_simple
 
 - [x] LSP source: request on trigger chars + debounce, `MenuItem` conversion (UTF-16 positions, kind map, sortText), `isIncomplete` re-request. Built in lsp-integration.md Phase 5 (`completion/lsp.rs`, `update/completion.rs`).
 - [x] `additionalTextEdits` → `MenuInsert::Lsp` (auto-import), resolve-before-accept, one undo step.
-- [x] Words demoted to `fallback` mode when LSP items present (`completion.words: fallback|enabled|disabled`); no dedup rule yet.
+- [x] Words demoted to `fallback` mode when LSP items present (`completion.menu.words: fallback|enabled|disabled`; legacy `completion.words` remains readable).
+- [x] `completion.menu` configuration: automatic opening independent of explicit requests and inline suggestions, configurable minimum candidate word length, canonical nested word policy and preserving-save migration. Context restrictions, server trigger behavior, manual paths and signature help retain their distinct roles.
 - [x] Lazy resolve for docs + documentation side-card (anchored to the menu panel's right edge, flips left).
+- [x] Native macOS rust-analyzer validation of the reported `cc::Build` chain (2026-09-06): typing `.` opened the member list, `comp` filtered to seven compiler-related methods, Tab accepted `compile`, and undo restored the prefix. Local parser/scanner names were absent. Selected signatures/docs were inspected. Methods now keep their `M` badge through a shared source/view kind type. This uses an isolated build-script fixture with the repository's `cc` version, not a modification to the user's file; other language/platform matrices remain open. Evidence and reproduction details are in the [audit](../dev/refactoring-audit-2026-09-06.md#real-rust-analyzer-dropdown-validation--2026-09-06).
 
 ### Phase 5+: Future
 
-- [ ] Multi-row ghost text + mid-line suggestions — after soft-wrap's `logical_to_visual` mapping exists.
+- [ ] Multi-row ghost text + mid-line suggestions — implemented on shared `TextViewportMap` geometry, with real-insertion oracle, lifecycle and blink-pixel tests plus an inspected headless screenshot. Isolated macOS keyboard/pointer/resize checks and release-stage profiling are now recorded; actual IME composition/candidate-window behavior and the remaining platform matrix are still unverified. See the [native/profiling audit](../dev/refactoring-audit-2026-09-06.md#ghost-native-checks-and-release-profiling--2026-09-07).
 - [ ] Edit prediction: anchor-based edit-list suggestion variant, deletion highlighting, diff popover, jump targets (the Zed model); candidate providers: Zeta-style rewrite models, Copilot NES-compatible backends.
 - [ ] Retrieval context strategy (BM25 over workspace, Tabby-style declaration extraction via tree-sitter or LSP).
-- [ ] TabbyML transport; supervised local llama-server child process (spawn/own like PTY).
-- [ ] Local acceptance stats (accept/dismiss counts per provider — Tabby's event shape, stored locally) to judge provider quality.
-- [ ] Path completion source; menu documentation panel richness; commit characters.
+- [x] TabbyML native segments transport, sharing the HTTP provider, credentials, cancellation, response limits, recency comment fallback and acceptance pipeline. No automatic startup or telemetry. Wire fixtures and worker acceptance/cancellation tests cover the adapter; live server/model quality is unverified. See [configuration and limits](../user/config-editor.md#tabbyml).
+- [ ] Supervised local llama-server child process (spawn/own like PTY).
+- [x] Local acceptance stats: one terminal outcome per offered response (accepted, dismissed, or fully typed through), attributed to its original configured provider name. Alternatives and partial accepts do not inflate totals. Versioned aggregate-only JSON is merged on the ordered file worker; a config/Settings opt-out and palette action expose the feature. Lifecycle, bounded storage, concurrent writers, failure recovery and queue-draining tests pass. No source, connection settings or network telemetry are collected. See [semantics and storage limits](../user/config-editor.md#local-completion-statistics); these are descriptive counts, not a controlled provider-quality score.
+- [x] Context-aware filesystem path source on the shared dropdown, alongside LSP results: bounded speculative directory reads, stale-request guards, Unicode/Markdown encoding, component replacement, directory continuation and multi-cursor Undo. Current syntax gates code-string reads. Supported forms and explicit limits are in [File path suggestions](../user/config-editor.md#file-path-suggestions); native platform verification remains separate. See the [path-source audit](../dev/refactoring-audit-2026-09-06.md#context-aware-path-completion--2026-09-07).
+- [x] Menu documentation panel richness — shared CommonMark/GFM-to-native-text
+  conversion now preserves nested styles, code examples, lists, quotes, tables,
+  escapes and reference-link labels (2026-09-07). This reuses the preview parser
+  and existing `StyledText`/card renderer, not a second Markdown grammar or an
+  HTML surface. The side card now has independent scrolling across code/prose,
+  a row-range footer, expansion via footer/F1 and Alt+PageUp/PageDown paging.
+  Measured layout is shared by painting and input; narrow cards do not cover
+  their menu. State, layout, input-routing and pixel regressions pass. Native
+  keyboard/pointer/IME verification remains part of the separate platform gate.
+- [x] Server/item commit characters: ordinary single-character keyboard input accepts the selected LSP item and types the character, preserving imports, single-cursor snippet placement and one-step Undo/Redo. Deferred resolution keeps the character visible and rejects stale/focus-changed replies. Paste/text payloads are not synthesized into acceptance keystrokes. The existing multi-cursor plain-text fallback is unchanged; native IME/platform verification remains a separate open gate above. See [user semantics](../user/config-editor.md#completion-dropdown) and the [acceptance audit](../dev/refactoring-audit-2026-09-06.md#commit-character-acceptance--2026-09-07).
 
 ---
 
@@ -618,7 +768,7 @@ A stub HTTP server (few dozen lines, `std::net`) speaking canned `/infill` and `
 | Key conflicts | input.rs branching / KeyContext conditions | conditions | Existing mechanism, user-rebindable, matches keymap TODO |
 | Menu debounce | timer / none for sync sources | none (sync); request-coalescing for async | Zed ships menu completion with no timer debounce; our sync sources are sub-ms |
 | Async runtime | tokio / std thread + mpsc worker | std thread | House pattern (syntax worker, PTY, planned LSP) |
-| Multi-line ghost text | build virtual rows now / first-line + `+N` badge | badge until soft-wrap | Virtual rows without `logical_to_visual` would fork the layout model; soft-wrap doc owns that seam |
+| Multi-line ghost text | shared projected rows / first-line + `+N` badge | shared projection (2026-09-07) | Uses soft-wrap segmentation and `TextViewportMap`; no independent paint-only row loop |
 
 ## Open Questions
 

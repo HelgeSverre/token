@@ -2,7 +2,7 @@
 
 Regex support, whole word matching, match count display, and visual highlighting.
 
-> **Status:** ✅ Shipped — engine, decorations, navigation (2026-08), then Phase 5 UI (status label, option legend, ⌥⌘ toggles) and Phase 7 selection scope (2026-09-03). Not done: mouse-clickable toggles and the `SearchResults` cache, both deliberately; archived 2026-09-03
+> **Status:** ✅ Shipped — engine, decorations, navigation (2026-08), then Phase 5 UI and Phase 7 selection scope (2026-09-03); archived 2026-09-03. A shared result cache was added on 2026-09-05 after production-path profiling; see [the refactoring report](../dev/refactoring-profile-2026-09-05.md). Historical phase notes below describe the original uncached implementation. Mouse-clickable toggles remain undone.
 > **Priority:** P1
 > **Effort:** M
 > **Created:** 2025-12-19
@@ -22,6 +22,17 @@ Regex support, whole word matching, match count display, and visual highlighting
 7. [References](#references)
 
 ---
+
+## Implementation follow-up — 2026-09-06
+
+Large cold display scans (at least 256 KiB) now use a coalescing background
+worker and report “Searching…” while hiding stale marks. Immutable request/result
+ownership and document, revision, rope, query, option and scope checks guard
+replies. Explicit navigation/replacement keeps a fresh synchronous fallback.
+Find replacements now share ordinary editing's undo transaction and split-pane
+position mapping; active selection scopes track edits and history traversal.
+See the [current audit](../dev/refactoring-audit-2026-09-06.md) for verification,
+profiling and limitations. The original phase checklists below remain historical.
 
 ## Overview
 

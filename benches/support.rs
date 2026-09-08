@@ -6,7 +6,6 @@ use token::model::editor::EditorState;
 use token::model::editor_area::EditorArea;
 use token::model::ui::UiState;
 use token::model::AppModel;
-use token::rendering::blend_pixel_u8;
 use token::theme::Theme;
 
 /// Create an AppModel with the specified number of lines
@@ -53,78 +52,63 @@ pub fn make_model(lines: usize) -> AppModel {
     }
 }
 
-/// Simplified renderer for benchmarking the render phase without actual GPU/windowing
+/// Headless production editor-area renderer. Includes layout and CPU drawing,
+/// excludes window scheduling, surface presentation and runtime effects.
 #[allow(dead_code)]
 pub struct BenchRenderer {
-    pub width: usize,
-    pub height: usize,
-    pub line_height: usize,
-    pub char_width: usize,
+    width: usize,
+    height: usize,
+    line_height: usize,
+    font: fontdue::Font,
+    glyph_cache: token::view::GlyphCache,
     buffer: Vec<u32>,
-    glyph: Vec<u8>,
 }
 
 #[allow(dead_code)]
 impl BenchRenderer {
     pub fn new(width: usize, height: usize, line_height: usize) -> Self {
-        let buffer = vec![0xFF1E1E2E; width * height];
-        let glyph = vec![128u8; 10 * 16]; // ~10 wide, 16 tall fake glyph
         Self {
             width,
             height,
             line_height,
-            char_width: 10,
-            buffer,
-            glyph,
+            font: fontdue::Font::from_bytes(
+                include_bytes!("../assets/JetBrainsMono.ttf") as &[u8],
+                fontdue::FontSettings::default(),
+            )
+            .expect("bundled benchmark font"),
+            glyph_cache: Default::default(),
+            buffer: vec![0; width * height],
         }
     }
 
-    /// Render a frame simulating the work done by the real Renderer
-    /// This exercises buffer clearing, visible line iteration, and glyph blending
-    pub fn render_frame(&mut self, model: &AppModel) {
-        let bg_color = 0xFF1E1E2E_u32;
-        self.buffer.fill(bg_color);
-
-        let doc = model.document();
-        let editor = model.editor();
-        let viewport = &editor.viewport;
-
-        let visible_lines = (self.height / self.line_height).min(50);
-        let chars_per_line = (self.width / self.char_width).min(180);
-        let fg_color = 0xFFCDD6F4_u32;
-        let glyph_width = 10;
-        let glyph_height = 16;
-
-        for line_offset in 0..visible_lines {
-            let line_idx = viewport.top_line + line_offset;
-            if line_idx >= doc.line_count() {
-                break;
-            }
-
-            let base_y = line_offset * self.line_height + 2;
-            if base_y + glyph_height > self.height {
-                continue;
-            }
-
-            for char_idx in 0..chars_per_line {
-                let base_x = 60 + char_idx * self.char_width; // 60px for gutter
-
-                for (gy, row) in self.glyph.chunks(glyph_width).enumerate() {
-                    for (gx, &alpha) in row.iter().enumerate() {
-                        if alpha > 0 {
-                            let px = base_x + gx;
-                            let py = base_y + gy;
-                            if px < self.width && py < self.height {
-                                let idx = py * self.width + px;
-                                self.buffer[idx] =
-                                    blend_pixel_u8(self.buffer[idx], fg_color, alpha);
-                            }
-                        }
-                    }
-                }
-            }
+    pub fn render_frame(&mut self, model: &mut AppModel) {
+        let font_size = 14.0;
+        let ascent = self.font.horizontal_line_metrics(font_size).unwrap().ascent;
+        model.line_height = self.line_height;
+        model.char_width = self.font.metrics('M', font_size).advance_width;
+        model.resize(self.width as u32, self.height as u32);
+        let mut frame = token::view::Frame::new(&mut self.buffer, self.width, self.height);
+        frame.clear(model.theme.editor.background.to_argb_u32());
+        let mut painter = token::view::TextPainter::new(
+            &self.font,
+            &mut self.glyph_cache,
+            font_size,
+            ascent,
+            model.char_width,
+            self.line_height,
+        );
+        let mut perf = token::perf::PerfStats::default();
+        for (&id, group) in &model.editor_area.groups {
+            token::view::Renderer::render_editor_group(
+                &mut frame,
+                &mut painter,
+                model,
+                id,
+                group.rect,
+                id == model.editor_area.focused_group_id,
+                &mut perf,
+            );
         }
-
         divan::black_box(&self.buffer);
     }
 }
