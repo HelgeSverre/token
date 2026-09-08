@@ -29,6 +29,11 @@ All notable changes to rust-editor are documented in this file.
 
 ### Performance
 
+- Settings and centered overlays skip backdrop blending behind opaque panel
+  interiors. Rounded edges and translucent overlays retain correct compositing.
+- Settings is always a solid page, preserving the theme's background RGB without
+  allowing editor content to show through a translucent overlay theme.
+
 - Modal backdrop dimming now reuses the clipped rectangle-blend primitive,
   removing repeated per-pixel clip-stack checks while preserving rendered colors.
 - Added Settings scrolling CPU probes for debug and optimized builds, with

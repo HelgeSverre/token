@@ -1647,6 +1647,52 @@ impl MenuItemKind {
     }
 }
 
+/// Dim the backdrop without blending pixels the following opaque panel fill
+/// will overwrite. Keep a conservative inset so rounded/antialiased edges
+/// still see the dimmed background. Translucent panels need the full backdrop.
+/// The caller must paint this panel under the same clip after this call.
+fn render_backdrop(
+    frame: &mut Frame,
+    panel: WidgetRect,
+    radius: usize,
+    panel_color: u32,
+    dim_alpha: u8,
+) {
+    if dim_alpha == 0 {
+        return;
+    }
+    if panel_color >> 24 != 255 {
+        return frame.dim(dim_alpha);
+    }
+
+    let (width, height) = (frame.width(), frame.height());
+    let x0 = panel.x.saturating_add(radius).min(width);
+    let y0 = panel.y.saturating_add(radius).min(height);
+    let x1 = panel
+        .x
+        .saturating_add(panel.w.saturating_sub(radius))
+        .min(width);
+    let y1 = panel
+        .y
+        .saturating_add(panel.h.saturating_sub(radius))
+        .min(height);
+    if x0 >= x1 || y0 >= y1 {
+        return frame.dim(dim_alpha);
+    }
+
+    // Four disjoint bands leave only the panel's guaranteed opaque interior
+    // untouched. The existing rectangle primitive applies the active clip.
+    let color = u32::from(dim_alpha) << 24;
+    for (x, y, w, h) in [
+        (0, 0, width, y0),
+        (0, y1, width, height - y1),
+        (0, y0, x0, y1 - y0),
+        (x1, y0, width - x1, y1 - y0),
+    ] {
+        frame.blend_rect_px(x, y, w, h, color);
+    }
+}
+
 /// Render an `Anchor::Centered` `OverlaySpec`: backdrop dim, shadow, panel,
 /// header, list rows (sections, match highlighting, accessories,
 /// truncation, scrollbar), footer.
@@ -1694,7 +1740,7 @@ pub fn render(
     };
 
     if let Anchor::Centered { dim_alpha, .. } = &spec.anchor {
-        frame.dim(*dim_alpha);
+        render_backdrop(frame, layout.panel, radius, colors.panel_bg, *dim_alpha);
     }
     frame.draw_shadow_rings(
         layout.panel.x,
@@ -3367,6 +3413,43 @@ fn draw_styled_run(
 mod tests {
     use super::*;
     use fontdue::Font;
+
+    #[test]
+    fn backdrop_culling_preserves_opaque_and_translucent_panel_compositing() {
+        let panel = WidgetRect {
+            x: 4,
+            y: 3,
+            w: 24,
+            h: 18,
+        };
+        for (color, clip) in [
+            (0xFF345678, None),
+            (0x80345678, None),
+            (0xFF345678, Some(Rect::new(2.0, 4.0, 17.0, 14.0))),
+        ] {
+            let initial: Vec<u32> = (0..32 * 24u32)
+                .map(|i| i.wrapping_mul(0x01234567))
+                .collect();
+            let mut actual = initial.clone();
+            let mut expected = initial;
+            for (buffer, optimized) in [(&mut actual, true), (&mut expected, false)] {
+                let mut frame = Frame::new(buffer, 32, 24);
+                let mut masks = RoundedRectMaskCache::new();
+                if let Some(clip) = clip {
+                    frame.push_clip(Rect::new(1.0, 1.0, 30.0, 22.0));
+                    frame.push_clip(clip);
+                }
+                if optimized {
+                    render_backdrop(&mut frame, panel, 3, color, 130);
+                } else {
+                    frame.dim(130);
+                }
+                frame.draw_shadow_rings(panel.x, panel.y, panel.w, panel.h, 3, 1.0, &mut masks);
+                frame.fill_rounded_rect(panel.x, panel.y, panel.w, panel.h, 3, color, &mut masks);
+            }
+            assert_eq!(actual, expected, "color={color:08x}, clip={clip:?}");
+        }
+    }
 
     #[test]
     fn documentation_viewport_does_not_cover_the_menu_in_a_narrow_window() {

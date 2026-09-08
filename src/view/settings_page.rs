@@ -404,8 +404,12 @@ pub(super) fn render(
 ) {
     let p = layout.panel;
     let pad = scaled(20.0, sf).min(p.w / 8);
-    frame.dim(130);
-    frame.fill_rounded_rect(p.x, p.y, p.w, p.h, scaled(8.0, sf), colors.panel_bg, masks);
+    let radius = scaled(8.0, sf);
+    // Settings is a solid preferences page, even when other themed overlays
+    // are translucent. Preserve the theme's RGB and only normalize opacity.
+    let panel_bg = colors.panel_bg | 0xFF00_0000;
+    render_backdrop(frame, p, radius, panel_bg, 130);
+    frame.fill_rounded_rect(p.x, p.y, p.w, p.h, radius, panel_bg, masks);
     frame.push_clip(Rect::new(p.x as f32, p.y as f32, p.w as f32, p.h as f32));
     let close = close_rect(&p, sf);
     text(
@@ -764,6 +768,51 @@ pub(super) fn render(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_page_is_opaque_even_with_a_translucent_overlay_theme() {
+        let font = fontdue::Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        let mut model = crate::model::AppModel::new(400, 500, 1.0);
+        let state = crate::settings::SettingsState::default();
+        for background in [0xFF123456, 0xFFFEDCBA] {
+            let mut reference = Vec::new();
+            for alpha in [255, 128, 0] {
+                model.theme.overlay.panel_background = crate::theme::Color::rgba(38, 40, 44, alpha);
+                crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                    let layout = super::super::layout(spec, 400, 500, 1.0);
+                    let mut pixels = vec![background; 400 * 500];
+                    let mut frame = Frame::new(&mut pixels, 400, 500);
+                    let mut cache = crate::view::GlyphCache::default();
+                    let mut painter = TextPainter::new(&font, &mut cache, 14.0, 11.0, 8.0, 18);
+                    render(
+                        &mut frame,
+                        &mut painter,
+                        &mut RoundedRectMaskCache::new(),
+                        &Palette::from_theme(&model.theme),
+                        spec,
+                        &layout,
+                        1.0,
+                        false,
+                    );
+                    if alpha == 255 {
+                        let p = layout.panel;
+                        assert_eq!(pixels[(p.y + p.h / 2) * 400 + p.x + 4], 0xFF26282C);
+                        assert_ne!(pixels[0], background, "the visible backdrop remains dimmed");
+                        reference = pixels;
+                    } else {
+                        assert_eq!(
+                            pixels, reference,
+                            "Settings ignores overlay panel alpha={alpha}"
+                        );
+                    }
+                });
+            }
+        }
+    }
 
     #[test]
     fn settings_partial_rows_share_pixel_scroll_geometry_and_clipping() {

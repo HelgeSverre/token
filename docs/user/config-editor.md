@@ -16,6 +16,9 @@ General editor settings for Token.
 
 ## Settings
 
+Settings is an opaque preferences page. It uses the theme's panel background
+color but ignores that color's transparency; other overlays remain theme-driven.
+
 The page uses the standard themed scrollbar: drag its thumb or click the track
 to jump. Scrolling leaves the selected setting unchanged and moves continuously
 in pixels, including partially visible rows. Trackpad deltas retain their pixel
