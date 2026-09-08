@@ -6,6 +6,12 @@ using fixture tests alone.
 
 ## Current checkpoint
 
+Latest implementation: `5b9a502` fixes global shortcut chords across focus
+contexts and makes Settings a global action. Linux X11 checks passed from the
+terminal, command palette, file explorer and CSV cell editing, including intact
+text input and cancelled CSV edits. Full macOS/Linux suites and strict lint
+passed. See the [context record](docs/dev/refactoring-audit-2026-09-06.md#global-shortcuts-across-input-contexts--2026-09-08).
+
 Latest diagnosis: an isolated zero-test binary showed a 3.02-second cold launch
 and 0.01-second warm launch, with a matching macOS execution-policy delay.
 Twenty hover-timeout repeats and five managed-server lifecycle repeats passed
@@ -92,8 +98,9 @@ see the [live-server record](docs/dev/refactoring-audit-2026-09-06.md#live-works
 - Native Windows keymap chips, contexts, capture and persistence, plus the
   remaining Linux focus-context/Wayland matrix. Linux X11 editor-context chips,
   capture/cancel, pointer save, restart persistence and terminal selection/copy
-  now have native evidence. Launcher detachment and per-instance port files on
-  Windows; managed llama-server startup/teardown on Windows/Linux; terminal
+  now have native evidence, as do global Settings chords from the terminal,
+  command palette, file explorer and CSV cell editing. Launcher detachment and
+  per-instance port files on Windows; managed llama-server startup/teardown on Windows/Linux; terminal
   tabs/selection/modifier-click on Windows and Wayland.
 - CJK/emoji positioning outside IME composition and the remaining completion
   native-input matrix. Existing unit/macOS evidence is not a full platform

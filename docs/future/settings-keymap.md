@@ -84,3 +84,12 @@ The saved Ctrl+Alt+K Ctrl+Alt+S sequence opened Settings from the editor both
 immediately and after restart. Final Linux/macOS full tests and strict lint passed.
 See the [native record](../dev/refactoring-audit-2026-09-06.md#linux-native-verification-and-portability-fixes--2026-09-08).
 This does not verify every focus context, Wayland or Windows. Keep the plan active.
+
+The follow-up context check exposed global chords being discarded outside the
+editor and Settings missing global classification. `5b9a502` fixes both through
+one filtered keymap resolver. Native Linux X11 checks now cover opening Settings
+from terminal, command palette, file explorer and CSV cell editing; a temporary
+editor-only text chord did not swallow ordinary field/terminal input. Full
+macOS/Linux tests and strict lint passed. See the
+[context record](../dev/refactoring-audit-2026-09-06.md#global-shortcuts-across-input-contexts--2026-09-08).
+This plan still awaits the remaining platform/context verification.

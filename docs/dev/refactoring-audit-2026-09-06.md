@@ -1,5 +1,56 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Global shortcuts across input contexts — 2026-09-08
+
+Commit `5b9a502` fixes a native Linux X11 mismatch: the persisted
+Ctrl+Alt+K Ctrl+Alt+S Settings binding opened the page from the editor but did
+nothing with terminal focus. `OpenSettings` was absent from global classification,
+and the runtime discarded every `AwaitMore` result outside normal editor routing,
+even when the pending chord led to an allowed global command.
+
+Command eligibility now participates in the existing resolver before single-key,
+prefix and completed-chord matching. The runtime supplies its existing focus
+policy once; rejected commands cannot capture text or shadow eligible bindings.
+There is no second keymap engine, new dependency or configuration switch. Settings
+joins the existing global action list. Popup navigation and legacy text editing
+retain their earlier priority. The existing routing regression was extended,
+rather than adding another test fixture/framework, to cover global chords,
+rejected editor-only prefixes and shadowed bindings.
+
+The updated native editor (container PID 11644, window 4194306) reused the
+isolated configuration and real shell PID 11664:
+
+- The saved Settings chord opened the page from terminal focus, command palette,
+  file-explorer focus and an actively edited CSV cell.
+- A temporary `q w -> Copy` editor-only chord left `qword` intact in Settings
+  search and a shell `printf` command. Captures:
+  [Settings input](data/2026-09-08/global-chords-settings-input.png),
+  [terminal input](data/2026-09-08/global-chords-terminal-input.png).
+- CSV cell text `alphaqword` remained pending after opening/closing Settings;
+  Escape then cancelled it, leaving the original `alpha,beta\none,two\n`
+  document unmodified. [Preserved cell edit](data/2026-09-08/global-chords-csv-preserved.png).
+  Earlier setup attempts in plain-text mode were undone before entering CSV view.
+- The temporary chord was removed afterward. The shell was closed, Quit exited
+  the editor with status 0, and the task container was stopped. Both synthetic
+  files retained their original on-disk contents; host keyboard settings were
+  untouched. No IME work was resumed.
+
+Verification:
+
+- Focused routing regression passed (`793a478d-8c78-462c-9dd1-0998dbd17760`).
+- Linux: 2,593 passed, one skipped, two doctests passed; full run
+  `414f4e7c-3af4-44df-9355-3dd85934f969`. Strict all-target/all-feature lint and
+  the native debug build passed.
+- macOS: 2,588 passed, five skipped, two doctests passed; full run
+  `0dd27d4d-b3cd-4f8f-81a5-c74d2a5e26d1`. Strict lint passed. Neither final suite
+  reported a leak; this does not resolve the earlier intermittent warnings.
+
+Raw logs are `/tmp/token-linux-native.31IToo/global-chords-{linux-checks,macos-tests,macos-lint}.log`.
+The Rust skill guided ownership/API scope, and diff-based review checked matching
+precedence, focus guards and retained text behavior. Scoped review: **Approve**,
+no outstanding findings. Windows/Wayland and the remaining context matrix are
+not certified by this X11 run; the Settings-keymap plan stays active.
+
 ## macOS launch-policy and exit-warning diagnosis — 2026-09-08
 
 No application source, test assertions, deadlines, runner version or host

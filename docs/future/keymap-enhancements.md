@@ -36,8 +36,12 @@ Automatically reload keymap when the configuration file changes:
 
 **2026-09-06 checkpoint:** user-defined space-separated chord strings now parse
 and dispatch in editor routing, and shortcut hints resolve complete sequences.
-Example: `key: "ctrl+k ctrl+c"`. The proposed default chord set, timeout,
-status-bar feedback and broader focus routing below remain future work.
+Example: `key: "ctrl+k ctrl+c"`. Global-command chords now also route from
+dialogs, docks and CSV cell editing (`5b9a502`, 2026-09-08). Command eligibility
+is checked before matching each prefix, so editor-only bindings cannot capture
+input in those surfaces. The proposed default chord set, timeout and status-bar
+feedback below remain future work; this does not make every editor command a
+global action.
 
 **Priority:** Low  
 **Effort:** Low (infrastructure exists)
