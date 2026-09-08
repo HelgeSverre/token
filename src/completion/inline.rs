@@ -17,6 +17,16 @@ pub const SUFFIX_BUDGET_CHARS: usize = 1000;
 /// Consecutive backend failures after which auto-trigger pauses until the
 /// user asks explicitly (capped retry, like the LSP crash policy).
 pub const MAX_CONSECUTIVE_FAILURES: u32 = 3;
+/// Bounds provider requests and retained alternatives, including non-HTTP replies.
+pub const MAX_ALTERNATIVES: usize = 8;
+
+/// How much of the visible remainder one acceptance inserts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcceptGranularity {
+    Full,
+    Word,
+    Line,
+}
 
 /// Captured at request time; every response carries it back. The
 /// universal staleness guard: a reply is applied only if the document,
@@ -31,16 +41,6 @@ pub struct RequestSnapshot {
     pub request_id: u64,
 }
 
-/// Which backend answers, resolved from config at request time so the
-/// runtime never reads the model.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InlineEndpoint {
-    /// llama.cpp server base URL, e.g. `http://127.0.0.1:8012`.
-    pub url: String,
-    pub max_tokens: u32,
-    pub timeout_ms: u64,
-}
-
 /// One suggestion request, complete: the worker needs nothing else.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InlineRequest {
@@ -51,7 +51,8 @@ pub struct InlineRequest {
     pub suffix: String,
     pub language: Option<String>,
     pub file_path: Option<PathBuf>,
-    pub endpoint: InlineEndpoint,
+    /// Stable, opt-in extra snippets, separate from the active buffer prefix.
+    pub extra_context: Vec<super::recency::ContextChunk>,
     pub explicit: bool,
 }
 
@@ -59,9 +60,9 @@ pub struct InlineRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InlineSuggestionState {
     pub snapshot: RequestSnapshot,
-    /// Full suggestion text as inserted at the snapshot cursor; may span
-    /// lines.
-    pub text: String,
+    /// Complete candidate texts anchored at the snapshot, in provider order.
+    choices: Vec<String>,
+    selected: usize,
     /// Chars of `text` the user has typed since the suggestion arrived.
     pub consumed: usize,
     /// The document revision the suggestion was last reconciled with:
@@ -70,21 +71,101 @@ pub struct InlineSuggestionState {
 }
 
 impl InlineSuggestionState {
+    pub fn new(snapshot: RequestSnapshot, candidates: Vec<String>) -> Option<Self> {
+        let mut choices = Vec::new();
+        for candidate in candidates.into_iter().take(MAX_ALTERNATIVES) {
+            if !candidate.trim().is_empty() && !choices.contains(&candidate) {
+                choices.push(candidate);
+            }
+        }
+        (!choices.is_empty()).then_some(Self {
+            valid_revision: snapshot.revision,
+            snapshot,
+            choices,
+            selected: 0,
+            consumed: 0,
+        })
+    }
+
+    fn text(&self) -> &str {
+        &self.choices[self.selected]
+    }
+
+    fn compatible(&self, candidate: &str) -> bool {
+        let prefix_len = self.text().len() - self.remaining().len();
+        candidate.len() > prefix_len && candidate.starts_with(&self.text()[..prefix_len])
+    }
+
+    /// One-based position among choices that preserve the already inserted prefix.
+    pub fn choice_position(&self) -> (usize, usize) {
+        let mut position = 0;
+        let mut count = 0;
+        for (index, candidate) in self.choices.iter().enumerate() {
+            if self.compatible(candidate) {
+                count += 1;
+                if index == self.selected {
+                    position = count;
+                }
+            }
+        }
+        (position, count)
+    }
+
+    /// Never rewrite consumed text. Keep incompatible choices so backspacing can
+    /// make them eligible again, rather than permanently pruning the response.
+    pub(crate) fn cycle(&mut self, forward: bool) -> bool {
+        for offset in 1..self.choices.len() {
+            let next = if forward {
+                (self.selected + offset) % self.choices.len()
+            } else {
+                (self.selected + self.choices.len() - offset) % self.choices.len()
+            };
+            if self.compatible(&self.choices[next]) {
+                self.selected = next;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Word accepts the leading alphabetic run, or the leading non-alphabetic
+    /// run when punctuation/spacing comes first. Line includes its newline.
+    /// Offsets stay on UTF-8 boundaries; the stored consumption count is chars.
+    pub fn acceptance_prefix(&self, granularity: AcceptGranularity) -> &str {
+        let remaining = self.remaining();
+        match granularity {
+            AcceptGranularity::Full => remaining,
+            AcceptGranularity::Line => remaining.split_inclusive('\n').next().unwrap_or(remaining),
+            AcceptGranularity::Word => {
+                let Some(first) = remaining.chars().next() else {
+                    return remaining;
+                };
+                let end = remaining
+                    .char_indices()
+                    .find_map(|(offset, ch)| {
+                        (ch.is_alphabetic() != first.is_alphabetic()).then_some(offset)
+                    })
+                    .unwrap_or(remaining.len());
+                &remaining[..end]
+            }
+        }
+    }
+
     /// What is still ghost text.
     pub fn remaining(&self) -> &str {
         let byte = self
-            .text
+            .text()
             .char_indices()
             .nth(self.consumed)
-            .map_or(self.text.len(), |(i, _)| i);
-        &self.text[byte..]
+            .map_or(self.text().len(), |(i, _)| i);
+        &self.text()[byte..]
     }
 
     /// Where the cursor must be for the remainder to apply: the snapshot
     /// cursor advanced over the consumed chars.
     pub fn expected_cursor(&self) -> (usize, usize) {
         let (mut line, mut column) = (self.snapshot.line, self.snapshot.column);
-        for ch in self.text.chars().take(self.consumed) {
+        for ch in self.text().chars().take(self.consumed) {
             if ch == '\n' {
                 line += 1;
                 column = 0;
@@ -103,15 +184,6 @@ impl InlineSuggestionState {
             && document.revision == self.valid_revision
             && cursor == self.expected_cursor()
     }
-
-    /// The first ghost line and how many more lines follow it.
-    pub fn first_line_and_rest(&self) -> (&str, usize) {
-        let remaining = self.remaining();
-        match remaining.split_once('\n') {
-            Some((first, rest)) => (first, rest.lines().count().max(1)),
-            None => (remaining, 0),
-        }
-    }
 }
 
 /// Apply the post-processing chain (autocomplete.md filters 1–4) to a
@@ -119,7 +191,7 @@ impl InlineSuggestionState {
 pub fn postprocess(raw: &str, suffix: &str) -> Option<String> {
     // 1. Leaked sentinel tokens end the suggestion.
     let mut text = raw;
-    for sentinel in SENTINELS {
+    for sentinel in super::prompt::sentinels() {
         if let Some(index) = text.find(sentinel) {
             text = &text[..index];
         }
@@ -138,26 +210,6 @@ pub fn postprocess(raw: &str, suffix: &str) -> Option<String> {
     }
     Some(text.trim_end_matches('\n').to_owned() + if text.ends_with('\n') { "\n" } else { "" })
 }
-
-const SENTINELS: &[&str] = &[
-    "<|endoftext|>",
-    "<|fim_prefix|>",
-    "<|fim_middle|>",
-    "<|fim_suffix|>",
-    "<|file_sep|>",
-    "<|repo_name|>",
-    "<fim_prefix>",
-    "<fim_middle>",
-    "<fim_suffix>",
-    "<PRE>",
-    "<SUF>",
-    "<MID>",
-    "<EOT>",
-    "</s>",
-    "[PREFIX]",
-    "[SUFFIX]",
-    "[MIDDLE]",
-];
 
 fn indent_of(line: &str) -> usize {
     line.chars().take_while(|c| c.is_whitespace()).count()
@@ -222,7 +274,6 @@ pub fn build_request(
     document: &Document,
     cursor: (usize, usize),
     request_id: u64,
-    endpoint: InlineEndpoint,
     language: Option<String>,
     explicit: bool,
 ) -> Option<InlineRequest> {
@@ -254,7 +305,7 @@ pub fn build_request(
         suffix,
         language,
         file_path: document.file_path.clone(),
-        endpoint,
+        extra_context: Vec::new(),
         explicit,
     })
 }
@@ -282,7 +333,8 @@ mod tests {
                 column: 4,
                 request_id: 1,
             },
-            text: text.to_owned(),
+            choices: vec![text.to_owned()],
+            selected: 0,
             consumed,
             valid_revision: 10,
         }
@@ -293,14 +345,113 @@ mod tests {
         let s = state("abc\ndef", 0);
         assert_eq!(s.remaining(), "abc\ndef");
         assert_eq!(s.expected_cursor(), (2, 4));
-        assert_eq!(s.first_line_and_rest(), ("abc", 1));
         let s = state("abc\ndef", 2);
         assert_eq!(s.remaining(), "c\ndef");
         assert_eq!(s.expected_cursor(), (2, 6));
         let s = state("abc\ndef", 5);
         assert_eq!(s.remaining(), "ef");
         assert_eq!(s.expected_cursor(), (3, 1));
-        assert_eq!(s.first_line_and_rest(), ("ef", 0));
+    }
+
+    #[test]
+    fn alternatives_are_bounded_deduplicated_and_nonempty() {
+        let snapshot = state("abc", 0).snapshot;
+        assert!(
+            InlineSuggestionState::new(snapshot.clone(), vec![" \n".into(), String::new()])
+                .is_none()
+        );
+        let candidates = vec!["abc".into(), "abc".into(), "\n".into(), "def".into()];
+        let mut choices = InlineSuggestionState::new(snapshot.clone(), candidates).unwrap();
+        assert_eq!(choices.choice_position(), (1, 2));
+        assert!(choices.cycle(false));
+        assert_eq!(choices.remaining(), "def");
+        assert_eq!(choices.choice_position(), (2, 2));
+        assert!(choices.cycle(true));
+        assert_eq!(choices.remaining(), "abc");
+        let choices =
+            InlineSuggestionState::new(snapshot, (0..100).map(|i| format!("choice{i}")).collect())
+                .unwrap();
+        assert_eq!(choices.choice_position(), (1, MAX_ALTERNATIVES));
+    }
+
+    #[test]
+    fn cycling_preserves_unicode_consumption_and_backspace_restores_choices() {
+        let mut choices = InlineSuggestionState::new(
+            state("abc", 0).snapshot,
+            ["héllo_one", "different", "héllo", "héllo_two"]
+                .map(String::from)
+                .to_vec(),
+        )
+        .unwrap();
+        choices.consumed = 5;
+        let cursor = choices.expected_cursor();
+        assert_eq!(choices.choice_position(), (1, 2));
+        assert!(choices.cycle(true));
+        assert_eq!(choices.remaining(), "_two");
+        assert_eq!(choices.expected_cursor(), cursor);
+        assert_eq!(choices.choice_position(), (2, 2));
+        assert!(choices.cycle(true));
+        assert_eq!(choices.remaining(), "_one");
+        choices.consumed = 6;
+        assert!(choices.cycle(false));
+        assert_eq!(choices.remaining(), "two");
+        choices.consumed = 0;
+        assert_eq!(choices.choice_position(), (4, 4));
+        assert!(choices.cycle(false));
+        assert_eq!(choices.remaining(), "héllo");
+        assert!(choices.cycle(false));
+        assert_eq!(choices.remaining(), "different");
+    }
+
+    #[test]
+    fn multiline_partial_accept_cycling_never_changes_the_inserted_prefix() {
+        let mut choices = InlineSuggestionState::new(
+            state("abc", 0).snapshot,
+            ["first\r\n  one", "first\n  two", "first\r\n  three"]
+                .map(String::from)
+                .to_vec(),
+        )
+        .unwrap();
+        choices.consumed = 7;
+        assert_eq!(choices.expected_cursor(), (3, 0));
+        assert!(choices.cycle(true));
+        assert_eq!(choices.remaining(), "  three");
+        assert_eq!(choices.expected_cursor(), (3, 0));
+        assert_eq!(choices.choice_position(), (2, 2));
+        choices.consumed += 3;
+        assert!(!choices.cycle(true));
+        assert_eq!(choices.remaining(), "hree");
+        assert_eq!(choices.choice_position(), (1, 1));
+    }
+
+    #[test]
+    fn partial_acceptance_uses_utf8_safe_leading_runs() {
+        for (text, word) in [
+            ("hello_world42", "hello"),
+            ("  (123)_world", "  (123)_"),
+            ("你好🙂 world", "你好"),
+            ("🙂 _42hello", "🙂 _42"),
+            ("\r\n  next", "\r\n  "),
+            ("", ""),
+        ] {
+            assert_eq!(
+                state(text, 0).acceptance_prefix(AcceptGranularity::Word),
+                word
+            );
+        }
+        let suggestion = state("foo\r\n  bar\nend", 0);
+        assert_eq!(
+            suggestion.acceptance_prefix(AcceptGranularity::Line),
+            "foo\r\n"
+        );
+        assert_eq!(
+            state("foo\n  bar", 4).acceptance_prefix(AcceptGranularity::Line),
+            "  bar"
+        );
+        assert_eq!(
+            state("\nnext", 0).acceptance_prefix(AcceptGranularity::Line),
+            "\n"
+        );
     }
 
     #[test]
@@ -371,17 +522,12 @@ mod tests {
         let mut doc = Document::with_text("fn main() {\n    let x = ");
         doc.id = Some(DocumentId(3));
         doc.revision = 5;
-        let endpoint = InlineEndpoint {
-            url: "http://127.0.0.1:8012".into(),
-            max_tokens: 64,
-            timeout_ms: 1000,
-        };
-        let req = build_request(&doc, (1, 12), 9, endpoint, Some("rust".into()), false).unwrap();
+        let req = build_request(&doc, (1, 12), 9, Some("rust".into()), false).unwrap();
         assert_eq!(req.prefix, "fn main() {\n    let x = ");
         assert_eq!(req.suffix, "\n");
         assert_eq!(req.snapshot.revision, 5);
         assert_eq!((req.snapshot.line, req.snapshot.column), (1, 12));
-        let mid = build_request(&doc, (0, 3), 9, req.endpoint.clone(), None, true).unwrap();
+        let mid = build_request(&doc, (0, 3), 9, None, true).unwrap();
         assert_eq!(mid.prefix, "fn ");
         assert!(mid.suffix.starts_with("main() {"));
         assert!(mid.explicit);

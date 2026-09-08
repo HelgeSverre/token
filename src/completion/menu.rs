@@ -15,17 +15,19 @@ use nucleo_matcher::{Config, Matcher, Utf32Str};
 use crate::lsp::LspServerId;
 use crate::model::{Cursor, DocumentId};
 
-/// Coarse completion-item kind, mirrored by `view::overlay_surface`'s
-/// `CompletionKind` (which owns the badge glyph/color — a view-layer
-/// concern). Kept separate so this module doesn't depend on `view`.
+/// Completion-item kind shared by sources and rows. The view owns badge
+/// glyphs/colors; this semantic type does not depend on rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuItemKind {
     Function,
+    Method,
     Variable,
     Type,
     Keyword,
     Field,
     Module,
+    File,
+    Folder,
     Constant,
     Other,
 }
@@ -36,6 +38,7 @@ pub enum MenuItemKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuSourceId {
     Lsp,
+    Paths,
     Snippets,
     Words,
 }
@@ -44,8 +47,9 @@ impl MenuSourceId {
     fn tier(self) -> u8 {
         match self {
             MenuSourceId::Lsp => 0,
-            MenuSourceId::Snippets => 1,
-            MenuSourceId::Words => 2,
+            MenuSourceId::Paths => 1,
+            MenuSourceId::Snippets => 2,
+            MenuSourceId::Words => 3,
         }
     }
 }
@@ -94,6 +98,9 @@ pub struct LspInsert {
     /// trip added (ts-ls auto-imports live here). Absolute ranges, applied
     /// atomically with the primary edit as one undo step.
     pub additional_text_edits: Vec<(lsp_types::Range, String)>,
+    /// Single-character commit set from this item or its server defaults.
+    /// Shared across inherited items and clones during query refinement.
+    pub commit_characters: std::sync::Arc<[char]>,
     /// Char offset within the primary inserted text where the caret lands
     /// after accept — the snippet's `$0`. `None`: after the text.
     pub caret_offset: Option<usize>,
@@ -120,6 +127,24 @@ pub struct MenuItem {
     /// fuzzy score as tiebreak"). `None` for offline sources, which order
     /// by label.
     pub sort_text: Option<String>,
+    /// Server preference for initial selection, never overriding user navigation.
+    pub preselect: bool,
+}
+
+/// Guards the one literal keystroke staged while an item resolves. No document
+/// or history clone: a changed revision, pane, selection or menu cancels it.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingCommit {
+    pub character: char,
+    pub document_id: DocumentId,
+    pub editor_id: crate::model::EditorId,
+    pub file_path: std::path::PathBuf,
+    pub language: crate::syntax::LanguageId,
+    pub revision: u64,
+    pub cursors: Vec<Cursor>,
+    pub active_cursor_index: usize,
+    pub undo_len: usize,
+    pub selected: usize,
 }
 
 /// The completion popup's state, held on `UiState::completion_menu`.
@@ -130,13 +155,18 @@ pub struct MenuItem {
 /// the shared home for that state by the time this shipped).
 #[derive(Debug, Clone)]
 pub struct CompletionMenuState {
+    /// Source policy at this query's start, refreshed after a pending parse.
+    pub context: super::context::CompletionContext,
+    /// User navigation takes precedence over a later server `preselect`.
+    pub selection_changed: bool,
     pub document_id: DocumentId,
     /// Document revision the items were collected against — the staleness
     /// guard on accept (autocomplete.md's `RequestSnapshot` shape, minus the
     /// async-only `request_id`: Phase 1 sources are synchronous, so there is
     /// never more than one in-flight collection to supersede).
     pub revision: u64,
-    /// Word start; `query = text[query_start..cursor]`.
+    /// Word or filename-component start. Path queries may decode Markdown's
+    /// percent escapes; their request snapshot guards the original source range.
     pub query_start: Cursor,
     /// The query the current `items` were collected/last filtered against.
     /// LSP items are carried across keystrokes only while the query grows
@@ -162,25 +192,36 @@ pub struct CompletionMenuState {
 }
 
 impl CompletionMenuState {
+    pub fn preferred_index(&self) -> usize {
+        self.filtered
+            .iter()
+            .position(|(_, index, _)| self.items[*index].preselect)
+            .unwrap_or(0)
+    }
     pub fn selected_item(&self, selected: usize) -> Option<&MenuItem> {
         let (_, idx, _) = self.filtered.get(selected)?;
         self.items.get(*idx)
     }
+
+    pub fn selected_documentation(&self, selected: usize) -> Option<&crate::model::StyledText> {
+        let MenuInsert::Lsp(data) = &self.selected_item(selected)?.insert else {
+            return None;
+        };
+        data.documentation
+            .as_ref()
+            .filter(|docs| !docs.text.trim().is_empty())
+    }
 }
 
-/// Tier key: exact match, then word-start match, then the LSP block
-/// (ordered by server `sortText`, label when absent) above every offline
-/// item, then score, source tier, label. This is autocomplete.md's rule
-/// ("exact, word-start, score desc, source tier, label") for words and
-/// snippets, with lsp-integration.md Phase 5's "server `sortText` first,
-/// fuzzy score as tiebreak" applied to LSP items — the LSP tier never
-/// mixes with offline items, so the two rules never conflict.
+/// Server relevance leads the LSP block, ahead of all local candidates.
+/// Local prefix matches order by exactness, source and proximity (words)
+/// or fuzzy score (snippets). Semantic matches retain server ordering.
 fn tier_key<'a>(
     item: &'a MenuItem,
     filter_text_lower: &str,
     query_lower: &str,
     score: u32,
-) -> (bool, bool, (u8, &'a str), u32, u8, &'a str) {
+) -> ((u8, &'a str), bool, bool, u8, u32, &'a str) {
     let exact = filter_text_lower == query_lower;
     let starts = filter_text_lower.starts_with(query_lower);
     let lsp_key = match item.source {
@@ -188,11 +229,11 @@ fn tier_key<'a>(
         _ => (1, ""),
     };
     (
+        lsp_key,
         !exact,
         !starts,
-        lsp_key,
-        u32::MAX - score,
         item.source.tier(),
+        u32::MAX - score,
         item.label.as_str(),
     )
 }
@@ -228,6 +269,7 @@ pub fn filter_and_sort(items: &[MenuItem], query: &str) -> Vec<(u32, usize, Vec<
                     items[*b].label.as_str(),
                 ))
         });
+        deduplicate_paths(items, &mut idxs);
         return idxs;
     }
     // ASCII-only lowercasing, not `str::to_lowercase`: the matched-char
@@ -250,6 +292,19 @@ pub fn filter_and_sort(items: &[MenuItem], query: &str) -> Vec<(u32, usize, Vec<
         .enumerate()
         .filter_map(|(i, item)| {
             let haystack_lower = item.filter_text.to_ascii_lowercase();
+            // Local candidates have no semantic authority. Require a real
+            // prefix; arbitrary subsequence matches are only useful for LSP
+            // candidates already selected for this receiver/scope.
+            if item.source != MenuSourceId::Lsp && !haystack_lower.starts_with(&query_lower) {
+                return None;
+            }
+            if item.source == MenuSourceId::Paths {
+                // Filesystem prefixes are already matched above. Nucleo's
+                // normalization expects a normalized needle and can otherwise
+                // discard an exact accented filename prefix such as `hé`.
+                let count = query_lower.chars().count() as u32;
+                return Some((count, i, haystack_lower, (0..count).collect()));
+            }
             let mut haystack_buf = Vec::new();
             let haystack = Utf32Str::new(&haystack_lower, &mut haystack_buf);
             let mut indices = Vec::new();
@@ -259,22 +314,79 @@ pub fn filter_and_sort(items: &[MenuItem], query: &str) -> Vec<(u32, usize, Vec<
         .collect();
 
     scored.sort_by(|(s1, i1, l1, _), (s2, i2, l2, _)| {
-        tier_key(&items[*i1], l1, &query_lower, *s1).cmp(&tier_key(
+        let score = |index: usize, fuzzy| {
+            if items[index].source == MenuSourceId::Words {
+                u32::MAX - index.min(u32::MAX as usize) as u32
+            } else {
+                fuzzy
+            }
+        };
+        tier_key(&items[*i1], l1, &query_lower, score(*i1, *s1)).cmp(&tier_key(
             &items[*i2],
             l2,
             &query_lower,
-            *s2,
+            score(*i2, *s2),
         ))
     });
-    scored
+    let mut filtered = scored
         .into_iter()
         .map(|(s, i, _, indices)| (s, i, indices))
-        .collect()
+        .collect();
+    deduplicate_paths(items, &mut filtered);
+    filtered
+}
+
+/// Prefer server semantics when both visible sources would insert the same
+/// filename. Keep distinct server edits/labels, even if their prefix matches.
+fn deduplicate_paths(items: &[MenuItem], filtered: &mut Vec<(u32, usize, Vec<u32>)>) {
+    if !filtered
+        .iter()
+        .any(|(_, index, _)| items[*index].source == MenuSourceId::Paths)
+    {
+        return;
+    }
+    fn text(item: &MenuItem) -> &str {
+        match &item.insert {
+            MenuInsert::Text(text) => text,
+            MenuInsert::Lsp(data) => data
+                .text_edit
+                .as_ref()
+                .map_or(data.text.as_str(), |(_, text)| text.as_str()),
+        }
+    }
+    let server: std::collections::HashSet<_> = filtered
+        .iter()
+        .filter_map(|(_, index, _)| {
+            let item = &items[*index];
+            (item.source == MenuSourceId::Lsp).then(|| (item.label.as_str(), text(item)))
+        })
+        .collect();
+    filtered.retain(|(_, index, _)| {
+        let item = &items[*index];
+        item.source != MenuSourceId::Paths || !server.contains(&(item.label.as_str(), text(item)))
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn path_completion_filter_deduplicates_matching_server_insertions() {
+        let items = vec![
+            item("asset.rs", MenuSourceId::Paths),
+            item("asset.rs", MenuSourceId::Lsp),
+            item("assets/", MenuSourceId::Paths),
+        ];
+        for query in ["", "as"] {
+            let filtered = filter_and_sort(&items, query);
+            assert_eq!(filtered.len(), 2);
+            assert_eq!(items[filtered[0].1].source, MenuSourceId::Lsp);
+        }
+        let items = vec![item("héllo.rs", MenuSourceId::Paths)];
+        let filtered = filter_and_sort(&items, "hé");
+        assert_eq!(filtered[0].2, vec![0, 1]);
+    }
 
     fn item(label: &str, source: MenuSourceId) -> MenuItem {
         MenuItem {
@@ -285,6 +397,7 @@ mod tests {
             source,
             detail: None,
             sort_text: None,
+            preselect: false,
         }
     }
 
@@ -316,6 +429,25 @@ mod tests {
         let sorted = filter_and_sort(&items, "vac");
         assert_eq!(items[sorted[0].1].label, "vacuum_cleaner");
         assert_eq!(items[sorted[1].1].label, "vacs");
+    }
+
+    #[test]
+    fn server_relevance_outranks_local_exact_and_lsp_prefix_matches() {
+        let mut preferred = item("collect_words", MenuSourceId::Lsp);
+        preferred.sort_text = Some("000".into());
+        let mut prefix = item("word", MenuSourceId::Lsp);
+        prefix.sort_text = Some("999".into());
+        let items = vec![
+            item("wo", MenuSourceId::Words),
+            prefix,
+            preferred,
+            item("collect_words", MenuSourceId::Words),
+        ];
+        let sorted = filter_and_sort(&items, "wo");
+        assert_eq!(
+            sorted.iter().map(|(_, i, _)| *i).collect::<Vec<_>>(),
+            [2, 1, 0]
+        );
     }
 
     #[test]

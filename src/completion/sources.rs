@@ -3,17 +3,15 @@
 //! autocomplete.md: "Not a trait for v1 (two hardcoded sources; a trait with
 //! one call site is speculation)."
 
+use super::context::{identifier_at, CompletionContext};
 use crate::model::{Cursor, Document};
 use crate::syntax::LanguageId;
-use crate::util::text::{char_type, CharType};
 
 use super::menu::{MenuInsert, MenuItem, MenuItemKind, MenuSourceId};
 
 /// Identifiers within this many lines of the cursor on either side
 /// (autocomplete.md: "Zed scans ±5000; we start smaller").
 const WINDOW_LINES: usize = 1000;
-/// Shortest word worth suggesting.
-const MIN_WORD_LEN: usize = 3;
 /// Cap on collected words, so a huge window on a very wide file can't blow
 /// up the filter/sort pass.
 const MAX_WORDS: usize = 500;
@@ -23,19 +21,35 @@ const MAX_WORDS: usize = 500;
 /// already finished typing, verbatim, is never useful). The exclusion is
 /// case-insensitive: typing `Value` must not suggest `value` — the query is
 /// what the user already committed to, whatever its casing.
-pub fn collect_words(document: &Document, cursor: Cursor, query: &str) -> Vec<MenuItem> {
+pub fn collect_words(
+    document: &Document,
+    cursor: Cursor,
+    query: &str,
+    min_word_length: usize,
+) -> Vec<MenuItem> {
+    let offset = document.cursor_to_offset(cursor.line, cursor.column);
+    let (line, column) = document.offset_to_cursor(offset.saturating_sub(query.chars().count()));
+    let context = CompletionContext::at(document, Cursor::at(line, column));
+    if !context.allows_words() {
+        return Vec::new();
+    }
     let line_count = document.line_count();
     let start_line = cursor.line.saturating_sub(WINDOW_LINES);
     let end_line = (cursor.line + WINDOW_LINES).min(line_count.saturating_sub(1));
 
     let mut seen = std::collections::HashSet::new();
+    let query_lower = query.to_ascii_lowercase();
     let mut out = Vec::new();
     for line_idx in lines_nearest_first(start_line, cursor.line.min(end_line), end_line) {
         let Some(line) = document.get_line_cow(line_idx) else {
             continue;
         };
-        for word in extract_words(&line) {
-            if word.eq_ignore_ascii_case(query) || !seen.insert(word.clone()) {
+        for (column, word) in extract_words(&line, min_word_length.max(1)) {
+            if (context == CompletionContext::Code && !identifier_at(document, line_idx, column))
+                || !word.to_ascii_lowercase().starts_with(&query_lower)
+                || word.eq_ignore_ascii_case(query)
+                || !seen.insert(word.clone())
+            {
                 continue;
             }
             out.push(MenuItem {
@@ -46,6 +60,7 @@ pub fn collect_words(document: &Document, cursor: Cursor, query: &str) -> Vec<Me
                 source: MenuSourceId::Words,
                 detail: None,
                 sort_text: None,
+                preselect: false,
             });
             if out.len() >= MAX_WORDS {
                 return out;
@@ -85,28 +100,38 @@ fn lines_nearest_first(start: usize, center: usize, end: usize) -> Vec<usize> {
     out
 }
 
-/// Extract maximal runs of `CharType::WordChar` at least `MIN_WORD_LEN`
-/// chars long — unicode-identifier-safe since `char_type` classifies by
-/// `is_whitespace`/boundary-symbol membership, not ASCII ranges.
-fn extract_words(line: &str) -> Vec<String> {
+/// Extract Unicode identifier-shaped words, keeping character columns for
+/// syntax lookup. Numbers and punctuation are not completion candidates.
+fn extract_words(line: &str, min_word_length: usize) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut current = String::new();
-    for ch in line.chars() {
-        if char_type(ch) == CharType::WordChar {
+    let mut start = 0;
+    for (column, ch) in line.chars().enumerate() {
+        if unicode_ident::is_xid_continue(ch) {
+            if current.is_empty() {
+                start = column;
+            }
             current.push(ch);
         } else if !current.is_empty() {
-            push_word(&mut out, &mut current);
+            push_word(&mut out, start, &mut current, min_word_length);
         }
     }
     if !current.is_empty() {
-        push_word(&mut out, &mut current);
+        push_word(&mut out, start, &mut current, min_word_length);
     }
     out
 }
 
-fn push_word(out: &mut Vec<String>, current: &mut String) {
-    if current.chars().count() >= MIN_WORD_LEN {
-        out.push(std::mem::take(current));
+fn push_word(
+    out: &mut Vec<(usize, String)>,
+    start: usize,
+    current: &mut String,
+    min_word_length: usize,
+) {
+    if current.chars().count() >= min_word_length
+        && current.starts_with(|ch: char| unicode_ident::is_xid_start(ch) || ch == '_')
+    {
+        out.push((start, std::mem::take(current)));
     } else {
         current.clear();
     }
@@ -161,6 +186,7 @@ pub fn collect_snippets(language: LanguageId) -> Vec<MenuItem> {
             source: MenuSourceId::Snippets,
             detail: Some("snippet".to_string()),
             sort_text: None,
+            preselect: false,
         })
         .collect()
 }
@@ -175,15 +201,30 @@ mod tests {
     }
 
     #[test]
+    fn completion_menu_config_word_length_counts_characters_and_keeps_identifiers_only() {
+        let doc = doc_with("a ab abc abcd éé ééé 12345 12abc 😀😀😀");
+        let labels = |minimum| {
+            collect_words(&doc, Cursor::at(0, 0), "", minimum)
+                .into_iter()
+                .map(|item| item.label)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(labels(0), vec!["a", "ab", "abc", "abcd", "éé", "ééé"]);
+        assert_eq!(labels(0), labels(1));
+        assert_eq!(labels(3), vec!["abc", "abcd", "ééé"]);
+        assert_eq!(labels(4), vec!["abcd"]);
+        assert!(labels(usize::MAX).is_empty());
+    }
+
+    #[test]
     fn collects_words_within_window_deduped_and_min_length() {
         let doc = doc_with("let value = compute();\nlet other = value + 1;\nlet x = 2;\n");
-        let items = collect_words(&doc, Cursor::at(0, 0), "");
+        let items = collect_words(&doc, Cursor::at(0, 0), "", 3);
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(labels.contains(&"value"));
         assert!(labels.contains(&"compute"));
         assert!(labels.contains(&"other"));
-        // "let" and "x" are below MIN_WORD_LEN or excluded — "let" is 3
-        // chars so it IS included; "x" (1 char) must not be.
+        // "let" has the minimum three characters; "x" (one) does not.
         assert!(!labels.contains(&"x"));
         // Deduped: "value" appears twice in source but once in output.
         assert_eq!(labels.iter().filter(|&&l| l == "value").count(), 1);
@@ -192,7 +233,7 @@ mod tests {
     #[test]
     fn excludes_the_query_itself() {
         let doc = doc_with("let value = 1;\nlet valueOther = 2;\n");
-        let items = collect_words(&doc, Cursor::at(0, 0), "value");
+        let items = collect_words(&doc, Cursor::at(0, 0), "value", 3);
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(!labels.contains(&"value"));
         assert!(labels.contains(&"valueOther"));
@@ -204,7 +245,7 @@ mod tests {
         // exact-match exclusion is about "the user already finished this
         // word", which doesn't depend on casing.
         let doc = doc_with("let value = 1;\nlet valueOther = 2;\n");
-        let items = collect_words(&doc, Cursor::at(0, 0), "Value");
+        let items = collect_words(&doc, Cursor::at(0, 0), "Value", 3);
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(
             !labels.contains(&"value"),
@@ -228,7 +269,7 @@ mod tests {
         let cursor_line = text.matches('\n').count(); // line after the last one
         let doc = doc_with(&text);
 
-        let items = collect_words(&doc, Cursor::at(cursor_line, 0), "targ");
+        let items = collect_words(&doc, Cursor::at(cursor_line, 0), "targ", 3);
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(
             labels.contains(&"target_word_here"),
@@ -238,9 +279,55 @@ mod tests {
 
     #[test]
     fn extracts_unicode_identifiers() {
-        let words = extract_words("let café = 1; let naïve_x = 2;");
-        assert!(words.contains(&"café".to_string()));
-        assert!(words.contains(&"naïve_x".to_string()));
+        let words = extract_words("let café = 1; let naïve_x = 2;", 3);
+        assert!(words.iter().any(|(_, word)| word == "café"));
+        assert!(words.iter().any(|(_, word)| word == "naïve_x"));
+    }
+
+    #[test]
+    fn words_reject_numbers_symbols_and_subsequence_noise() {
+        let doc = doc_with("123456 😀😀😀 vector_value value_valid cafe\u{301}\nva");
+        let items = collect_words(&doc, Cursor::at(1, 2), "va", 3);
+        assert_eq!(
+            items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(),
+            ["value_valid"]
+        );
+        let words = extract_words("123456 😀😀😀 cafe\u{301} _value 123invalid", 3);
+        assert_eq!(
+            words.iter().map(|(_, w)| w.as_str()).collect::<Vec<_>>(),
+            ["cafe\u{301}", "_value"]
+        );
+    }
+
+    #[test]
+    fn code_words_exclude_comment_and_string_contents() {
+        let mut doc = doc_with("fn main() {\nlet value_real = 1;\n// value_comment\nlet text = \"value_string\";\nva\n}\n");
+        doc.language = LanguageId::Rust;
+        doc.syntax_highlights = Some(crate::syntax::ParserState::new().parse_and_highlight(
+            &doc.buffer.to_string(),
+            doc.language,
+            crate::model::DocumentId(1),
+            doc.revision,
+        ));
+        let items = collect_words(&doc, Cursor::at(4, 2), "va", 3);
+        assert_eq!(
+            items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(),
+            ["value_real"]
+        );
+        assert!(collect_words(&doc, Cursor::at(2, 5), "va", 3).is_empty());
+        doc.revision += 1;
+        assert!(collect_words(&doc, Cursor::at(4, 2), "va", 3).is_empty());
+    }
+
+    #[test]
+    fn nearest_prefix_match_ranks_first_and_unrelated_words_do_not_spend_cap() {
+        let mut text = "noise\n".repeat(MAX_WORDS + 1);
+        text.push_str("value_far\n\nvalue_near_longer\nva");
+        let doc = doc_with(&text);
+        let items = collect_words(&doc, Cursor::at(doc.line_count() - 1, 2), "va", 3);
+        let sorted = super::super::menu::filter_and_sort(&items, "va");
+        assert_eq!(items[sorted[0].1].label, "value_near_longer");
+        assert_eq!(items.len(), 2);
     }
 
     #[test]

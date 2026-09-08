@@ -14,21 +14,50 @@ use crate::model::StyledText;
 /// under this.
 const MAX_LSP_ITEMS: usize = 1000;
 
-/// Converts one server response's items. `can_resolve` comes from the
-/// responding server's capability snapshot (`completionProvider.resolveProvider`)
-/// and rides on each item so accept can decide resolve-before-apply without
-/// re-consulting the handle.
+/// Converts one server response using its `completionProvider` snapshot.
+/// Resolve support and inherited commit characters are derived together at this
+/// boundary; update handlers never need to consult a server handle.
 pub fn items_to_menu_items(
     items: Vec<lsp_types::CompletionItem>,
     server_id: &LspServerId,
     root: &std::path::Path,
-    can_resolve: bool,
+    options: Option<&lsp_types::CompletionOptions>,
 ) -> Vec<MenuItem> {
+    let can_resolve = options.is_some_and(|options| options.resolve_provider == Some(true));
+    let default_commit_characters = normalize_commit_characters(
+        options
+            .and_then(|options| options.all_commit_characters.as_deref())
+            .unwrap_or_default(),
+    );
     items
         .into_iter()
         .take(MAX_LSP_ITEMS)
-        .filter_map(|item| completion_item_to_menu_item(item, server_id, root, can_resolve))
+        .filter_map(|item| {
+            completion_item_to_menu_item(
+                item,
+                server_id,
+                root,
+                can_resolve,
+                &default_commit_characters,
+            )
+        })
         .collect()
+}
+
+/// Commit characters are a set, not strings to paste. Ignore malformed entries
+/// and share the normalized server default across all items that inherit it.
+fn normalize_commit_characters(characters: &[String]) -> std::sync::Arc<[char]> {
+    let mut result: Vec<_> = characters
+        .iter()
+        .filter_map(|text| {
+            let mut chars = text.chars();
+            let ch = chars.next()?;
+            chars.next().is_none().then_some(ch)
+        })
+        .collect();
+    result.sort_unstable();
+    result.dedup();
+    result.into()
 }
 
 /// Per-item conversion. Returns `None` for items with neither a usable
@@ -40,12 +69,22 @@ fn completion_item_to_menu_item(
     server_id: &LspServerId,
     root: &std::path::Path,
     can_resolve: bool,
+    default_commit_characters: &std::sync::Arc<[char]>,
 ) -> Option<MenuItem> {
     // Serialize the *whole* item before destructuring it:
     // `completionItem/resolve` requires the same item object round-tripped,
     // including server-specific extension fields under `data`, and
     // `CompletionItem` isn't `Clone`.
     let raw = std::sync::Arc::new(serde_json::to_value(&item).unwrap_or(serde_json::Value::Null));
+    let detail = item_detail(&item);
+    let preselect = item.preselect.unwrap_or(false);
+    // An explicit empty item list opts out of all server defaults. Do not union
+    // the two sets or insert inherited fields into the raw resolve payload.
+    let commit_characters = item
+        .commit_characters
+        .as_deref()
+        .map(normalize_commit_characters)
+        .unwrap_or_else(|| default_commit_characters.clone());
 
     let mut text_edit = match item.text_edit {
         Some(lsp_types::CompletionTextEdit::Edit(edit)) => Some((edit.range, edit.new_text)),
@@ -63,9 +102,9 @@ fn completion_item_to_menu_item(
         mut insert_text,
         insert_text_format,
         kind,
-        detail,
         sort_text,
         documentation,
+        additional_text_edits,
         ..
     } = item;
 
@@ -105,7 +144,12 @@ fn completion_item_to_menu_item(
             can_resolve,
             resolved: false,
             text_edit,
-            additional_text_edits: Vec::new(),
+            additional_text_edits: additional_text_edits
+                .unwrap_or_default()
+                .into_iter()
+                .map(|edit| (edit.range, edit.new_text))
+                .collect(),
+            commit_characters,
             caret_offset,
             documentation: documentation.as_ref().and_then(documentation_to_styled),
         })),
@@ -113,7 +157,34 @@ fn completion_item_to_menu_item(
         source: MenuSourceId::Lsp,
         detail,
         sort_text,
+        preselect,
     })
+}
+
+/// Prefer structured label metadata (parameters and return type/owner), without
+/// changing the insertable label or its filter-text character coordinates.
+pub fn item_detail(item: &lsp_types::CompletionItem) -> Option<String> {
+    fn nonempty(text: Option<&str>) -> Option<&str> {
+        text.map(str::trim).filter(|text| !text.is_empty())
+    }
+    let parameters = item
+        .label_details
+        .as_ref()
+        .and_then(|details| nonempty(details.detail.as_deref()));
+    let description = item
+        .label_details
+        .as_ref()
+        .and_then(|details| nonempty(details.description.as_deref()));
+    match parameters {
+        Some(parameters) => Some(match description {
+            Some(description) => format!("{parameters} {description}"),
+            None => parameters.to_owned(),
+        }),
+        // A return type/owner alone must not hide an available full signature.
+        None => nonempty(item.detail.as_deref())
+            .or(description)
+            .map(str::to_owned),
+    }
 }
 
 /// Flattens an LSP snippet body to plain text: `$n`/`${n}` vanish,
@@ -240,14 +311,15 @@ pub fn documentation_to_styled(doc: &lsp_types::Documentation) -> Option<StyledT
 fn map_kind(kind: Option<CompletionItemKind>) -> MenuItemKind {
     use CompletionItemKind as K;
     match kind {
-        Some(K::FUNCTION | K::CONSTRUCTOR | K::METHOD | K::EVENT | K::OPERATOR) => {
-            MenuItemKind::Function
-        }
+        Some(K::METHOD) => MenuItemKind::Method,
+        Some(K::FUNCTION | K::CONSTRUCTOR | K::EVENT | K::OPERATOR) => MenuItemKind::Function,
         Some(K::VARIABLE | K::VALUE | K::ENUM_MEMBER | K::TEXT) => MenuItemKind::Variable,
         Some(
             K::STRUCT | K::CLASS | K::ENUM | K::INTERFACE | K::TYPE_PARAMETER | K::UNIT | K::COLOR,
         ) => MenuItemKind::Type,
-        Some(K::MODULE | K::FOLDER | K::FILE | K::REFERENCE) => MenuItemKind::Module,
+        Some(K::MODULE | K::REFERENCE) => MenuItemKind::Module,
+        Some(K::FILE) => MenuItemKind::File,
+        Some(K::FOLDER) => MenuItemKind::Folder,
         Some(K::KEYWORD) => MenuItemKind::Keyword,
         Some(K::FIELD | K::PROPERTY | K::SNIPPET) => MenuItemKind::Field,
         Some(K::CONSTANT) => MenuItemKind::Constant,
@@ -268,7 +340,13 @@ mod tests {
 
     fn convert(item: lsp_types::CompletionItem) -> Option<MenuItem> {
         let (id, root) = server();
-        completion_item_to_menu_item(item, &id, &root, true)
+        let options = lsp_types::CompletionOptions {
+            resolve_provider: Some(true),
+            ..Default::default()
+        };
+        items_to_menu_items(vec![item], &id, &root, Some(&options))
+            .into_iter()
+            .next()
     }
 
     fn base_item(label: &str) -> lsp_types::CompletionItem {
@@ -285,6 +363,42 @@ mod tests {
         let menu_item = convert(item).unwrap();
         assert_eq!(menu_item.filter_text, "push");
         assert_eq!(menu_item.label, "push(self: &mut Vec)");
+    }
+
+    #[test]
+    fn structured_method_metadata_and_preselection_survive_conversion() {
+        let mut item = base_item("compile");
+        item.label_details = Some(lsp_types::CompletionItemLabelDetails {
+            detail: Some("(output: &str)".into()),
+            description: Some("()".into()),
+        });
+        item.detail = Some("legacy detail".into());
+        item.preselect = Some(true);
+        item.kind = Some(CompletionItemKind::METHOD);
+        let result = convert(item).unwrap();
+        assert_eq!(result.label, "compile");
+        assert_eq!(result.filter_text, "compile");
+        assert_eq!(result.detail.as_deref(), Some("(output: &str) ()"));
+        assert_eq!(result.kind, MenuItemKind::Method);
+        assert!(result.preselect);
+        let MenuInsert::Lsp(data) = result.insert else {
+            panic!("LSP item")
+        };
+        assert_eq!(data.text, "compile");
+    }
+
+    #[test]
+    fn empty_label_details_fall_back_to_legacy_detail() {
+        let mut item = base_item("compile");
+        item.label_details = Some(lsp_types::CompletionItemLabelDetails::default());
+        item.detail = Some("fn compile(&self, output: &str)".into());
+        assert_eq!(item_detail(&item), item.detail);
+        item.label_details.as_mut().unwrap().description = Some("cc::Build".into());
+        assert_eq!(
+            item_detail(&item),
+            item.detail,
+            "an owner alone must not hide the signature"
+        );
     }
 
     #[test]
@@ -343,6 +457,121 @@ mod tests {
     }
 
     #[test]
+    fn completion_metadata_item_commits_override_defaults_including_explicit_empty() {
+        let options = lsp_types::CompletionOptions {
+            resolve_provider: Some(true),
+            all_commit_characters: Some(vec![".".into(), "(".into()]),
+            ..Default::default()
+        };
+        let mut own = base_item("own");
+        own.commit_characters = Some(vec![";".into()]);
+        let mut empty = base_item("empty");
+        empty.commit_characters = Some(vec![]);
+        let (id, root) = server();
+        let items = items_to_menu_items(
+            vec![base_item("inherited"), own, empty, base_item("shared")],
+            &id,
+            &root,
+            Some(&options),
+        );
+        let inserts: Vec<_> = items
+            .iter()
+            .map(|item| {
+                let MenuInsert::Lsp(data) = &item.insert else {
+                    panic!("LSP insert")
+                };
+                assert!(data.can_resolve);
+                data
+            })
+            .collect();
+        assert_eq!(inserts[0].commit_characters.as_ref(), &['(', '.']);
+        assert_eq!(inserts[1].commit_characters.as_ref(), &[';']);
+        assert!(inserts[2].commit_characters.is_empty());
+        assert!(std::sync::Arc::ptr_eq(
+            &inserts[0].commit_characters,
+            &inserts[3].commit_characters
+        ));
+        assert!(
+            inserts[0].raw.get("commitCharacters").is_none(),
+            "resolve payload must remain the original item"
+        );
+        assert_eq!(inserts[2].raw["commitCharacters"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn completion_metadata_rejects_non_character_entries_without_inheriting_overrides() {
+        let mut item = base_item("item");
+        item.commit_characters = Some(
+            ["", "::", "e\u{301}", "é", "🦀", ".", "."]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+        );
+        let MenuInsert::Lsp(data) = convert(item).unwrap().insert else {
+            panic!("LSP insert")
+        };
+        assert_eq!(data.commit_characters.as_ref(), &['.', 'é', '🦀']);
+        let options = lsp_types::CompletionOptions {
+            all_commit_characters: Some(vec![".".into()]),
+            ..Default::default()
+        };
+        let mut invalid_override = base_item("invalid");
+        invalid_override.commit_characters = Some(vec!["::".into()]);
+        let (id, root) = server();
+        let items = items_to_menu_items(vec![invalid_override], &id, &root, Some(&options));
+        let MenuInsert::Lsp(data) = &items[0].insert else {
+            panic!("LSP insert")
+        };
+        assert!(data.commit_characters.is_empty());
+    }
+
+    #[test]
+    fn completion_metadata_missing_options_never_guess_commit_characters_or_resolve_support() {
+        let (id, root) = server();
+        for options in [None, Some(lsp_types::CompletionOptions::default())] {
+            let items = items_to_menu_items(vec![base_item("item")], &id, &root, options.as_ref());
+            let MenuInsert::Lsp(data) = &items[0].insert else {
+                panic!("LSP insert")
+            };
+            assert!(!data.can_resolve);
+            assert!(data.commit_characters.is_empty());
+        }
+    }
+
+    #[test]
+    fn completion_metadata_keeps_upfront_edits_literal_and_raw_payload_unchanged() {
+        let item: lsp_types::CompletionItem = serde_json::from_value(serde_json::json!({
+            "label": "method", "insertText": "method($0)", "insertTextFormat": 2,
+            "commitCharacters": [";", ";", "::"], "data": {"opaque": 7},
+            "additionalTextEdits": [
+                {"range": {"start": {"line": 0, "character": 2}, "end": {"line": 0, "character": 2}}, "newText": "$0"},
+                {"range": {"start": {"line": 1, "character": 3}, "end": {"line": 1, "character": 5}}, "newText": "é"}
+            ]
+        })).unwrap();
+        let expected_raw = serde_json::to_value(&item).unwrap();
+        let expected_edits: Vec<_> = item
+            .additional_text_edits
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|edit| (edit.range, edit.new_text.clone()))
+            .collect();
+        let MenuInsert::Lsp(data) = convert(item).unwrap().insert else {
+            panic!("LSP insert")
+        };
+        assert_eq!(*data.raw, expected_raw);
+        assert_eq!(data.additional_text_edits, expected_edits);
+        assert_eq!(data.text, "method()");
+        assert_eq!(data.caret_offset, Some(7));
+        assert_eq!(data.commit_characters.as_ref(), &[';']);
+        let copy = data.clone();
+        assert!(std::sync::Arc::ptr_eq(
+            &data.commit_characters,
+            &copy.commit_characters
+        ));
+    }
+
+    #[test]
     fn documentation_is_flattened_to_plaintext() {
         let mut item = base_item("f");
         item.documentation = Some(lsp_types::Documentation::MarkupContent(
@@ -371,6 +600,10 @@ mod tests {
     fn kinds_map_onto_badge_kinds() {
         let mut item = base_item("f");
         item.kind = Some(CompletionItemKind::METHOD);
+        assert_eq!(convert(item).unwrap().kind, MenuItemKind::Method);
+
+        let mut item = base_item("f");
+        item.kind = Some(CompletionItemKind::FUNCTION);
         assert_eq!(convert(item).unwrap().kind, MenuItemKind::Function);
 
         let mut item = base_item("c");
@@ -452,7 +685,7 @@ mod tests {
             .collect();
         let (id, root) = server();
         assert_eq!(
-            items_to_menu_items(items, &id, &root, false).len(),
+            items_to_menu_items(items, &id, &root, None).len(),
             MAX_LSP_ITEMS
         );
     }
