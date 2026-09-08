@@ -506,6 +506,12 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Problems(m) => format!("Problems::{:?}", m),
         Msg::Usages(m) => format!("Usages::{:?}", m),
         Msg::Terminal(m) => format!("Terminal::{:?}", m),
+        Msg::Completion(crate::messages::CompletionMsg::InlineContextReady { job, .. }) => {
+            format!(
+                "Completion::InlineContextReady(request={})",
+                job.request.snapshot.request_id
+            )
+        }
         Msg::Completion(m) => format!("Completion::{:?}", m),
         Msg::Lsp(m) => format!("Lsp::{:?}", m),
         Msg::ContextMenu(m) => format!("ContextMenu::{:?}", m),

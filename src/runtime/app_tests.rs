@@ -793,6 +793,52 @@ fn recency_inline_suggestion_round_trips_through_the_worker_and_accepts() {
     );
 }
 
+/// Retrieval preparation feeds the same provider worker as recency context.
+#[test]
+fn workspace_retrieval_reaches_the_inline_provider_through_background_preparation() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(
+        directory.path().join("helpers.rs"),
+        "fn parse_widget() -> i32 { 42 }\n",
+    )
+    .unwrap();
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model
+        .open_workspace(directory.path().canonicalize().unwrap());
+    app.model.config.completion.inline.enabled = true;
+    app.model.config.completion.inline.statistics = false;
+    app.model.config.completion.inline.provider = "local".into();
+    app.model.config.completion.providers.insert(
+        "local".into(),
+        token::config::ProviderConfig {
+            url: fake_infill_server("42"),
+            context: token::completion::recency::ContextStrategy::WorkspaceRetrieval {
+                max_chunks: 8,
+                chunk_lines: 64,
+            },
+            ..Default::default()
+        },
+    );
+    app.model.document_mut().buffer = "// parse_widget\n".into();
+    app.process_automation_msg(Msg::Editor(EditorMsg::SetCursorPosition {
+        line: 1,
+        column: 0,
+    }));
+    app.process_automation_msg(Msg::Completion(CompletionMsg::TriggerInline {
+        explicit: true,
+    }));
+    app.check_inline_deadlines();
+    assert!(app.inline_retrieval.is_some());
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+        token::update::inline::visible(&app.model).is_some()
+    }));
+    let latest = app.inline_worker.latest();
+    let request = &latest.as_ref().unwrap().request;
+    assert_eq!(request.extra_context.len(), 1);
+    assert_eq!(request.extra_context[0].filename, "helpers.rs");
+    assert_eq!(request.prefix, "// parse_widget\n");
+}
+
 /// Real worker arrival followed by partial/full acceptance through named actions.
 #[test]
 fn inline_partial_accept_is_available_through_automation() {

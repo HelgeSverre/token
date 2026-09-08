@@ -25,6 +25,12 @@ pub enum ContextStrategy {
         #[serde(default = "default_chunk_lines")]
         chunk_lines: usize,
     },
+    WorkspaceRetrieval {
+        #[serde(default = "default_max_chunks")]
+        max_chunks: usize,
+        #[serde(default = "default_chunk_lines")]
+        chunk_lines: usize,
+    },
 }
 
 fn default_max_chunks() -> usize {
@@ -43,12 +49,18 @@ impl ContextStrategy {
             Self::RecencyRing {
                 max_chunks,
                 chunk_lines,
+            }
+            | Self::WorkspaceRetrieval {
+                max_chunks,
+                chunk_lines,
             } if (1..=MAX_CHUNKS).contains(&max_chunks) && (1..=256).contains(&chunk_lines) => {
                 Ok(Some((max_chunks, chunk_lines)))
             }
-            Self::RecencyRing { .. } => Err(ProviderError::Configuration(
-                "recency_ring requires max_chunks: 1..32 and chunk_lines: 1..256",
-            )),
+            Self::RecencyRing { .. } | Self::WorkspaceRetrieval { .. } => {
+                Err(ProviderError::Configuration(
+                    "context requires max_chunks: 1..32 and chunk_lines: 1..256",
+                ))
+            }
         }
     }
 }
@@ -135,6 +147,16 @@ mod tests {
         let provider: crate::config::ProviderConfig =
             serde_yaml::from_str("context: { strategy: recency_ring }").unwrap();
         assert_eq!(provider.context.limits().unwrap(), Some((8, 64)));
+        let retrieval: crate::config::ProviderConfig =
+            serde_yaml::from_str("context: { strategy: workspace_retrieval }").unwrap();
+        assert_eq!(retrieval.context.limits().unwrap(), Some((8, 64)));
+        assert_eq!(
+            serde_yaml::from_str::<crate::config::ProviderConfig>(
+                &serde_yaml::to_string(&retrieval).unwrap()
+            )
+            .unwrap(),
+            retrieval
+        );
         let encoded = serde_yaml::to_string(&provider).unwrap();
         assert_eq!(
             serde_yaml::from_str::<crate::config::ProviderConfig>(&encoded).unwrap(),
@@ -148,6 +170,12 @@ mod tests {
             (usize::MAX, usize::MAX),
         ] {
             assert!(ContextStrategy::RecencyRing {
+                max_chunks,
+                chunk_lines
+            }
+            .limits()
+            .is_err());
+            assert!(ContextStrategy::WorkspaceRetrieval {
                 max_chunks,
                 chunk_lines
             }

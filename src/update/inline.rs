@@ -284,7 +284,7 @@ pub(crate) fn deadline_fired(
         explicit,
     )?;
     model.ui.inline_in_flight = true;
-    Some(Cmd::RunInlineRequest(Box::new(InlineJob {
+    Some(Cmd::PrepareInlineRequest(Box::new(InlineJob {
         request,
         provider,
         context: crate::completion::postprocess::InlineContext::capture(
@@ -292,6 +292,25 @@ pub(crate) fn deadline_fired(
             (cursor.line, cursor.column),
         ),
     })))
+}
+
+/// Context is speculative too: never transmit a stale request to a provider.
+pub(crate) fn context_ready(
+    model: &mut AppModel,
+    job: Box<InlineJob>,
+    root: Option<std::path::PathBuf>,
+) -> Option<Cmd> {
+    let session = model.ui.inline_session.as_ref()?;
+    if session.snapshot != job.request.snapshot || session.provider != job.provider {
+        return None;
+    }
+    if !session_is_current(model, session) || model.workspace_root() != root.as_ref() {
+        return dismiss(model);
+    }
+    model
+        .ui
+        .inline_in_flight
+        .then_some(Cmd::RunInlineRequest(job))
 }
 
 /// The worker answered. Stale replies (document, revision, or cursor
@@ -485,6 +504,51 @@ mod tests {
     fn arm(model: &mut AppModel) -> RequestSnapshot {
         trigger(model, true);
         model.ui.inline_session.as_ref().unwrap().snapshot.clone()
+    }
+
+    #[test]
+    fn inline_context_is_revalidated_before_provider_submission() {
+        let mut model = model_with_inline("\n");
+        let snapshot = arm(&mut model);
+        let Some(Cmd::PrepareInlineRequest(job)) = deadline_fired(&mut model, snapshot, true)
+        else {
+            panic!("preparation required");
+        };
+        #[cfg(debug_assertions)]
+        assert_eq!(
+            super::super::msg_type_name(&Msg::Completion(CompletionMsg::InlineContextReady {
+                job: job.clone(),
+                root: None
+            })),
+            format!(
+                "Completion::InlineContextReady(request={})",
+                job.request.snapshot.request_id
+            )
+        );
+        assert!(matches!(
+            context_ready(&mut model, job.clone(), None),
+            Some(Cmd::RunInlineRequest(_))
+        ));
+        let mut old = job.clone();
+        old.request.snapshot.request_id = old.request.snapshot.request_id.wrapping_sub(1);
+        assert!(context_ready(&mut model, old, None).is_none());
+        assert!(
+            model.ui.inline_in_flight,
+            "late work must not clear newer requests"
+        );
+        assert!(cancels(&context_ready(
+            &mut model,
+            job,
+            Some("changed-workspace".into())
+        )));
+        assert!(!model.ui.inline_in_flight);
+        let snapshot = arm(&mut model);
+        let Some(Cmd::PrepareInlineRequest(job)) = deadline_fired(&mut model, snapshot, true)
+        else {
+            panic!("preparation required");
+        };
+        model.document_mut().revision += 1;
+        assert!(cancels(&context_ready(&mut model, job, None)));
     }
 
     fn statistics_events(command: Option<Cmd>) -> Vec<crate::completion::statistics::UsageEvent> {
@@ -1037,7 +1101,7 @@ mod tests {
         );
         fn worker_request(cmd: &Cmd) -> Option<&crate::completion::inline::InlineRequest> {
             match cmd {
-                Cmd::RunInlineRequest(job) => Some(&job.request),
+                Cmd::PrepareInlineRequest(job) => Some(&job.request),
                 Cmd::Batch(cmds) => cmds.iter().find_map(worker_request),
                 _ => None,
             }

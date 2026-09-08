@@ -1177,7 +1177,9 @@ pub enum Cmd {
         delay_ms: u64,
         explicit: bool,
     },
-    /// Hand a snapshotted request to the completion worker thread.
+    /// Collect opt-in context before handing the request to the provider.
+    PrepareInlineRequest(Box<crate::completion::provider::InlineJob>),
+    /// Hand a context-prepared request to the completion worker thread.
     RunInlineRequest(Box<crate::completion::provider::InlineJob>),
     /// Stop the pending debounce and drop the worker's in-flight future.
     CancelInlineRequest,
@@ -1355,6 +1357,7 @@ impl Cmd {
             Cmd::LspExecuteCommand { .. } => Damage::Areas(vec![]),
             Cmd::LspScheduleCompletion { .. } => Damage::Areas(vec![]),
             Cmd::ScheduleInlineRequest { .. }
+            | Cmd::PrepareInlineRequest(_)
             | Cmd::RunInlineRequest(_)
             | Cmd::CancelInlineRequest => Damage::Areas(vec![]),
             Cmd::LspCancelCompletion { .. } => Damage::Areas(vec![]),

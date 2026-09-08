@@ -107,6 +107,9 @@ pub(super) fn update_completion(model: &mut AppModel, msg: CompletionMsg) -> Opt
         CompletionMsg::InlineDeadlineFired { snapshot, explicit } => {
             super::inline::deadline_fired(model, snapshot, explicit)
         }
+        CompletionMsg::InlineContextReady { job, root } => {
+            super::inline::context_ready(model, job, root)
+        }
         CompletionMsg::InlineReady { snapshot, texts } => {
             super::inline::ready(model, snapshot, texts)
         }

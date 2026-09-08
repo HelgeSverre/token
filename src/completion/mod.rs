@@ -14,6 +14,7 @@ pub mod postprocess;
 pub mod prompt;
 pub mod provider;
 pub mod recency;
+pub mod retrieval;
 pub mod sources;
 pub mod statistics;
 

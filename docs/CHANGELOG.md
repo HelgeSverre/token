@@ -6,6 +6,14 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Workspace-aware inline suggestions
+
+- Providers can opt into `workspace_retrieval` context: bounded, background BM25
+  ranking of workspace declarations using the existing syntax/outline registry.
+  Respects ignore files, skips hidden/generated directories and symlinks, and uses
+  unsaved open buffers instead of stale disk text. Requests are revalidated before
+  provider submission. No workspace source is collected by default.
+
 ### Managed local suggestions
 
 - Inline providers can opt into a window-owned llama-server using a configured

@@ -574,6 +574,54 @@ Extra context participates in exact and partial result-cache equality and the
 existing 8 MiB cache payload limit. Changing context therefore prevents reuse of
 an answer generated with different snippets; there is no new cache setting.
 
+### Workspace retrieval context
+
+For relevant declarations from unopened workspace files, use this **opt-in**
+alternative to `recency_ring` on your existing provider:
+
+```yaml
+context:
+  strategy: workspace_retrieval
+  max_chunks: 8       # 1–32
+  chunk_lines: 64     # 1–256
+```
+
+This permits sending workspace source, including unsaved text from eligible
+open files, to the configured provider. It is not a secret detector: keep private
+source excluded by ignore rules, or leave context disabled. No extra source is
+collected without a workspace, or for a named active file outside that workspace.
+
+The background worker respects `.gitignore` (also outside Git repositories),
+`.ignore`, Git excludes and global Git ignores. It skips symlinks, hidden paths,
+`target`, `node_modules`, `vendor`, `dist`, `build`, unknown-language files,
+binary/invalid UTF-8 files and the active file. Reported ignore/traversal errors yield no
+extra context. Open text snapshots replace disk content; oversized or special
+open buffers are excluded, not silently replaced by their saved versions.
+
+Existing Tree-sitter grammars and outline extractors identify declarations;
+languages without an outline use line windows. BM25 ranks exact identifiers from
+the last 1,024 prefix characters and first 256 suffix characters, excluding common
+syntax words and taking at most 128 terms, closest prefix terms first.
+Only positive-overlap snippets are sent; overlapping regions and
+identical snippets are removed. This is lexical relevance, not type resolution
+or a guarantee of useful model output. Selected chunks use stable path/text order,
+but selection can change while typing and reduce the server's prompt-cache reuse.
+
+Collection is bounded to 512 files, 256 KiB per file, 8 MiB of source, depth 20
+and 20,000 traversal entries. It checks a 250 ms collection deadline between
+entries; parsers have a 25 ms cancellation budget. These are cooperative limits,
+not hard filesystem latency guarantees. Large workspaces may contribute only a
+subset. Each file contributes at most 128 chunks; ranking examines at most 8 MiB
+of chunk text. The usual 8 KiB/snippet and 1 KiB/filename limits still apply.
+
+The window-local cache retains source and declaration ranges only in memory.
+Each request rechecks ignore rules and source text, so changed, deleted and newly
+ignored files cannot reuse old cached chunks. Cancellation supersedes background
+work; document/cursor, provider and workspace identity are checked again before
+HTTP submission. Switching away from retrieval or disabling inline completion
+drops the cache. Requests already sent cannot be retracted. Transport formatting
+and result-cache rules are the same as for recency context above.
+
 ### Cycling inline alternatives
 
 For `open_ai_compat`, `n` selects 1–8 results per request and defaults to 1.

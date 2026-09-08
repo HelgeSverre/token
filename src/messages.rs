@@ -1506,6 +1506,11 @@ pub enum CompletionMsg {
         snapshot: crate::completion::inline::RequestSnapshot,
         explicit: bool,
     },
+    /// Background context collection completed; validate identity before HTTP.
+    InlineContextReady {
+        job: Box<crate::completion::provider::InlineJob>,
+        root: Option<std::path::PathBuf>,
+    },
     /// The completion worker produced ordered, post-processed alternatives.
     InlineReady {
         snapshot: crate::completion::inline::RequestSnapshot,

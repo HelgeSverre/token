@@ -509,12 +509,22 @@ pub enum ContextStrategy {
         // token-set similarity (>0.9 evicts); updated on idle only, so the
         // prompt's stable region stays stable and server KV-cache reuse works
     },
+    WorkspaceRetrieval { // bounded, ignore-aware BM25 declaration retrieval
+        max_chunks: usize,       // default 8
+        chunk_lines: usize,      // default 64
+    },
 }
 ```
 
 Capability flags per transport (`builds_fim_prompt`, `supports_extra_context`, `supports_time_budget`, `supports_slot_affinity`) steer the request builder — e.g. when `supports_extra_context` is false, ring chunks are inlined into the prefix as commented snippets (`// Path: …` headers, the Copilot/DeepSeek convention).
 
-Why RecencyRing and not retrieval: retrieval that re-ranks per keystroke invalidates the server's prefix cache — the single biggest local-latency lever. llama.vim's ring (stable chunks first in the prompt, `cache_prompt: true`, `--cache-reuse`) turns a large repo context into a one-time prompt-eval cost. Retrieval (BM25 à la Zeta/Tabby) is a future `ContextStrategy` variant; the enum is the seam.
+Recency remains useful when prompt-prefix stability matters: retrieval can change
+the selected chunks while typing, reducing the server's KV-cache reuse.
+`WorkspaceRetrieval` is now an opt-in alternative on the same strategy boundary.
+It uses the existing syntax/outline registry for declarations, with bounded line
+windows where no outline exists. An ignore-aware, cancelable runtime worker
+collects source; the update layer revalidates the request before provider
+submission. See [configuration, limits and transmission scope](../user/config-editor.md#workspace-retrieval-context).
 
 ### Post-processing
 
@@ -689,7 +699,12 @@ Automation/MCP: all commands (`TriggerMenu`, `AcceptInline`, …) are `is_simple
 
 - [ ] Multi-row ghost text + mid-line suggestions — implemented on shared `TextViewportMap` geometry, with real-insertion oracle, lifecycle and blink-pixel tests plus an inspected headless screenshot. Isolated macOS keyboard/pointer/resize checks and release-stage profiling are now recorded; actual IME composition/candidate-window behavior and the remaining platform matrix are still unverified. See the [native/profiling audit](../dev/refactoring-audit-2026-09-06.md#ghost-native-checks-and-release-profiling--2026-09-07).
 - [ ] Edit prediction: anchor-based edit-list suggestion variant, deletion highlighting, diff popover, jump targets (the Zed model); candidate providers: Zeta-style rewrite models, Copilot NES-compatible backends.
-- [ ] Retrieval context strategy (BM25 over workspace, Tabby-style declaration extraction via tree-sitter or LSP).
+- [x] Opt-in workspace retrieval: BM25 over bounded workspace source, declaration
+  extraction through the existing Tree-sitter/outline registry, ignore-aware
+  collection on the shared latest-request worker, unsaved-buffer precedence,
+  and a guarded preparation-to-provider handoff. Ranking, ignore/cache refresh,
+  scope, wire formatting and the real background preparation/provider pipeline
+  have fixture coverage. Live model relevance is not established by those checks.
 - [x] TabbyML native segments transport, sharing the HTTP provider, credentials, cancellation, response limits, recency comment fallback and acceptance pipeline. No automatic startup or telemetry. Wire fixtures and worker acceptance/cancellation tests cover the adapter; live server/model quality is unverified. See [configuration and limits](../user/config-editor.md#tabbyml).
 - [x] Supervised local llama-server child process: opt-in executable/model configuration, on-demand startup, health checks, bounded loading, warm reuse across generation cancellation, explicit failure retry and owned-child teardown on configuration changes/exit. Real-child fixtures and an isolated macOS run with a cached Qwen Coder model pass; Windows/Linux process behavior and broader model quality remain unverified. See [configuration](../user/config-editor.md#managed-local-llama-server) and the [verification record](../dev/refactoring-audit-2026-09-06.md#managed-local-llama-server--2026-09-08).
 - [x] Local acceptance stats: one terminal outcome per offered response (accepted, dismissed, or fully typed through), attributed to its original configured provider name. Alternatives and partial accepts do not inflate totals. Versioned aggregate-only JSON is merged on the ordered file worker; a config/Settings opt-out and palette action expose the feature. Lifecycle, bounded storage, concurrent writers, failure recovery and queue-draining tests pass. No source, connection settings or network telemetry are collected. See [semantics and storage limits](../user/config-editor.md#local-completion-statistics); these are descriptive counts, not a controlled provider-quality score.
@@ -763,7 +778,7 @@ A stub HTTP server (few dozen lines, `std::net`) speaking canned `/infill` and `
 | FIM factoring | monolithic per-backend / transport × prompt format × context strategy | three independent axes | Zed's proven factoring; only one that survives new backends |
 | First transport | Ollama / OpenAI-compat / llama.cpp `/infill` | llama.cpp | Server-side prompt building (no sentinel risk), time budgets, `input_extra`, cache reuse — most capability for least client code |
 | Default model guidance | Mellum / Codestral / Qwen2.5-Coder base | Qwen2.5-Coder 0.5B/1.5B base | Apache 2.0, smallest viable, llama.cpp presets exist; Mellum documented as GPU tier; Codestral open weights are non-production licensed |
-| Context strategy | retrieval (BM25) / recency ring | recency ring first | Stable prompt prefix preserves server KV-cache — the dominant local-latency lever; retrieval is an enum variant later |
+| Context strategy | retrieval (BM25) / recency ring | opt-in recency or workspace retrieval | Recency favors stable prompt prefixes; retrieval favors lexical relevance and respects workspace ignore rules |
 | Fuzzy matcher | new SIMD matcher (frizbee-like) / nucleo | nucleo | Already a dependency; Lapce ships it for exactly this; revisit only on measured lag |
 | Key conflicts | input.rs branching / KeyContext conditions | conditions | Existing mechanism, user-rebindable, matches keymap TODO |
 | Menu debounce | timer / none for sync sources | none (sync); request-coalescing for async | Zed ships menu completion with no timer debounce; our sync sources are sub-ms |

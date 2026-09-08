@@ -650,7 +650,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recency_context_uses_native_extra_or_commented_prefix_on_the_wire() {
+    async fn extra_context_uses_native_extra_or_commented_prefix_on_the_wire() {
         use crate::completion::recency::{ContextChunk, ContextStrategy};
         for (transport, format) in [
             (TransportKind::LlamaCpp, PromptFormat::Native),
@@ -671,7 +671,7 @@ mod tests {
             };
             let (url, seen) = server(response("200 OK", reply));
             let config = ProviderConfig {
-                context: ContextStrategy::RecencyRing {
+                context: ContextStrategy::WorkspaceRetrieval {
                     max_chunks: 8,
                     chunk_lines: 64,
                 },

@@ -12,6 +12,7 @@ mod file_io;
 mod find_worker;
 mod inline_cache;
 mod inline_context;
+mod inline_retrieval;
 mod inline_server;
 mod inline_statistics;
 pub mod inline_worker;

@@ -123,7 +123,12 @@ impl InlineContextRing {
             .providers
             .get(&completion.inline.provider)
             .filter(|_| completion.enabled && completion.inline.enabled)
-            .filter(|provider| matches!(provider.context.limits(), Ok(Some(_))));
+            .filter(|provider| {
+                matches!(
+                    provider.context,
+                    token::completion::recency::ContextStrategy::RecencyRing { .. }
+                )
+            });
         let Some(provider) = provider else {
             *self = Self::default();
             return;

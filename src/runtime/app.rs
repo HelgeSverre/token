@@ -252,6 +252,7 @@ pub struct App {
     /// Only the focused pane can own an inline debounce/request.
     inline_deadline: Option<(Instant, token::completion::inline::RequestSnapshot, bool)>,
     inline_context: super::inline_context::InlineContextRing,
+    inline_retrieval: Option<super::inline_retrieval::RetrievalWorker>,
     /// Requests for the completion worker thread.
     inline_worker: super::inline_worker::InlineWorker,
     /// When this window last gained focus (process start until then);
@@ -1107,6 +1108,7 @@ impl App {
             document_waiters: Vec::new(),
             inline_deadline: None,
             inline_context: super::inline_context::InlineContextRing::default(),
+            inline_retrieval: None,
             inline_worker,
             focused_at: std::time::SystemTime::now(),
             syntax_scheduled: HashMap::new(),
@@ -2930,9 +2932,42 @@ impl App {
                     explicit,
                 ));
             }
-            Cmd::RunInlineRequest(mut request) => {
-                self.inline_context
-                    .attach(&self.model, &mut request, Instant::now());
+            Cmd::PrepareInlineRequest(mut request) => {
+                if matches!(
+                    request.provider.context,
+                    token::completion::recency::ContextStrategy::WorkspaceRetrieval { .. }
+                ) {
+                    if self.inline_retrieval.is_none() {
+                        match super::inline_retrieval::start(
+                            self.msg_tx.clone(),
+                            self.worker_wake.clone(),
+                        ) {
+                            Ok(worker) => self.inline_retrieval = Some(worker),
+                            Err(_) => {
+                                let _ = self.msg_tx.send(Msg::Completion(
+                                    token::messages::CompletionMsg::InlineFailed {
+                                        snapshot: request.request.snapshot,
+                                        error: "Could not start workspace context worker".into(),
+                                    },
+                                ));
+                                return;
+                            }
+                        }
+                    }
+                    if let Some(worker) = &self.inline_retrieval {
+                        worker.submit(super::inline_retrieval::RetrievalJob::capture(
+                            &self.model,
+                            request,
+                        ));
+                    }
+                } else {
+                    self.inline_retrieval = None;
+                    self.inline_context
+                        .attach(&self.model, &mut request, Instant::now());
+                    self.process_cmd(Cmd::RunInlineRequest(request));
+                }
+            }
+            Cmd::RunInlineRequest(request) => {
                 if !self.inline_worker.submit(request) {
                     tracing::warn!("inline suggestion worker is gone");
                     self.model.ui.inline_in_flight = false;
@@ -2942,6 +2977,9 @@ impl App {
             Cmd::CancelInlineRequest => {
                 self.inline_deadline = None;
                 self.inline_worker.cancel();
+                if let Some(worker) = &self.inline_retrieval {
+                    worker.cancel();
+                }
             }
             Cmd::LspCancelCompletion { document_id } => {
                 // Drop the pending debounce and supersede any in-flight
@@ -4980,13 +5018,21 @@ impl App {
     }
 
     /// Configuration lifetime is independent of a canceled suggestion request.
-    fn sync_inline_provider(&self) {
+    fn sync_inline_provider(&mut self) {
         let completion = &self.model.config.completion;
         let provider = completion
             .providers
             .get(&completion.inline.provider)
             .filter(|_| completion.enabled && completion.inline.enabled);
         self.inline_worker.configure(provider);
+        if !provider.is_some_and(|provider| {
+            matches!(
+                provider.context,
+                token::completion::recency::ContextStrategy::WorkspaceRetrieval { .. }
+            )
+        }) {
+            self.inline_retrieval = None;
+        }
     }
 
     /// Replay elapsed inline-suggestion debounces into the update layer,
@@ -5281,6 +5327,7 @@ impl ApplicationHandler for App {
         // the endpoint it connected through disappears.
         self.answer_exit_waiters();
         self.inline_worker.stop();
+        self.inline_retrieval = None;
         automation::remove_own_endpoint();
     }
 

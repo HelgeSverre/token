@@ -99,6 +99,7 @@ csv = "1.3"
 
 # For find/replace regex + whole-word search
 regex = "1"
+ignore = "0.4"
 
 # Syntax highlighting with tree-sitter
 tree-sitter = "0.25"
