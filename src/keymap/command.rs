@@ -688,6 +688,7 @@ impl Command {
         matches!(
             self,
             Command::ToggleCommandPalette
+                | Command::OpenSettings
                 | Command::ToggleGotoLine
                 | Command::ToggleFindReplace
                 | Command::ToggleSoftWrap

@@ -23,6 +23,10 @@ All notable changes to rust-editor are documented in this file.
 
 ### Keyboard shortcuts
 
+- Settings shortcuts now work from terminals, docks and other dialogs. Chords
+  for global commands work in those contexts too; editor-only bindings are
+  filtered before matching so they cannot capture input or block an eligible
+  global binding.
 - Alt-containing chord shortcuts no longer trigger the bare-Alt double-tap
   multi-cursor gesture. Actual double-tap-and-arrow navigation is preserved.
 

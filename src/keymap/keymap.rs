@@ -101,8 +101,22 @@ impl Keymap {
         candidates: impl IntoIterator<Item = Keystroke>,
         context: Option<&KeyContext>,
     ) -> KeyAction {
+        self.handle_keystroke_filtered(candidates, context, |_| true)
+    }
+
+    /// Resolve only commands the caller can dispatch in its current focus mode.
+    /// Filtering before matching keeps unavailable commands from claiming a
+    /// single key or chord prefix, or shadowing an available binding.
+    pub fn handle_keystroke_filtered(
+        &mut self,
+        candidates: impl IntoIterator<Item = Keystroke>,
+        context: Option<&KeyContext>,
+        accepts: impl Fn(Command) -> bool,
+    ) -> KeyAction {
+        let is_active =
+            |binding: &Keybinding| binding.is_active(context) && accepts(binding.command);
         for keystroke in candidates {
-            let action = self.action_for(keystroke, context);
+            let action = self.action_for(keystroke, &is_active);
             match action {
                 KeyAction::NoMatch => continue,
                 KeyAction::AwaitMore => self.pending_chord.push(keystroke),
@@ -114,26 +128,30 @@ impl Keymap {
         KeyAction::NoMatch
     }
 
-    fn action_for(&self, keystroke: Keystroke, context: Option<&KeyContext>) -> KeyAction {
+    fn action_for(
+        &self,
+        keystroke: Keystroke,
+        is_active: &impl Fn(&Keybinding) -> bool,
+    ) -> KeyAction {
         if !self.pending_chord.is_empty() {
             let mut pending = self.pending_chord.clone();
             pending.push(keystroke);
-            return self.chord_action(&pending, context);
+            return self.chord_action(&pending, is_active);
         }
 
         // Try single-keystroke binding
         if let Some(indices) = self.single_lookup.get(&keystroke) {
-            if let Some(command) = self.find_matching_binding(indices, context) {
+            if let Some(command) = self.find_matching_binding(indices, is_active) {
                 return KeyAction::Execute(command);
             }
         }
 
         // Check if this starts a chord
-        if self.chord_prefixes.get(&keystroke).is_some_and(|indices| {
-            indices
-                .iter()
-                .any(|&idx| self.bindings[idx].is_active(context))
-        }) {
+        if self
+            .chord_prefixes
+            .get(&keystroke)
+            .is_some_and(|indices| indices.iter().any(|&idx| is_active(&self.bindings[idx])))
+        {
             return KeyAction::AwaitMore;
         }
 
@@ -144,12 +162,12 @@ impl Keymap {
     fn find_matching_binding(
         &self,
         indices: &[usize],
-        context: Option<&KeyContext>,
+        is_active: &impl Fn(&Keybinding) -> bool,
     ) -> Option<Command> {
         // First pass: find bindings with conditions that match
         for &idx in indices {
             let binding = &self.bindings[idx];
-            if binding.when.is_some() && binding.is_active(context) {
+            if binding.when.is_some() && is_active(binding) {
                 return Some(binding.command);
             }
         }
@@ -157,7 +175,7 @@ impl Keymap {
         // Second pass: find unconditional bindings
         for &idx in indices {
             let binding = &self.bindings[idx];
-            if binding.when.is_none() {
+            if binding.when.is_none() && is_active(binding) {
                 return Some(binding.command);
             }
         }
@@ -166,7 +184,11 @@ impl Keymap {
     }
 
     /// Resolve without mutating chord state, shared by dispatch and hints.
-    fn chord_action(&self, pending: &[Keystroke], context: Option<&KeyContext>) -> KeyAction {
+    fn chord_action(
+        &self,
+        pending: &[Keystroke],
+        is_active: &impl Fn(&Keybinding) -> bool,
+    ) -> KeyAction {
         let Some(&first) = pending.first() else {
             return KeyAction::NoMatch;
         };
@@ -179,7 +201,7 @@ impl Keymap {
         // Preserve dispatch's existing chord precedence: first eligible exact match.
         for &idx in indices {
             let binding = &self.bindings[idx];
-            if binding.keystrokes == pending && binding.is_active(context) {
+            if binding.keystrokes == pending && is_active(binding) {
                 return KeyAction::Execute(binding.command);
             }
         }
@@ -189,7 +211,7 @@ impl Keymap {
             let binding = &self.bindings[idx];
             binding.keystrokes.len() > pending.len()
                 && &binding.keystrokes[..pending.len()] == pending
-                && binding.is_active(context)
+                && is_active(binding)
         });
 
         if could_match {
@@ -214,7 +236,7 @@ impl Keymap {
         context: Option<&KeyContext>,
     ) -> Option<Command> {
         let indices = self.single_lookup.get(keystroke)?;
-        self.find_matching_binding(indices, context)
+        self.find_matching_binding(indices, &|binding| binding.is_active(context))
     }
 
     /// Get all bindings
@@ -234,7 +256,9 @@ impl Keymap {
                 return binding.keystrokes.len() == 1 && winner == command;
             }
             for length in 2..=binding.keystrokes.len() {
-                let action = self.chord_action(&binding.keystrokes[..length], Some(context));
+                let action = self.chord_action(&binding.keystrokes[..length], &|binding| {
+                    binding.is_active(Some(context))
+                });
                 if length == binding.keystrokes.len() {
                     return action == KeyAction::Execute(command);
                 }

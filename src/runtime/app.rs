@@ -1218,23 +1218,12 @@ impl App {
         let context = self.get_key_context();
         let skip_non_global =
             should_skip_non_global_keymap(&self.model, self.option_gesture.double_tapped, alt);
-        let action = self
-            .model
+        self.model
             .ui
             .keymap
-            .handle_keystroke_with_context(candidates, Some(&context));
-        match action {
-            KeyAction::Execute(command)
-                if command.is_global() || (!skip_non_global && command.is_simple()) =>
-            {
-                KeyAction::Execute(command)
-            }
-            KeyAction::AwaitMore if !skip_non_global => KeyAction::AwaitMore,
-            _ => {
-                self.model.ui.keymap.reset();
-                KeyAction::NoMatch
-            }
-        }
+            .handle_keystroke_filtered(candidates, Some(&context), |command| {
+                command.is_global() || (!skip_non_global && command.is_simple())
+            })
     }
 
     fn init_renderer(&mut self, window: Rc<Window>, context: &Context<Rc<Window>>) -> Result<()> {

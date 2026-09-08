@@ -165,10 +165,15 @@ fn shortcut_resolution_retains_global_commands_and_focus_gates() {
     let save = Keystroke::new(KeyCode::Char('s'), Modifiers::CTRL);
     let copy = Keystroke::new(KeyCode::Char('c'), Modifiers::CTRL);
     let prefix = Keystroke::new(KeyCode::Char('k'), Modifiers::CTRL);
+    let editor_prefix = Keystroke::new(KeyCode::Char('b'), Modifiers::CTRL);
+    let settings = Keystroke::new(KeyCode::Char(','), Modifiers::CTRL);
     app.model.ui.keymap = Keymap::with_bindings(vec![
         Keybinding::new(save, Command::SaveFile),
         Keybinding::new(copy, Command::Copy),
+        Keybinding::new(settings, Command::OpenSettings),
         Keybinding::chord(vec![prefix, save], Command::SaveFile),
+        Keybinding::chord(vec![prefix, copy], Command::Copy),
+        Keybinding::chord(vec![editor_prefix, copy], Command::Copy),
     ]);
     assert_eq!(
         app.resolve_keymap_action([prefix], false),
@@ -188,6 +193,20 @@ fn shortcut_resolution_retains_global_commands_and_focus_gates() {
     assert_eq!(app.resolve_keymap_action([copy], false), KeyAction::NoMatch);
     assert_eq!(
         app.resolve_keymap_action([prefix], false),
+        KeyAction::AwaitMore
+    );
+    assert_eq!(
+        app.resolve_keymap_action([save], false),
+        KeyAction::Execute(Command::SaveFile)
+    );
+    assert_eq!(
+        app.resolve_keymap_action([prefix], false),
+        KeyAction::AwaitMore
+    );
+    assert_eq!(app.resolve_keymap_action([copy], false), KeyAction::NoMatch);
+    assert!(!app.model.ui.keymap.has_pending_chord());
+    assert_eq!(
+        app.resolve_keymap_action([editor_prefix], false),
         KeyAction::NoMatch
     );
     assert!(!app.model.ui.keymap.has_pending_chord());
@@ -198,6 +217,64 @@ fn shortcut_resolution_retains_global_commands_and_focus_gates() {
         KeyAction::Execute(Command::SaveFile)
     );
     assert_eq!(app.resolve_keymap_action([copy], false), KeyAction::NoMatch);
+
+    // Settings is a global action, and global chords remain usable in docks.
+    for dock in [
+        token::panel::DockPosition::Left,
+        token::panel::DockPosition::Bottom,
+    ] {
+        app.model
+            .dock_layout
+            .bottom
+            .activate(token::panel::PanelId::TERMINAL);
+        app.model.ui.focus_dock(dock);
+        assert_eq!(
+            app.resolve_keymap_action([settings], false),
+            KeyAction::Execute(Command::OpenSettings)
+        );
+        assert_eq!(
+            app.resolve_keymap_action([prefix], false),
+            KeyAction::AwaitMore
+        );
+        assert_eq!(
+            app.resolve_keymap_action([save], false),
+            KeyAction::Execute(Command::SaveFile)
+        );
+        assert_eq!(
+            app.resolve_keymap_action([editor_prefix], false),
+            KeyAction::NoMatch
+        );
+        assert!(!app.model.ui.keymap.has_pending_chord());
+    }
+
+    // An unavailable conditional binding must not shadow a global command
+    // on the same key, or terminate a longer eligible global chord.
+    use token::keymap::Condition;
+    app.model.ui.keymap = Keymap::with_bindings(vec![
+        Keybinding::new(settings, Command::Copy).when_single(Condition::ModalActive),
+        Keybinding::new(settings, Command::OpenSettings),
+        Keybinding::chord(vec![prefix, copy], Command::Copy),
+        Keybinding::chord(vec![prefix, copy, save], Command::SaveFile),
+    ]);
+    app.model
+        .ui
+        .open_modal(token::model::ModalState::CommandPalette(Default::default()));
+    assert_eq!(
+        app.resolve_keymap_action([settings], false),
+        KeyAction::Execute(Command::OpenSettings)
+    );
+    assert_eq!(
+        app.resolve_keymap_action([prefix], false),
+        KeyAction::AwaitMore
+    );
+    assert_eq!(
+        app.resolve_keymap_action([copy], false),
+        KeyAction::AwaitMore
+    );
+    assert_eq!(
+        app.resolve_keymap_action([save], false),
+        KeyAction::Execute(Command::SaveFile)
+    );
 }
 
 fn focus_outline_with_symbols(app: &mut App) {
