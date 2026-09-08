@@ -1,7 +1,8 @@
 # Pixel scrolling and animated easing
 
-Status: implemented on `feat/pixel-smooth-scrolling`; native acceptance checks
-remain open.
+Status: archived — implemented and verified on `feat/pixel-smooth-scrolling`.
+Native acceptance covers synthetic macOS input and process restart; physical
+trackpad feel and Linux/Windows interaction are not claimed.
 
 ## Requested outcome
 
@@ -23,8 +24,8 @@ terminal and image input semantics are preserved. No new rendering backend.
 - [x] Navigation/reveal, wrapping, resize/DPI, split panes, external reload and
       session persistence preserve or deliberately reset fractional positions.
 - [x] Focused geometry/pixel/animation regressions, full suite and strict lint.
-- [ ] Native macOS pointer/trackpad/scrollbar and restart checks, with explicit
-      limits on cross-platform claims.
+- [x] Native macOS pointer/pixel-wheel/scrollbar and restart checks, with explicit
+      limits on hardware-gesture and cross-platform claims.
 - [x] Release scrolling profile through shared performance stages, recorded in
       `docs/benchmark/`; no debug-frame-rate claims.
 - [x] Changelog, logically grouped commits and final diff review. Archive this
@@ -56,16 +57,22 @@ All build/verification output stays in the normal repository `target/` directory
   unchanged managed-server fixture's one-second startup deadline before its
   startup marker appeared; an isolated retry and the final full confirmation
   passed. No timeouts were changed.
-- Native macOS launch/render and automation queries succeeded, but injected
-  pointer/wheel events did not reliably reach the test window. A corrected
-  foreground query confirmed activation of the test process, and CoreGraphics
-  reported event-posting access enabled. The injection failure remains unexplained.
-  Do not claim native gesture, scrollbar or fractional-restart verification from
-  those attempts. The isolated fixture/config and logs are under
-  `target/verification/native-pixel/`. No host security settings were changed.
+- Native macOS acceptance passed on the latest debug application, using an
+  isolated 300-line fixture and config. Session-tap pixel events moved both
+  axes directly; discrete wheel input produced intermediate animated positions
+  and settled exactly. Native drags moved both scrollbar thumbs to fractional
+  row/column positions. Clicking the partial first row selected the expected
+  text, and wrapped text also accepted direct pixel movement.
+- Orderly window close and process restart restored exactly `x=6 px, y=2900 px`
+  and cursor `(79, 8)` (zero-based), including serialized within-cell fractions.
+  The test window was closed afterward. No host security settings were changed.
+  The local fixture/config, state samples and screenshot remain under
+  `target/verification/native-pixel/`; see the durable native record in the
+  [benchmark report](../benchmark/2026-09-09-pixel-scrolling.md#native-macos-acceptance).
 - Optimized workload results are recorded in the
   [pixel-scrolling CPU report](../benchmark/2026-09-09-pixel-scrolling.md).
 - Core implementation: `61e8eea`. Follow-up `989b84a` fixes horizontal bounds after
   inline dismissal and expands full/dirty pixel comparisons to wrapped tabs,
   diagnostics, visible carets and fractional ghost rows. Diff review found no
-  remaining code defects; native interaction acceptance remains open.
+  remaining code defects. Native acceptance closed without additional
+  application changes; the CPU workload/report extension is `37d9335`.

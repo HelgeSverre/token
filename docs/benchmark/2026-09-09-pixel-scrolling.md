@@ -86,16 +86,11 @@ strict lint passed. Tests cover fractional geometry, full/dirty repaint
 agreement, animation retargeting/cancellation, the idle wake deadline, split
 targeting and session fractions across changed viewport metrics.
 
-The native macOS app launched and rendered the isolated fixture, and automation
-state queries worked. Injected pointer/wheel events did not reliably reach it;
-the test app was confirmed foreground and CoreGraphics reported event-posting
-access enabled, so the injection failure is not explained by a confirmed lock
-or missing permission. No host security settings were changed. Native
-gesture/scrollbar interaction and fractional restart are **not verified** yet.
-The [active implementation checklist](../feature/pixel-scrolling.md) remains
-unarchived until the native checks are closed. The extended CPU pixel tests
-also compare wrapped/unwrapped partial rows with tabs, diagnostics, visible
-carets and ghost text against full and incremental repainting.
+Native macOS acceptance subsequently passed as recorded below. The
+[completed implementation checklist](../archived/pixel-scrolling.md) is archived.
+The extended CPU pixel tests also compare wrapped/unwrapped partial rows with
+tabs, diagnostics, visible carets and ghost text against full and incremental
+repainting.
 
 A subsequent inline-dismissal edge fix clamps horizontal offsets when a wide
 ghost suggestion disappears. The scrolling workloads above contain no inline
@@ -104,3 +99,37 @@ suggestions and were not rerun to claim any performance effect from that fix.
 One later full-suite run hit the unchanged managed-server fixture's one-second
 startup deadline before its startup marker appeared. An isolated retry and the
 final full-suite confirmation passed; no timeout or host-policy changes were made.
+
+## Native macOS acceptance
+
+Checked the latest debug application at `37d9335` (including the `989b84a`
+inline-dismissal fix), with a task-owned window, isolated config/session and a
+300-line long-text fixture. The window's client area was 1600×1200 physical pixels
+at 2×, with a 37 px line height. These are interaction checks, **not debug-build
+performance measurements**.
+
+| Check | Observed result |
+| --- | --- |
+| Direct pixel events | Horizontal movement reached `x=6`; vertical movement changed `y=1850` to `1836`, without animation. |
+| Discrete wheel easing | Samples advanced through `y=1949.95`, `2332.14`, `2477.04` and `2501.98`, then settled exactly at `2502` with animation inactive. |
+| Native scrollbar drags | Vertical thumb reached `y=2924` (one pixel past row 79); horizontal thumb reached `x=78`, within column 4. |
+| Partial-row pointer hit | Click selected zero-based line 79, column 8, retaining `x=78, y=2924`. |
+| Wrapped pixels | Direct movement changed `y=11655` to `11669`; horizontal position remained zero. |
+| Fractional restart | Normal close saved both within-cell fractions. A fresh process restored exactly `x=6, y=2900`, cursor `(79, 8)`, and the same saved file. |
+
+The native screenshot showed text and gutter aligned through the clipped first
+row, partial left-edge glyphs, and no text bleeding into the tab bar. Input used
+`cliclick` for pointer actions and CoreGraphics session-tap pixel/line scroll
+events with short delivery waits; automation only queried state or set up the
+fixture (for example toggling wrapping). Earlier HID-tap attempts were
+inconclusive. Some apparent vertical failures were upward input clamped at the
+top; these observations do not establish a single cause for every earlier
+injection failure. No application workaround or host security change was needed.
+
+Local evidence is under `target/verification/native-pixel/`: `partial.png`,
+`session-tap-vertical.json`, `session-tap-easing.json`, `vertical-drag.json`,
+`horizontal-drag.json`, `partial-row-click.json`, `wrapped-pixels.json`, and
+`pre-restart.json` / `post-restart.json`. The test processes were closed and
+ordinary user config/session data was not changed. This verifies synthetic
+native input delivery and restart, not physical trackpad feel, momentum phases,
+display latency or Linux/Windows interaction.
