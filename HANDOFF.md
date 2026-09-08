@@ -26,6 +26,11 @@ The persistent Usages panel, Mermaid rendering, context-menu hover, restored
 Settings design and draggable shared scrollbars were committed previously.
 Nothing was pushed or published.
 
+The original eight-theme overlay tuning follow-up is committed in `48a29fa`:
+explicit palettes, contrast checks and inspected command-palette/compact Settings
+renders. Details are in the refactoring audit; later built-ins and custom-theme
+fallbacks are unchanged.
+
 ## Settings scrolling correction
 
 Preserve the separate Settings page, category navigation and form controls.
@@ -60,7 +65,6 @@ measurements, not native presentation checks.
 
 - Autocomplete: edit prediction, workspace retrieval context, and supervised
   local llama-server ownership. See [autocomplete](docs/feature/autocomplete.md).
-- Hand-tune the eight bundled themes still using derived fallbacks.
 - Address measured performance targets as warranted: cold explicit Find scans,
   completion-response allocations, larger recency refreshes and forward
   multi-cursor edits. Existing measurements are in
@@ -78,8 +82,9 @@ measurements, not native presentation checks.
   service verification.
 - Native context-menu pointer acceptance; automated runtime/pixel checks already pass.
 - Resolve intermittent nextest process-exit warnings and the two ignored
-  load-sensitive spawn tests. The latest full suites were clean, but a targeted
-  Settings run still marked one test leaky; do not suppress or call that resolved.
+  load-sensitive spawn tests. The September 8 theme suite passed all 2,574 tests
+  but flagged `settings_page_keeps_spacious_categories_and_shared_control_hits`
+  as leaky. Do not suppress or call that resolved.
 
 ## Archival and closeout
 

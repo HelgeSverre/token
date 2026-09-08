@@ -1,5 +1,55 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Bundled overlay theme tuning — 2026-09-08
+
+Commit `48a29fa` closed the original eight-theme follow-up: Fleet Dark, GitHub Dark/Light,
+Dracula, Mocha, Nord, Tokyo Night and Gruvbox Dark now specify all 23 overlay
+palette keys. Values were selected to retain each theme's palette identity,
+with distinct text ramps and readable selection, shortcut and diagnostic colors.
+Existing legacy overlay alpha is preserved; Settings remains opaque. The five
+later built-ins and custom-theme fallback resolver were not changed.
+
+An independent contrast calculation read the final YAML values, composited
+translucent panels over both black and white, and evaluated text, keycaps,
+selected matches and 15% severity-banner grounds. Ratios below are the worst
+values in each group; banner values also include the conservative composited
+panel cases. GitHub Light's dim/error text was darkened after this check exposed
+insufficient contrast over black. The existing Rust theme tests additionally
+check every registered built-in (currently 14); no new tests or harness were added.
+
+| Theme | Panel text minimum | Keycap text | Selected match | Banner text minimum |
+| --- | --- | --- | --- | --- |
+| fleet-dark | 4.56 | 8.38 | 8.52 | 5.35 |
+| github-dark | 4.90 | 9.86 | 9.09 | 5.55 |
+| github-light | 4.71 | 7.71 | 10.61 | 4.53 |
+| dracula | 5.94 | 8.28 | 7.89 | 6.14 |
+| mocha | 7.37 | 8.69 | 8.70 | 7.00 |
+| nord | 5.14 | 7.49 | 7.30 | 4.61 |
+| tokyo-night | 6.44 | 8.09 | 9.43 | 7.40 |
+| gruvbox-dark | 6.77 | 8.45 | 8.64 | 6.41 |
+
+All eight command-palette screenshots (1400×1000 physical, 2×) and compact
+scrolled Settings screenshots (400×750, 1×) were rendered from explicit YAML
+paths and inspected. Selection, match highlighting, shortcut chips and text
+hierarchy remain distinct. The existing command-palette fixture was corrected
+from `theme_picker` to `command_palette`; its previous live-preview selection
+would have overwritten the requested theme.
+
+Reproduce for each theme ID with the existing screenshot tool:
+
+```bash
+target/debug/screenshot --scenario screenshots/scenarios/showcase-command-palette.yaml --theme themes/nord.yaml --width 1400 --height 1000 --out-dir /tmp/token-theme-palette
+target/debug/screenshot --scenario screenshots/scenarios/settings-scrolled.yaml --theme themes/nord.yaml --width 400 --height 750 --out-dir /tmp/token-theme-settings
+```
+
+Final suite: 2,574 tests passed, seven skipped; two doctests passed,
+six ignored. Nextest run `0d4fc96e-5401-41c0-a8dc-a618066499d8` flagged
+`settings_page_keeps_spacious_categories_and_shared_control_hits` as leaky.
+That process-exit issue remains open; it is not an assertion failure or proof
+of a theme regression. Diff-based self-review: **Approve** for theme tuning
+after the contrast correction. This is headless/macOS evidence, not a new
+native-platform certification. Strict lint, formatting and a debug build passed.
+
 ## Source consolidation and Settings scrolling — 2026-09-08
 
 The implementation backlog is committed as a coordinated series:
