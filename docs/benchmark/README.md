@@ -4,6 +4,8 @@ This document describes how to run benchmarks and profile the Token editor.
 
 ## Reports
 
+- [2026-09-08: completion response ownership](2026-09-08-completion-responses.md) —
+  deferred JSON serialization, before/after allocations and independent repeat.
 - [2026-09-08: workspace retrieval](2026-09-08-workspace-retrieval.md) — optimized
   warm declaration-ranking costs and allocations; collection and inference excluded.
 - [2026-09-08: Settings scrolling](2026-09-08-settings-scroll.md) — debug versus

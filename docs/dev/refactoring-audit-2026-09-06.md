@@ -1,5 +1,46 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Completion response ownership — 2026-09-08
+
+Commit `68cf62a` addresses the September allocation finding: eager `CompletionItem` → JSON
+conversion for every candidate, followed by a deep JSON clone when scheduling
+or requesting resolve. Menu presentation already needs separate normalized
+snippet/edit fields; that does not require a second JSON representation too.
+
+Rows now share an immutable `Arc<CompletionItem>` through both resolve commands
+and the existing debounce. Only the runtime's actual request boundary serializes
+it. Opaque `data`, label details, original snippets and commit metadata remain
+untouched; display/acceptance fields retain their previous transformations.
+Serialization failure follows the existing unavailable-server resolve fallback.
+No provider API, worker, scheduler, dependency or menu behavior was added.
+
+The existing conversion, round-trip, metadata, resolve/cancellation and rendering
+fixtures were adapted. A pointer-identity assertion checks sharing across menu
+clones. The existing asynchronous trace-label test now also covers completion
+responses: debug builds log identity/count rather than format the full payload.
+No test cases were added.
+
+Verification: **216 completion-focused tests passed**; then **2,581 full-suite
+tests passed**, five skipped, and **two doctests passed**, six ignored
+(`be248240-c876-4626-a891-d859c89fe6bb`). Strict all-target/all-feature lint passed.
+The full run had no process-exit warnings; the historical warning's cause remains
+unresolved.
+
+Scoped diff-based self-review checked immutable round trips, snippet/$0
+precedence, upfront edits, shared ownership through both resolve paths and
+failure fallback.
+
+| Severity | File | Finding / resolution |
+| --- | --- | --- |
+| Medium | `src/update/mod.rs` | Generic debug tracing would format the entire typed payload. Completion responses now have a metadata-only trace label, checked in the existing test. |
+
+No outstanding findings; verdict: **Approve**. Before/after measurement reduced fresh allocation from
+4.398 MB to 838.5 KB per 1,000-item conversion; medians changed from 894.5 µs to
+138.5–155.5 µs. The repeat had a 2.084 ms outlier. See the
+[report and raw output](../benchmark/2026-09-08-completion-responses.md) for scope
+and limits. No other plan became archive-eligible; completed history was trimmed
+from `HANDOFF.md`, leaving its unfinished scope and current checkpoint intact.
+
 ## Workspace retrieval context — 2026-09-08
 
 Commit `09895c3` adds `workspace_retrieval` as an opt-in alternative to recency context. A single

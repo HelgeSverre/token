@@ -14,6 +14,9 @@ All notable changes to rust-editor are documented in this file.
   Snippet normalization, initial edits and resolve round-trip contents are unchanged.
 - Completion-response debug traces now report identity and item count without
   formatting or logging the entire candidate payload.
+- The [before/after benchmark](benchmark/2026-09-08-completion-responses.md)
+  measured about 81% fewer freshly allocated bytes for 1,000-item conversion;
+  this is not an end-to-end menu-latency measurement.
 
 ### Workspace-aware inline suggestions
 

@@ -1,97 +1,38 @@
 # Handoff
 
-Reconciled 2026-09-08. This is a temporary checklist, not a historical activity
-log. Delete it only when the remaining work below is completed and verified.
-Earlier checkpoints are preserved in Git history and the
-[refactoring audit](docs/dev/refactoring-audit-2026-09-06.md).
+Reconciled 2026-09-08. This is a temporary checklist. Delete it only when the
+remaining scope below is completed and verified; do not close native/live gates
+using fixture tests alone.
 
-## Completed and committed
+## Current checkpoint
 
-The previously uncommitted implementation is now recorded as a coordinated
-six-commit series, `ab96495` through `2bdbcca`:
+Completed implementation history and detailed evidence are in the
+[refactoring audit](docs/dev/refactoring-audit-2026-09-06.md) and
+[benchmark reports](docs/benchmark/README.md), with earlier handoff entries
+preserved in Git history.
 
-- Shared document edits, lossless pane Undo/Redo, soft wrap and viewport rendering.
-- Ordered file/configuration effects, captured file identity and startup preparation.
-- Context-aware dropdowns, path suggestions, commit characters, documentation
-  cards, cancelable inline providers, partial acceptance, alternatives, cache,
-  recency context, multi-row ghost text and local statistics.
-- Settings/keymap controls, override persistence and live shortcut hints.
-- Workspace-symbol runtime/UI, background Find and shared runtime integration.
-- Benchmark workloads, fixtures, changelog and implementation/verification records.
+Latest implementation: `68cf62a` defers completion-item JSON until an actual
+resolve request. The full suite passed 2,581 tests and two doctests, strict lint
+and formatting. The [response-conversion report](docs/benchmark/2026-09-08-completion-responses.md)
+records roughly 81% lower fresh allocation at 1,000 items. This closes the
+completion-response allocation investigation, not the other profiling targets.
 
-These groups share contracts; intermediate commits are not independent build
-checkpoints. The combined source passed 2,568 tests and two doctests
-(`98402f7e-0048-457c-888a-e28d3ae2d78d`). Staging preserved working-file hashes.
-The persistent Usages panel, Mermaid rendering, context-menu hover, restored
-Settings design and draggable shared scrollbars were committed previously.
-Nothing was pushed or published.
+Preserve the separate opaque Settings page, category navigation and form
+controls. Settings scrolls continuously in physical pixels with clipped partial
+rows; editor scrolling stays row-based. Shared geometry remains authoritative.
 
-The original eight-theme overlay tuning follow-up is committed in `48a29fa`:
-explicit palettes, contrast checks and inspected command-palette/compact Settings
-renders. Details are in the refactoring audit; later built-ins and custom-theme
-fallbacks are unchanged.
-
-The load-sensitive spawn-test cleanup is complete: PTY tests use a controlled
-shell, assert actual output and run shell-exit coverage by default. The ignored
-shell-script LSP handshake duplicate was removed; the existing real-process
-integration scenario retains that coverage. Twenty repeated runs and the full
-suite passed on macOS (2,575 tests, five skipped). See the refactoring audit.
-
-Managed local llama-server ownership is committed in `31e3ff4`: opt-in,
-on-demand startup and owned-child cleanup on the existing inline worker.
-Real-child fixtures and an isolated macOS run verified generation, partial
-acceptance/Undo, disable/re-enable and quit cleanup without touching an external
-server. The fresh suite passed 2,577 tests and two doctests, plus strict lint,
-formatting and build. Broader model/platform verification remains below.
-The verified local build cache is `/tmp/token-managed-server-check.5prvI4`;
-the default `target/` disappeared during verification. Reuse that directory via
-`CARGO_TARGET_DIR` for subsequent local checks if it still exists.
-
-Workspace retrieval context is committed in `09895c3`: opt-in, ignore-aware
-source collection on the shared worker, existing outline extraction, BM25
-ranking, unsaved-buffer precedence and guarded provider submission. The final
-suite passed 2,581 tests and two doctests, plus strict lint and formatting.
-Optimized ranking measured 139–143 µs at 32 files and 1.15–1.19 ms at 256 files;
-collection/inference are excluded. See the
-[retrieval report](docs/benchmark/2026-09-08-workspace-retrieval.md).
-
-## Settings scrolling correction
-
-Preserve the separate Settings page, category navigation and form controls.
-Do not turn it into a command palette. Settings uses physical-pixel scrolling
-with clipped partial rows; editor scrolling stays row-based. The shared
-`RowListView` owns geometry, clipping ranges, hit mapping and row reveal.
-This correction is committed in `67fa676`; profiling and the shared dimmer
-follow-up are in `8516dc2`.
-
-The final scrolling/rendering suite passed 2,572 tests and two doctests
-(`f462df76-3cca-4c02-8ab7-29836f9ebab2`), strict lint, formatting and debug build.
-That checkpoint skipped seven tests and six doctests. Wide and compact headless
-screenshots confirm partial-row clipping; native trackpad presentation is not
-measured by those checks.
-
-Debug and optimized CPU profiling is complete. Reusing the shared rectangle
-dimmer reduced high-DPI debug modal paint from 101.8 to 47.4 ms; optimized repeats
-were about 2.2–2.3 ms, with no established optimized speedup. See the
-[Settings report](docs/benchmark/2026-09-08-settings-scroll.md) for raw results,
-measurement boundaries and remaining debug rendering costs.
-
-Follow-up `05136be` makes Settings opaque and skips backdrop work hidden by
-opaque panels through one shared private helper. The fresh high-DPI debug modal
-comparison is 49.5 → 28.2 ms; see the report's opaque-panel follow-up. All 2,574
-tests and two doctests, strict lint, formatting and debug build passed; default
-Settings/palette screenshot files match their pre-change versions byte-for-byte.
-Optimized modal paint measured 0.95–0.99 ms at high DPI (previous snapshot about
-2.25 ms); the combined editor/modal probe was 1.45–1.49 ms. These remain CPU-only
-measurements, not native presentation checks.
+Reuse `CARGO_TARGET_DIR=/tmp/token-managed-server-check.5prvI4` for local checks
+if that cache still exists; it contains verified debug and optimized builds.
+The default `target/` previously disappeared outside this task.
 
 ## Remaining implementation
 
-- Autocomplete: edit prediction.
-  See [autocomplete](docs/feature/autocomplete.md).
+- Autocomplete: edit prediction (anchored edits, deletion/diff preview and jump
+  targets). The plan names candidate providers but no selected backend contract;
+  a backend/model preference has been requested. See
+  [autocomplete](docs/feature/autocomplete.md).
 - Address measured performance targets as warranted: cold explicit Find scans,
-  completion-response allocations, larger recency refreshes and forward
-  multi-cursor edits. Existing measurements are in
+  larger recency refreshes and forward multi-cursor edits. Existing measurements are in
   [the September report](docs/benchmark/2026-09-07-current.md).
 
 ## Remaining verification

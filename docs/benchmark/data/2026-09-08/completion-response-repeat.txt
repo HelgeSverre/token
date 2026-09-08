@@ -1,0 +1,26 @@
+CARGO_TARGET_DIR=/tmp/token-managed-server-check.5prvI4 CARGO_BUILD_JOBS=1 just bench-completion convert_server_response
+    Finished `bench` profile [optimized] target(s) in 0.72s
+     Running benches/completion.rs (/tmp/token-managed-server-check.5prvI4/release/deps/completion-c0d9f7660b6ce718)
+Timer precision: 41 ns
+completion                  fastest       │ slowest       │ median        │ mean          │ samples │ iters
+╰─ convert_server_response                │               │               │               │         │
+   ├─ 200                   21.66 µs      │ 64.24 µs      │ 25.72 µs      │ 27 µs         │ 100     │ 100
+   │                        max alloc:    │               │               │               │         │
+   │                          2002        │ 2002          │ 2002          │ 2002          │         │
+   │                          167.3 KB    │ 167.3 KB      │ 167.3 KB      │ 167.3 KB      │         │
+   │                        alloc:        │               │               │               │         │
+   │                          2002        │ 2002          │ 2002          │ 2002          │         │
+   │                          167.3 KB    │ 167.3 KB      │ 167.3 KB      │ 167.3 KB      │         │
+   │                        dealloc:      │               │               │               │         │
+   │                          1           │ 1             │ 1             │ 1             │         │
+   │                          13 B        │ 13 B          │ 13 B          │ 13 B          │         │
+   ╰─ 1000                  133.8 µs      │ 2.084 ms      │ 155.5 µs      │ 179.7 µs      │ 100     │ 100
+                            max alloc:    │               │               │               │         │
+                              10002       │ 10002         │ 10002         │ 10002         │         │
+                              838.5 KB    │ 838.5 KB      │ 838.5 KB      │ 838.5 KB      │         │
+                            alloc:        │               │               │               │         │
+                              10002       │ 10002         │ 10002         │ 10002         │         │
+                              838.5 KB    │ 838.5 KB      │ 838.5 KB      │ 838.5 KB      │         │
+                            dealloc:      │               │               │               │         │
+                              1           │ 1             │ 1             │ 1             │         │
+                              13 B        │ 13 B          │ 13 B          │ 13 B          │         │
