@@ -14,6 +14,18 @@ All notable changes to rust-editor are documented in this file.
 - Gate the macOS-only open-file sender to its platform, keeping Linux builds
   free of unused-code warnings while retaining the shared automation tests.
 
+### Clipboard
+
+- Keep copied text available on Linux desktops without a clipboard manager.
+  Copy and paste now share a persistent, ordered background worker instead of
+  dropping clipboard ownership after each operation. This applies to editor,
+  terminal and other surfaces using the existing clipboard commands.
+
+### Keyboard shortcuts
+
+- Alt-containing chord shortcuts no longer trigger the bare-Alt double-tap
+  multi-cursor gesture. Actual double-tap-and-arrow navigation is preserved.
+
 ### Terminal links
 
 - Hold Cmd on macOS (Ctrl elsewhere) to underline a terminal web link and show

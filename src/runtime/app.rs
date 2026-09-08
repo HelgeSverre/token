@@ -214,6 +214,7 @@ pub struct App {
     msg_tx: Sender<Msg>,
     msg_rx: Receiver<Msg>,
     file_io_tx: Option<super::file_io::FileWorker>,
+    clipboard_worker: Option<super::clipboard::ClipboardWorker>,
     find_worker: Option<super::find_worker::FindWorker>,
     path_worker: Option<super::path_completion::PathWorker>,
     perf: PerfStats,
@@ -1089,6 +1090,7 @@ impl App {
             msg_tx,
             msg_rx,
             file_io_tx: None,
+            clipboard_worker: None,
             find_worker: None,
             path_worker: None,
             perf: PerfStats::default(),
@@ -1501,6 +1503,8 @@ impl App {
                     } else if event.state == ElementState::Released {
                         self.option_gesture.on_release();
                     }
+                } else if event.state == ElementState::Pressed {
+                    self.option_gesture.on_other_key();
                 }
 
                 if event.state == ElementState::Pressed {
@@ -2289,6 +2293,27 @@ impl App {
         }
     }
 
+    fn enqueue_clipboard(&mut self, request: super::clipboard::Request) {
+        if self.clipboard_worker.is_none() {
+            match super::clipboard::ClipboardWorker::start(
+                self.msg_tx.clone(),
+                self.worker_wake.clone(),
+            ) {
+                Ok(worker) => self.clipboard_worker = Some(worker),
+                Err(error) => {
+                    tracing::warn!("Failed to start clipboard worker: {error}");
+                    return;
+                }
+            }
+        }
+        if let Some(worker) = &self.clipboard_worker {
+            if worker.send(request).is_err() {
+                self.clipboard_worker = None;
+                tracing::warn!("Clipboard worker stopped");
+            }
+        }
+    }
+
     fn enqueue_file_job(&mut self, job: super::file_io::FileJob) {
         if self.file_io_tx.is_none() {
             match super::file_io::start_worker(self.msg_tx.clone(), self.worker_wake.clone()) {
@@ -2518,33 +2543,11 @@ impl App {
                 self.enqueue_file_job(super::file_io::FileJob::InlineUsage(event));
             }
             Cmd::CopyToClipboard(text) => {
-                std::thread::spawn(move || {
-                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        if let Err(e) = clipboard.set_text(&text) {
-                            tracing::warn!("Failed to copy to clipboard: {}", e);
-                        }
-                    } else {
-                        tracing::warn!("Failed to initialize clipboard");
-                    }
-                });
+                self.enqueue_clipboard(super::clipboard::Request::Copy(text));
             }
             Cmd::OpenWebUrl(url) => super::open_web_url(url),
             Cmd::RequestClipboardPaste => {
-                let tx = self.msg_tx.clone();
-                std::thread::spawn(move || {
-                    let clipboard_text = if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        clipboard.get_text().unwrap_or_default()
-                    } else {
-                        tracing::warn!("Failed to open clipboard for pasting");
-                        String::new()
-                    };
-                    if let Err(e) = tx.send(Msg::App(AppMsg::PasteFromClipboard(clipboard_text))) {
-                        tracing::warn!(
-                            "Failed to send clipboard paste message to main thread: {}",
-                            e
-                        );
-                    }
-                });
+                self.enqueue_clipboard(super::clipboard::Request::Paste);
             }
             Cmd::SaveConfiguration { config } => {
                 // Keep saves ordered: independent writer threads can overwrite newer choices.
@@ -5448,6 +5451,7 @@ impl ApplicationHandler for App {
         // the endpoint it connected through disappears.
         self.answer_exit_waiters();
         self.inline_worker.stop();
+        self.clipboard_worker = None;
         self.inline_retrieval = None;
         automation::remove_own_endpoint();
     }

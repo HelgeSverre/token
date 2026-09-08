@@ -7,6 +7,7 @@
 //! - `webview` - Webview management for markdown preview
 
 pub mod app;
+mod clipboard;
 mod configuration;
 mod file_io;
 mod find_worker;

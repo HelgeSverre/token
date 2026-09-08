@@ -40,7 +40,7 @@ pub struct KeyModifiers {
 
 /// Detects Option key double-tap gesture for multi-cursor mode.
 ///
-/// When the Option key is pressed twice within 300ms, `double_tapped` is set to true.
+/// Two bare Option presses within 300ms set `double_tapped` to true.
 /// It resets when the key is released.
 #[derive(Default)]
 pub struct OptionKeyGesture {
@@ -63,6 +63,12 @@ impl OptionKeyGesture {
     /// Call when the Option key is released.
     pub fn on_release(&mut self) {
         self.double_tapped = false;
+    }
+
+    /// A shortcut is not a bare tap. Keep an already activated gesture alive
+    /// for its arrow keys, but don't let this key seed another double-tap.
+    pub fn on_other_key(&mut self) {
+        self.last_press = None;
     }
 }
 
@@ -1275,6 +1281,23 @@ fn get_binary_placeholder_path(model: &AppModel) -> Option<std::path::PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shortcut_keys_do_not_turn_alt_chords_into_double_taps() {
+        let mut gesture = super::OptionKeyGesture::default();
+        gesture.on_press();
+        gesture.on_other_key(); // Alt+K, not a bare Alt tap.
+        gesture.on_release();
+        gesture.on_press();
+        assert!(!gesture.double_tapped);
+        gesture.on_release();
+        gesture.on_press(); // A real second bare tap.
+        assert!(gesture.double_tapped);
+        gesture.on_other_key(); // Its arrow key keeps the gesture active.
+        assert!(gesture.double_tapped);
+        gesture.on_release();
+        assert!(!gesture.double_tapped);
+    }
+
     #[test]
     fn settings_keymap_capture_consumes_shortcuts_and_ime_text_without_editing() {
         use token::keymap::preferences::KeymapSnapshot;
