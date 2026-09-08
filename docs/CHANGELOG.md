@@ -6,6 +6,19 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Documentation cards
+
+- Hover cards have a wider responsive layout and an opaque reading surface;
+  completion documentation side cards are opaque too.
+- Documentation code spans use the configured editor font at a slightly smaller
+  size, while prose keeps the UI font. Shared wrapping measures the same font
+  roles used for painting, and inline backgrounds no longer spill into nearby
+  prose. Standalone code avoids stacked backgrounds, and signatures have balanced
+  vertical padding. Screenshot fixtures use both bundled fonts and the native
+  cursor-overlay renderer.
+- Markdown paragraphs reflow across source soft breaks, while explicit hard
+  breaks and code-block newlines remain intact.
+
 ### Indent guides
 
 - Added indentation guides with an Appearance toggle (`indent_guides`, enabled

@@ -1,5 +1,54 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Indent guides and documentation-card polish — 2026-09-08
+
+The first indent-guide slice is implemented in the shared text-decoration pass
+(`e988572`). A fixed four-column grid was inappropriate for the two-space Sema
+sample: guide spacing now follows common indentation increases in a bounded
+200-line sample, while tab expansion still uses the shared four-column geometry.
+Settings has an Appearance toggle, all 14 themes have explicit guide colors,
+and old custom themes have a derived fallback. The advanced scope/rainbow plan
+remains active; empty-line scope continuation is not part of this slice.
+
+The hover-card screenshot exposed three independent readability problems:
+an effectively fixed 280-logical-pixel width, translucent text behind prose,
+and code measured/painted with the UI font. Cards now use a responsive
+360–560-logical-pixel width, an opaque reading surface and smaller editor-font
+code. Wrapping and painting share the font-role policy and existing wrapping
+algorithm. Markdown soft breaks reflow as paragraph spaces; hard breaks and
+code newlines remain. Standalone code no longer stacks a chip over its signature
+background, and that strip has balanced vertical padding. Completion side
+documentation shares the opaque surface and font/wrapping improvements.
+
+Verification on macOS:
+
+- `CARGO_BUILD_JOBS=1 just test`: 2,589 passed, five skipped; two doctests passed,
+  six ignored. Final suite took 24.293 seconds, excluding compilation.
+- `CARGO_BUILD_JOBS=1 just lint`, `just fmt-check`, `just build` and
+  `git diff --check` passed.
+- Focused coverage checks two-/four-space detection, mixed tabs/spaces,
+  horizontal clipping, wrapped continuations, disabled guides, legacy theme
+  fallback/RGBA overrides, mixed-font wrapping and restored painter font role.
+  Existing Markdown tests now distinguish soft breaks, hard breaks and code.
+- Inspected the new `hover-documentation.yaml` fixture at 1800×1400 physical
+  pixels/2× in Fleet Dark and GitHub Light, plus 900×1000/2× in Fleet Dark.
+  Code/prose are separated from the editor, signature padding is balanced,
+  and the card stays within the narrow window. The screenshot utility now
+  renders cursor overlays and uses both bundled fonts through the real renderer.
+- These are headless visual checks, not new live-LSP or native-pointer checks.
+  Builds, screenshots and verification logs stay under the normal `target/`
+  directory; no temporary build-output directory is used.
+
+Diff-based self-review followed the Rust and code-review skills: shared geometry
+and wrapping were retained rather than adding feature-local rendering loops.
+
+| Severity | Finding |
+| --- | --- |
+| — | No remaining blocking findings in the changed paths. |
+
+Verdict: **Approve** for this bounded slice. External-file conflict protection,
+session restore and the handoff's remaining native checks are not closed by it.
+
 ## Plan reconciliation — 2026-09-08
 
 Reviewed the scope/status of all 23 plans in `docs/feature/` and `docs/future/`

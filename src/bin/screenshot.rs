@@ -87,6 +87,9 @@ struct Scenario {
     /// Ghost text shown at the first file's cursor (autocomplete.md Phase 2).
     #[serde(default)]
     inline_suggestion: Option<InlineFixture>,
+    /// Deterministic Markdown content for a native documentation hover card.
+    #[serde(default)]
+    hover: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -389,6 +392,16 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
     // Set up modal if configured
     if let Some(modal_config) = &scenario.modal {
         apply_modal(&mut model, modal_config);
+    }
+
+    if let Some(markdown) = &scenario.hover {
+        model.ui.hover_card = Some(token::model::HoverCardState {
+            content: Some(token::lsp::markdown::markdown_to_styled(markdown)),
+            ..Default::default()
+        });
+        model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+            token::model::CursorOverlayKind::Hover,
+        ));
     }
 
     if let Some(fixture) = &scenario.inline_suggestion {
@@ -766,6 +779,12 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
     let mut buffer: Vec<u32> = vec![bg; width * height];
 
     let mut glyph_cache: GlyphCache = HashMap::new();
+    let ui_font = fontdue::Font::from_bytes(
+        include_bytes!("../../assets/Inter-Regular.ttf") as &[u8],
+        fontdue::FontSettings::default(),
+    )
+    .expect("bundled UI font");
+    let mut ui_cache = GlyphCache::default();
 
     let chrome = token::layout::chrome::chrome(model);
     let available_rect = chrome
@@ -791,7 +810,8 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
             font_info.ascent,
             font_info.char_width,
             font_info.line_height,
-        );
+        )
+        .with_ui_font(&ui_font, &mut ui_cache);
         let mut perf = token::perf::PerfStats::default();
 
         // 1. Editor area + splitters (render_editor_area_with_preview_mode includes splitters)
@@ -831,9 +851,17 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
             .expect("window chrome always declares the status bar");
         Renderer::render_status_bar(&mut frame, &mut painter, model, status_bar_rect);
 
-        // 5. Modals (on top of everything)
+        // 5. Cursor documentation, followed by blocking modals.
+        let mut mask_cache = token::view::RoundedRectMaskCache::new();
+        Renderer::render_cursor_overlay(
+            &mut frame,
+            &mut painter,
+            model,
+            width,
+            height,
+            &mut mask_cache,
+        );
         if model.ui.active_modal.is_some() {
-            let mut mask_cache = token::view::RoundedRectMaskCache::new();
             Renderer::render_modals(
                 &mut frame,
                 &mut painter,

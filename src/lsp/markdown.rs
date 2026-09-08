@@ -114,7 +114,10 @@ pub fn markdown_to_styled(markdown: &str) -> StyledText {
             Event::Code(value) | Event::InlineMath(value) | Event::DisplayMath(value) => {
                 text.push(&value, Some(SpanStyle::Code));
             }
-            Event::SoftBreak | Event::HardBreak => text.boundary(1),
+            // Source wrapping is not a visual line break in a paragraph.
+            // Explicit hard breaks and literal fenced-code newlines remain.
+            Event::SoftBreak => text.push(" ", text.style()),
+            Event::HardBreak => text.boundary(1),
             Event::Rule => text.boundary(2),
             Event::TaskListMarker(checked) => {
                 text.push(if checked { "[x] " } else { "[ ] " }, None)
@@ -340,6 +343,10 @@ mod tests {
         );
         // Old flattener behaviour retained for the plaintext view.
         assert_eq!(markdown_to_plain_text("a\n* * *\nb"), "a\n\nb");
+        assert_eq!(
+            markdown_to_plain_text("wrapped\nprose  \nnext\n\n```\na\nb\n```"),
+            "wrapped prose\nnext\n\na\nb"
+        );
     }
 
     #[test]
@@ -391,7 +398,7 @@ mod tests {
         );
         assert_eq!(
             t.text,
-            "3. first\n  • [x] nested\n4. second\n\n│ quoted text\n│ next line"
+            "3. first\n  • [x] nested\n4. second\n\n│ quoted text next line"
         );
         assert_eq!(
             spans(&t),

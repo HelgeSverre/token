@@ -1702,7 +1702,12 @@ pub fn render(
             &mut measure,
         )
     };
-    let colors = Palette::from_theme(theme);
+    let mut colors = Palette::from_theme(theme);
+    // Reading surfaces must separate documentation from the editor beneath.
+    // Keep translucency on other overlays as configured by the theme.
+    if matches!(spec.body, Body::Zones(_)) && matches!(spec.anchor, Anchor::Cursor { .. }) {
+        colors.panel_bg |= 0xFF00_0000;
+    }
     if matches!(spec.anchor, Anchor::Settings { .. }) {
         settings_page::render(
             frame,
@@ -1837,7 +1842,7 @@ pub fn render(
             panel.w,
             panel.h,
             radius,
-            colors.panel_bg,
+            colors.panel_bg | 0xFF00_0000,
             mask_cache,
         );
         frame.stroke_rounded_rect(
@@ -2361,6 +2366,7 @@ fn render_list(
                                 colors.text_dim,
                                 painter.line_height_for_size(meta_size),
                                 scale_factor,
+                                false,
                             );
                         }
                     }
@@ -2984,11 +2990,16 @@ fn render_zones(
 
     if let (Some((lines, _)), Some(r)) = (plan.code.as_ref(), layout.zones_code) {
         frame.fill_rect_px(r.x, r.y, r.w, r.h, colors.panel_secondary);
+        let content = WidgetRect {
+            y: r.y + gap / 2,
+            h: r.h.saturating_sub(gap),
+            ..r
+        };
         draw_text_lines(
             frame,
             painter,
             colors,
-            r,
+            content,
             lines,
             false,
             SIZE_ROW,
@@ -3038,7 +3049,11 @@ fn render_zones(
 }
 
 fn should_center_zone_text(zones: &Zones<'_>, lines: &[StyledLine], truncated: bool) -> bool {
-    zones.banner.is_none() && zones.code.is_none() && lines.len() == 1 && !truncated
+    zones.banner.is_none()
+        && zones.code.is_none()
+        && lines.len() == 1
+        && lines[0].runs.is_empty()
+        && !truncated
 }
 
 /// Cap on wrapped text-zone lines (hover docs can be pages long); a
@@ -3096,6 +3111,43 @@ fn styled_lines(
         .collect()
 }
 
+/// One source of truth for documentation font roles in wrapping and painting.
+fn documentation_style(
+    mut base: crate::layout::TextStyle,
+    span: Option<SpanStyle>,
+) -> crate::layout::TextStyle {
+    if span == Some(SpanStyle::Code) {
+        base.code = true;
+        base.size *= 0.92;
+    }
+    base
+}
+
+fn style_at(spans: &[Span], offset: usize) -> Option<SpanStyle> {
+    spans
+        .get(spans.partition_point(|span| span.range.end <= offset))
+        .filter(|span| span.range.contains(&offset))
+        .map(|span| span.style)
+}
+
+fn wrap_documentation(
+    text: &str,
+    spans: &[Span],
+    style: crate::layout::TextStyle,
+    width: f32,
+    measure: &mut dyn crate::layout::TextMeasure,
+) -> Vec<StyledLine> {
+    styled_lines(
+        text,
+        spans,
+        crate::layout::text::wrap_with_style(text, width, measure, |offset| {
+            documentation_style(style, style_at(spans, offset))
+        })
+        .into_iter()
+        .map(|line| line.range),
+    )
+}
+
 pub(crate) fn plan_zones(
     zones: &Zones,
     panel_w: usize,
@@ -3115,31 +3167,20 @@ pub(crate) fn plan_zones(
     // Minimum useful wrap width — the historical 8-cell floor.
     let min_wrap_w = size_px(8.0 * dims::ZONE_CELL_W, scale_factor);
 
-    /// Wrapped line byte ranges into `text`.
-    fn wrap_ranges(
-        text: &str,
-        style: crate::layout::TextStyle,
-        max_w: f32,
-        min_w: f32,
-        measure: &mut dyn crate::layout::TextMeasure,
-    ) -> Vec<std::ops::Range<usize>> {
-        crate::layout::text::wrap_to_width(text, style, max_w.max(min_w), measure)
-            .into_iter()
-            .map(|line| line.range)
-            .collect()
-    }
-
-    /// Like `wrap_ranges`, with a narrower budget for the first line (the
-    /// banner shares it with the right-aligned source tag).
+    /// The banner shares its first line with the right-aligned source tag.
     fn wrap_ranges_with_first_width(
         text: &str,
+        spans: &[Span],
         style: crate::layout::TextStyle,
         first_w: f32,
         later_w: f32,
         min_w: f32,
         measure: &mut dyn crate::layout::TextMeasure,
     ) -> Vec<std::ops::Range<usize>> {
-        let first = crate::layout::text::wrap_to_width(text, style, first_w.max(min_w), measure);
+        let first =
+            crate::layout::text::wrap_with_style(text, first_w.max(min_w), measure, |offset| {
+                documentation_style(style, style_at(spans, offset))
+            });
         let Some(first_line) = first.first() else {
             return Vec::new();
         };
@@ -3150,9 +3191,14 @@ pub(crate) fn plan_zones(
         let remainder = &text[offset..];
         if !remainder.is_empty() {
             ranges.extend(
-                wrap_ranges(remainder, style, later_w, min_w, measure)
-                    .into_iter()
-                    .map(|r| r.start + offset..r.end + offset),
+                crate::layout::text::wrap_with_style(
+                    remainder,
+                    later_w.max(min_w),
+                    measure,
+                    |byte| documentation_style(style, style_at(spans, offset + byte)),
+                )
+                .into_iter()
+                .map(|line| line.range.start + offset..line.range.end + offset),
             );
         }
         ranges
@@ -3175,7 +3221,15 @@ pub(crate) fn plan_zones(
         let mut lines = styled_lines(
             message,
             zones.banner_spans,
-            wrap_ranges_with_first_width(message, row_style, first_w, later_w, min_wrap_w, measure),
+            wrap_ranges_with_first_width(
+                message,
+                zones.banner_spans,
+                row_style,
+                first_w,
+                later_w,
+                min_wrap_w,
+                measure,
+            ),
         );
         let truncated = lines.len() > MAX_ZONE_BANNER_LINES;
         lines.truncate(MAX_ZONE_BANNER_LINES);
@@ -3190,10 +3244,12 @@ pub(crate) fn plan_zones(
     });
 
     let code = zones.code.map(|s| {
-        let lines = styled_lines(
+        let lines = wrap_documentation(
             s,
             zones.code_spans,
-            wrap_ranges(s, row_style, content_w, min_wrap_w, measure),
+            row_style,
+            content_w.max(min_wrap_w),
+            measure,
         );
         let h = lines.len().max(1) * line_h + 2 * (gap / 2);
         (lines, h)
@@ -3226,13 +3282,7 @@ fn plan_text_zone(
     line_h: usize,
     measure: &mut dyn crate::layout::TextMeasure,
 ) -> TextZonePlan {
-    let mut lines = styled_lines(
-        text,
-        spans,
-        crate::layout::text::wrap_to_width(text, style, content_w.max(min_wrap_w), measure)
-            .into_iter()
-            .map(|line| line.range),
-    );
+    let mut lines = wrap_documentation(text, spans, style, content_w.max(min_wrap_w), measure);
     let truncated = lines.len() > max_lines;
     lines.truncate(max_lines);
     let h = (lines.len() + usize::from(truncated)).max(1) * line_h;
@@ -3270,13 +3320,7 @@ fn plan_docs(
         if text.text.is_empty() {
             return Vec::new();
         }
-        styled_lines(
-            &text.text,
-            &text.spans,
-            crate::layout::text::wrap_to_width(&text.text, style, width.max(1.0), measure)
-                .into_iter()
-                .map(|line| line.range),
-        )
+        wrap_documentation(&text.text, &text.spans, style, width.max(1.0), measure)
     };
     let (code, prose) = docs.text.split_leading_code();
     let code = code
@@ -3401,6 +3445,7 @@ fn draw_styled_line(
         color,
         line_h,
         scale_factor,
+        true,
     )
 }
 
@@ -3418,8 +3463,13 @@ fn draw_styled_run(
     color: u32,
     line_h: usize,
     scale_factor: f64,
+    documentation: bool,
 ) -> f32 {
     let chip_pad = scaled(2.0, scale_factor);
+    // A standalone code line already reads as a block. Reserve chips for
+    // identifiers embedded in prose, avoiding a second wash on signatures.
+    let code_line = matches!(line.runs.as_slice(), [(range, SpanStyle::Code)]
+        if range.start == 0 && range.end == line.text.len());
     let mut cursor = 0usize;
     let mut cx = x as f32;
     let mut segment =
@@ -3427,18 +3477,34 @@ fn draw_styled_run(
             if text.is_empty() {
                 return;
             }
+            let text_style = if documentation {
+                documentation_style(crate::layout::TextStyle::sized(size), style)
+            } else {
+                crate::layout::TextStyle::sized(size)
+            };
+            let previous = text_style.code.then(|| painter.use_ui_font(false));
+            let size = text_style.size;
+            let text_y = y + line_h.saturating_sub(painter.line_height_for_size(size)) / 2;
             let w = painter.measure_sized(text, size, 0.0);
             let sx = cx.round() as usize;
             match style {
                 Some(SpanStyle::Code) => {
-                    frame.blend_rect_px(
-                        sx.saturating_sub(chip_pad),
-                        y,
-                        w.ceil() as usize + 2 * chip_pad,
-                        line_h,
-                        colors.recessed_wash,
-                    );
-                    painter.draw_sized(frame, sx, y, text, size, 0.0, colors.text_bright);
+                    let inset = if documentation {
+                        scaled(2.0, scale_factor)
+                    } else {
+                        0
+                    };
+                    let pad = if documentation { 0 } else { chip_pad };
+                    if !documentation || !code_line {
+                        frame.blend_rect_px(
+                            sx.saturating_sub(pad),
+                            y + inset,
+                            w.ceil() as usize + 2 * pad,
+                            line_h.saturating_sub(2 * inset),
+                            colors.recessed_wash,
+                        );
+                    }
+                    painter.draw_sized(frame, sx, text_y, text, size, 0.0, colors.text_bright);
                 }
                 // Synthetic bold: a second strike one pixel right, and one
                 // extra pixel of advance so the widened glyphs never touch
@@ -3461,6 +3527,9 @@ fn draw_styled_run(
                 }
             }
             cx += w;
+            if let Some(previous) = previous {
+                painter.use_ui_font(previous);
+            }
         };
     for (range, style) in &line.runs {
         segment(frame, painter, &line.text[cursor..range.start], None);
@@ -3643,6 +3712,53 @@ mod tests {
                 toggle: true
             }
         );
+    }
+
+    #[test]
+    fn documentation_wrap_matches_mixed_font_paint_and_restores_ui_measurement() {
+        let (font, mut cache) = test_painter_and_frame();
+        let ui_font = Font::from_bytes(
+            include_bytes!("../../assets/Inter-Regular.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        let mut ui_cache = super::super::GlyphCache::default();
+        let mut painter = test_painter(&font, &mut cache).with_ui_font(&ui_font, &mut ui_cache);
+        let before = painter.measure_sized("proportional width", 13.0, 0.0);
+        let docs = crate::lsp::markdown::markdown_to_styled(
+            "Replace `current` with `(map/update m key f)` and keep café readable.",
+        );
+        let lines = wrap_documentation(
+            &docs.text,
+            &docs.spans,
+            crate::layout::TextStyle::sized(13.0),
+            180.0,
+            &mut crate::layout::PainterMeasure::new(&mut painter),
+        );
+        let colors = Palette::from_theme(&crate::theme::Theme::default());
+        let mut pixels = vec![0; 300 * 300];
+        let mut frame = Frame::new(&mut pixels, 300, 300);
+        for (row, line) in lines.iter().enumerate() {
+            let width = draw_styled_line(
+                &mut frame,
+                &mut painter,
+                &colors,
+                0,
+                row * 20,
+                line,
+                13.0,
+                colors.text_primary,
+                1.0,
+            );
+            assert!(width <= 180.0, "{}: {width}", line.text);
+        }
+        assert_eq!(
+            painter.measure_sized("proportional width", 13.0, 0.0),
+            before
+        );
+        assert!(lines
+            .iter()
+            .any(|line| line.runs.iter().any(|(_, style)| *style == SpanStyle::Code)));
     }
 
     #[test]
@@ -3901,9 +4017,8 @@ mod tests {
         );
     }
 
-    /// Acceptance: a `Code` span paints a recessed chip behind its run and
-    /// nothing else moves — the same zone without spans differs only inside
-    /// the chip's band; a `Strong` run differs only where its glyphs are.
+    /// Code has a compact background without invading the preceding prose;
+    /// font-size changes may move subsequent text, but not other zones.
     #[test]
     fn styled_runs_paint_a_chip_behind_code_and_bold_for_strong() {
         let font = Font::from_bytes(
@@ -3981,12 +4096,11 @@ mod tests {
 
         let mid_y = rect.y + rect.h.min(scaled(dims::ZONE_LINE_H, 1.0)) / 2;
         let at = |buf: &Vec<u32>, x: usize| buf[mid_y * w + x];
-        // Chip: the pad pixel just left of the run's first glyph is washed
-        // in the chipped render, untouched in the plain one.
+        // The chip stays within the run, without washing over the prose gap.
         let chip_left = rect.x + before.round() as usize - 1;
-        assert_ne!(at(&chipped, chip_left), at(&plain, chip_left));
-        // Outside the run (well into "now and more") nothing changed.
-        let outside = rect.x + (before + run).ceil() as usize + 40;
+        assert_eq!(at(&chipped, chip_left), at(&plain, chip_left));
+        // Outside the text, the remaining surface is unchanged.
+        let outside = rect.x + rect.w - 2;
         assert_eq!(at(&chipped, outside), at(&plain, outside));
         assert_eq!(at(&bold, outside), at(&plain, outside));
         // The whole chip band [run start - pad, run end + pad) differs

@@ -2249,9 +2249,9 @@ pub fn with_cursor_overlay_spec<R>(
                     // unlike Completion.
                     prefer_below: false,
                     width: WidthRule {
-                        pct: 0.0,
-                        min: 280.0,
-                        max: 420.0,
+                        pct: 0.42,
+                        min: 360.0,
+                        max: 560.0,
                     },
                 },
                 header: None,
@@ -2316,9 +2316,9 @@ pub fn with_cursor_overlay_spec<R>(
                     // "Cursor, above-preferred" per the Contexts table.
                     prefer_below: false,
                     width: WidthRule {
-                        pct: 0.0,
-                        min: 280.0,
-                        max: 420.0,
+                        pct: 0.42,
+                        min: 360.0,
+                        max: 560.0,
                     },
                 },
                 header: None,

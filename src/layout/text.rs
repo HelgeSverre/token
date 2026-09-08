@@ -22,6 +22,8 @@ use crate::view::TextPainter;
 pub struct TextStyle {
     pub size: f32,
     pub tracking: f32,
+    /// Use the configured code font instead of the painter's current role.
+    pub code: bool,
 }
 
 impl TextStyle {
@@ -29,6 +31,7 @@ impl TextStyle {
         Self {
             size,
             tracking: 0.0,
+            code: false,
         }
     }
 }
@@ -48,11 +51,21 @@ pub trait TextMeasure {
 /// Direct measurement without an additional memo table.
 impl TextMeasure for TextPainter<'_> {
     fn width(&mut self, text: &str, style: TextStyle) -> f32 {
-        self.measure_sized(text, style.size, style.tracking)
+        let previous = style.code.then(|| self.use_ui_font(false));
+        let width = self.measure_sized(text, style.size, style.tracking);
+        if let Some(previous) = previous {
+            self.use_ui_font(previous);
+        }
+        width
     }
 
     fn line_height(&mut self, style: TextStyle) -> f32 {
-        self.line_height_for_size(style.size) as f32
+        let previous = style.code.then(|| self.use_ui_font(false));
+        let height = self.line_height_for_size(style.size) as f32;
+        if let Some(previous) = previous {
+            self.use_ui_font(previous);
+        }
+        height
     }
 }
 
@@ -84,7 +97,7 @@ pub struct PainterMeasure<'p, 'a> {
     /// hand back another string's width, and wrong widths here become wrong
     /// geometry everywhere downstream. The inner map still looks up by
     /// `&str`, so a hit allocates nothing.
-    memo: HashMap<(u32, u32), HashMap<String, f32>>,
+    memo: HashMap<(u32, u32, bool), HashMap<String, f32>>,
 }
 
 impl<'p, 'a> PainterMeasure<'p, 'a> {
@@ -98,7 +111,7 @@ impl<'p, 'a> PainterMeasure<'p, 'a> {
 
 impl TextMeasure for PainterMeasure<'_, '_> {
     fn width(&mut self, text: &str, style: TextStyle) -> f32 {
-        let style_key = (style.size.to_bits(), style.tracking.to_bits());
+        let style_key = (style.size.to_bits(), style.tracking.to_bits(), style.code);
         if let Some(&w) = self
             .memo
             .get(&style_key)
@@ -106,7 +119,7 @@ impl TextMeasure for PainterMeasure<'_, '_> {
         {
             return w;
         }
-        let w = self.painter.measure_sized(text, style.size, style.tracking);
+        let w = self.painter.width(text, style);
         self.memo
             .entry(style_key)
             .or_default()
@@ -115,7 +128,7 @@ impl TextMeasure for PainterMeasure<'_, '_> {
     }
 
     fn line_height(&mut self, style: TextStyle) -> f32 {
-        self.painter.line_height_for_size(style.size) as f32
+        TextMeasure::line_height(self.painter, style)
     }
 }
 
@@ -157,6 +170,17 @@ pub fn wrap_to_width(
     max_w: f32,
     measure: &mut dyn TextMeasure,
 ) -> Vec<TextLine> {
+    wrap_with_style(text, max_w, measure, |_| style)
+}
+
+/// The shared wrapping algorithm with a style selected at each UTF-8 byte
+/// offset. Rich documentation uses this to measure code and prose as painted.
+pub(crate) fn wrap_with_style(
+    text: &str,
+    max_w: f32,
+    measure: &mut dyn TextMeasure,
+    mut style_at: impl FnMut(usize) -> TextStyle,
+) -> Vec<TextLine> {
     let mut out = Vec::new();
     let mut line_offset = 0;
     for raw in text.split_inclusive('\n') {
@@ -169,8 +193,8 @@ pub fn wrap_to_width(
         cum.push(0.0);
         {
             let mut buf = [0u8; 4];
-            for &(_, ch) in &chars {
-                let ch_w = measure.width(ch.encode_utf8(&mut buf), style);
+            for &(offset, ch) in &chars {
+                let ch_w = measure.width(ch.encode_utf8(&mut buf), style_at(line_offset + offset));
                 cum.push(cum.last().unwrap() + ch_w);
             }
         }

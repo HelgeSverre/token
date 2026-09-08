@@ -1,0 +1,27 @@
+name: hover-documentation
+width: 1800
+height: 1400
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: samples/syntax/sample.sema
+    scroll_to: 96
+    cursor_line: 122
+    cursor_column: 10
+hover: |
+  ```sema
+  (map/update m key f) → map
+  ```
+
+  Return a new map with the value at `key` replaced by `(f current)`, where
+  `current` is the existing value. This is the read-modify-write shortcut for
+  `(assoc m k (f (get m k)))`.
+
+  Gotcha: if the key is **absent**, `f` is still called — with `nil` as `current`.
+  Make `f` tolerate `nil` (or ensure the key exists first), otherwise a numeric
+  function like `(fn (v) (+ v 1))` will raise a type error.
+  For nested paths use `map/update-in`.
+
+  ```sema
+  (map/update {:a 1} :a (fn (v) (+ v 10)))
+  ```
