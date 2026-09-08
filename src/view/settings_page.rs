@@ -386,7 +386,7 @@ fn text(
     size: f32,
     color: u32,
 ) {
-    let value = truncate_tail(painter, size, value, rect.w as f32);
+    let value = painter.truncate_sized(value, size, rect.w as f32, EllipsisSide::End);
     painter.draw_sized(frame, rect.x, rect.y, &value, size, 0.0, color);
 }
 

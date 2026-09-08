@@ -16,6 +16,7 @@ pub use settings_page::visible_count as settings_visible_count;
 
 use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
+use super::helpers::EllipsisSide;
 use super::scrollbar::{
     render_scrollbar, ScrollbarColors, ScrollbarGeometry, ScrollbarState, SCROLLBAR_WIDTH_LOGICAL,
 };
@@ -758,54 +759,6 @@ pub fn coalesce_match_indices(indices: &[u32]) -> Vec<(u32, u32)> {
     runs
 }
 
-/// Tail-ellipsize `text` to fit `max_width`, appending `…`. Char-boundary
-/// safe for multi-byte text.
-pub fn truncate_tail(painter: &mut TextPainter, size: f32, text: &str, max_width: f32) -> String {
-    if painter.measure_sized(text, size, 0.0) <= max_width {
-        return text.to_string();
-    }
-    let ellipsis_w = painter.measure_sized("\u{2026}", size, 0.0);
-    let budget = (max_width - ellipsis_w).max(0.0);
-    let mut out = String::new();
-    let mut w = 0.0;
-    let mut buf = [0u8; 4];
-    for ch in text.chars() {
-        let cw = painter.measure_sized(ch.encode_utf8(&mut buf), size, 0.0);
-        if w + cw > budget {
-            break;
-        }
-        out.push(ch);
-        w += cw;
-    }
-    out.push('\u{2026}');
-    out
-}
-
-/// Head-ellipsize `text` to fit `max_width`, prepending `…` (used for
-/// `detail` truncation, e.g. `…/view/geometry.rs`).
-pub fn truncate_head(painter: &mut TextPainter, size: f32, text: &str, max_width: f32) -> String {
-    if painter.measure_sized(text, size, 0.0) <= max_width {
-        return text.to_string();
-    }
-    let ellipsis_w = painter.measure_sized("\u{2026}", size, 0.0);
-    let budget = (max_width - ellipsis_w).max(0.0);
-    let mut kept: Vec<char> = Vec::new();
-    let mut w = 0.0;
-    let mut buf = [0u8; 4];
-    for ch in text.chars().rev() {
-        let cw = painter.measure_sized(ch.encode_utf8(&mut buf), size, 0.0);
-        if w + cw > budget {
-            break;
-        }
-        kept.push(ch);
-        w += cw;
-    }
-    kept.reverse();
-    let mut out = String::from('\u{2026}');
-    out.extend(kept);
-    out
-}
-
 /// The list-context header's query text, clipped to `max_width` — full text
 /// when it fits, otherwise head-ellipsized so the *tail* (nearest the caret,
 /// which sits at/after the end while typing) stays visible instead of
@@ -819,13 +772,13 @@ fn visible_header_text(
     text: &str,
     max_width: f32,
 ) -> (String, usize) {
-    if painter.measure_sized(text, size, 0.0) <= max_width {
-        return (text.to_string(), 0);
+    let visible = painter.truncate_sized(text, size, max_width, EllipsisSide::Start);
+    if matches!(visible, std::borrow::Cow::Borrowed(value) if value == text) {
+        return (visible.into_owned(), 0);
     }
-    let visible = truncate_head(painter, size, text, max_width);
     let total_chars = text.chars().count();
     let kept_chars = visible.chars().count().saturating_sub(1); // minus the ellipsis
-    (visible, total_chars.saturating_sub(kept_chars))
+    (visible.into_owned(), total_chars.saturating_sub(kept_chars))
 }
 
 /// Geometry for one `Field` in a `Body::Fields` layout: the label row above
@@ -2384,13 +2337,18 @@ fn render_list(
                         let leftover = available as f32 - full_label_w - gap;
                         if leftover > 0.0 {
                             let detail_x = x + full_label_w.round() as usize + text_pad;
-                            let detail = truncate_head(painter, meta_size, detail, leftover);
+                            let detail = painter.truncate_sized(
+                                detail,
+                                meta_size,
+                                leftover,
+                                EllipsisSide::Start,
+                            );
                             let run = StyledLine {
                                 runs: row
                                     .detail_style
                                     .map(|style| vec![(0..detail.len(), style)])
                                     .unwrap_or_default(),
-                                text: detail,
+                                text: detail.into_owned(),
                             };
                             draw_styled_run(
                                 frame,
@@ -2407,7 +2365,12 @@ fn render_list(
                         }
                     }
                 } else {
-                    let label = truncate_tail(painter, row_size, row.label, available as f32);
+                    let label = painter.truncate_sized(
+                        row.label,
+                        row_size,
+                        available as f32,
+                        EllipsisSide::End,
+                    );
                     draw_label_with_matches(
                         frame,
                         painter,
@@ -2463,11 +2426,11 @@ fn render_list(
                                     );
                                 }
                                 let pad = scaled(4.0, scale_factor).min(chip.w / 2);
-                                let label = truncate_tail(
-                                    painter,
-                                    meta_size,
+                                let label = painter.truncate_sized(
                                     label,
+                                    meta_size,
                                     chip.w.saturating_sub(pad * 2) as f32,
+                                    EllipsisSide::End,
                                 );
                                 if painter.measure_sized(&label, meta_size, 0.0)
                                     <= chip.w.saturating_sub(pad * 2) as f32
@@ -4749,8 +4712,9 @@ mod tests {
     fn truncate_tail_keeps_short_text_unchanged() {
         let (font, mut cache) = test_painter_and_frame();
         let mut painter = TextPainter::new(&font, &mut cache, 13.0, 10.0, 8.0, 16);
-        let out = truncate_tail(&mut painter, 13.0, "short", 1000.0);
+        let out = painter.truncate_sized("short", 13.0, 1000.0, EllipsisSide::End);
         assert_eq!(out, "short");
+        assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
     }
 
     #[test]
@@ -4758,18 +4722,31 @@ mod tests {
         let (font, mut cache) = test_painter_and_frame();
         let mut painter = TextPainter::new(&font, &mut cache, 13.0, 10.0, 8.0, 16);
         let text = "日本語テキストとても長い文字列です";
-        let out = truncate_tail(&mut painter, 13.0, text, 40.0);
+        let out = painter.truncate_sized(text, 13.0, 40.0, EllipsisSide::End);
         assert!(out.ends_with('\u{2026}'));
         assert!(out.chars().count() < text.chars().count());
+        assert!(painter.measure_sized(&out, 13.0, 0.0) <= 40.0);
+        assert_eq!(
+            painter.truncate_sized(text, 13.0, 0.0, EllipsisSide::End),
+            ""
+        );
     }
 
     #[test]
     fn truncate_head_prepends_ellipsis_and_keeps_tail() {
         let (font, mut cache) = test_painter_and_frame();
         let mut painter = TextPainter::new(&font, &mut cache, 13.0, 10.0, 8.0, 16);
-        let out = truncate_head(&mut painter, 13.0, "src/view/geometry.rs", 60.0);
+        let out = painter.truncate_sized("src/view/geometry.rs", 13.0, 60.0, EllipsisSide::Start);
         assert!(out.starts_with('\u{2026}'));
         assert!(out.ends_with(".rs"));
+        assert!(painter.measure_sized(&out, 13.0, 0.0) <= 60.0);
+        for side in [EllipsisSide::Start, EllipsisSide::End] {
+            let ellipsis = painter.measure_sized("…", 13.0, 0.0);
+            assert_eq!(
+                painter.truncate_sized("日本語.rs", 13.0, ellipsis - 1.0, side),
+                ""
+            );
+        }
     }
 
     #[test]

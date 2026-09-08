@@ -1094,26 +1094,22 @@ impl<'a> TextPainter<'a> {
         text: &'text str,
         width: f32,
     ) -> std::borrow::Cow<'text, str> {
-        use std::borrow::Cow;
-        let ellipsis = self.measure_width("…");
-        let mut used = 0.0;
-        let mut end = 0;
-        for (index, ch) in text.char_indices() {
-            let mut bytes = [0; 4];
-            let advance = self.measure_width(ch.encode_utf8(&mut bytes));
-            used += advance;
-            if used > width {
-                return if width < ellipsis {
-                    Cow::Borrowed("")
-                } else {
-                    Cow::Owned(format!("{}…", &text[..end]))
-                };
-            }
-            if used <= width - ellipsis {
-                end = index + ch.len_utf8();
-            }
-        }
-        Cow::Borrowed(text)
+        super::helpers::ellipsize(text, width, super::helpers::EllipsisSide::End, |text| {
+            self.measure_width(text)
+        })
+    }
+
+    /// Ellipsize sized UI text using the same rounded advances as `draw_sized`.
+    pub(crate) fn truncate_sized<'text>(
+        &mut self,
+        text: &'text str,
+        size: f32,
+        width: f32,
+        side: super::helpers::EllipsisSide,
+    ) -> std::borrow::Cow<'text, str> {
+        super::helpers::ellipsize(text, width, side, |text| {
+            self.measure_sized(text, size, 0.0)
+        })
     }
 
     /// Draw text with syntax highlighting

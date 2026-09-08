@@ -13,6 +13,10 @@ All notable changes to rust-editor are documented in this file.
 - Removed the duplicate navigation command-merging helper. Problems-panel
   grouping uses borrowed traversal without temporary group lists, and opening
   a diagnostic no longer clones its full payload.
+- UI labels, Settings controls and overlay text now share one UTF-8-safe
+  truncation routine with matching font measurements. Text that fits stays
+  borrowed where possible; widths too small for an ellipsis produce empty text
+  instead of overflowing.
 
 ### Context menus
 
