@@ -75,6 +75,7 @@ pub enum CommandId {
 
     // CSV
     ToggleCsvView,
+    ToggleSoftWrap,
 
     // Markdown
     ToggleMarkdownPreview,
@@ -107,6 +108,13 @@ pub enum CommandId {
     TriggerCompletionMenu,
     /// Inline ghost-text suggestion (autocomplete.md Phase 2)
     TriggerInlineSuggestion,
+    AcceptInlineSuggestion,
+    AcceptInlineWord,
+    AcceptInlineLine,
+    NextInlineSuggestion,
+    PrevInlineSuggestion,
+    DismissInlineSuggestion,
+    OpenInlineStatistics,
 
     // Language servers (lsp-integration.md Phase 1)
     RestartLanguageServer,
@@ -163,9 +171,10 @@ impl CommandCategory {
 /// A command definition for the command palette
 #[derive(Debug, Clone)]
 pub struct CommandDef {
+    /// Shared keyboard action, when the palette command has one.
+    pub action: Option<KeymapCommand>,
     pub id: CommandId,
     pub label: &'static str,
-    pub keybinding: Option<&'static str>,
     pub category: CommandCategory,
 }
 
@@ -173,381 +182,429 @@ pub struct CommandDef {
 pub static COMMANDS: &[CommandDef] = &[
     CommandDef {
         id: CommandId::NewFile,
+        action: Some(KeymapCommand::NewTab),
         category: CommandCategory::File,
         label: "New File",
-        keybinding: Some("⇧⌘N"),
     },
     CommandDef {
         id: CommandId::OpenFile,
+        action: Some(KeymapCommand::OpenFile),
         category: CommandCategory::File,
         label: "Open File...",
-        keybinding: Some("⌘O"),
     },
     CommandDef {
         id: CommandId::FuzzyFileFinder,
+        action: Some(KeymapCommand::FuzzyFileFinder),
         category: CommandCategory::File,
         label: "Go to File...",
-        keybinding: Some("⇧⌘O"),
     },
     CommandDef {
         id: CommandId::SaveFile,
+        action: Some(KeymapCommand::SaveFile),
         category: CommandCategory::File,
         label: "Save File",
-        keybinding: Some("⌘S"),
     },
     CommandDef {
         id: CommandId::SaveFileAs,
+        action: Some(KeymapCommand::SaveFileAs),
         category: CommandCategory::File,
         label: "Save File As...",
-        keybinding: Some("⇧⌘S"),
     },
     CommandDef {
         id: CommandId::Undo,
+        action: Some(KeymapCommand::Undo),
         category: CommandCategory::Edit,
         label: "Undo",
-        keybinding: Some("⌘Z"),
     },
     CommandDef {
         id: CommandId::Redo,
+        action: Some(KeymapCommand::Redo),
         category: CommandCategory::Edit,
         label: "Redo",
-        keybinding: Some("⇧⌘Z"),
     },
     CommandDef {
         id: CommandId::Cut,
+        action: Some(KeymapCommand::Cut),
         category: CommandCategory::Edit,
         label: "Cut",
-        keybinding: Some("⌘X"),
     },
     CommandDef {
         id: CommandId::Copy,
+        action: Some(KeymapCommand::Copy),
         category: CommandCategory::Edit,
         label: "Copy",
-        keybinding: Some("⌘C"),
     },
     CommandDef {
         id: CommandId::Paste,
+        action: Some(KeymapCommand::Paste),
         category: CommandCategory::Edit,
         label: "Paste",
-        keybinding: Some("⌘V"),
     },
     CommandDef {
         id: CommandId::SelectAll,
+        action: Some(KeymapCommand::SelectAll),
         category: CommandCategory::Edit,
         label: "Select All",
-        keybinding: Some("⌘A"),
     },
     CommandDef {
         id: CommandId::GotoLine,
+        action: Some(KeymapCommand::ToggleGotoLine),
         category: CommandCategory::Nav,
         label: "Go to Line...",
-        keybinding: Some("⌘L"),
     },
     CommandDef {
         id: CommandId::GotoDefinition,
+        action: Some(KeymapCommand::GotoDefinition),
         category: CommandCategory::Nav,
         label: "Go to Definition",
-        keybinding: Some("⌘B"),
     },
     CommandDef {
         id: CommandId::NavigateBack,
+        action: Some(KeymapCommand::NavigateBack),
         category: CommandCategory::Nav,
         label: "Navigate Back",
-        keybinding: Some("⌘["),
     },
     CommandDef {
         id: CommandId::NavigateForward,
+        action: Some(KeymapCommand::NavigateForward),
         category: CommandCategory::Nav,
         label: "Navigate Forward",
-        keybinding: Some("⌘]"),
     },
     CommandDef {
         id: CommandId::ShowHover,
+        action: Some(KeymapCommand::ShowHover),
         category: CommandCategory::Nav,
         label: "Show Hover",
-        keybinding: Some("⇧⌘D"),
     },
     CommandDef {
         id: CommandId::ShowSignatureHelp,
+        action: Some(KeymapCommand::ShowSignatureHelp),
         category: CommandCategory::Nav,
         label: "Show Signature Help",
-        keybinding: Some("⌘P"),
     },
     CommandDef {
         id: CommandId::RenameSymbol,
+        action: Some(KeymapCommand::RenameSymbol),
         category: CommandCategory::Nav,
         label: "Rename Symbol",
-        keybinding: Some("⇧F6"),
     },
     CommandDef {
         id: CommandId::ShowCodeActions,
+        action: Some(KeymapCommand::ShowCodeActions),
         category: CommandCategory::Edit,
         label: "Show Code Actions",
-        keybinding: Some("⌥↩"),
     },
     CommandDef {
         id: CommandId::FormatDocument,
+        action: Some(KeymapCommand::FormatDocument),
         category: CommandCategory::Edit,
         label: "Format Document",
-        keybinding: Some("⌥⌘L"),
     },
     CommandDef {
         id: CommandId::FormatSelection,
+        action: Some(KeymapCommand::FormatSelection),
         category: CommandCategory::Edit,
         label: "Format Selection",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::FindUsages,
+        action: Some(KeymapCommand::FindUsages),
         category: CommandCategory::Nav,
         label: "Find Usages",
-        keybinding: Some("⌥F7"),
     },
     CommandDef {
         id: CommandId::ShowUsages,
+        action: Some(KeymapCommand::ShowUsages),
         category: CommandCategory::Nav,
         label: "Show Usages",
-        keybinding: Some("⌥⌘F7"),
     },
     CommandDef {
         id: CommandId::NextDiagnostic,
+        action: Some(KeymapCommand::NextDiagnostic),
         category: CommandCategory::Nav,
         label: "Next Diagnostic",
-        keybinding: Some("F2"),
     },
     CommandDef {
         id: CommandId::PrevDiagnostic,
+        action: Some(KeymapCommand::PrevDiagnostic),
         category: CommandCategory::Nav,
         label: "Previous Diagnostic",
-        keybinding: Some("⇧F2"),
     },
     CommandDef {
         id: CommandId::ShowContextMenu,
+        action: Some(KeymapCommand::ShowContextMenu),
         category: CommandCategory::Nav,
         label: "Show Context Menu",
-        keybinding: Some("⇧F10"),
     },
     CommandDef {
         id: CommandId::SplitHorizontal,
+        action: Some(KeymapCommand::SplitHorizontal),
         category: CommandCategory::View,
         label: "Split Editor Right",
-        keybinding: Some("⇧⌥⌘H"),
     },
     CommandDef {
         id: CommandId::SplitVertical,
+        action: Some(KeymapCommand::SplitVertical),
         category: CommandCategory::View,
         label: "Split Editor Down",
-        keybinding: Some("⇧⌥⌘V"),
     },
     CommandDef {
         id: CommandId::CloseGroup,
+        action: None,
         category: CommandCategory::View,
         label: "Close Editor Group",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::NextTab,
+        action: Some(KeymapCommand::NextTab),
         category: CommandCategory::View,
         label: "Next Tab",
-        keybinding: Some("⌥⌘→"),
     },
     CommandDef {
         id: CommandId::PrevTab,
+        action: Some(KeymapCommand::PrevTab),
         category: CommandCategory::View,
         label: "Previous Tab",
-        keybinding: Some("⌥⌘←"),
     },
     CommandDef {
         id: CommandId::CloseTab,
+        action: Some(KeymapCommand::CloseTab),
         category: CommandCategory::View,
         label: "Close Tab",
-        keybinding: Some("⌘W"),
     },
     CommandDef {
         id: CommandId::Find,
+        action: Some(KeymapCommand::ToggleFindReplace),
         category: CommandCategory::Nav,
         label: "Find...",
-        keybinding: Some("⌘F"),
     },
     CommandDef {
         id: CommandId::ShowCommandPalette,
+        action: Some(KeymapCommand::ToggleCommandPalette),
         category: CommandCategory::System,
         label: "Show Command Palette",
-        keybinding: Some("⇧⌘A"),
     },
     CommandDef {
         id: CommandId::SwitchTheme,
+        action: None,
         category: CommandCategory::View,
         label: "Switch Theme...",
-        keybinding: None,
-    },
-    CommandDef {
-        id: CommandId::OpenSettings,
-        category: CommandCategory::System,
-        label: "Open Settings",
-        keybinding: Some("⌘,"),
     },
     CommandDef {
         id: CommandId::OpenConfigDirectory,
+        action: None,
         category: CommandCategory::System,
         label: "Open Config Directory",
-        keybinding: None,
+    },
+    CommandDef {
+        id: CommandId::OpenSettings,
+        action: Some(KeymapCommand::OpenSettings),
+        category: CommandCategory::System,
+        label: "Open Settings",
     },
     CommandDef {
         id: CommandId::OpenKeybindings,
+        action: None,
         category: CommandCategory::System,
         label: "Open Keymap",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::ReloadConfiguration,
+        action: None,
         category: CommandCategory::System,
         label: "Reload Configuration",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::ToggleCsvView,
+        action: Some(KeymapCommand::CsvToggle),
         category: CommandCategory::View,
         label: "Toggle CSV View",
-        keybinding: None,
+    },
+    CommandDef {
+        id: CommandId::ToggleSoftWrap,
+        action: Some(KeymapCommand::ToggleSoftWrap),
+        category: CommandCategory::View,
+        label: "Toggle Soft Wrap",
     },
     CommandDef {
         id: CommandId::ToggleMarkdownPreview,
+        action: Some(KeymapCommand::MarkdownTogglePreview),
         category: CommandCategory::View,
         label: "Markdown: Toggle Preview",
-        keybinding: Some("⇧⌘V"),
     },
     CommandDef {
         id: CommandId::OpenLogFile,
+        action: Some(KeymapCommand::OpenLogFile),
         category: CommandCategory::System,
         label: "Open Log File",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::OpenFolder,
+        action: None,
         category: CommandCategory::File,
         label: "Open Folder...",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::ToggleFileExplorer,
+        action: Some(KeymapCommand::ToggleFileExplorer),
         category: CommandCategory::Panel,
         label: "View: Toggle File Explorer",
-        keybinding: Some("⌘1"),
     },
     CommandDef {
         id: CommandId::ToggleTerminal,
+        action: Some(KeymapCommand::ToggleTerminal),
         category: CommandCategory::Panel,
         label: "View: Toggle Terminal",
-        keybinding: Some("⌘2"),
     },
     CommandDef {
         id: CommandId::ToggleOutline,
+        action: Some(KeymapCommand::ToggleOutline),
         category: CommandCategory::Panel,
         label: "View: Toggle Outline",
-        keybinding: Some("⌘7"),
     },
     CommandDef {
         id: CommandId::ToggleProblems,
+        action: Some(KeymapCommand::ToggleProblems),
         category: CommandCategory::Panel,
         label: "View: Toggle Problems",
-        keybinding: Some("⌘4"),
     },
     CommandDef {
         id: CommandId::ToggleProblemsScope,
+        action: None,
         category: CommandCategory::Panel,
         label: "Problems: Toggle Current File Only",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::ToggleUsages,
-        keybinding: None,
+        action: Some(KeymapCommand::ToggleUsages),
         category: CommandCategory::Panel,
         label: "View: Toggle Usages",
     },
     CommandDef {
         id: CommandId::CloseFocusedDock,
+        action: Some(KeymapCommand::CloseFocusedDock),
         category: CommandCategory::Panel,
         label: "View: Close Panel",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::RevealInFinder,
+        action: None,
         category: CommandCategory::File,
         label: "Reveal Current File in Finder",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::RevealInSidebar,
+        action: Some(KeymapCommand::RevealInSidebar),
         category: CommandCategory::File,
         label: "Reveal in File Explorer",
-        keybinding: Some("\u{2318}\u{21e7}R"),
     },
     CommandDef {
         id: CommandId::CopyAbsolutePath,
+        action: None,
         category: CommandCategory::File,
         label: "Copy Absolute Path",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::CopyRelativePath,
+        action: None,
         category: CommandCategory::File,
         label: "Copy Relative Path",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::OpenRecentFiles,
+        action: Some(KeymapCommand::OpenRecentFiles),
         category: CommandCategory::File,
         label: "Open Recent Files",
-        keybinding: Some("⌘E"),
     },
     CommandDef {
         id: CommandId::TriggerCompletionMenu,
+        action: Some(KeymapCommand::TriggerCompletionMenu),
         category: CommandCategory::Edit,
         label: "Trigger Completion",
-        keybinding: Some("⌃Space"),
     },
     CommandDef {
         id: CommandId::TriggerInlineSuggestion,
+        action: Some(KeymapCommand::TriggerInlineSuggestion),
         category: CommandCategory::Edit,
         label: "Trigger Inline Suggestion",
-        keybinding: Some("⌥\\"),
+    },
+    CommandDef {
+        id: CommandId::AcceptInlineSuggestion,
+        action: Some(KeymapCommand::AcceptInlineSuggestion),
+        category: CommandCategory::Edit,
+        label: "Accept Inline Suggestion",
+    },
+    CommandDef {
+        id: CommandId::AcceptInlineWord,
+        action: Some(KeymapCommand::AcceptInlineWord),
+        category: CommandCategory::Edit,
+        label: "Accept Inline Suggestion Word",
+    },
+    CommandDef {
+        id: CommandId::AcceptInlineLine,
+        action: Some(KeymapCommand::AcceptInlineLine),
+        category: CommandCategory::Edit,
+        label: "Accept Inline Suggestion Line",
+    },
+    CommandDef {
+        id: CommandId::DismissInlineSuggestion,
+        action: Some(KeymapCommand::DismissInlineSuggestion),
+        category: CommandCategory::Edit,
+        label: "Dismiss Inline Suggestion",
+    },
+    CommandDef {
+        id: CommandId::OpenInlineStatistics,
+        action: Some(KeymapCommand::OpenInlineStatistics),
+        category: CommandCategory::Edit,
+        label: "Open Inline Completion Statistics",
+    },
+    CommandDef {
+        id: CommandId::NextInlineSuggestion,
+        action: Some(KeymapCommand::NextInlineSuggestion),
+        category: CommandCategory::Edit,
+        label: "Next Inline Suggestion",
+    },
+    CommandDef {
+        id: CommandId::PrevInlineSuggestion,
+        action: Some(KeymapCommand::PrevInlineSuggestion),
+        category: CommandCategory::Edit,
+        label: "Previous Inline Suggestion",
     },
     CommandDef {
         id: CommandId::RestartLanguageServer,
+        action: Some(KeymapCommand::RestartLanguageServer),
         category: CommandCategory::System,
         label: "Restart Language Server",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::ToggleLsp,
+        action: None,
         category: CommandCategory::System,
         label: "Toggle LSP",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::ToggleAutocomplete,
+        action: None,
         category: CommandCategory::System,
         label: "Toggle Autocomplete",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::ManageLanguageServers,
+        action: None,
         category: CommandCategory::System,
         label: "Language Servers...",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::SetLanguage,
+        action: None,
         category: CommandCategory::System,
         label: "Set Language...",
-        keybinding: None,
     },
     CommandDef {
         id: CommandId::Quit,
+        action: Some(KeymapCommand::Quit),
         category: CommandCategory::System,
         label: "Quit",
-        keybinding: Some("⌘Q"),
     },
 ];
 
@@ -556,21 +613,21 @@ pub static COMMANDS: &[CommandDef] = &[
 pub static DEBUG_COMMANDS: &[CommandDef] = &[
     CommandDef {
         id: CommandId::TogglePerfOverlay,
+        action: None,
         category: CommandCategory::System,
         label: "Toggle Performance Overlay",
-        keybinding: Some("F2"),
     },
     CommandDef {
         id: CommandId::ToggleDebugOverlay,
+        action: None,
         category: CommandCategory::System,
         label: "Toggle Debug Overlay",
-        keybinding: Some("F8"),
     },
     CommandDef {
         id: CommandId::CycleCursorOverlayDemo,
+        action: None,
         category: CommandCategory::System,
         label: "Cycle Cursor Overlay Demo",
-        keybinding: Some("F9"),
     },
 ];
 
@@ -578,11 +635,10 @@ pub static DEBUG_COMMANDS: &[CommandDef] = &[
 /// registry order. Fuzzy filtering/ranking lives in `update::ui` alongside
 /// the file finder's nucleo matching (`resolve_palette_rows`) — this just
 /// hands back the raw pool.
-pub(crate) fn all_commands() -> Vec<&'static CommandDef> {
-    #[allow(unused_mut)]
-    let mut cmds: Vec<&'static CommandDef> = COMMANDS.iter().collect();
+pub(crate) fn all_commands() -> impl Iterator<Item = &'static CommandDef> {
+    let cmds = COMMANDS.iter();
     #[cfg(debug_assertions)]
-    cmds.extend(DEBUG_COMMANDS.iter());
+    let cmds = cmds.chain(DEBUG_COMMANDS.iter());
     cmds
 }
 
@@ -591,98 +647,23 @@ pub(crate) fn all_commands() -> Vec<&'static CommandDef> {
 /// palette's own keycap hint instead of threading `Keymap` into a second
 /// lookup path (context-menu.md "Adjustment 2").
 pub(crate) fn command_def(id: CommandId) -> Option<&'static CommandDef> {
-    all_commands().into_iter().find(|def| def.id == id)
+    all_commands().find(|def| def.id == id)
 }
 
-/// Map CommandId to keymap::Command for keybinding lookup
+/// The palette registry shares its action identity with keyboard dispatch.
 impl CommandId {
     pub fn to_keymap_command(self) -> Option<KeymapCommand> {
-        match self {
-            CommandId::NewFile => Some(KeymapCommand::NewTab), // NewFile maps to NewTab
-            CommandId::OpenFile => Some(KeymapCommand::OpenFile),
-            CommandId::FuzzyFileFinder => Some(KeymapCommand::FuzzyFileFinder),
-            CommandId::SaveFile => Some(KeymapCommand::SaveFile),
-            CommandId::SaveFileAs => Some(KeymapCommand::SaveFileAs),
-            CommandId::Undo => Some(KeymapCommand::Undo),
-            CommandId::Redo => Some(KeymapCommand::Redo),
-            CommandId::Cut => Some(KeymapCommand::Cut),
-            CommandId::Copy => Some(KeymapCommand::Copy),
-            CommandId::Paste => Some(KeymapCommand::Paste),
-            CommandId::SelectAll => Some(KeymapCommand::SelectAll),
-            CommandId::GotoLine => Some(KeymapCommand::ToggleGotoLine),
-            CommandId::GotoDefinition => Some(KeymapCommand::GotoDefinition),
-            CommandId::NavigateBack => Some(KeymapCommand::NavigateBack),
-            CommandId::NavigateForward => Some(KeymapCommand::NavigateForward),
-            CommandId::ShowHover => Some(KeymapCommand::ShowHover),
-            CommandId::ShowSignatureHelp => Some(KeymapCommand::ShowSignatureHelp),
-            CommandId::RenameSymbol => Some(KeymapCommand::RenameSymbol),
-            CommandId::ShowCodeActions => Some(KeymapCommand::ShowCodeActions),
-            CommandId::FormatDocument => Some(KeymapCommand::FormatDocument),
-            CommandId::FormatSelection => Some(KeymapCommand::FormatSelection),
-            CommandId::FindUsages => Some(KeymapCommand::FindUsages),
-            CommandId::NextDiagnostic => Some(KeymapCommand::NextDiagnostic),
-            CommandId::PrevDiagnostic => Some(KeymapCommand::PrevDiagnostic),
-            CommandId::ShowUsages => Some(KeymapCommand::ShowUsages),
-            CommandId::ShowContextMenu => Some(KeymapCommand::ShowContextMenu),
-            CommandId::SplitHorizontal => Some(KeymapCommand::SplitHorizontal),
-            CommandId::SplitVertical => Some(KeymapCommand::SplitVertical),
-            CommandId::CloseGroup => None, // No direct mapping yet
-            CommandId::NextTab => Some(KeymapCommand::NextTab),
-            CommandId::PrevTab => Some(KeymapCommand::PrevTab),
-            CommandId::CloseTab => Some(KeymapCommand::CloseTab),
-            CommandId::Find => Some(KeymapCommand::ToggleFindReplace),
-            CommandId::ShowCommandPalette => Some(KeymapCommand::ToggleCommandPalette),
-            CommandId::SwitchTheme => None,
-            CommandId::OpenSettings => Some(KeymapCommand::OpenSettings),
-            CommandId::OpenConfigDirectory => None,
-            CommandId::OpenKeybindings => None,
-            CommandId::ReloadConfiguration => None,
-            CommandId::ToggleCsvView => Some(KeymapCommand::CsvToggle),
-            CommandId::ToggleMarkdownPreview => Some(KeymapCommand::MarkdownTogglePreview),
-            CommandId::OpenLogFile => Some(KeymapCommand::OpenLogFile),
-            CommandId::OpenFolder => None,
-            CommandId::ToggleFileExplorer => Some(KeymapCommand::ToggleFileExplorer),
-            CommandId::ToggleTerminal => Some(KeymapCommand::ToggleTerminal),
-            CommandId::ToggleOutline => Some(KeymapCommand::ToggleOutline),
-            CommandId::ToggleProblems => Some(KeymapCommand::ToggleProblems),
-            CommandId::ToggleUsages => Some(KeymapCommand::ToggleUsages),
-            CommandId::ToggleProblemsScope => None,
-            CommandId::CloseFocusedDock => Some(KeymapCommand::CloseFocusedDock),
-            CommandId::RevealInFinder => None,
-            CommandId::RevealInSidebar => Some(KeymapCommand::RevealInSidebar),
-            CommandId::CopyAbsolutePath => None,
-            CommandId::CopyRelativePath => None,
-            CommandId::OpenRecentFiles => Some(KeymapCommand::OpenRecentFiles),
-            CommandId::TriggerCompletionMenu => Some(KeymapCommand::TriggerCompletionMenu),
-            CommandId::TriggerInlineSuggestion => Some(KeymapCommand::TriggerInlineSuggestion),
-            CommandId::RestartLanguageServer => Some(KeymapCommand::RestartLanguageServer),
-            CommandId::ToggleLsp => None,
-            CommandId::ToggleAutocomplete => None,
-            CommandId::ManageLanguageServers => None,
-            CommandId::SetLanguage => None,
-            CommandId::Quit => Some(KeymapCommand::Quit),
-            #[cfg(debug_assertions)]
-            CommandId::TogglePerfOverlay => None,
-            #[cfg(debug_assertions)]
-            CommandId::ToggleDebugOverlay => None,
-            #[cfg(debug_assertions)]
-            CommandId::CycleCursorOverlayDemo => None,
-        }
+        command_def(self).and_then(|def| def.action)
     }
 }
 
-/// Get keybinding display string for a command from the keymap
-pub fn keybinding_for_command(id: CommandId, keymap: &Keymap) -> Option<String> {
-    let keymap_cmd = id.to_keymap_command()?;
-    keymap.display_for(keymap_cmd)
-}
-
-/// Get keybinding display string using the static fallback (for when keymap isn't available)
-pub fn keybinding_for_command_static(id: CommandId) -> Option<&'static str> {
-    COMMANDS
-        .iter()
-        .find(|cmd| cmd.id == id)
-        .and_then(|cmd| cmd.keybinding)
+/// Resolve a command's hint using the same active bindings and conditions as dispatch.
+pub(crate) fn keybinding_for_command(
+    id: CommandId,
+    keymap: &Keymap,
+    context: &crate::keymap::KeyContext,
+) -> Option<String> {
+    keymap.display_for(id.to_keymap_command()?, context)
 }
 
 // ============================================================================
@@ -852,9 +833,23 @@ pub enum ResolvePurpose {
     Accept,
 }
 
+/// Configuration resources opened by user actions. Path discovery and preparation
+/// belong to the runtime, not keymap translation or update handlers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigResource {
+    Directory,
+    Keybindings,
+    Log,
+    InlineStatistics,
+}
+
 /// Commands returned by update functions
 #[derive(Debug, Clone, Default)]
 pub enum Cmd {
+    /// Replace the workspace-wide symbol query; None cancels current work.
+    WorkspaceSymbols(Option<crate::lsp::workspace_symbols::SymbolSearchRequest>),
+    /// Coalesced background Find scan against an immutable document snapshot.
+    RunFindSearch(std::sync::Arc<crate::model::ui::FindSearchRequest>),
     /// No command - do nothing
     #[default]
     None,
@@ -862,32 +857,40 @@ pub enum Cmd {
     Redraw,
     /// Request a partial redraw of specific areas (optimization)
     RedrawAreas(Vec<DamageArea>),
-    /// Save file asynchronously
-    SaveFile { path: PathBuf, content: String },
-    /// Save-As write, asynchronously — distinct from `SaveFile` so its
-    /// completion (`AppMsg::SaveAsCompleted`) can carry the document/path
-    /// identity needed to defer the LSP didClose/didOpen pair until the
-    /// file actually exists on disk (see that message's doc comment).
-    SaveFileAs {
-        document_id: crate::model::editor_area::DocumentId,
-        old_path: Option<PathBuf>,
-        new_path: PathBuf,
-        content: String,
+    /// Save or Save As. The ordered runtime writer returns the exact snapshot
+    /// written, so subsequent edits cannot be marked saved by an old reply.
+    SaveFile {
+        target: crate::model::FileRequest,
+        path: PathBuf,
+        content: ropey::Rope,
     },
     /// Load file asynchronously
-    LoadFile { path: PathBuf },
+    LoadFile {
+        target: crate::model::FileRequest,
+        path: PathBuf,
+    },
+    /// Prepare a file or configuration resource off the UI thread.
+    PrepareFileOpen(crate::model::FileOpenRequest),
+    /// Notify runtime waiters after installation (or rejection), not after reading.
+    FileOpenFinished {
+        request_id: u64,
+        document_id: Option<DocumentId>,
+    },
     /// Open a path in the system file explorer/finder
-    OpenInExplorer { path: PathBuf },
+    OpenInExplorer {
+        path: PathBuf,
+    },
     /// Reveal a file in the system file manager (select it)
-    RevealFileInFinder { path: PathBuf },
-    /// Open a file in a new tab for editing
-    OpenFileInEditor { path: PathBuf },
+    RevealFileInFinder {
+        path: PathBuf,
+    },
     /// Execute multiple commands
     Batch(Vec<Cmd>),
 
     // File dialogs
     /// Show native open file dialog
     ShowOpenFileDialog {
+        group_id: crate::model::GroupId,
         /// Allow selecting multiple files
         allow_multi: bool,
         /// Starting directory for the dialog
@@ -895,6 +898,7 @@ pub enum Cmd {
     },
     /// Show native save file dialog
     ShowSaveFileDialog {
+        target: crate::model::FileRequest,
         /// Suggested file path (for pre-filling name/directory)
         suggested_path: Option<PathBuf>,
     },
@@ -926,13 +930,11 @@ pub enum Cmd {
         snapshot_ms: f64,
     },
     /// Drop debounced parse state and worker-side cached parse trees for a document.
-    ClearSyntaxState { document_id: DocumentId },
+    ClearSyntaxState {
+        document_id: DocumentId,
+    },
 
     // === Display Commands ===
-    /// Persist a settings snapshot on the runtime thread, preserving click order.
-    SaveConfiguration {
-        config: Box<crate::config::EditorConfig>,
-    },
     /// Reinitialize the renderer (e.g., after scale factor change)
     ReinitializeRenderer,
     /// Re-derive status bar height from the renderer's font metrics
@@ -952,12 +954,35 @@ pub enum Cmd {
     SaveCommandHistory {
         history: crate::command_history::CommandHistory,
     },
+    /// Merge one aggregate inline outcome on the ordered file worker.
+    RecordInlineUsage(crate::completion::statistics::UsageEvent),
+    /// Read a directory on the replaceable speculative worker, never in update.
+    CompletePaths(std::sync::Arc<crate::completion::path::PathRequest>),
+    CancelPathCompletion,
+    /// Resolve a documentation scroll against the same layout used for paint.
+    PageCompletionDocumentation {
+        forward: bool,
+    },
     /// Copy a string to the system clipboard
     CopyToClipboard(String),
     /// Request pasting text from the system clipboard
     RequestClipboardPaste,
-    /// Create default keymap file asynchronously
-    CreateDefaultKeymapFile { path: PathBuf },
+    /// Read or conditionally replace the keymap on the ordered file worker.
+    PrepareKeymap {
+        session: std::sync::Arc<()>,
+        save: Option<Box<crate::keymap::preferences::KeymapSave>>,
+    },
+    /// Persist configuration in runtime order, never from an update handler.
+    SaveConfiguration {
+        config: Box<crate::config::EditorConfig>,
+    },
+    /// Read configuration and its theme, then deliver ConfigurationLoaded.
+    ReloadConfiguration,
+    /// Load a theme for preview, restore, or confirmation.
+    LoadTheme {
+        id: String,
+        persist: bool,
+    },
 
     // === Terminal Commands ===
     /// Spawn a PTY + shell for a new terminal session. The runtime spawns
@@ -981,7 +1006,9 @@ pub enum Cmd {
     },
     /// Kill and respawn every running instance of a server (manual
     /// restart, e.g. from the command palette).
-    LspRestartServer { server_id: crate::lsp::LspServerId },
+    LspRestartServer {
+        server_id: crate::lsp::LspServerId,
+    },
     /// A matching document gained a file path + language — send
     /// `textDocument/didOpen` (spawning the server first if needed).
     /// Idempotent from the model's point of view; the runtime's
@@ -1001,11 +1028,16 @@ pub enum Cmd {
     },
     /// Send `textDocument/didSave` for a just-saved document, with text
     /// iff the server's capabilities asked for it.
-    LspDidSave { document_id: DocumentId },
+    LspDidSave {
+        document_id: DocumentId,
+        saved_text: ropey::Rope,
+    },
     /// Send `textDocument/didClose` — call only when the document is
     /// released (`release_document_if_unreferenced`), never on tab
     /// close alone (documents are refcounted).
-    LspDidClose { document_id: DocumentId },
+    LspDidClose {
+        document_id: DocumentId,
+    },
     /// Drop the authoritative diagnostics-store entry for `document_id`'s
     /// current file (lsp-integration.md "cleared on ... language
     /// change") — unlike `LspDidClose`, which never touches the store
@@ -1013,7 +1045,9 @@ pub enum Cmd {
     /// is for the one case where the *same* URI's retained diagnostics
     /// must not survive: the language association changed, so a
     /// subsequent `didOpen` must not resurrect them.
-    LspClearDiagnostics { document_id: DocumentId },
+    LspClearDiagnostics {
+        document_id: DocumentId,
+    },
     /// `textDocument/definition` for `document_id` at `position`
     /// (already UTF-16-converted), tagged with the document's `revision`
     /// at request time and the `origin` to record in jump history on
@@ -1139,18 +1173,21 @@ pub enum Cmd {
     /// Arm (or re-arm) the inline-suggestion debounce for a document; the
     /// runtime replays `CompletionMsg::InlineDeadlineFired` when it elapses.
     ScheduleInlineRequest {
-        document_id: DocumentId,
-        revision: u64,
+        snapshot: crate::completion::inline::RequestSnapshot,
         delay_ms: u64,
         explicit: bool,
     },
     /// Hand a snapshotted request to the completion worker thread.
-    RunInlineRequest(Box<crate::completion::inline::InlineRequest>),
+    RunInlineRequest(Box<crate::completion::provider::InlineJob>),
+    /// Stop the pending debounce and drop the worker's in-flight future.
+    CancelInlineRequest,
     /// The menu closed (or its document changed): drop any pending
     /// completion debounce and supersede the in-flight request for this
     /// document. Without this a request fired just after dismissal would
     /// be answered into a closed menu and dropped anyway.
-    LspCancelCompletion { document_id: DocumentId },
+    LspCancelCompletion {
+        document_id: DocumentId,
+    },
     /// `completionItem/resolve` for the raw item the selected menu row was
     /// converted from. `Accept` purpose is the deferred half of
     /// accept-when-resolve-support-is-advertised (ts-ls returns minimal
@@ -1187,7 +1224,9 @@ pub enum Cmd {
     /// clears their diagnostics; enabling clears the missing-server memo
     /// so `ensure_lsp_server` can re-attempt spawns lazily on the next
     /// open/edit rather than staying skipped forever.
-    LspSetEnabled { enabled: bool },
+    LspSetEnabled {
+        enabled: bool,
+    },
     /// A single server's `lsp.servers.<id>.enabled` override flipped from
     /// the Language Servers picker modal — same semantics as
     /// `LspSetEnabled`, scoped to one server id.
@@ -1237,7 +1276,6 @@ impl Cmd {
         match self {
             Cmd::None => Damage::Areas(vec![]), // No damage
             Cmd::Redraw => Damage::Full,
-            Cmd::SaveConfiguration { .. } => Damage::Full,
             Cmd::RedrawAreas(areas) => {
                 if areas.is_empty() {
                     Damage::Areas(vec![])
@@ -1246,11 +1284,12 @@ impl Cmd {
                 }
             }
             // File operations may cause full redraw (file load changes content)
-            Cmd::SaveFile { .. } | Cmd::SaveFileAs { .. } => Damage::Full,
+            Cmd::SaveFile { .. } => Damage::Full,
             Cmd::LoadFile { .. } => Damage::Full,
+            Cmd::PrepareFileOpen(_) => Damage::status_bar(),
+            Cmd::FileOpenFinished { .. } => Damage::None,
             Cmd::OpenInExplorer { .. } => Damage::Full,
             Cmd::RevealFileInFinder { .. } => Damage::Areas(vec![]),
-            Cmd::OpenFileInEditor { .. } => Damage::Full,
             // Batch: merge all damages
             Cmd::Batch(cmds) => {
                 let mut damage = Damage::Areas(vec![]);
@@ -1270,6 +1309,8 @@ impl Cmd {
             // Syntax commands don't need immediate redraw
             Cmd::DebouncedSyntaxParse { .. } => Damage::Areas(vec![]),
             Cmd::RunSyntaxParse { .. } => Damage::Areas(vec![]),
+            // Starting a new Find scan clears stale marks and shows Searching.
+            Cmd::RunFindSearch(_) => Damage::Full,
             Cmd::ClearSyntaxState { .. } => Damage::Areas(vec![]),
             // Reinitialize triggers full redraw
             Cmd::ReinitializeRenderer => Damage::Full,
@@ -1278,9 +1319,18 @@ impl Cmd {
             Cmd::Quit => Damage::Areas(vec![]),
             Cmd::SaveRecentFiles { .. } => Damage::Areas(vec![]),
             Cmd::SaveCommandHistory { .. } => Damage::Areas(vec![]),
+            Cmd::RecordInlineUsage(_) => Damage::Areas(vec![]),
+            Cmd::CompletePaths(_)
+            | Cmd::CancelPathCompletion
+            | Cmd::PageCompletionDocumentation { .. } => Damage::Areas(vec![]),
             Cmd::CopyToClipboard(_) => Damage::Areas(vec![]),
             Cmd::RequestClipboardPaste => Damage::Areas(vec![]),
-            Cmd::CreateDefaultKeymapFile { .. } => Damage::Areas(vec![]),
+            // Preparation completes synchronously in runtime command order and
+            // can immediately open a tab or display an error.
+            Cmd::SaveConfiguration { .. }
+            | Cmd::ReloadConfiguration
+            | Cmd::LoadTheme { .. }
+            | Cmd::PrepareKeymap { .. } => Damage::Areas(vec![]),
             // Spawning doesn't need immediate redraw; the PtyOutput that
             // follows shortly after will request one.
             Cmd::SpawnTerminal { .. } => Damage::Areas(vec![]),
@@ -1300,11 +1350,13 @@ impl Cmd {
             Cmd::LspRequestPrepareRename { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestRename { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestFormatting { .. } => Damage::Areas(vec![]),
-            Cmd::LspRequestReferences { .. } => Damage::Areas(vec![]),
+            Cmd::LspRequestReferences { .. } | Cmd::WorkspaceSymbols(_) => Damage::Areas(vec![]),
             Cmd::LspRequestCodeActions { .. } => Damage::Areas(vec![]),
             Cmd::LspExecuteCommand { .. } => Damage::Areas(vec![]),
             Cmd::LspScheduleCompletion { .. } => Damage::Areas(vec![]),
-            Cmd::ScheduleInlineRequest { .. } | Cmd::RunInlineRequest(_) => Damage::Areas(vec![]),
+            Cmd::ScheduleInlineRequest { .. }
+            | Cmd::RunInlineRequest(_)
+            | Cmd::CancelInlineRequest => Damage::Areas(vec![]),
             Cmd::LspCancelCompletion { .. } => Damage::Areas(vec![]),
             Cmd::LspResolveCompletionItem { .. } => Damage::Areas(vec![]),
             Cmd::LspScheduleResolve { .. } => Damage::Areas(vec![]),
@@ -1355,6 +1407,22 @@ impl From<Option<Cmd>> for Cmd {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn palette_registry_has_unique_ids_and_roundtrippable_actions() {
+        let mut ids = std::collections::HashSet::new();
+        for def in all_commands() {
+            assert!(
+                ids.insert(def.id),
+                "duplicate palette identity: {:?}",
+                def.id
+            );
+            if let Some(action) = def.action {
+                assert_eq!(format!("{action:?}").parse::<KeymapCommand>(), Ok(action));
+                assert_eq!(def.id.to_keymap_command(), Some(action));
+            }
+        }
+    }
 
     #[test]
     fn test_cmd_damage_computation() {

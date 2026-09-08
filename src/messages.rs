@@ -41,6 +41,8 @@ pub enum EditorMsg {
     Scroll(i32),
     /// Scroll viewport horizontally (positive = right, negative = left)
     ScrollHorizontal(i32),
+    /// Toggle soft wrapping for this editor pane.
+    ToggleSoftWrap,
 
     // === Selection Movement (Shift+key) ===
     /// Move cursor with selection (Shift+Arrow)
@@ -227,10 +229,8 @@ pub enum ModalMsg {
     Confirm,
     /// Set selection to a specific row and confirm in one step (row click).
     ActivateRow(usize),
-    /// Move through the selected setting's presets.
-    CycleSetting(isize),
-    /// Pick a rendered preset chip by row and choice index.
-    SelectSettingChoice { row: usize, choice: usize },
+    /// Select a preset on a settings row in the shared filtered order.
+    ChooseSetting { row: usize, choice: usize },
     /// Toggle the pinned flag on the selected row (Recent Files, Commands
     /// tab: `⌘.`).
     TogglePin,
@@ -267,9 +267,25 @@ pub enum ModalMsg {
     ReplaceAll,
 }
 
+#[derive(Debug, Clone)]
+pub enum SettingsMsg {
+    CaptureKey(crate::keymap::Keystroke),
+    CaptureRejected(String),
+    KeymapResult {
+        session: std::sync::Arc<()>,
+        saved: bool,
+        result: Result<Box<crate::keymap::preferences::KeymapSnapshot>, String>,
+    },
+}
+
 /// UI-specific messages (status bar, cursor blink, modals)
 #[derive(Debug, Clone)]
 pub enum UiMsg {
+    Settings(SettingsMsg),
+    FindSearchCompleted {
+        request: std::sync::Arc<crate::model::ui::FindSearchRequest>,
+        result: Result<std::sync::Arc<crate::model::ui::FindResults>, String>,
+    },
     /// Toggle cursor blink state
     BlinkCursor,
     /// Update a specific status bar segment
@@ -278,7 +294,10 @@ pub enum UiMsg {
         content: SegmentContent,
     },
     /// Set a transient message that auto-expires
-    SetTransientMessage { text: String, duration_ms: u64 },
+    SetTransientMessage {
+        text: String,
+        duration_ms: u64,
+    },
     /// Clear the transient message
     ClearTransientMessage,
     /// Modal messages
@@ -305,7 +324,9 @@ pub enum UiMsg {
     /// Capture an editor or modal thumb until release.
     ScrollbarThumbPressed(crate::model::ui::ScrollbarDragState),
     /// Mouse moved during scrollbar thumb drag; primary axis coordinate (y or x)
-    ScrollbarDragUpdate { mouse_coord: f32 },
+    ScrollbarDragUpdate {
+        mouse_coord: f32,
+    },
     /// Mouse released; end scrollbar drag
     ScrollbarDragEnd,
 }
@@ -318,6 +339,12 @@ pub enum LayoutMsg {
 
     /// Open a file in a new tab in the focused group
     OpenFileInNewTab(PathBuf),
+
+    /// Runtime-only completion of file/configuration preparation.
+    FilePrepared {
+        request: crate::model::FileOpenRequest,
+        result: Result<Box<crate::model::PreparedFile>, String>,
+    },
 
     /// Split the focused group in the given direction
     /// Creates a new group with a copy of the current editor view
@@ -413,17 +440,40 @@ pub enum AppMsg {
     LoadFile(PathBuf),
     /// Create a new file
     NewFile,
-    /// File save completed (async result)
-    SaveCompleted(Result<(), String>),
+    /// An ordered save/write completed. Content is the snapshot actually written,
+    /// not the possibly newer buffer currently shown in the editor.
+    SaveCompleted {
+        target: crate::model::FileRequest,
+        path: PathBuf,
+        content: ropey::Rope,
+        identity: Option<crate::util::FileIdentity>,
+        result: Result<(), String>,
+    },
     /// File load completed (async result)
     FileLoaded {
+        target: crate::model::FileRequest,
         path: PathBuf,
+        identity: Option<crate::util::FileIdentity>,
         result: Result<String, String>,
     },
     /// Quit the application
     Quit,
     /// Reload configuration from disk
     ReloadConfiguration,
+    /// Runtime result of loading configuration and its theme.
+    ConfigurationLoaded {
+        config: Box<crate::config::EditorConfig>,
+        theme: Box<crate::theme::Theme>,
+        result: crate::config::ReloadResult,
+    },
+    /// Runtime result of saving configuration.
+    ConfigurationSaved(Result<(), String>),
+    /// Runtime result of a theme preview or confirmation.
+    ThemeLoaded {
+        id: String,
+        persist: bool,
+        result: Result<Box<crate::theme::Theme>, String>,
+    },
     /// Restart the language server for the active document's language
     /// (palette/automation entry point for `LspMsg::RestartServer`; the
     /// server id is resolved from the active document here, since the
@@ -434,24 +484,18 @@ pub enum AppMsg {
     /// User requested "Save As..." dialog
     SaveFileAs,
     /// Save As dialog returned a path (or None if cancelled)
-    SaveFileAsDialogResult { path: Option<PathBuf> },
-    /// Save-As write completed (async result) — the LSP identity swap
-    /// (didClose(old) + didOpen(new)) and the diagnostics-projection clear
-    /// wait for this rather than firing in `SaveFileAsDialogResult`, since
-    /// `path_to_uri` canonicalizes and a not-yet-written file resolves to
-    /// a different URI than the same path once it exists on disk (see
-    /// design doc's URIs and Paths section).
-    SaveAsCompleted {
-        document_id: crate::model::editor_area::DocumentId,
-        old_path: Option<PathBuf>,
-        new_path: PathBuf,
-        result: Result<(), String>,
+    SaveFileAsDialogResult {
+        target: crate::model::FileRequest,
+        path: Option<PathBuf>,
     },
 
     /// User requested "Open File..." dialog
     OpenFileDialog,
     /// Open File dialog returned paths (empty if cancelled)
-    OpenFileDialogResult { paths: Vec<PathBuf> },
+    OpenFileDialogResult {
+        group_id: GroupId,
+        paths: Vec<PathBuf>,
+    },
 
     /// User requested "Open Folder..." dialog
     OpenFolderDialog,
@@ -460,11 +504,8 @@ pub enum AppMsg {
 
     /// Paste text retrieved from system clipboard
     PasteFromClipboard(String),
-    /// Default keymap file was created asynchronously
-    KeymapCreated {
-        path: PathBuf,
-        result: Result<(), String>,
-    },
+    /// Request path discovery and preparation in the runtime.
+    OpenConfigResource(crate::commands::ConfigResource),
 }
 
 /// Syntax highlighting messages
@@ -981,6 +1022,11 @@ pub enum Msg {
 /// added by later phases once there is data to route.
 #[derive(Debug, Clone)]
 pub enum LspMsg {
+    WorkspaceSymbolProviders(Vec<crate::lsp::workspace_symbols::SymbolProvider>),
+    WorkspaceSymbolsReady {
+        request: crate::lsp::workspace_symbols::SymbolSearchRequest,
+        results: crate::lsp::workspace_symbols::SymbolResults,
+    },
     WorkspaceSymbolsResponseFromServer {
         server_id: LspServerId,
         root: std::path::PathBuf,
@@ -1428,25 +1474,42 @@ pub enum DefinitionOutcome {
 /// inline-suggestion messages of Phase 2.
 #[derive(Debug, Clone)]
 pub enum CompletionMsg {
+    /// Scroll the selected documentation using runtime font measurements.
+    PageDocumentation {
+        forward: bool,
+    },
+    /// Measured scroll destination; changes no selection or document content.
+    DocumentationScrolled(usize),
+    ToggleDocumentation,
+    /// Speculative directory listing; request identity is checked on arrival.
+    PathsReady {
+        request: std::sync::Arc<crate::completion::path::PathRequest>,
+        result: Result<crate::completion::path::PathResults, String>,
+    },
+    /// Ordered background statistics persistence completed; errors are non-modal.
+    InlineStatisticsSaved(Result<(), String>),
     /// Ask for a ghost-text suggestion now (`explicit`) or after the
     /// debounce.
     TriggerInline {
         explicit: bool,
     },
-    /// Tab while ghost text is visible: insert the remainder.
-    AcceptInline,
+    /// Insert all, the leading word run, or the next line of visible ghost text.
+    AcceptInline(crate::completion::inline::AcceptGranularity),
+    /// Choose another visible alternative without changing the document.
+    CycleInline {
+        forward: bool,
+    },
     /// Escape while ghost text is visible.
     DismissInline,
     /// The runtime's debounce elapsed for this document/revision.
     InlineDeadlineFired {
-        document_id: crate::model::editor_area::DocumentId,
-        revision: u64,
+        snapshot: crate::completion::inline::RequestSnapshot,
         explicit: bool,
     },
-    /// The completion worker produced a suggestion (already post-processed).
+    /// The completion worker produced ordered, post-processed alternatives.
     InlineReady {
         snapshot: crate::completion::inline::RequestSnapshot,
-        text: String,
+        texts: Vec<String>,
     },
     /// The completion worker failed; never modal.
     InlineFailed {

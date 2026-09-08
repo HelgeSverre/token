@@ -44,6 +44,7 @@ profile-chrome = ["profile-tracing", "dep:tracing-chrome"]
 winit = "0.30.12"
 softbuffer = "0.4"
 ropey = "1.6"
+unicode-ident = "1"
 
 # For font rendering
 fontdue = "0.9.3"
@@ -74,7 +75,8 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # For CLI argument parsing
 clap = { version = "4", features = ["derive"] }
 rmcp = { version = "3.0.1", features = ["server", "transport-io"] }
-tokio = { version = "1", features = ["io-std", "rt", "sync"] }
+tokio = { version = "1", features = ["io-std", "rt", "sync", "macros", "time", "net"] }
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls"] }
 thiserror = "2"
 
 # LSP protocol types (serde-only; framing is hand-rolled, see src/lsp/transport.rs)
@@ -82,7 +84,7 @@ lsp-types = "0.97"
 
 # For Markdown preview
 pulldown-cmark = "0.12"
-wry = "0.54"
+wry = "0.56"
 open = "5"  # For opening URLs in default browser
 
 # For user config directory detection
@@ -295,6 +297,10 @@ name = "search"
 harness = false
 
 [[bench]]
+name = "wrap"
+harness = false
+
+[[bench]]
 name = "layout"
 harness = false
 
@@ -356,4 +362,8 @@ strip = false
 
 [[bench]]
 name = "completion"
+harness = false
+
+[[bench]]
+name = "editor_workloads"
 harness = false

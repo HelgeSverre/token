@@ -9,6 +9,7 @@
 //! `overlay_surface::layout()`, so geometry can't drift between paint and
 //! hit-test (overlay-surface.md "Hit-testing": one layout, two consumers).
 
+use crate::completion::menu::MenuItemKind;
 use crate::model::ui::{
     FindReplaceField, LanguagePickerState, LspServersState, RecentFilesState, ThemePickerState,
 };
@@ -107,17 +108,34 @@ fn all_tab_max_visible(sections_spec: &[(Option<&'static str>, usize)]) -> usize
 /// (Visual Language > Keycaps).
 enum PaletteAccessory {
     None,
-    DimText(&'static str),
+    DimText(String),
     Keycaps(Vec<Vec<overlay_surface::Chip>>),
 }
 
-fn palette_accessory(keybinding: Option<&'static str>) -> PaletteAccessory {
+fn command_accessories(
+    model: &AppModel,
+    matches: &[crate::model::CommandMatch],
+) -> Vec<PaletteAccessory> {
+    let context = crate::keymap::KeyContext::for_command_hints(model);
+    matches
+        .iter()
+        .map(|m| {
+            palette_accessory(crate::commands::keybinding_for_command(
+                m.def.id,
+                &model.ui.keymap,
+                &context,
+            ))
+        })
+        .collect()
+}
+
+fn palette_accessory(keybinding: Option<String>) -> PaletteAccessory {
     use crate::view::overlay_surface::{binding_chips, chip_count};
 
     match keybinding {
         None => PaletteAccessory::None,
         Some(kb) => {
-            let steps = binding_chips(kb);
+            let steps = binding_chips(&kb);
             if chip_count(&steps) > 4 {
                 PaletteAccessory::DimText(kb)
             } else {
@@ -201,7 +219,10 @@ fn search_tab_bar<'a>(
         // "All" is a match count for the current query too — the union of
         // the Commands and Files counts (overlay-surface.md Phase 4: "Tab
         // counts are match counts for the current query").
-        ("All", count_for(commands_total + file_total)),
+        (
+            "All",
+            count_for(commands_total + file_total + state.symbols.results.items.len()),
+        ),
         ("Commands", count_for(commands_total)),
         (
             "Files",
@@ -215,7 +236,14 @@ fn search_tab_bar<'a>(
                     .unwrap_or(TabCount::Hidden)
             },
         ),
-        ("Symbols", TabCount::Unavailable),
+        (
+            "Symbols",
+            if state.symbols.available {
+                count_for(state.symbols.results.items.len())
+            } else {
+                TabCount::Unavailable
+            },
+        ),
     ];
     let active = SearchTab::ORDER
         .iter()
@@ -241,17 +269,30 @@ fn render_command_palette_modal(
     // Per-row keycap chip storage lives here so `Row::accessory` can borrow
     // into it for the duration of this render call (spec lifetime: built
     // and consumed in one scope — see overlay-surface.md "The spec").
-    let accessories: Vec<PaletteAccessory> = state
-        .matches
-        .iter()
-        .map(|m| palette_accessory(m.def.keybinding))
-        .collect();
+    let accessories = command_accessories(model, &state.matches);
     let cmd_rows = command_rows(&state.matches, &accessories, icon_color);
     let file_rows_all = state
         .files
         .as_ref()
         .map(|f| file_rows(&f.results, icon_color))
         .unwrap_or_default();
+    let symbol_rows: Vec<_> = state
+        .symbols
+        .results
+        .items
+        .iter()
+        .map(|symbol| Row {
+            icon: RowIcon::Glyph {
+                ch: '◇',
+                color: icon_color,
+            },
+            label: &symbol.name,
+            match_indices: &[],
+            detail: Some(&symbol.detail),
+            detail_style: None,
+            accessory: Accessory::None,
+        })
+        .collect();
 
     let (tab_labels, active_tab_idx) = search_tab_bar(state);
     let tabs = TabBar {
@@ -314,6 +355,11 @@ fn render_command_palette_modal(
                             let rows = &file_rows_all[file_offset..file_offset + len];
                             file_offset += len;
                             Section { title, rows }
+                        } else if title == Some("Symbols") {
+                            Section {
+                                title,
+                                rows: &symbol_rows[..len],
+                            }
                         } else {
                             let rows = &cmd_rows[cmd_offset..cmd_offset + len];
                             cmd_offset += len;
@@ -328,7 +374,18 @@ fn render_command_palette_modal(
                     all_tab_max_visible(&sections_spec),
                 )
             }
-            SearchTab::Symbols => (Vec::new(), 0, 0, COMMAND_PALETTE_MAX_VISIBLE),
+            SearchTab::Symbols => (
+                sections_spec
+                    .iter()
+                    .map(|&(title, len)| Section {
+                        title,
+                        rows: &symbol_rows[..len],
+                    })
+                    .collect(),
+                state.symbols.selected_index,
+                state.symbols.scroll_offset,
+                COMMAND_PALETTE_MAX_VISIBLE,
+            ),
         };
 
     let spec = OverlaySpec {
@@ -340,7 +397,7 @@ fn render_command_palette_modal(
         header: Some(Header {
             glyph: Some(PALETTE_HEADER_GLYPH),
             text: &input_text,
-            placeholder: "Search commands, files\u{2026}",
+            placeholder: "Search commands, files, symbols\u{2026}",
             caret: Some(
                 state
                     .editable
@@ -359,7 +416,14 @@ fn render_command_palette_modal(
             max_visible,
         },
         footer: Some(Footer {
-            leading: "\u{2191}\u{2193} navigate \u{00b7} \u{21b5} run \u{00b7} \u{21e5} tab",
+            leading: if matches!(state.active_tab, SearchTab::All | SearchTab::Symbols)
+                && state.symbols.available
+            {
+                state.symbols.status()
+            } else {
+                None
+            }
+            .unwrap_or("\u{2191}\u{2193} navigate \u{00b7} \u{21b5} run \u{00b7} \u{21e5} tab"),
             trailing: "esc dismiss",
         }),
         hover_row: model.ui.modal_hover_row.map(FlatIndex),
@@ -390,7 +454,7 @@ fn render_command_palette_modal(
             Some("No files match your query")
         }
         SearchTab::All if sections.is_empty() => Some("No matches"),
-        SearchTab::Symbols => Some("No language server for this file"),
+        SearchTab::Symbols if symbol_rows.is_empty() => state.symbols.status(),
         _ => None,
     };
     if let Some(text) = empty_message {
@@ -783,6 +847,188 @@ fn render_theme_picker_modal(
         ctx.scale_factor,
         model.ui.cursor_visible,
     );
+}
+
+// ============================================================================
+// Settings
+// ============================================================================
+
+/// Both rendering and hit testing build the actual same settings spec, including
+/// the choice count on each row. No placeholder can lose its chip hit targets.
+pub(crate) fn with_settings_spec<R>(
+    model: &AppModel,
+    state: &crate::settings::SettingsState,
+    f: impl FnOnce(&OverlaySpec) -> R,
+) -> R {
+    use crate::settings::{keymap::SettingsTab, RowKind};
+    let keymap_tab = state.tab == SettingsTab::Keymap;
+    let capturing = state.keymap.capture.is_some();
+    let categories = crate::settings::categories();
+    let tab_labels: Vec<_> = categories
+        .iter()
+        .map(|category| {
+            (
+                category.unwrap_or("All Settings"),
+                overlay_surface::TabCount::Hidden,
+            )
+        })
+        .collect();
+    let tabs = TabBar {
+        tabs: &tab_labels,
+        active: if keymap_tab {
+            categories.len() - 1
+        } else {
+            state.category
+        },
+    };
+    let groups = state.sections();
+    let details: Vec<_> = state
+        .rows
+        .iter()
+        .map(|&id| {
+            if matches!(state.entries[id].kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
+                std::borrow::Cow::Borrowed(model.config.theme.as_str())
+            } else { state.entries[id].detail(&model.config) }
+        })
+        .collect();
+    let statuses: Vec<_> = state
+        .rows
+        .iter()
+        .map(|&id| state.entries[id].status(model))
+        .collect();
+    let bindings: Vec<_> = state
+        .rows
+        .iter()
+        .map(|&id| match state.entries[id].kind {
+            RowKind::KeymapBinding(index, _) => index
+                .and_then(|index| state.keymap.snapshot.as_ref()?.bindings.get(index))
+                .map(|binding| palette_accessory(Some(binding.display_string())))
+                .unwrap_or_else(|| PaletteAccessory::DimText("Unassigned".into())),
+            _ => PaletteAccessory::None,
+        })
+        .collect();
+    let row_groups: Vec<Vec<Row>> = groups
+        .iter()
+        .map(|(_, range)| {
+            state.rows[range.clone()]
+                .iter()
+                .enumerate()
+                .map(|(offset, &id)| {
+                    let index = range.start + offset;
+                    let entry = &state.entries[id];
+                    Row {
+                        icon: RowIcon::None,
+                        label: &entry.name,
+                        detail: if matches!(entry.kind, RowKind::ServerCommand(_))
+                            || matches!(entry.kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
+                            None
+                        } else { Some(&details[index]) },
+                        detail_style: None,
+                        match_indices: &[],
+                        accessory: if matches!(entry.kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
+                            Accessory::SettingValue { text: &model.config.theme, action: Some("Choose…") }
+                        } else if matches!(entry.kind, RowKind::ServerCommand(_)) {
+                            Accessory::SettingValue { text: &details[index], action: None }
+                        } else if matches!(entry.kind, RowKind::KeymapBinding(_, _)) {
+                            match &bindings[index] {
+                                PaletteAccessory::None => Accessory::None,
+                                PaletteAccessory::DimText(text) => Accessory::DimText(text),
+                                PaletteAccessory::Keycaps(steps) => Accessory::Keycaps(steps),
+                            }
+                        } else if entry.choices().is_empty() {
+                            Accessory::DimText(statuses[index].as_deref().unwrap_or("Read-only"))
+                        } else {
+                            Accessory::Choices {
+                                labels: entry.choices(),
+                                active: if matches!(entry.kind, RowKind::KeymapBase) {
+                                    state.keymap.base_index()
+                                } else {
+                                    entry.active(&model.config)
+                                },
+                            }
+                        },
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    let sections: Vec<Section> = groups
+        .iter()
+        .zip(&row_groups)
+        .map(|((title, _), rows)| Section {
+            title: Some(title),
+            rows,
+        })
+        .collect();
+    let query = state
+        .keymap
+        .capture
+        .as_ref()
+        .map(|capture| {
+            capture
+                .strokes
+                .iter()
+                .map(crate::keymap::Keystroke::display_string)
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap_or_else(|| state.editable.text());
+    let selected_detail = state.selected_index.min(details.len().saturating_sub(1));
+    let spec = OverlaySpec {
+        tabs: Some(tabs),
+        anchor: Anchor::Settings {
+            width: WidthRule {
+                pct: 0.95,
+                min: 0.0,
+                max: 1160.0,
+            },
+        },
+        header: Some(Header {
+            glyph: None,
+            text: &query,
+            placeholder: if capturing {
+                "Recording shortcut…"
+            } else if keymap_tab {
+                "Search keybindings…"
+            } else {
+                "Search settings…"
+            },
+            caret: (!capturing).then_some(state.editable.cursor().column),
+            selection: if capturing {
+                None
+            } else {
+                editable_selection(&state.editable)
+            },
+            scope: None,
+        }),
+        body: Body::List {
+            sections: &sections,
+            selected: FlatIndex(state.selected_index),
+            scroll: state.scroll_offset,
+            max_visible: overlay_surface::settings_visible_count(
+                model.window_size.0 as usize,
+                model.window_size.1 as usize,
+                model.metrics.scale_factor,
+            ),
+        },
+        footer: Some(Footer {
+            leading: if keymap_tab {
+                &state.keymap.status
+            } else {
+                details
+                    .get(selected_detail)
+                    .map_or("No matching settings", |detail| detail.as_ref())
+            },
+            trailing: if keymap_tab {
+                ""
+            } else {
+                "←→ change · Tab category · Esc close"
+            },
+        }),
+        docs: None,
+        hover_row: model.ui.modal_hover_row.map(FlatIndex),
+    };
+    f(&spec)
 }
 
 // ============================================================================
@@ -1193,189 +1439,12 @@ fn render_find_replace_modal(
 // Shape-only layouts (hit-testing, caret placement)
 // ============================================================================
 
-/// Build settings from the shared row list and current configuration/status.
-/// Paint and hit testing use this same spec, including preset accessories.
-pub(crate) fn with_settings_spec<R>(
-    model: &AppModel,
-    state: &crate::model::ui::SettingsState,
-    f: impl FnOnce(&OverlaySpec) -> R,
-) -> R {
-    use crate::settings::{descriptors::DESCRIPTORS, SettingsRow};
-    let labels: Vec<_> = state.rows.iter().map(|row| row.label()).collect();
-    let descriptions: Vec<_> = state
-        .rows
-        .iter()
-        .map(|row| match row {
-            SettingsRow::ServerCommand(def) => model
-                .config
-                .lsp
-                .servers
-                .get(def.id)
-                .and_then(|server| server.command.clone())
-                .unwrap_or_else(|| format!("{} (default)", def.command)),
-            SettingsRow::Theme(_) => model.config.theme.clone(),
-            _ => row.description(),
-        })
-        .collect();
-    let choices: Vec<Vec<&str>> = state
-        .rows
-        .iter()
-        .map(|row| match row {
-            SettingsRow::Preset(index) => DESCRIPTORS[*index]
-                .choices
-                .iter()
-                .map(|(label, _)| *label)
-                .collect(),
-            SettingsRow::ServerEnabled(_) => vec!["Off", "On"],
-            _ => Vec::new(),
-        })
-        .collect();
-    let statuses: Vec<_> = state
-        .rows
-        .iter()
-        .map(|row| match row {
-            SettingsRow::ServerStatus(def) => match model
-                .lsp
-                .servers
-                .get(&crate::lsp::LspServerId::from(def.id))
-            {
-                Some(crate::lsp::ServerState::Starting) => "Starting".into(),
-                Some(crate::lsp::ServerState::Indexing) => "Indexing".into(),
-                Some(crate::lsp::ServerState::Ready) => "Ready".into(),
-                Some(crate::lsp::ServerState::Restarting { attempt }) => {
-                    format!("Restarting ({attempt})")
-                }
-                Some(crate::lsp::ServerState::Failed) => "Failed".into(),
-                Some(crate::lsp::ServerState::Missing) => "Missing".into(),
-                Some(crate::lsp::ServerState::ShuttingDown) => "Shutting Down".into(),
-                None => "Not Running".into(),
-            },
-            _ => String::new(),
-        })
-        .collect();
-    let rows: Vec<_> = state
-        .rows
-        .iter()
-        .enumerate()
-        .map(|(index, row)| Row {
-            icon: RowIcon::None,
-            label: &labels[index],
-            match_indices: &[],
-            detail: if matches!(
-                row,
-                SettingsRow::ServerStatus(_)
-                    | SettingsRow::ServerCommand(_)
-                    | SettingsRow::Theme(_)
-            ) {
-                None
-            } else {
-                Some(&descriptions[index])
-            },
-            detail_style: None,
-            accessory: match row {
-                SettingsRow::Preset(descriptor) => Accessory::Choices {
-                    labels: &choices[index],
-                    active: DESCRIPTORS[*descriptor].active_choice(&model.config),
-                },
-                SettingsRow::ServerEnabled(def) => Accessory::Choices {
-                    labels: &choices[index],
-                    active: Some(usize::from(
-                        model
-                            .config
-                            .lsp
-                            .servers
-                            .get(def.id)
-                            .and_then(|server| server.enabled)
-                            .unwrap_or(true),
-                    )),
-                },
-                SettingsRow::ServerStatus(_) => Accessory::DimText(&statuses[index]),
-                SettingsRow::Theme(_) => Accessory::SettingValue {
-                    text: &descriptions[index],
-                    action: Some("Open Picker"),
-                },
-                SettingsRow::ServerCommand(_) => Accessory::SettingValue {
-                    text: &descriptions[index],
-                    action: None,
-                },
-            },
-        })
-        .collect();
-    let groups = state.sections();
-    let sections: Vec<_> = groups
-        .iter()
-        .map(|(title, range)| Section {
-            title: Some(title),
-            rows: &rows[range.clone()],
-        })
-        .collect();
-    let categories: Vec<_> = crate::settings::categories()
-        .into_iter()
-        .map(|name| {
-            (
-                name.unwrap_or("All Settings"),
-                overlay_surface::TabCount::Hidden,
-            )
-        })
-        .collect();
-    let input = state.editable.text();
-    let detail = state
-        .rows
-        .get(state.selected_index)
-        .map(|row| match row {
-            SettingsRow::Theme(_) | SettingsRow::ServerCommand(_) => format!(
-                "{} · {}",
-                descriptions[state.selected_index],
-                row.description()
-            ),
-            _ => row.description(),
-        })
-        .unwrap_or_else(|| "No matching settings".into());
-    let spec = OverlaySpec {
-        tabs: Some(TabBar {
-            tabs: &categories,
-            active: state.category,
-        }),
-        anchor: Anchor::Settings {
-            width: width_rule(PICKER_WIDTH),
-        },
-        header: Some(Header {
-            glyph: None,
-            text: &input,
-            placeholder: "Search settings…",
-            caret: Some(state.editable.cursor().column),
-            selection: editable_selection(&state.editable),
-            scope: None,
-        }),
-        body: Body::List {
-            sections: &sections,
-            selected: FlatIndex(state.selected_index),
-            scroll: state.scroll_offset,
-            max_visible: overlay_surface::settings_visible_count(
-                model.window_size.0 as usize,
-                model.window_size.1 as usize,
-                model.metrics.scale_factor,
-            ),
-        },
-        footer: Some(Footer {
-            leading: &detail,
-            trailing: if matches!(
-                state.rows.get(state.selected_index),
-                Some(SettingsRow::ServerCommand(_))
-            ) {
-                ""
-            } else {
-                "← → Change · Esc Close"
-            },
-        }),
-        hover_row: model.ui.modal_hover_row.map(FlatIndex),
-        docs: None,
-    };
-    f(&spec)
-}
-
-/// Build the active modal's layout for hit testing and caret placement.
-/// Settings uses real accessories because individual chips are hit targets.
+/// Build the shape-only `OverlaySpec` (placeholder row content, real
+/// counts/titles/sections/scroll) for whichever modal is active, call
+/// `overlay_surface::layout()` on it, and hand both to `f`. Used by
+/// `hit_test::hit_test_modal` (row/tab/scrollbar hit-testing) and
+/// `view::caret` (IME caret placement) so both consume the exact geometry
+/// the renderer computes without re-deriving row content.
 pub(crate) fn with_modal_overlay_layout<R>(
     model: &AppModel,
     window_width: usize,
@@ -1387,10 +1456,6 @@ pub(crate) fn with_modal_overlay_layout<R>(
 
     let modal = model.ui.active_modal.as_ref()?;
     match modal {
-        ModalState::Settings(state) => Some(with_settings_spec(model, state, |spec| {
-            let layout = overlay_surface::layout(spec, window_width, window_height, scale_factor);
-            f(spec, &layout)
-        })),
         ModalState::CommandPalette(state) => {
             use crate::model::SearchTab;
             use crate::update::search_everywhere_sections;
@@ -1430,7 +1495,11 @@ pub(crate) fn with_modal_overlay_layout<R>(
                     COMMAND_PALETTE_MAX_VISIBLE,
                 ),
                 SearchTab::All => (state.all_selected, 0, all_tab_max_visible(&sections_spec)),
-                SearchTab::Symbols => (0, 0, COMMAND_PALETTE_MAX_VISIBLE),
+                SearchTab::Symbols => (
+                    state.symbols.selected_index,
+                    state.symbols.scroll_offset,
+                    COMMAND_PALETTE_MAX_VISIBLE,
+                ),
             };
 
             let spec = OverlaySpec {
@@ -1506,6 +1575,10 @@ pub(crate) fn with_modal_overlay_layout<R>(
             let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
             Some(f(&spec, &l))
         }
+        ModalState::Settings(state) => Some(with_settings_spec(model, state, |spec| {
+            let layout = overlay_surface::layout(spec, window_width, window_height, scale_factor);
+            f(spec, &layout)
+        })),
         ModalState::ThemePicker(state) => {
             let groups = theme_picker_groups(&state.themes);
             let row_groups: Vec<Vec<Row>> = groups
@@ -1781,6 +1854,9 @@ pub fn render_modals(
     };
 
     match modal {
+        ModalState::ThemePicker(state) => {
+            render_theme_picker_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
+        }
         ModalState::Settings(state) => with_settings_spec(model, state, |spec| {
             overlay_surface::render(
                 frame,
@@ -1794,9 +1870,6 @@ pub fn render_modals(
                 model.ui.cursor_visible,
             );
         }),
-        ModalState::ThemePicker(state) => {
-            render_theme_picker_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
-        }
         ModalState::CommandPalette(state) => {
             render_command_palette_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }
@@ -1896,27 +1969,6 @@ fn cursor_overlay_anchor(model: &AppModel) -> Option<(usize, usize, usize)> {
     Some((rect.x, rect.y, rect.h))
 }
 
-/// Maps a completion item's kind onto the overlay surface's badge palette —
-/// the view-layer translation `completion::menu::MenuItemKind`'s doc comment
-/// points to, kept here rather than in `completion/menu.rs` so that module
-/// stays independent of `view`.
-fn completion_kind_badge(
-    kind: crate::completion::menu::MenuItemKind,
-) -> overlay_surface::CompletionKind {
-    use crate::completion::menu::MenuItemKind as K;
-    use overlay_surface::CompletionKind as B;
-    match kind {
-        K::Function => B::Function,
-        K::Variable => B::Variable,
-        K::Type => B::Type,
-        K::Keyword => B::Keyword,
-        K::Field => B::Field,
-        K::Module => B::Module,
-        K::Constant => B::Constant,
-        K::Other => B::Other,
-    }
-}
-
 /// Build the real Completion popup's rows from `UiState::completion_menu`,
 /// in filtered/sorted order.
 fn completion_rows(state: &crate::completion::CompletionMenuState) -> Vec<Row<'_>> {
@@ -1925,7 +1977,7 @@ fn completion_rows(state: &crate::completion::CompletionMenuState) -> Vec<Row<'_
         .iter()
         .filter_map(|(_, idx, indices)| state.items.get(*idx).map(|item| (item, indices)))
         .map(|(item, indices)| Row {
-            icon: RowIcon::KindBadge(completion_kind_badge(item.kind)),
+            icon: RowIcon::KindBadge(item.kind),
             label: &item.label,
             match_indices: indices,
             detail: item.detail.as_deref(),
@@ -1942,27 +1994,15 @@ fn completion_rows(state: &crate::completion::CompletionMenuState) -> Vec<Row<'_
 /// signature accessory) — manual-testing content only; the real completion
 /// source is [autocomplete.md](autocomplete.md) Phase 1.
 fn debug_completion_rows() -> Vec<Row<'static>> {
-    const ITEMS: &[(overlay_surface::CompletionKind, &str, &str)] = &[
-        (
-            overlay_surface::CompletionKind::Function,
-            "to_string",
-            "fn() -> String",
-        ),
-        (
-            overlay_surface::CompletionKind::Function,
-            "trim",
-            "fn() -> &str",
-        ),
-        (overlay_surface::CompletionKind::Variable, "value", "i32"),
-        (overlay_surface::CompletionKind::Type, "String", "struct"),
-        (overlay_surface::CompletionKind::Keyword, "match", "keyword"),
-        (overlay_surface::CompletionKind::Field, "len", "usize"),
-        (
-            overlay_surface::CompletionKind::Module,
-            "std::fmt",
-            "module",
-        ),
-        (overlay_surface::CompletionKind::Constant, "MAX", "usize"),
+    const ITEMS: &[(MenuItemKind, &str, &str)] = &[
+        (MenuItemKind::Method, "to_string", "fn() -> String"),
+        (MenuItemKind::Method, "trim", "fn() -> &str"),
+        (MenuItemKind::Variable, "value", "i32"),
+        (MenuItemKind::Type, "String", "struct"),
+        (MenuItemKind::Keyword, "match", "keyword"),
+        (MenuItemKind::Field, "len", "usize"),
+        (MenuItemKind::Module, "std::fmt", "module"),
+        (MenuItemKind::Constant, "MAX", "usize"),
     ];
     ITEMS
         .iter()
@@ -2068,13 +2108,7 @@ pub fn with_cursor_overlay_spec<R>(
             title: None,
             rows: &rows,
         }];
-        let docs = menu
-            .selected_item(state.selected)
-            .and_then(|item| match &item.insert {
-                crate::completion::menu::MenuInsert::Lsp(data) => data.documentation.as_ref(),
-                crate::completion::menu::MenuInsert::Text(_) => None,
-            })
-            .filter(|docs| !docs.text.trim().is_empty());
+        let docs = menu.selected_documentation(state.selected);
         let spec = OverlaySpec {
             tabs: None,
             anchor: Anchor::Cursor {
@@ -2097,7 +2131,11 @@ pub fn with_cursor_overlay_spec<R>(
             },
             footer: None,
             hover_row: state.hover_row.map(FlatIndex),
-            docs,
+            docs: docs.map(|text| overlay_surface::Documentation {
+                text,
+                scroll: state.docs_scroll,
+                expanded: state.docs_expanded,
+            }),
         };
         return Some(f(&spec));
     }
@@ -2636,6 +2674,263 @@ mod tests {
     use crate::model::ModalId;
 
     #[test]
+    fn settings_keymap_tabs_keycaps_and_capture_share_narrow_geometry() {
+        use crate::settings::keymap::{Capture, SettingsTab};
+        let model = AppModel::new(800, 600, 1.0);
+        let mut state = crate::settings::SettingsState {
+            tab: SettingsTab::Keymap,
+            ..Default::default()
+        };
+        state.keymap.snapshot =
+            Some(crate::keymap::preferences::KeymapSnapshot::parse(None).unwrap());
+        state.refresh_entries();
+        with_settings_spec(&model, &state, |spec| {
+            assert_eq!(
+                spec.tabs.as_ref().unwrap().active,
+                crate::settings::categories().len() - 1
+            );
+            let Body::List { sections, .. } = &spec.body else {
+                panic!("list")
+            };
+            assert!(sections
+                .iter()
+                .flat_map(|s| s.rows)
+                .any(|r| matches!(r.accessory, Accessory::Keycaps(_))));
+            assert_eq!(
+                sections
+                    .iter()
+                    .flat_map(|s| s.rows)
+                    .map(|r| r.label)
+                    .collect::<Vec<_>>(),
+                state
+                    .filtered_rows()
+                    .map(|(label, _)| label)
+                    .collect::<Vec<_>>()
+            );
+            for width in [360, 800] {
+                let layout = overlay_surface::layout(spec, width, 600, 1.0);
+                assert!(layout.panel.x + layout.panel.w <= width);
+                for (index, rect) in layout.tab_rects.iter().enumerate() {
+                    assert_eq!(
+                        overlay_surface::hit_test(
+                            spec,
+                            &layout,
+                            rect.x + rect.w / 2,
+                            rect.y + rect.h / 2
+                        ),
+                        overlay_surface::OverlayHit::Tab(index)
+                    );
+                }
+            }
+        });
+        state.keymap.capture = Some(Capture {
+            original: None,
+            command: crate::keymap::Command::SaveFile,
+            strokes: crate::keymap::preferences::parse_sequence("ctrl+k ctrl+s").unwrap(),
+            literal_next: false,
+        });
+        state.refresh_entries();
+        with_settings_spec(&model, &state, |spec| {
+            assert!(spec.header.as_ref().unwrap().caret.is_none());
+            let recorded = state
+                .keymap
+                .capture
+                .as_ref()
+                .unwrap()
+                .strokes
+                .iter()
+                .map(crate::keymap::Keystroke::display_string)
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert_eq!(spec.header.as_ref().unwrap().text, recorded);
+            let layout = overlay_surface::layout(spec, 360, 600, 1.0);
+            // Find all three shared chip hit targets; no feature-local rectangles.
+            let mut choices = std::collections::BTreeSet::new();
+            for y in layout.panel.y..layout.panel.y + layout.panel.h {
+                for x in layout.panel.x..layout.panel.x + layout.panel.w {
+                    if let overlay_surface::OverlayHit::Choice { choice, .. } =
+                        overlay_surface::hit_test(spec, &layout, x, y)
+                    {
+                        choices.insert(choice);
+                    }
+                }
+            }
+            assert_eq!(choices, [0, 1, 2].into_iter().collect());
+        });
+    }
+
+    #[test]
+    fn lsp_settings_status_updates_redraw_open_modal_without_reordering_rows() {
+        use crate::lsp::{LspServerId, ServerState};
+        use crate::messages::{LspMsg, Msg};
+        let mut model = AppModel::new(1000, 800, 1.0);
+        update(&mut model, Msg::Ui(UiMsg::ToggleModal(ModalId::Settings)));
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("rust-analyzer".into()))),
+        );
+        let Some(crate::model::ModalState::Settings(state)) = &model.ui.active_modal else {
+            panic!("settings");
+        };
+        let before: Vec<_> = state
+            .filtered_rows()
+            .map(|(label, _)| label.to_owned())
+            .collect();
+        let status_row = before
+            .iter()
+            .position(|label| label == "rust-analyzer status")
+            .unwrap();
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::ActivateRow(status_row))),
+        );
+        for (state, expected) in [
+            (ServerState::Starting, "Starting"),
+            (ServerState::Indexing, "Indexing"),
+            (ServerState::Ready, "Ready"),
+            (ServerState::Restarting { attempt: 2 }, "Restarting (2)"),
+            (ServerState::Failed, "Failed"),
+            (ServerState::Missing, "Missing"),
+            (ServerState::ShuttingDown, "Shutting down"),
+        ] {
+            let cmd = update(
+                &mut model,
+                Msg::Lsp(LspMsg::ServerStateChanged {
+                    server_id: LspServerId::from("rust-analyzer"),
+                    root: "/ws".into(),
+                    state,
+                }),
+            )
+            .unwrap();
+            assert!(matches!(cmd.damage(), crate::commands::Damage::Full));
+            let Some(crate::model::ModalState::Settings(settings)) = &model.ui.active_modal else {
+                panic!("settings");
+            };
+            assert_eq!(settings.selected_index(), status_row);
+            assert_eq!(
+                settings
+                    .filtered_rows()
+                    .map(|(label, _)| label.to_owned())
+                    .collect::<Vec<_>>(),
+                before
+            );
+            with_settings_spec(&model, settings, |spec| {
+                let Body::List { sections, .. } = &spec.body else {
+                    panic!("list");
+                };
+                let row = sections
+                    .iter()
+                    .flat_map(|s| s.rows)
+                    .find(|r| r.label == "rust-analyzer status")
+                    .unwrap();
+                assert!(matches!(row.accessory, Accessory::DimText(value) if value == expected));
+            });
+        }
+    }
+
+    #[test]
+    fn lsp_settings_command_values_use_clipped_detail_not_unbounded_accessory() {
+        let mut model = AppModel::new(1000, 800, 1.0);
+        let command = format!("/{}server", "long-directory/".repeat(100));
+        model
+            .config
+            .lsp
+            .servers
+            .entry("rust-analyzer".into())
+            .or_default()
+            .command = Some(command.clone());
+        let state = crate::settings::SettingsState::default();
+        with_settings_spec(&model, &state, |spec| {
+            let Body::List { sections, .. } = &spec.body else {
+                panic!("list");
+            };
+            let row = sections
+                .iter()
+                .flat_map(|s| s.rows)
+                .find(|r| r.label == "lsp.servers.rust-analyzer.command")
+                .unwrap();
+            assert!(row.detail.is_none());
+            assert!(
+                matches!(row.accessory, Accessory::SettingValue { text, action: None } if text == command)
+            );
+        });
+    }
+
+    #[test]
+    fn settings_view_and_input_share_filtered_section_order() {
+        let mut model = AppModel::new(1200, 800, 1.0);
+        update(
+            &mut model,
+            crate::messages::Msg::Ui(UiMsg::ToggleModal(ModalId::Settings)),
+        );
+        update(
+            &mut model,
+            crate::messages::Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("bar".into()))),
+        );
+        let Some(crate::model::ModalState::Settings(state)) = &model.ui.active_modal else {
+            panic!("settings");
+        };
+        let expected: Vec<_> = state.filtered_rows().collect();
+        with_settings_spec(&model, state, |spec| {
+            let Body::List { sections, .. } = &spec.body else {
+                panic!("list");
+            };
+            assert!(sections.len() >= 2, "fixture must filter multiple sections");
+            let actual: Vec<_> = sections
+                .iter()
+                .flat_map(|s| s.rows.iter().map(move |r| (r.label, s.title.unwrap())))
+                .collect();
+            assert_eq!(actual, expected);
+        });
+        let font_row = expected
+            .iter()
+            .position(|(label, _)| *label == "Status bar font")
+            .unwrap();
+        update(
+            &mut model,
+            crate::messages::Msg::Ui(UiMsg::Modal(ModalMsg::ChooseSetting {
+                row: font_row,
+                choice: 2,
+            })),
+        );
+        assert_eq!(model.config.status_bar_font_size, 13.0);
+    }
+
+    #[test]
+    fn shortcut_hints_in_palette_rows_follow_rebinding_and_unbinding() {
+        use crate::keymap::{
+            Command, Condition, KeyCode, Keybinding, Keymap, Keystroke, Modifiers,
+        };
+        let mut model = AppModel::new(800, 600, 1.0);
+        let chord = [
+            Keystroke::new(KeyCode::Char('k'), Modifiers::CTRL),
+            Keystroke::new(KeyCode::Char('s'), Modifiers::CTRL),
+        ];
+        model.ui.keymap =
+            Keymap::with_bindings(vec![Keybinding::chord(chord.to_vec(), Command::SaveFile)
+                .when_single(Condition::EditorFocused)]);
+        let state = crate::model::CommandPaletteState::default();
+        model
+            .ui
+            .open_modal(crate::model::ModalState::CommandPalette(state.clone()));
+        let index = state
+            .matches
+            .iter()
+            .position(|m| m.def.id == crate::commands::CommandId::SaveFile)
+            .unwrap();
+        let accessories = command_accessories(&model, &state.matches);
+        let rows = command_rows(&state.matches, &accessories, 0);
+        assert!(matches!(rows[index].accessory, Accessory::Keycaps(_)));
+        match &accessories[index] {
+            PaletteAccessory::Keycaps(steps) => assert_eq!(steps.len(), 2),
+            _ => panic!("A two-step chord should produce keycaps"),
+        }
+        model.ui.keymap = Keymap::new();
+        let accessories = command_accessories(&model, &state.matches);
+        assert!(matches!(accessories[index], PaletteAccessory::None));
+    }
+
+    #[test]
     fn legend_marks_only_the_active_options() {
         let mut state = crate::model::ui::FindReplaceState::default();
         let off = find_options_legend(&state);
@@ -2648,6 +2943,7 @@ mod tests {
         assert!(on.contains(".* \u{2325}\u{2318}R \u{2713}"));
     }
     use crate::update::update;
+
     use crate::view::hit_test::{hit_test_modal, HitTarget, Point};
 
     /// A Search Everywhere modal open on the Commands tab with a non-empty
@@ -2655,7 +2951,7 @@ mod tests {
     /// against an empty list. Window size/scale mirror the drift reported
     /// against overlay-surface.md's Hit-testing invariant.
     fn opened_palette_model() -> AppModel {
-        let mut model = AppModel::new(1200, 800, 1.0, vec![]);
+        let mut model = AppModel::new(1200, 800, 1.0);
         update(
             &mut model,
             crate::messages::Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),
@@ -2694,7 +2990,6 @@ mod tests {
 
         let mut state = CommandPaletteState {
             matches: crate::commands::all_commands()
-                .into_iter()
                 .take(5)
                 .map(|def| CommandMatch {
                     def,
@@ -2712,7 +3007,7 @@ mod tests {
             .collect();
         state.files = Some(files);
 
-        let mut model = AppModel::new(1200, 800, 1.0, vec![]);
+        let mut model = AppModel::new(1200, 800, 1.0);
         model.ui.open_modal(ModalState::CommandPalette(state));
 
         let (max_visible, rows_laid_out) =
@@ -2729,6 +3024,58 @@ mod tests {
             rows_laid_out, 12,
             "all 12 display slots (2 headers + 10 rows) must be laid out"
         );
+    }
+
+    #[test]
+    fn workspace_symbols_rows_share_flat_indices_with_hit_testing() {
+        use crate::lsp::workspace_symbols::{SymbolItem, SymbolProvider};
+        use crate::model::{CommandPaletteState, ModalState, SearchTab};
+        for tab in [SearchTab::All, SearchTab::Symbols] {
+            let mut state = CommandPaletteState {
+                active_tab: tab,
+                ..Default::default()
+            };
+            state.matches.truncate(5);
+            state.symbols.available = true;
+            state.symbols.results.items = (0..20)
+                .map(|i| SymbolItem {
+                    name: format!("symbol{i}"),
+                    detail: "source.rs".into(),
+                    kind: lsp_types::SymbolKind::FUNCTION,
+                    location: lsp_types::Location {
+                        uri: "file:///ws/source.rs".parse().unwrap(),
+                        range: Default::default(),
+                    },
+                    provider: SymbolProvider {
+                        server_id: "fake".into(),
+                        root: "/ws".into(),
+                        generation: 1,
+                    },
+                })
+                .collect();
+            if tab == SearchTab::Symbols {
+                state.symbols.scroll_offset = 5;
+            }
+            let mut model = AppModel::new(1200, 800, 1.0);
+            model.ui.open_modal(ModalState::CommandPalette(state));
+            let (row, expected) = with_modal_overlay_layout(&model, 1200, 800, 1.0, |_, layout| {
+                if tab == SearchTab::All {
+                    assert_eq!(
+                        layout.rows.len(),
+                        12,
+                        "two headings and capped command/symbol groups"
+                    );
+                    (layout.rows[11], 9)
+                } else {
+                    (layout.rows[0], 5)
+                }
+            })
+            .unwrap();
+            let point = Point::new((row.x + row.w / 2) as f64, (row.y + row.h / 2) as f64);
+            assert!(
+                matches!(hit_test_modal(&model, point), Some(HitTarget::ModalRow {flat_index}) if flat_index == expected)
+            );
+        }
     }
 
     /// Regression for the reported blocker: the shape-only spec
@@ -2837,7 +3184,7 @@ mod tests {
     fn cursor_overlay_flip_above_clears_the_caret_line_not_just_its_bottom() {
         use crate::model::editor::Cursor;
         use crate::model::CursorOverlayKind;
-        let mut model = AppModel::new(400, 800, 1.0, vec![]);
+        let mut model = AppModel::new(400, 800, 1.0);
         model.line_height = 20;
         model.document_mut().buffer = ropey::Rope::from("\n".repeat(50));
         model.editor_mut().cursors = vec![Cursor::at(36, 0)];
@@ -2878,7 +3225,7 @@ mod tests {
 
     #[test]
     fn opening_the_lsp_servers_modal_lists_a_row_per_registered_server() {
-        let mut model = AppModel::new(1200, 800, 1.0, vec![]);
+        let mut model = AppModel::new(1200, 800, 1.0);
         update(
             &mut model,
             crate::messages::Msg::Ui(UiMsg::ToggleModal(ModalId::LspServers)),
@@ -2892,7 +3239,7 @@ mod tests {
 
     #[test]
     fn lsp_server_config_enabled_defaults_true_and_reflects_a_disabled_override() {
-        let mut model = AppModel::new(1200, 800, 1.0, vec![]);
+        let mut model = AppModel::new(1200, 800, 1.0);
         let server_id = crate::lsp::all_server_defs()[0].id;
         assert!(lsp_server_config_enabled(&model, server_id));
 
@@ -2971,7 +3318,7 @@ mod tests {
         use crate::context_menu::{ContextMenuRegion, MenuItem};
         use crate::model::{ContextMenuState, CursorOverlayKind, CursorOverlayState};
 
-        let mut model = AppModel::new(400, 300, 1.0, vec![]);
+        let mut model = AppModel::new(400, 300, 1.0);
         model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::ContextMenu));
         model.ui.context_menu = Some(ContextMenuState {
             items: vec![
@@ -3071,7 +3418,7 @@ mod tests {
     fn signature_help_spec_styles_the_active_parameter_doc_and_counter() {
         use crate::model::{SignatureHelpState, SignatureView, SpanStyle};
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let label = "fn f(a: i32, b: &str)";
         model.ui.signature_help = Some(SignatureHelpState {
             signatures: vec![
@@ -3131,7 +3478,7 @@ mod tests {
     fn hover_card_spec_carries_markdown_spans() {
         use crate::model::{CursorOverlayKind, CursorOverlayState, HoverCardState, SpanStyle};
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.hover_card = Some(HoverCardState {
             content: Some(crate::lsp::markdown::markdown_to_styled(
                 "```rust\nfn foo()\n```\nReturns **nothing**.",
@@ -3161,13 +3508,47 @@ mod tests {
     }
 
     #[test]
+    fn completion_rows_show_server_method_metadata_without_altering_label() {
+        let item = serde_json::from_value(serde_json::json!({
+            "label": "compile", "kind": 2,
+            "labelDetails": { "detail": "(output: &str)", "description": "()" }
+        }))
+        .unwrap();
+        let items = crate::completion::lsp::items_to_menu_items(
+            vec![item],
+            &crate::lsp::LspServerId::from("rust-analyzer"),
+            std::path::Path::new("/tmp/proj"),
+            None,
+        );
+        let menu = crate::completion::CompletionMenuState {
+            document_id: crate::model::DocumentId(1),
+            revision: 0,
+            query_start: crate::model::Cursor::at(0, 8),
+            query: String::new(),
+            items,
+            filtered: vec![(0, 0, vec![])],
+            is_incomplete: false,
+            pending_resolve: None,
+            context: crate::completion::context::CompletionContext::Member,
+            selection_changed: false,
+        };
+        let rows = completion_rows(&menu);
+        assert!(matches!(
+            rows[0].icon,
+            RowIcon::KindBadge(MenuItemKind::Method)
+        ));
+        assert_eq!(rows[0].detail, Some("(output: &str) ()"));
+        assert_eq!(menu.selected_item(0).unwrap().label, "compile");
+    }
+
+    #[test]
     fn completion_docs_panel_follows_the_selected_items_documentation() {
         use crate::completion::menu::{
             CompletionMenuState, LspInsert, MenuInsert, MenuItem, MenuItemKind, MenuSourceId,
         };
         use crate::model::{CursorOverlayKind, CursorOverlayState};
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.document_mut().buffer = ropey::Rope::from_str("va\n");
         let doc = model.document();
         let (document_id, revision) = (doc.id.unwrap(), doc.revision);
@@ -3183,6 +3564,7 @@ mod tests {
                 resolved: true,
                 text_edit: None,
                 additional_text_edits: Vec::new(),
+                commit_characters: std::sync::Arc::from([]),
                 documentation: docs.map(crate::model::StyledText::from),
                 caret_offset: None,
             })),
@@ -3190,6 +3572,7 @@ mod tests {
             source: MenuSourceId::Lsp,
             detail: None,
             sort_text: None,
+            preselect: false,
         };
         model.ui.completion_menu = Some(CompletionMenuState {
             document_id,
@@ -3203,6 +3586,8 @@ mod tests {
             filtered: vec![(0, 0, Vec::new()), (0, 1, Vec::new())],
             is_incomplete: false,
             pending_resolve: None,
+            context: Default::default(),
+            selection_changed: false,
         });
         model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Completion));
 

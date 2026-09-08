@@ -66,13 +66,64 @@ impl OptionKeyGesture {
     }
 }
 
-/// Handle keyboard input for special cases not covered by keymap
+/// Capture precedes every shortcut dispatcher, including debug shortcuts.
+pub(super) fn handle_settings_capture_key(
+    model: &mut AppModel,
+    key: &Key,
+    physical_key: winit::keyboard::PhysicalKey,
+    modifiers: KeyModifiers,
+) -> Option<Cmd> {
+    if !matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.keymap.capture.is_some())
+    {
+        return None;
+    }
+    // An IME commit is text, not a single shortcut key.
+    if matches!(key, Key::Character(text) if text.chars().count() != 1) {
+        return Some(Cmd::Redraw);
+    }
+    token::keymap::keystroke_from_winit(
+        key,
+        physical_key,
+        modifiers.ctrl,
+        modifiers.shift,
+        modifiers.alt,
+        modifiers.logo,
+    )
+    .and_then(|stroke| {
+        #[cfg(target_os = "macos")]
+        if let Some(reason) = super::macos_menu::reserved_capture_key(stroke) {
+            return update(
+                model,
+                Msg::Ui(UiMsg::Settings(
+                    token::messages::SettingsMsg::CaptureRejected(reason),
+                )),
+            );
+        }
+        #[cfg(debug_assertions)]
+        if matches!(stroke.key, token::keymap::KeyCode::F(2 | 7 | 8 | 9)) {
+            return update(
+                model,
+                Msg::Ui(UiMsg::Settings(
+                    token::messages::SettingsMsg::CaptureRejected(
+                        "This function key is reserved by debug tools; choose another key".into(),
+                    ),
+                )),
+            );
+        }
+        update(
+            model,
+            Msg::Ui(UiMsg::Settings(token::messages::SettingsMsg::CaptureKey(
+                stroke,
+            ))),
+        )
+    })
+    .or(Some(Cmd::Redraw))
+}
+
+/// Handle keyboard input for special cases not covered by keymap.
 ///
-/// Called as a fallback when:
-/// - A modal is active (all input routes to modal)
-/// - CSV cell editing is active (all input routes to cell editor)
-/// - Option double-tap multi-cursor gesture is in progress
-/// - Keymap returns NoMatch or a non-simple command
+/// Called as a fallback for modals, CSV cells, Option double-tap gestures,
+/// and unmatched or non-simple keymap actions.
 pub fn handle_key(
     model: &mut AppModel,
     key: Key,
@@ -80,6 +131,9 @@ pub fn handle_key(
     modifiers: KeyModifiers,
     option_double_tapped: bool,
 ) -> Option<Cmd> {
+    if let Some(cmd) = handle_settings_capture_key(model, &key, physical_key, modifiers) {
+        return Some(cmd);
+    }
     let KeyModifiers {
         ctrl,
         shift,
@@ -138,7 +192,6 @@ pub fn handle_key(
     if is_problems_dock_focused(model) {
         return handle_problems_dock_key(model, &key).or(Some(Cmd::Redraw));
     }
-
     // Focus capture: route keys to terminal panel when bottom dock terminal has focus
     if is_terminal_dock_focused(model) {
         return handle_terminal_dock_key(model, &key, modifiers).or(Some(Cmd::Redraw));
@@ -274,11 +327,14 @@ pub fn handle_key(
         }
 
         Key::Character(ref s) if !(ctrl || logo) => {
-            let mut cmd = None;
-            for ch in s.chars() {
-                cmd = update(model, Msg::Document(DocumentMsg::InsertChar(ch))).or(cmd);
+            let mut chars = s.chars();
+            match (chars.next(), chars.next()) {
+                (Some(ch), None) => update(model, Msg::Document(DocumentMsg::InsertChar(ch))),
+                (None, _) => None,
+                // A composed/multi-character key payload is one text insertion,
+                // not a sequence of keys that can commit dropdown candidates.
+                _ => update(model, Msg::Document(DocumentMsg::InsertText(s.to_string()))),
             }
-            cmd
         }
 
         _ => None,
@@ -303,7 +359,19 @@ pub(crate) fn handle_cursor_overlay_key(
     key: &Key,
     modifiers: KeyModifiers,
 ) -> Option<Option<Cmd>> {
-    let kind = model.ui.cursor_overlay?.kind;
+    if model.ui.cursor_overlay.is_none()
+        && model.ui.completion_menu.is_some()
+        && matches!(key, Key::Named(NamedKey::Escape))
+        && !(modifiers.ctrl || modifiers.shift || modifiers.alt || modifiers.logo)
+    {
+        let completion = update(model, Msg::Completion(CompletionMsg::Dismiss));
+        let inline = update(model, Msg::Completion(CompletionMsg::DismissInline));
+        return Some(Some(Cmd::Batch(
+            completion.into_iter().chain(inline).collect(),
+        )));
+    }
+    let overlay = model.ui.cursor_overlay?;
+    let kind = overlay.kind;
     if kind == token::model::CursorOverlayKind::DebugHover
         || kind == token::model::CursorOverlayKind::Hover
     {
@@ -407,6 +475,28 @@ pub(crate) fn handle_cursor_overlay_key(
     // extension), Ctrl/Cmd+Tab (group focus), Shift+Enter (find-previous in
     // modals reusing this path), etc. must fall through to the keymap
     // instead of being swallowed as menu navigation.
+    if kind == token::model::CursorOverlayKind::Completion
+        && !(ctrl || logo)
+        && model
+            .ui
+            .completion_menu
+            .as_ref()
+            .is_some_and(|menu| menu.selected_documentation(overlay.selected).is_some())
+    {
+        let message = match key {
+            Key::Named(NamedKey::F1) if !(shift || alt) => Some(CompletionMsg::ToggleDocumentation),
+            Key::Named(NamedKey::PageUp) if alt && !shift => {
+                Some(CompletionMsg::PageDocumentation { forward: false })
+            }
+            Key::Named(NamedKey::PageDown) if alt && !shift => {
+                Some(CompletionMsg::PageDocumentation { forward: true })
+            }
+            _ => None,
+        };
+        if let Some(message) = message {
+            return Some(update(model, Msg::Completion(message)));
+        }
+    }
     if ctrl || shift || alt || logo {
         return None;
     }
@@ -734,10 +824,7 @@ fn handle_modal_key(
     modifiers: KeyModifiers,
 ) -> Option<Cmd> {
     let KeyModifiers {
-        shift,
-        alt,
-        logo,
-        ctrl,
+        shift, alt, logo, ..
     } = modifiers;
 
     // Find/Replace option toggles (find-enhancements.md Phase 5): ⌥⌘C
@@ -775,25 +862,6 @@ fn handle_modal_key(
             if shift && matches!(model.ui.active_modal, Some(ModalState::FindReplace(_))) =>
         {
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::FindPrevious)))
-        }
-
-        Key::Named(NamedKey::ArrowLeft)
-            if !shift
-                && !alt
-                && !ctrl
-                && !logo
-                && matches!(model.ui.active_modal, Some(ModalState::Settings(_))) =>
-        {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::CycleSetting(-1))))
-        }
-        Key::Named(NamedKey::ArrowRight)
-            if !shift
-                && !alt
-                && !ctrl
-                && !logo
-                && matches!(model.ui.active_modal, Some(ModalState::Settings(_))) =>
-        {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::CycleSetting(1))))
         }
 
         // Enter: confirm modal action
@@ -1199,6 +1267,82 @@ fn get_binary_placeholder_path(model: &AppModel) -> Option<std::path::PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn settings_keymap_capture_consumes_shortcuts_and_ime_text_without_editing() {
+        use token::keymap::preferences::KeymapSnapshot;
+        use token::settings::keymap::Capture;
+        let mut model = AppModel::new(800, 600, 1.0);
+        model.ui.open_modal(ModalState::Settings(
+            token::settings::SettingsState::default(),
+        ));
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::ActivateTab(
+                token::settings::categories().len() - 1,
+            ))),
+        );
+        let Some(ModalState::Settings(state)) = &mut model.ui.active_modal else {
+            panic!("settings")
+        };
+        state.keymap.snapshot = Some(KeymapSnapshot::parse(None).unwrap());
+        state.keymap.capture = Some(Capture {
+            original: None,
+            command: token::keymap::Command::SaveFile,
+            strokes: Vec::new(),
+            literal_next: false,
+        });
+        let before = model.document().buffer.to_string();
+        for key in [
+            Key::Character("q".into()),
+            Key::Named(NamedKey::F24),
+            Key::Named(NamedKey::Tab),
+            Key::Character("多字".into()),
+        ] {
+            assert!(matches!(
+                handle_key(
+                    &mut model,
+                    key,
+                    PhysicalKey::Code(KeyCode::KeyQ),
+                    KeyModifiers {
+                        logo: true,
+                        ..KeyModifiers::default()
+                    },
+                    false
+                ),
+                Some(Cmd::Redraw)
+            ));
+        }
+        let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+            panic!("settings")
+        };
+        let capture = state.keymap.capture.as_ref().unwrap();
+        assert_eq!(
+            capture.strokes.len(),
+            3,
+            "multi-character commits are not shortcut keys"
+        );
+        assert_eq!(capture.strokes[0].key, token::keymap::KeyCode::Char('q'));
+        assert_eq!(capture.strokes[1].key, token::keymap::KeyCode::F(24));
+        assert_eq!(capture.strokes[2].key, token::keymap::KeyCode::Tab);
+        assert_eq!(model.document().buffer.to_string(), before);
+        assert!(state.input().is_empty());
+        #[cfg(debug_assertions)]
+        {
+            handle_key(
+                &mut model,
+                Key::Named(NamedKey::F2),
+                PhysicalKey::Code(KeyCode::F2),
+                KeyModifiers::default(),
+                false,
+            );
+            let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+                panic!("settings")
+            };
+            assert_eq!(state.keymap.capture.as_ref().unwrap().strokes.len(), 3);
+            assert!(state.keymap.status.contains("reserved by debug tools"));
+        }
+    }
+
     use std::sync::mpsc;
 
     use super::*;
@@ -1207,7 +1351,7 @@ mod tests {
     use winit::keyboard::{KeyCode, PhysicalKey};
 
     fn focused_terminal_model() -> (AppModel, mpsc::Receiver<Vec<u8>>) {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.dock_layout.bottom.activate(PanelId::TERMINAL);
         model.ui.focus_dock(DockPosition::Bottom);
 
@@ -1222,9 +1366,58 @@ mod tests {
     }
 
     #[test]
+    fn commit_character_keyboard_payloads_distinguish_one_key_from_composed_text() {
+        use token::completion::lsp::items_to_menu_items;
+        use token::lsp::LspServerId;
+        use token::messages::LspMsg;
+
+        for (payload, expected) in [("(", "vacuum("), ("(é", "va(é"), ("🦀", "vacuum🦀")] {
+            let mut model = AppModel::new(800, 600, 1.0);
+            model.document_mut().language = token::syntax::LanguageId::Rust;
+            model.document_mut().file_path = Some("/tmp/proj/lib.rs".into());
+            for ch in "va".chars() {
+                update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)));
+            }
+            let menu = model.ui.completion_menu.clone().unwrap();
+            let item = lsp_types::CompletionItem {
+                label: "vacuum".into(),
+                commit_characters: Some(vec!["(".into(), "🦀".into()]),
+                ..Default::default()
+            };
+            let items = items_to_menu_items(
+                vec![item],
+                &LspServerId::from("rust-analyzer"),
+                std::path::Path::new("/tmp/proj"),
+                None,
+            );
+            update(
+                &mut model,
+                Msg::Lsp(LspMsg::CompletionResolved {
+                    document_id: menu.document_id,
+                    revision: menu.revision,
+                    items,
+                    is_incomplete: false,
+                }),
+            );
+            let history = model.document().undo_stack.len();
+            handle_key(
+                &mut model,
+                Key::Character(payload.into()),
+                PhysicalKey::Code(KeyCode::Digit9),
+                KeyModifiers::default(),
+                false,
+            );
+            assert_eq!(model.document().buffer.to_string(), expected);
+            assert_eq!(model.document().undo_stack.len(), history + 1);
+            update(&mut model, Msg::Document(DocumentMsg::Undo));
+            assert_eq!(model.document().buffer.to_string(), "va");
+        }
+    }
+
+    #[test]
     fn option_command_letters_toggle_find_options_in_the_modal() {
         use token::model::{FindReplaceState, ModalState};
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model
             .ui
             .open_modal(ModalState::FindReplace(FindReplaceState::default()));
@@ -1275,46 +1468,6 @@ mod tests {
         assert_eq!(state.query(), "x");
     }
 
-    #[test]
-    fn settings_arrows_change_presets_and_modified_arrows_edit_search() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
-        model.config = token::config::EditorConfig::default();
-        update(
-            &mut model,
-            Msg::Ui(UiMsg::ToggleModal(token::model::ModalId::Settings)),
-        );
-        update(
-            &mut model,
-            Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("blink".into()))),
-        );
-        let cmd = handle_modal_key(
-            &mut model,
-            Key::Named(NamedKey::ArrowRight),
-            PhysicalKey::Code(KeyCode::ArrowRight),
-            KeyModifiers::default(),
-        )
-        .unwrap();
-        assert_eq!(model.config.cursor_blink_ms, 300);
-        assert!(
-            matches!(cmd, Cmd::Batch(ref commands) if commands.iter().any(|cmd| matches!(cmd, Cmd::SaveConfiguration { .. })))
-        );
-        handle_modal_key(
-            &mut model,
-            Key::Named(NamedKey::ArrowLeft),
-            PhysicalKey::Code(KeyCode::ArrowLeft),
-            KeyModifiers {
-                alt: true,
-                ..KeyModifiers::default()
-            },
-        );
-        assert_eq!(model.config.cursor_blink_ms, 300);
-        let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
-            panic!()
-        };
-        assert_eq!(state.editable.text(), "blink");
-        assert_eq!(state.editable.cursor().column, 0);
-    }
-
     fn move_panel(model: &mut AppModel, panel_id: PanelId, from: DockPosition, to: DockPosition) {
         let source = model.dock_layout.dock_mut(from);
         source.panel_ids.retain(|&panel| panel != panel_id);
@@ -1327,7 +1480,7 @@ mod tests {
 
     #[test]
     fn focused_panel_detection_follows_panels_between_docks() {
-        let mut outline_model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut outline_model = AppModel::new(800, 600, 1.0);
         move_panel(
             &mut outline_model,
             PanelId::OUTLINE,
@@ -1336,7 +1489,7 @@ mod tests {
         );
         assert!(is_outline_dock_focused(&outline_model));
 
-        let mut problems_model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut problems_model = AppModel::new(800, 600, 1.0);
         move_panel(
             &mut problems_model,
             PanelId::PROBLEMS,
@@ -1348,7 +1501,7 @@ mod tests {
 
     #[test]
     fn usages_panel_keyboard_navigation_captures_text_and_follows_left_dock() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.document_mut().buffer = "unchanged".into();
         model.usages_panel.items = vec![token::update::navigation::LocationItem {
             path: "/source.rs".into(),
@@ -1404,16 +1557,17 @@ mod tests {
         use token::messages::Msg;
         use token::update::update;
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
         let dir = std::env::temp_dir().join("problems-input-jump-test");
         std::fs::create_dir_all(&dir).unwrap();
         let target = dir.join("target.rs");
         std::fs::write(&target, "a\nb\nc\n").unwrap();
         // The panel is current-file scoped: open the diagnosed file first,
         // then focus the dock (opening focuses the editor).
-        update(
-            &mut model,
-            Msg::Layout(token::messages::LayoutMsg::OpenFileInNewTab(target.clone())),
+        let mut model = AppModel::with_document(
+            800,
+            600,
+            1.0,
+            token::model::Document::from_file(target.clone()).unwrap(),
         );
         model.dock_layout.bottom.activate(PanelId::PROBLEMS);
         model.ui.focus_dock(DockPosition::Bottom);
@@ -1463,7 +1617,7 @@ mod tests {
 
     #[test]
     fn problems_dock_escape_returns_focus_to_the_editor() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.dock_layout.bottom.activate(PanelId::PROBLEMS);
         model.ui.focus_dock(DockPosition::Bottom);
 
@@ -1576,7 +1730,7 @@ mod tests {
     // =========================================================================
 
     fn model_with_completion_demo_open() -> AppModel {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
             token::model::CursorOverlayKind::DebugCompletion,
         ));
@@ -1728,7 +1882,7 @@ mod tests {
     fn real_completion_popup_routes_navigation_and_accept() {
         use token::messages::DocumentMsg;
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.document_mut().buffer = ropey::Rope::from("value_one\nvalue_two\n");
         model.editor_mut().cursors[0] = token::model::Cursor::at(2, 0);
         model.editor_mut().clear_selection();
@@ -1768,7 +1922,41 @@ mod tests {
             "Enter should accept and close the real menu"
         );
         let line = model.document().get_line_cow(2).unwrap();
-        assert_eq!(line, "value_two");
+        // The nearer value_two starts selected; Down moves to value_one.
+        assert_eq!(line, "value_one");
+    }
+
+    #[test]
+    fn pending_completion_only_claims_escape_not_editing_keys() {
+        let mut model = AppModel::new(800, 600, 1.0);
+        model.document_mut().buffer = ropey::Rope::from("builder.");
+        model.document_mut().language = token::syntax::LanguageId::Rust;
+        model.document_mut().file_path = Some("/tmp/proj/build.rs".into());
+        model.editor_mut().cursors[0] = token::model::Cursor::at(0, 8);
+        model.editor_mut().clear_selection();
+        update(&mut model, Msg::Completion(CompletionMsg::TriggerMenu));
+        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.cursor_overlay.is_none());
+        for key in [
+            NamedKey::Tab,
+            NamedKey::Enter,
+            NamedKey::ArrowDown,
+            NamedKey::ArrowUp,
+        ] {
+            assert!(handle_cursor_overlay_key(
+                &mut model,
+                &Key::Named(key),
+                KeyModifiers::default()
+            )
+            .is_none());
+        }
+        assert!(handle_cursor_overlay_key(
+            &mut model,
+            &Key::Named(NamedKey::Escape),
+            KeyModifiers::default()
+        )
+        .is_some());
+        assert!(model.ui.completion_menu.is_none());
     }
 
     /// Hover is not the completion popup: overlay-surface.md's Contexts
@@ -1778,7 +1966,7 @@ mod tests {
     /// claimed ones, closes it while still reaching the editor normally.
     #[test]
     fn hover_overlay_dismisses_on_any_key_and_still_passes_it_through() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
             token::model::CursorOverlayKind::DebugHover,
         ));
@@ -1806,7 +1994,7 @@ mod tests {
     /// typed character must never reach the document.
     #[test]
     fn references_overlay_dismisses_and_consumes_a_typed_character() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.reference_list = Some(vec![]);
         model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
             token::model::CursorOverlayKind::References,
@@ -1836,7 +2024,7 @@ mod tests {
     #[test]
     fn references_overlay_up_down_wrap_the_selection_and_stay_open() {
         let path_a = std::path::PathBuf::from("/tmp/a.rs");
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.reference_list = Some(vec![
             token::update::navigation::LocationItem {
                 path: path_a.clone(),
@@ -1879,7 +2067,7 @@ mod tests {
     }
 
     fn menu_model(items: Vec<token::context_menu::MenuItem>) -> AppModel {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.document_mut().buffer = ropey::Rope::from("");
         let selected = token::context_menu::first_enabled_index(&items);
         let mut overlay =
@@ -2015,7 +2203,7 @@ mod tests {
 
     #[test]
     fn real_hover_card_dismisses_on_any_key_and_clears_hover_card_state() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
             token::model::CursorOverlayKind::Hover,
         ));
@@ -2096,7 +2284,7 @@ mod tests {
         use token::messages::UiMsg;
         use token::model::ModalId;
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         update(
             &mut model,
             Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),

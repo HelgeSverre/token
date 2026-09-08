@@ -120,10 +120,14 @@ pub fn client_capabilities() -> ClientCapabilities {
                 dynamic_registration: Some(false),
                 completion_item: Some(CompletionItemCapability {
                     snippet_support: Some(false),
+                    commit_characters_support: Some(true),
+                    preselect_support: Some(true),
+                    label_details_support: Some(true),
                     resolve_support: Some(CompletionItemCapabilityResolveSupport {
                         properties: vec![
                             "documentation".to_owned(),
                             "detail".to_owned(),
+                            "labelDetails".to_owned(),
                             "additionalTextEdits".to_owned(),
                         ],
                     }),
@@ -1747,7 +1751,14 @@ mod tests {
             .completion_item
             .unwrap();
         assert_eq!(item.snippet_support, Some(false));
-        assert!(item.resolve_support.is_some());
+        assert_eq!(item.commit_characters_support, Some(true));
+        assert_eq!(item.preselect_support, Some(true));
+        assert_eq!(item.label_details_support, Some(true));
+        assert!(item
+            .resolve_support
+            .unwrap()
+            .properties
+            .contains(&"labelDetails".to_owned()));
     }
 
     #[test]

@@ -13,11 +13,11 @@ use crate::model::{
     ThemePickerState, TransientMessage, COMMAND_PALETTE_MAX_VISIBLE,
 };
 use crate::syntax::LanguageId;
-use crate::theme::load_theme;
 use crate::update::layout::update_layout;
-use crate::update::lsp::{schedule_lsp_did_change, toggle_lsp_server_enabled};
+use crate::update::lsp::toggle_lsp_server_enabled;
 use crate::update::navigation::push_history;
-use crate::update::syntax::{schedule_syntax_parse, update_syntax};
+use crate::update::syntax::update_syntax;
+use crate::update::text_edits::{apply_planned_edits, EditCarets, PlannedEdit};
 use crate::view::modal::{recent_files_groups, theme_picker_groups};
 use crate::view::overlay_surface::{resolve_scroll_for_selection, SectionShape};
 
@@ -26,6 +26,16 @@ use super::app::execute_command;
 /// Handle UI messages (status bar, cursor blink, modals)
 pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
     match msg {
+        UiMsg::FindSearchCompleted { request, result } => {
+            let document_id = model.editor_area.focused_document_id()?;
+            let document = model.editor_area.documents.get(&document_id)?;
+            let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal else {
+                return None;
+            };
+            state
+                .finish_search(document, request, result)
+                .then_some(Cmd::Redraw)
+        }
         UiMsg::BlinkCursor => {
             if model
                 .ui
@@ -81,6 +91,7 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
         }
 
         UiMsg::Modal(modal_msg) => update_modal(model, modal_msg),
+        UiMsg::Settings(msg) => super::settings::update_settings(model, msg),
 
         UiMsg::ToggleModal(modal_id) => {
             if let Some(ref active) = model.ui.active_modal {
@@ -93,7 +104,7 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             // Open the requested modal
             let state = match modal_id {
                 ModalId::Settings => {
-                    ModalState::Settings(crate::model::ui::SettingsState::default())
+                    ModalState::Settings(crate::settings::SettingsState::default())
                 }
                 ModalId::CommandPalette => {
                     // Cmd+Shift+A: Search Everywhere, pre-focused on All
@@ -111,7 +122,7 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                 ModalId::GotoLine => ModalState::GotoLine(GotoLineState::default()),
                 // Needs the caret context captured at request time.
                 ModalId::RenameSymbol => {
-                    return crate::update::update_lsp(model, crate::messages::LspMsg::RenameSymbol)
+                    return super::lsp::update_lsp(model, crate::messages::LspMsg::RenameSymbol)
                 }
                 ModalId::FindReplace => ModalState::FindReplace(reopened_find_replace(model)),
                 ModalId::ThemePicker => {
@@ -261,6 +272,7 @@ fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<Strin
 /// no such side effect.
 fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
     match modal {
+        ModalState::Settings(state) => state.resolve_rows(),
         ModalState::CommandPalette(state) => {
             resolve_palette_rows(state, history);
             // Query is shared across tabs — keep the (lazily-populated)
@@ -272,7 +284,6 @@ fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
                 update_file_finder_results(files);
             }
         }
-        ModalState::Settings(state) => state.refilter(),
         ModalState::FileFinder(state) => update_file_finder_results(state),
         ModalState::RecentFiles(state) => resolve_recent_rows(state),
         ModalState::GotoLine(_)
@@ -288,6 +299,16 @@ fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
 fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
     // Changing the modal's query/category/selection invalidates captured geometry.
     model.ui.scrollbar_drag = None;
+    if super::settings::capturing(model) {
+        return match msg {
+            ModalMsg::Close => super::settings::capture_action(model, 1),
+            ModalMsg::Confirm => super::settings::capture_action(model, 0),
+            ModalMsg::ChooseSetting { row: 0, choice } => {
+                super::settings::capture_action(model, choice)
+            }
+            _ => Some(Cmd::Redraw),
+        };
+    }
     match msg {
         ModalMsg::OpenCommandPalette => {
             let mut state = model.ui.last_command_palette.clone().unwrap_or_default();
@@ -316,9 +337,12 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         ModalMsg::Close => {
             // Restore original theme if closing theme picker without confirming
             if let Some(ModalState::ThemePicker(state)) = &model.ui.active_modal {
-                if let Ok(theme) = load_theme(&state.original_theme_id) {
-                    model.theme = theme;
-                }
+                let id = state.original_theme_id.clone();
+                model.ui.close_modal();
+                return Some(Cmd::Batch(vec![
+                    Cmd::LoadTheme { id, persist: false },
+                    Cmd::Redraw,
+                ]));
             }
             model.ui.close_modal();
             Some(Cmd::Redraw)
@@ -327,8 +351,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         ModalMsg::SetInput(text) => {
             if let Some(ref mut modal) = model.ui.active_modal {
                 match modal {
-                    ModalState::Settings(state) => state.editable.set_content(&text),
                     ModalState::CommandPalette(state) => state.set_input(&text),
+                    ModalState::Settings(state) => state.editable.set_content(&text),
                     ModalState::GotoLine(state) => state.set_input(&text),
                     ModalState::RenameSymbol(state) => state.editable.set_content(&text),
                     ModalState::FindReplace(state) => state.set_query(&text),
@@ -354,9 +378,8 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                     if state.input().is_empty() {
                         if let Some(tab) = search_tab_for_prefix(ch) {
                             // Mirror `activate_search_tab`/`cycle_search_tab`:
-                            // never park on an `Unavailable` tab (Symbols is
-                            // always `Unavailable` today) — fall through to
-                            // inserting the char instead.
+                            // never park on an `Unavailable` tab — fall
+                            // through to inserting the char instead.
                             if state.tab_available(tab) {
                                 state.active_tab = tab;
                                 return Some(Cmd::Redraw);
@@ -424,6 +447,9 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::MoveCursorLeft => {
+            if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) {
+                return change_setting(model, None, -1);
+            }
             if let Some(ref mut modal) = model.ui.active_modal {
                 if let Some(editable) = modal_editable_mut(modal) {
                     editable.move_left(false);
@@ -433,6 +459,9 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::MoveCursorRight => {
+            if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) {
+                return change_setting(model, None, 1);
+            }
             if let Some(ref mut modal) = model.ui.active_modal {
                 if let Some(editable) = modal_editable_mut(modal) {
                     editable.move_right(false);
@@ -588,16 +617,6 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::SelectPrevious => modal_select(model, -1),
-        ModalMsg::CycleSetting(delta) => change_setting(model, None, delta),
-        ModalMsg::SelectSettingChoice { row, choice } => {
-            if let Some(ModalState::Settings(state)) = model.ui.active_modal.as_mut() {
-                if row >= state.rows.len() {
-                    return None;
-                }
-                state.selected_index = row;
-            }
-            change_setting(model, Some(choice), 0)
-        }
 
         ModalMsg::SelectNext => modal_select(model, 1),
 
@@ -607,9 +626,22 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::Scroll(delta) => modal_scroll(model, delta),
 
+        ModalMsg::ChooseSetting { row, choice } => {
+            if let Some(ModalState::Settings(state)) = &mut model.ui.active_modal {
+                if row >= state.rows.len() {
+                    return None;
+                }
+                state.selected_index = row;
+                return change_setting(model, Some(choice), 1);
+            }
+            None
+        }
         ModalMsg::ActivateRow(row) => {
             if let Some(ref mut modal) = model.ui.active_modal {
                 set_modal_selected_index(modal, row);
+                if matches!(modal, ModalState::Settings(_)) {
+                    return super::settings::activate_row(model);
+                }
             }
             confirm_active_modal(model)
         }
@@ -679,21 +711,27 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
+        ModalMsg::NextTab if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) => {
+            super::settings::switch_tab(model, None)
+        }
         ModalMsg::NextTab => cycle_search_tab(model, true),
 
+        ModalMsg::PrevTab if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) => {
+            let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+                return None;
+            };
+            let count = crate::settings::categories().len();
+            let previous = (state.category + count - 1) % count;
+            super::settings::switch_tab(model, Some(previous))
+        }
         ModalMsg::PrevTab => cycle_search_tab(model, false),
 
-        ModalMsg::ActivateTab(index) => {
-            if let Some(ModalState::Settings(state)) = model.ui.active_modal.as_mut() {
-                if index < crate::settings::categories().len() {
-                    state.category = index;
-                    state.refilter();
-                }
-                Some(Cmd::Redraw)
-            } else {
-                activate_search_tab(model, index)
-            }
+        ModalMsg::ActivateTab(index)
+            if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) =>
+        {
+            super::settings::switch_tab(model, Some(index))
         }
+        ModalMsg::ActivateTab(index) => activate_search_tab(model, index),
 
         ModalMsg::Confirm => confirm_active_modal(model),
 
@@ -804,19 +842,9 @@ fn search_tab_for_prefix(ch: char) -> Option<SearchTab> {
 }
 
 /// `ModalMsg::NextTab`/`PrevTab` (⇥/⇧⇥): cycle Search Everywhere's tabs,
-/// skipping `Unavailable` ones (Symbols always; Files with no workspace).
-/// Settings uses the same messages to cycle its category navigation.
+/// skipping tabs without their required workspace/provider context.
+/// A no-op for every other modal.
 fn cycle_search_tab(model: &mut AppModel, forward: bool) -> Option<Cmd> {
-    if let Some(ModalState::Settings(state)) = model.ui.active_modal.as_mut() {
-        let count = crate::settings::categories().len();
-        state.category = if forward {
-            (state.category + 1) % count
-        } else {
-            (state.category + count - 1) % count
-        };
-        state.refilter();
-        return Some(Cmd::Redraw);
-    }
     // Computed up front (owned data, not borrowed from `model`) so it can
     // still be used after `state` takes a mutable borrow of
     // `model.ui.active_modal` below.
@@ -883,9 +911,7 @@ fn activate_search_tab(model: &mut AppModel, index: usize) -> Option<Cmd> {
 /// A no-op for `Fields`/no-list contexts.
 fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
     match modal {
-        ModalState::Settings(state) => {
-            state.selected_index = row.min(state.rows.len().saturating_sub(1))
-        }
+        ModalState::Settings(state) => state.selected_index = row.min(state.rows.len()),
         ModalState::CommandPalette(state) => match state.active_tab {
             SearchTab::Commands => state.selected_index = row.min(state.matches.len()),
             SearchTab::Files => {
@@ -894,7 +920,9 @@ fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
                 }
             }
             SearchTab::All => state.all_selected = row.min(all_tab_total(state)),
-            SearchTab::Symbols => {}
+            SearchTab::Symbols => {
+                state.symbols.selected_index = row.min(state.symbols.results.items.len())
+            }
         },
         ModalState::ThemePicker(state) => state.selected_index = row.min(state.themes.len()),
         ModalState::FileFinder(state) => state.selected_index = row.min(state.results.len()),
@@ -918,17 +946,13 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
     let modal = model.ui.active_modal.clone();
     if let Some(modal) = modal {
         match modal {
-            ModalState::Settings(state) => {
-                if matches!(
-                    state.rows.get(state.selected_index),
-                    Some(crate::settings::SettingsRow::Theme(_))
-                ) {
-                    update_ui(model, UiMsg::ToggleModal(ModalId::ThemePicker))
-                } else {
-                    Some(Cmd::Redraw)
-                }
-            }
             ModalState::CommandPalette(state) => confirm_search_everywhere(model, state),
+            ModalState::Settings(state)
+                if state.tab == crate::settings::keymap::SettingsTab::Keymap =>
+            {
+                super::settings::activate_row(model)
+            }
+            ModalState::Settings(_) => change_setting(model, None, 1),
             ModalState::RenameSymbol(state) => {
                 model.ui.close_modal();
                 let new_name = state.input();
@@ -996,14 +1020,12 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
             ModalState::ThemePicker(state) => {
                 // Apply selected theme and save config
                 if let Some(theme_info) = state.themes.get(state.selected_index) {
-                    let theme_id = theme_info.id.clone();
-                    if let Ok(theme) = load_theme(&theme_id) {
-                        model.theme = theme;
-                        // Save theme preference to config
-                        if let Err(e) = model.config.set_theme(&theme_id) {
-                            tracing::warn!("Failed to save theme preference: {}", e);
-                        }
-                    }
+                    let id = theme_info.id.clone();
+                    model.ui.close_modal();
+                    return Some(Cmd::Batch(vec![
+                        Cmd::LoadTheme { id, persist: true },
+                        Cmd::Redraw,
+                    ]));
                 }
                 model.ui.close_modal();
                 Some(Cmd::Redraw)
@@ -1118,14 +1140,24 @@ pub fn search_everywhere_sections(
             if file_count > 0 {
                 sections.push((Some("Files"), files_cap));
             }
+            let symbols_cap = state.symbols.results.items.len().min(ALL_TAB_GROUP_CAP);
+            if symbols_cap > 0 {
+                sections.push((Some("Symbols"), symbols_cap));
+            }
             sections
         }
-        SearchTab::Symbols => Vec::new(),
+        SearchTab::Symbols => {
+            let count = state.symbols.results.items.len();
+            if count == 0 {
+                Vec::new()
+            } else {
+                vec![(None, count)]
+            }
+        }
     }
 }
 
-/// Total selectable rows on the All tab: capped Commands + capped Files
-/// (Symbols never contributes — disabled-state only).
+/// Total selectable rows on the All tab: capped Commands, Files and Symbols.
 fn all_tab_total(state: &CommandPaletteState) -> usize {
     search_everywhere_sections(state)
         .iter()
@@ -1193,6 +1225,22 @@ fn confirm_search_everywhere(model: &mut AppModel, state: CommandPaletteState) -
                 model.ui.close_modal();
                 return Some(Cmd::Redraw);
             }
+            let files_shown = state
+                .files
+                .as_ref()
+                .map_or(0, |files| files.results.len().min(ALL_TAB_GROUP_CAP));
+            if state.all_selected >= commands_shown + files_shown {
+                let symbol = state
+                    .symbols
+                    .results
+                    .items
+                    .get(state.all_selected - commands_shown - files_shown)
+                    .cloned();
+                return match symbol {
+                    Some(symbol) => super::workspace_symbols::open(model, symbol),
+                    None => Some(Cmd::Redraw),
+                };
+            }
             let path = state
                 .files
                 .as_ref()
@@ -1208,14 +1256,96 @@ fn confirm_search_everywhere(model: &mut AppModel, state: CommandPaletteState) -
             }
         }
         SearchTab::Symbols => {
-            model.ui.close_modal();
-            Some(Cmd::Redraw)
+            let symbol = state
+                .symbols
+                .results
+                .items
+                .get(state.symbols.selected_index)
+                .cloned();
+            match symbol {
+                Some(symbol) => super::workspace_symbols::open(model, symbol),
+                None => Some(Cmd::Redraw),
+            }
         }
     }
 }
 
-/// Section shapes for a flat (untitled, single-section) list body — the
-/// Command Palette and File Finder, which have no headers.
+/// Apply a preset from the settings list's authoritative filtered order.
+fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -> Option<Cmd> {
+    let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+        return None;
+    };
+    let row = &state.entries[*state.rows.get(state.selected_index)?];
+    if state.tab == crate::settings::keymap::SettingsTab::Keymap {
+        return super::settings::choose_base(model, explicit, delta);
+    }
+    let choices = row.choices();
+    if choices.is_empty() || explicit.is_some_and(|choice| choice >= choices.len()) {
+        return None;
+    }
+    let choice = explicit.unwrap_or_else(|| {
+        row.active(&model.config)
+            .map_or(if delta < 0 { choices.len() - 1 } else { 0 }, |active| {
+                (active as isize + delta).rem_euclid(choices.len() as isize) as usize
+            })
+    });
+    if row.active(&model.config) == Some(choice) {
+        return Some(Cmd::Redraw);
+    }
+    let descriptor = match row.kind {
+        crate::settings::RowKind::LspMaster => {
+            let effect = super::lsp::toggle_lsp_enabled(model);
+            return super::merge_cmds(effect, Some(Cmd::Redraw));
+        }
+        crate::settings::RowKind::ServerEnabled(id) => {
+            return super::lsp::toggle_lsp_server_enabled(model, id)
+        }
+        crate::settings::RowKind::Preset(index) => &crate::settings::DESCRIPTORS[index],
+        crate::settings::RowKind::ServerCommand(_)
+        | crate::settings::RowKind::ServerStatus(_)
+        | crate::settings::RowKind::KeymapBase
+        | crate::settings::RowKind::KeymapBinding(..)
+        | crate::settings::RowKind::CaptureActions => return None,
+    };
+    if descriptor.setting == crate::settings::Setting::Theme {
+        return update_ui(model, UiMsg::ToggleModal(ModalId::ThemePicker));
+    }
+    if !descriptor.apply(&mut model.config, choice) {
+        return Some(Cmd::Redraw);
+    }
+    model.ui.cursor_visible = true;
+    let mut commands = vec![
+        Cmd::SaveConfiguration {
+            config: Box::new(model.config.clone()),
+        },
+        Cmd::Redraw,
+    ];
+    if descriptor.setting == crate::settings::Setting::StatusFont {
+        commands.push(Cmd::SyncStatusBarMetrics);
+    }
+    Some(Cmd::Batch(commands))
+}
+
+fn settings_capacity(model: &AppModel) -> usize {
+    crate::view::overlay_surface::settings_visible_count(
+        model.window_size.0 as usize,
+        model.window_size.1 as usize,
+        model.metrics.scale_factor,
+    )
+}
+
+fn settings_shapes(state: &crate::settings::SettingsState) -> Vec<SectionShape> {
+    state
+        .sections()
+        .iter()
+        .map(|(_, range)| SectionShape {
+            has_title: true,
+            len: range.len(),
+        })
+        .collect()
+}
+
+/// Section shapes for an untitled, single-section list body.
 fn flat_shapes(total: usize) -> [SectionShape; 1] {
     [SectionShape {
         has_title: false,
@@ -1332,98 +1462,21 @@ fn move_search_everywhere_selection(state: &mut CommandPaletteState, delta: isiz
                     (state.all_selected as isize + delta).rem_euclid(total as isize) as usize;
             }
         }
-        SearchTab::Symbols => {}
-    }
-}
-
-/// Section shapes from the settings ordering authority.
-fn settings_shapes(state: &crate::model::ui::SettingsState) -> Vec<SectionShape> {
-    state
-        .sections()
-        .into_iter()
-        .map(|(_, range)| SectionShape {
-            has_title: true,
-            len: range.len(),
-        })
-        .collect()
-}
-
-fn change_setting(model: &mut AppModel, choice: Option<usize>, delta: isize) -> Option<Cmd> {
-    use crate::settings::{descriptors::DESCRIPTORS, SettingsRow};
-    let Some(ModalState::Settings(state)) = model.ui.active_modal.as_ref() else {
-        return None;
-    };
-    let row = *state.rows.get(state.selected_index)?;
-    let pick = |active: Option<usize>, len: usize| {
-        choice.unwrap_or_else(|| match active {
-            Some(index) => (index as isize + delta).rem_euclid(len as isize) as usize,
-            None if delta < 0 => len - 1,
-            None => 0,
-        })
-    };
-    let changed = match row {
-        SettingsRow::Preset(index) => {
-            let descriptor = &DESCRIPTORS[index];
-            let index = pick(
-                descriptor.active_choice(&model.config),
-                descriptor.choices.len(),
+        SearchTab::Symbols => {
+            let shapes = flat_shapes(state.symbols.results.items.len());
+            move_list_selection(
+                &mut state.symbols.selected_index,
+                &mut state.symbols.scroll_offset,
+                &shapes,
+                delta,
             );
-            descriptor.select(&mut model.config, index)
         }
-        SettingsRow::ServerEnabled(def) => {
-            let enabled = model
-                .config
-                .lsp
-                .servers
-                .get(def.id)
-                .and_then(|s| s.enabled)
-                .unwrap_or(true);
-            let index = pick(Some(usize::from(enabled)), 2);
-            if index > 1 || (index == 1) == enabled {
-                false
-            } else {
-                model
-                    .config
-                    .lsp
-                    .servers
-                    .entry(def.id.to_owned())
-                    .or_default()
-                    .enabled = Some(index == 1);
-                true
-            }
-        }
-        SettingsRow::Theme(_) | SettingsRow::ServerCommand(_) | SettingsRow::ServerStatus(_) => {
-            false
-        }
-    };
-    if !changed {
-        return Some(Cmd::Redraw);
     }
-    if !(model.config.completion.enabled && model.config.completion.inline.enabled) {
-        model.ui.inline_suggestion = None;
-        model.ui.inline_in_flight = false;
-    }
-    model.ui.reset_cursor_blink();
-    let (width, height) = model.window_size;
-    model.resize(width, height);
-    Some(Cmd::Batch(vec![
-        Cmd::SyncStatusBarMetrics,
-        Cmd::Redraw,
-        Cmd::SaveConfiguration {
-            config: Box::new(model.config.clone()),
-        },
-    ]))
 }
 
-fn settings_capacity(model: &AppModel) -> usize {
-    crate::view::overlay_surface::settings_visible_count(
-        model.window_size.0 as usize,
-        model.window_size.1 as usize,
-        model.metrics.scale_factor,
-    )
-}
-
-/// Move list selection; the theme picker previews its new selection.
+/// `ModalMsg::SelectPrevious`/`SelectNext`: move selection by `delta`
+/// (-1/+1) in whichever list-body modal is active. Theme Picker previews
+/// the newly-selected theme live.
 fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
     let capacity = settings_capacity(model);
     let modal = model.ui.active_modal.as_mut()?;
@@ -1502,9 +1555,13 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
         ModalState::GotoLine(_) | ModalState::RenameSymbol(_) | ModalState::FindReplace(_) => None,
     };
     if let Some(theme_id) = preview_theme_id {
-        if let Ok(theme) = load_theme(&theme_id) {
-            model.theme = theme;
-        }
+        return Some(Cmd::Batch(vec![
+            Cmd::LoadTheme {
+                id: theme_id,
+                persist: false,
+            },
+            Cmd::Redraw,
+        ]));
     }
     Some(Cmd::Redraw)
 }
@@ -1518,7 +1575,10 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
         ModalState::Settings(state) => {
             let shapes = settings_shapes(state);
             state.selected_index = if forward {
-                (state.selected_index + capacity).min(state.rows.len().saturating_sub(1))
+                state
+                    .selected_index
+                    .saturating_add(capacity)
+                    .min(state.rows.len().saturating_sub(1))
             } else {
                 state.selected_index.saturating_sub(capacity)
             };
@@ -1565,7 +1625,15 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
                     };
                 }
             }
-            SearchTab::Symbols => {}
+            SearchTab::Symbols => {
+                let shapes = flat_shapes(state.symbols.results.items.len());
+                page_list_selection(
+                    &mut state.symbols.selected_index,
+                    &mut state.symbols.scroll_offset,
+                    &shapes,
+                    forward,
+                );
+            }
         },
         ModalState::ThemePicker(state) => {
             let shapes = theme_picker_shapes(state);
@@ -1646,7 +1714,11 @@ fn modal_scroll_to(model: &mut AppModel, position: Option<usize>, delta: isize) 
                 (&mut files.scroll_offset, shapes)
             }
             // All is a non-scrolling summary.
-            SearchTab::All | SearchTab::Symbols => return None,
+            SearchTab::All => return None,
+            SearchTab::Symbols => (
+                &mut state.symbols.scroll_offset,
+                flat_shapes(state.symbols.results.items.len()).to_vec(),
+            ),
         },
         ModalState::ThemePicker(state) => {
             let shapes = theme_picker_shapes(state);
@@ -1690,11 +1762,26 @@ fn modal_scroll_to(model: &mut AppModel, position: Option<usize>, delta: isize) 
 /// stale offsets, and an empty selection cannot scope anything.
 fn reopened_find_replace(model: &AppModel) -> FindReplaceState {
     let mut state = model.ui.last_find_replace.clone().unwrap_or_default();
+    state.reset_search_session();
     if state.selection_only {
         let selection = model.editor().selections[0];
         state.set_selection_only(true, model.document(), &selection);
     }
     state
+}
+
+/// Schedule once after any update, including edits and focus/tab changes. Display
+/// readers never schedule effects or fall back to a large synchronous scan.
+pub(super) fn schedule_find_search(model: &mut AppModel) -> Option<Cmd> {
+    let editor = model.editor_area.focused_editor()?;
+    if !editor.is_plain_text_mode() {
+        return None;
+    }
+    let document = model.editor_area.documents.get(&editor.document_id?)?;
+    let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal else {
+        return None;
+    };
+    state.prepare_search(document).map(Cmd::RunFindSearch)
 }
 
 /// Show "No matches found", or the regex error if the query failed to
@@ -1709,8 +1796,6 @@ fn report_no_matches(model: &mut AppModel, query: &crate::search::SearchQuery) {
 
 /// Find next occurrence in the document and select it
 fn find_next_in_document(model: &mut AppModel, state: &FindReplaceState) -> Option<Cmd> {
-    let query = state.build_query();
-    let query = &query;
     let editor = model.editor();
     let doc = model.document();
 
@@ -1723,10 +1808,22 @@ fn find_next_in_document(model: &mut AppModel, state: &FindReplaceState) -> Opti
         doc.cursor_to_offset(editor.cursors[0].line, editor.cursors[0].column)
     };
 
+    find_next_from(model, state, start_offset, false)
+}
+
+/// Replacements include an adjacent match starting exactly at the new caret;
+/// explicit Find Next retains its existing strictly-after navigation policy.
+fn find_next_from(
+    model: &mut AppModel,
+    state: &FindReplaceState,
+    start_offset: usize,
+    inclusive: bool,
+) -> Option<Cmd> {
+    let doc = model.document();
     let matches = state.matches(doc);
     let found = matches
         .iter()
-        .find(|m| m.start > start_offset)
+        .find(|m| m.start > start_offset || (inclusive && m.start == start_offset))
         .or_else(|| matches.first())
         .copied();
 
@@ -1749,7 +1846,7 @@ fn find_next_in_document(model: &mut AppModel, state: &FindReplaceState) -> Opti
         model.ensure_cursor_visible();
         Some(Cmd::redraw_editor())
     } else {
-        report_no_matches(model, query);
+        report_no_matches(model, &state.build_query());
         Some(Cmd::redraw_editor())
     }
 }
@@ -1808,6 +1905,9 @@ fn replace_and_find_next(
     state: &FindReplaceState,
     replacement: &str,
 ) -> Option<Cmd> {
+    if !model.editor().is_plain_text_mode() {
+        return None;
+    }
     // First, gather all the info we need without holding borrows
     let should_replace = {
         let editor = model.editor();
@@ -1831,42 +1931,36 @@ fn replace_and_find_next(
         }
     };
 
-    // Now do the replacement if needed
-    let mut sync_cmds = Vec::new();
-    if let Some((start_offset, end_offset)) = should_replace {
-        let doc = model.document_mut();
-        doc.buffer.remove(start_offset..end_offset);
-        doc.buffer.insert(start_offset, replacement);
-        doc.is_modified = true;
-        doc.revision += 1;
+    let Some((start_offset, end_offset)) = should_replace else {
+        return find_next_in_document(model, state);
+    };
+    let edit = PlannedEdit {
+        start: start_offset,
+        deleted: model
+            .document()
+            .buffer
+            .slice(start_offset..end_offset)
+            .to_string(),
+        inserted: replacement.to_owned(),
+    };
+    let new_offset = start_offset + replacement.chars().count();
+    let effects = apply_find_edits(model, vec![edit], new_offset);
 
-        // Update cursor position
-        let new_offset = start_offset + replacement.chars().count();
-        let (new_line, new_col) = doc.offset_to_cursor(new_offset);
-
-        let editor = model.editor_mut();
-        editor.cursors[0].line = new_line;
-        editor.cursors[0].column = new_col;
-        editor.clear_selection();
-
-        if let Some(doc_id) = model.document().id {
-            sync_cmds.extend(schedule_syntax_parse(model, doc_id));
-            sync_cmds.extend(schedule_lsp_did_change(model, doc_id));
-        }
+    // The shared mapper has updated the active scope. Do not search the stale
+    // clone captured before a length-changing replacement.
+    let mut next_state = state.clone();
+    if let Some(ModalState::FindReplace(active)) = &model.ui.active_modal {
+        next_state.scope = active.scope;
     }
-
-    // Now find next
-    let next_cmd = find_next_in_document(model, state);
-    if sync_cmds.is_empty() {
-        next_cmd
-    } else {
-        sync_cmds.extend(next_cmd);
-        Some(Cmd::Batch(sync_cmds))
-    }
+    let next_cmd = find_next_from(model, &next_state, new_offset, true);
+    super::merge_cmds(effects, next_cmd)
 }
 
 /// Replace all occurrences
 fn replace_all(model: &mut AppModel, state: &FindReplaceState, replacement: &str) -> Option<Cmd> {
+    if !model.editor().is_plain_text_mode() {
+        return None;
+    }
     let doc = model.document();
     let occurrences = state.matches(doc);
 
@@ -1877,37 +1971,52 @@ fn replace_all(model: &mut AppModel, state: &FindReplaceState, replacement: &str
 
     let count = occurrences.len();
 
-    // Replace from end to start to preserve offsets
-    let doc = model.document_mut();
-    let replacement_char_len = replacement.chars().count();
-    for m in occurrences.into_iter().rev() {
-        doc.buffer.remove(m.start..m.end);
-        doc.buffer.insert(m.start, replacement);
-    }
-    doc.is_modified = true;
-    doc.revision += 1;
-
-    // Position cursor at end of last replacement (which is now first in document)
-    let editor = model.editor_mut();
-    editor.cursors[0].line = 0;
-    editor.cursors[0].column = replacement_char_len;
-    editor.clear_selection();
+    let planned = occurrences
+        .iter()
+        .rev()
+        .map(|m| PlannedEdit {
+            start: m.start,
+            deleted: doc.buffer.slice(m.start..m.end).to_string(),
+            inserted: replacement.to_owned(),
+        })
+        .collect();
+    // Earlier matches do not exist, so later replacements cannot shift this
+    // offset. Derive its actual line/column through the shared placement policy.
+    let first_end = occurrences[0].start + replacement.chars().count();
+    let effects = apply_find_edits(model, planned, first_end);
 
     model.ui.transient_message = Some(TransientMessage::new(
         format!("Replaced {} occurrences", count),
         Duration::from_secs(2),
     ));
 
-    let mut cmds = vec![Cmd::redraw_editor()];
-    if let Some(doc_id) = model.document().id {
-        cmds.extend(schedule_syntax_parse(model, doc_id));
-        cmds.extend(schedule_lsp_did_change(model, doc_id));
+    effects
+}
+
+/// Find owns only the primary caret's final placement. Other carets, selections,
+/// the live search scope, history and effects use the shared transaction.
+fn apply_find_edits(
+    model: &mut AppModel,
+    mut planned: Vec<PlannedEdit>,
+    caret: usize,
+) -> Option<Cmd> {
+    planned.retain(|edit| edit.deleted != edit.inserted);
+    if planned.is_empty() {
+        return Some(Cmd::redraw_editor());
     }
-    if cmds.len() > 1 {
-        Some(Cmd::Batch(cmds))
-    } else {
-        Some(Cmd::redraw_editor())
-    }
+    let document_id = model.editor_area.focused_document_id()?;
+    let editor_id = model.editor_area.focused_editor_id()?;
+    model.reset_cursor_blink();
+    apply_planned_edits(
+        model,
+        document_id,
+        &planned,
+        EditCarets::Place {
+            editor_id,
+            offsets: &[caret],
+            before: None,
+        },
+    )
 }
 
 /// Get the line numbers of all cursors in the focused editor
@@ -1993,7 +2102,7 @@ const RECENCY_BOOST: u32 = 3;
 /// empty query with no usage history) keep registry order via the stable
 /// sort.
 fn fuzzy_match_commands(query: &str, history: &CommandHistory) -> Vec<CommandMatch> {
-    let all: Vec<&'static CommandDef> = crate::commands::all_commands();
+    let all: Vec<&'static CommandDef> = crate::commands::all_commands().collect();
 
     let scored: Vec<(CommandMatch, u32)> = if query.is_empty() {
         all.into_iter()
@@ -2177,7 +2286,7 @@ mod tests {
 
     #[test]
     fn current_cursor_lines_are_reported_for_plain_text_editors() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         model.editor_mut().cursors[0].line = 7;
 
         assert_eq!(get_current_cursor_lines(&model), vec![7]);
@@ -2185,7 +2294,7 @@ mod tests {
 
     #[test]
     fn current_cursor_lines_are_ignored_for_image_editors() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         model.editor_mut().view_mode = ViewMode::Image(Box::new(ImageState::new(
             vec![255, 255, 255, 255],
             1,
@@ -2202,9 +2311,11 @@ mod tests {
 
     #[test]
     fn blink_cursor_dedupes_dirty_lines_from_previous_and_current() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         // Force update_cursor_blink to report a state change on the next call.
-        model.config.cursor_blink_ms = 0;
+        // Zero now means Off, so use an elapsed positive interval.
+        model.config.cursor_blink_ms = 1;
+        model.ui.last_cursor_blink = std::time::Instant::now() - std::time::Duration::from_secs(1);
 
         // Two cursors: one overlaps a previous line, one is new.
         model.editor_mut().cursors[0].line = 3;
@@ -2247,7 +2358,7 @@ mod tests {
     /// selected, not an independently re-derived list.
     #[test]
     fn confirm_executes_the_row_selected_in_the_cached_view_order() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         // Cmd+Shift+A opens on the All tab (overlay-surface.md Phase 4).
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
 
@@ -2303,7 +2414,7 @@ mod tests {
         );
         assert_eq!(
             ids.len(),
-            crate::commands::all_commands().len(),
+            crate::commands::all_commands().count(),
             "no commands should be dropped, only reordered"
         );
     }
@@ -2354,7 +2465,6 @@ mod tests {
         assert_eq!(
             state.matches.iter().map(|m| m.def.id).collect::<Vec<_>>(),
             crate::commands::all_commands()
-                .iter()
                 .map(|d| d.id)
                 .collect::<Vec<_>>()
         );
@@ -2366,7 +2476,7 @@ mod tests {
 
     #[test]
     fn insert_char_gt_on_empty_query_pins_commands_tab_and_is_consumed() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
         assert!(matches!(
             &model.ui.active_modal,
@@ -2386,11 +2496,11 @@ mod tests {
 
     #[test]
     fn insert_char_at_on_empty_query_does_not_pin_unavailable_symbols_tab() {
-        // Symbols is always `Unavailable` (no workspace-symbols provider
-        // exists yet) — `@` must not park the user on a dead tab; it falls
+        // With no workspace-symbols provider, Symbols is `Unavailable`.
+        // `@` must not park the user on a dead tab; it falls
         // through to a literal char insert instead, same as any other
         // prefix routed to an `Unavailable` tab.
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
         update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('@')));
         match &model.ui.active_modal {
@@ -2404,7 +2514,7 @@ mod tests {
 
     #[test]
     fn prefix_char_only_recognized_on_previously_empty_query() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
         update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('g')));
         update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('>')));
@@ -2420,7 +2530,7 @@ mod tests {
 
     #[test]
     fn backspace_on_empty_query_returns_to_all_tab() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
         update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('>')));
         // Consumed the prefix; query is empty, tab is Commands.
@@ -2435,7 +2545,7 @@ mod tests {
 
     #[test]
     fn next_tab_skips_unavailable_files_and_symbols_with_no_workspace() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         assert!(model.workspace.is_none());
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
         // All -> Commands -> (Files unavailable, Symbols unavailable) -> All
@@ -2465,7 +2575,7 @@ mod tests {
     fn page_down_moves_selection_on_the_all_tab() {
         // Regression: PageUp/Down were a no-op on the All tab — the default
         // landing tab — which read as broken keys.
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
         assert_tab(&model, SearchTab::All);
 
@@ -2480,7 +2590,7 @@ mod tests {
 
     #[test]
     fn all_tab_confirm_executes_the_selected_command_and_records_history() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
         assert_tab(&model, SearchTab::All);
 
@@ -2506,7 +2616,7 @@ mod tests {
     /// view-order == confirm-order assertion.
     #[test]
     fn all_tab_confirm_order_matches_view_order_with_recents_and_a_files_group() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         model.command_history.record_execution(CommandId::SaveFile);
         model.command_history.record_execution(CommandId::GotoLine);
 
@@ -2595,7 +2705,7 @@ mod tests {
 
     #[test]
     fn toggle_pin_on_commands_tab_pins_selected_command() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         let state = CommandPaletteState {
             active_tab: SearchTab::Commands,
             ..Default::default()
@@ -2620,7 +2730,7 @@ mod tests {
         std::fs::write(dir.path().join("beta.rs"), "").unwrap();
         std::fs::write(dir.path().join("gamma.txt"), "").unwrap();
 
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         model.open_workspace(dir.path().to_path_buf());
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
         update_ui(
@@ -2787,12 +2897,12 @@ mod tests {
     }
 
     /// Replace All mutates `doc.buffer`/`doc.revision` directly (bypassing
-    /// `redraw_with_syntax_parse_shift`), so it must schedule its own
+    /// the shared planned-edit transaction), so it must schedule its own
     /// syntax-parse and LSP didChange like every other mutation site — see
     /// docs/feature/lsp-integration.md's flush-before-request invariant.
     #[test]
     fn replace_all_schedules_syntax_parse_and_lsp_did_change() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         model.document_mut().buffer = ropey::Rope::from_str("foo foo foo");
         let before_revision = model.document().revision;
 
@@ -2804,20 +2914,20 @@ mod tests {
         assert_eq!(model.document().buffer.to_string(), "bar bar bar");
         assert!(model.document().revision > before_revision);
 
-        let cmds = match cmd {
-            Some(Cmd::Batch(cmds)) => cmds,
-            other => panic!("expected a batch of sync commands, got {other:?}"),
-        };
-        assert!(
-            cmds.iter()
-                .any(|c| matches!(c, Cmd::LspScheduleDidChange { .. })),
-            "expected LspScheduleDidChange in {cmds:?}"
-        );
+        assert_eq!(lsp_change_count(&cmd.expect("replacement effects")), 1);
+    }
+
+    fn lsp_change_count(cmd: &Cmd) -> usize {
+        match cmd {
+            Cmd::LspScheduleDidChange { .. } => 1,
+            Cmd::Batch(cmds) => cmds.iter().map(lsp_change_count).sum(),
+            _ => 0,
+        }
     }
 
     #[test]
     fn replace_and_find_next_schedules_lsp_did_change_when_it_replaces() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         model.document_mut().buffer = ropey::Rope::from_str("foo bar");
         model.editor_mut().selections[0].anchor.column = 0;
         model.editor_mut().selections[0].head.column = 3;
@@ -2831,22 +2941,14 @@ mod tests {
         assert_eq!(model.document().buffer.to_string(), "baz bar");
         assert!(model.document().revision > before_revision);
 
-        let cmds = match cmd {
-            Some(Cmd::Batch(cmds)) => cmds,
-            other => panic!("expected a batch of sync commands, got {other:?}"),
-        };
-        assert!(
-            cmds.iter()
-                .any(|c| matches!(c, Cmd::LspScheduleDidChange { .. })),
-            "expected LspScheduleDidChange in {cmds:?}"
-        );
+        assert_eq!(lsp_change_count(&cmd.expect("replacement effects")), 1);
     }
 
     #[test]
     fn escape_closes_the_lsp_servers_modal() {
         use crate::model::LspServersState;
 
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         model
             .ui
             .open_modal(ModalState::LspServers(LspServersState::default()));
@@ -2864,7 +2966,7 @@ mod tests {
     /// one test instead, restoring it on drop.
     ///
     /// ponytail: process-global env mutation, not race-proof against other
-    /// tests' concurrent `AppModel::new()`/`EditorConfig::load()` calls (a
+    /// tests' concurrent runtime startup/`EditorConfig::load()` calls (a
     /// transient "no config file found" read falls back to defaults, which
     /// none of them assert against, so this is a correctness no-op for
     /// them) — upgrade to an injectable config path if this ever causes
@@ -2905,7 +3007,7 @@ mod tests {
         use crate::model::LspServersState;
 
         let _scratch = ScratchConfigHome::new();
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         model
             .ui
             .open_modal(ModalState::LspServers(LspServersState::default()));
@@ -2932,10 +3034,21 @@ mod tests {
             "the servers picker is a management surface: it stays open after a toggle"
         );
 
-        // Round-trips through the real `save()` path against the scratch
-        // dir, confirming the toggle actually persisted rather than only
-        // mutating the in-memory model.
+        // Update is I/O-free. Execute only its save effect explicitly against
+        // the scratch directory, as the runtime would.
         let saved = crate::config_paths::config_file().unwrap();
+        assert!(!saved.exists());
+        let Some(Cmd::Batch(cmds)) = cmd else {
+            unreachable!()
+        };
+        let config = cmds
+            .iter()
+            .find_map(|cmd| match cmd {
+                Cmd::SaveConfiguration { config } => Some(config),
+                _ => None,
+            })
+            .expect("toggle emits a save effect");
+        config.save().unwrap();
         let content = std::fs::read_to_string(saved).unwrap();
         let reloaded: crate::config::EditorConfig = serde_yaml::from_str(&content).unwrap();
         assert_eq!(reloaded.lsp.servers[first_id].enabled, Some(false));
@@ -2943,7 +3056,7 @@ mod tests {
 
     #[test]
     fn opening_the_language_picker_preselects_the_current_language() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         model.document_mut().language = crate::syntax::LanguageId::Rust;
 
         update_ui(&mut model, UiMsg::ToggleModal(ModalId::LanguagePicker));
@@ -2961,7 +3074,7 @@ mod tests {
     fn confirming_a_different_language_pins_and_switches_the_document() {
         use crate::syntax::LanguageId;
 
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         model.document_mut().outline = Some(crate::outline::OutlineData::empty(0));
         let rust_row = LanguageId::all()
             .position(|l| l == LanguageId::Rust)
@@ -2994,7 +3107,7 @@ mod tests {
 
     #[test]
     fn confirming_the_current_language_just_closes_the_picker() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         model
             .ui
             .open_modal(ModalState::LanguagePicker(Default::default()));

@@ -3,6 +3,10 @@
 //! Tests for modal system: command palette, goto line, find/replace, theme picker
 
 mod common;
+#[path = "modal/find_async.rs"]
+mod find_async;
+#[path = "modal/settings.rs"]
+mod settings;
 
 use common::test_model;
 

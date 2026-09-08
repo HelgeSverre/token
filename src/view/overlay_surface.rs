@@ -19,6 +19,7 @@ use super::geometry::WidgetRect;
 use super::scrollbar::{
     render_scrollbar, ScrollbarColors, ScrollbarGeometry, ScrollbarState, SCROLLBAR_WIDTH_LOGICAL,
 };
+use crate::completion::menu::MenuItemKind;
 use crate::layout::{
     AttachPoint, Content, Dir, ElementDecl, FloatAnchor, FloatDecl, LayoutSnapshot, Padding,
     RowListDecl, Sizing, SizingAxes, UiKey, UiTree,
@@ -186,7 +187,7 @@ pub fn header_pad_x(scale_factor: f64) -> usize {
 pub use crate::layout::anchor::WidthRule;
 
 pub enum Anchor {
-    /// Spacious preferences form with category navigation.
+    /// Spacious preferences page with category navigation.
     Settings { width: WidthRule },
     /// Centered X; Y follows the Chrome table's `min(h/4, Y)` class. Dims
     /// the backdrop at `dim_alpha`.
@@ -268,44 +269,26 @@ pub enum RowIcon {
         ch: char,
         color: u32,
     },
-    /// Completion row icon: a 16×16, r4 badge colored by `CompletionKind`
+    /// Completion row icon: a 16×16, r4 badge colored by `MenuItemKind`
     /// (Visual Language > Rows: "Completion").
-    KindBadge(CompletionKind),
+    KindBadge(MenuItemKind),
 }
 
-/// LSP completion-item kind, coarsened to the badge groups
-/// overlay-surface.md's `overlay.kind_*` color table describes. Colors are
-/// derived from the existing syntax theme (`Theme::syntax`) rather than new
-/// persisted `overlay.kind_*` YAML keys — the doc's "per-kind from syntax
-/// colors" fallback rule, without adding nine themes' worth of literal
-/// tuning for a shell with no live producer yet.
-/// ponytail: new `overlay.kind_*` theme keys with per-theme hand-tuning are
-/// the fuller version; add them when autocomplete.md's Phase 1 ships a real
-/// completion source and the badge colors need bundled-theme polish.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompletionKind {
-    Function,
-    Variable,
-    Type,
-    Keyword,
-    Field,
-    Module,
-    Constant,
-    Other,
-}
-
-impl CompletionKind {
+impl MenuItemKind {
     /// Single-glyph badge label.
-    pub fn glyph(self) -> char {
+    fn badge_glyph(self) -> char {
         match self {
-            CompletionKind::Function => 'f',
-            CompletionKind::Variable => 'v',
-            CompletionKind::Type => 't',
-            CompletionKind::Keyword => 'k',
-            CompletionKind::Field => '.',
-            CompletionKind::Module => 'm',
-            CompletionKind::Constant => 'c',
-            CompletionKind::Other => '?',
+            Self::Function => 'f',
+            Self::Method => 'M',
+            Self::Variable => 'v',
+            Self::Type => 't',
+            Self::Keyword => 'k',
+            Self::Field => '.',
+            Self::Module => 'm',
+            Self::File => 'F',
+            Self::Folder => '/',
+            Self::Constant => 'c',
+            Self::Other => '?',
         }
     }
 }
@@ -316,12 +299,12 @@ pub enum Accessory<'a> {
         text: &'a str,
         action: Option<&'a str>,
     },
-    /// Adjacent selectable preset chips. Geometry is shared with hit testing.
+    None,
+    /// Explicit preset choices. `None` active preserves off-preset config values.
     Choices {
         labels: &'a [&'a str],
         active: Option<usize>,
     },
-    None,
     DimText(&'a str),
     Check,
     /// Keycap chips for a keybinding: outer = chord steps, inner = the
@@ -361,7 +344,17 @@ pub fn binding_chips(binding: &str) -> Vec<Vec<Chip>> {
                     label: c.to_string(),
                 })
                 .collect();
-            let key: String = step.chars().skip_while(|c| MODIFIERS.contains(c)).collect();
+            let mut key: String = step.chars().skip_while(|c| MODIFIERS.contains(c)).collect();
+            // Windows/Linux display uses textual modifiers rather than glyphs.
+            while let Some(prefix) = ["Ctrl+", "Alt+", "Shift+", "Win+"]
+                .into_iter()
+                .find(|prefix| key.starts_with(prefix))
+            {
+                chips.push(Chip {
+                    label: prefix.trim_end_matches('+').to_owned(),
+                });
+                key = key[prefix.len()..].to_owned();
+            }
             if !key.is_empty() {
                 chips.push(Chip { label: key });
             }
@@ -518,6 +511,42 @@ impl<'a> Body<'a> {
     }
 }
 
+/// A documentation side card uses the same measured plan for paint and input.
+pub struct Documentation<'a> {
+    pub text: &'a StyledText,
+    pub scroll: usize,
+    pub expanded: bool,
+}
+
+impl<'a> From<&'a StyledText> for Documentation<'a> {
+    fn from(text: &'a StyledText) -> Self {
+        Self {
+            text,
+            scroll: 0,
+            expanded: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DocumentationViewport {
+    pub scroll: usize,
+    pub visible: usize,
+    pub total: usize,
+}
+
+impl DocumentationViewport {
+    pub fn max_scroll(self) -> usize {
+        self.total.saturating_sub(self.visible)
+    }
+
+    pub fn scrolled(self, lines: isize) -> usize {
+        self.scroll
+            .saturating_add_signed(lines)
+            .min(self.max_scroll())
+    }
+}
+
 pub struct OverlaySpec<'a> {
     pub anchor: Anchor,
     /// Search Everywhere only — `None` for every other context.
@@ -532,9 +561,8 @@ pub struct OverlaySpec<'a> {
     /// text lift (Visual Language "Pointer"); distinct from `selected`,
     /// which is keyboard-authoritative. Ignored for other body kinds.
     pub hover_row: Option<FlatIndex>,
-    /// Plaintext documentation floated in a card beside the panel
-    /// (completion menu: the selected item's docs). Display-only.
-    pub docs: Option<&'a StyledText>,
+    /// Styled documentation floated beside the panel, with its own viewport.
+    pub docs: Option<Documentation<'a>>,
 }
 
 /// One entry in the flattened, on-screen row list: either a section header
@@ -805,6 +833,8 @@ pub struct FieldLayout {
 pub struct OverlayLayout {
     scale_factor: f64,
     snapshot: LayoutSnapshot,
+    /// Solved choice-chip rectangles, shared by painting and hit testing.
+    choices: Vec<(FlatIndex, Vec<WidgetRect>)>,
     pub panel: WidgetRect,
     /// `None` unless `spec.tabs` is `Some` (Search Everywhere only).
     pub tab_bar: Option<WidgetRect>,
@@ -845,6 +875,8 @@ pub struct OverlayLayout {
     pub(crate) docs_code_plan: Option<(Vec<StyledLine>, usize)>,
     /// Content rect of the docs card's code block.
     pub docs_code: Option<WidgetRect>,
+    pub docs_footer: Option<WidgetRect>,
+    pub docs_viewport: Option<DocumentationViewport>,
 }
 
 fn float_decl(anchor: &Anchor) -> FloatDecl {
@@ -958,14 +990,16 @@ pub fn layout_measured(
         .tabs
         .as_ref()
         .map(|_| scaled(dims::TAB_BAR_HEIGHT, scale_factor));
+    let display_rows = match &spec.body {
+        Body::List { sections, .. } => flatten_rows(sections),
+        Body::Fields { .. } | Body::Zones(_) => Vec::new(),
+    };
     let list_info = match &spec.body {
         Body::List {
-            sections,
             scroll,
             max_visible,
             ..
         } => {
-            let display_rows = flatten_rows(sections);
             let (start, visible) = resolve_visible_window(&display_rows, *scroll, *max_visible);
             // Empty lists still reserve one row for their empty-state text.
             let visible = visible.max(usize::from(display_rows.is_empty()));
@@ -979,11 +1013,52 @@ pub fn layout_measured(
         Body::Zones(zones) => Some(plan_zones(zones, panel_w, scale_factor, measure)),
         Body::List { .. } | Body::Fields { .. } => None,
     };
-    let docs_w = scaled(dims::DOCS_WIDTH, scale_factor).min(window_width);
-    let (docs_code_plan, docs_plan) = spec
+    // Horizontal placement is independent of height. Reuse the solver's
+    // anchor functions so wrapping fits the actual larger side of the menu,
+    // including when neither side can fit the preferred documentation width.
+    let panel_x = match &spec.anchor {
+        Anchor::Cursor {
+            x,
+            y,
+            h,
+            prefer_below,
+            ..
+        } => {
+            crate::layout::anchor::position_at_caret(
+                *x,
+                *y,
+                *h,
+                *prefer_below,
+                window_width,
+                window_height,
+                panel_w,
+                0,
+                scale_factor,
+            )
+            .0
+        }
+        Anchor::Centered { .. } | Anchor::Settings { .. } => {
+            crate::layout::anchor::position_centered(
+                window_width,
+                window_height,
+                panel_w,
+                scale_factor,
+            )
+            .0
+        }
+    };
+    let side_space = panel_x.max(window_width.saturating_sub(panel_x + panel_w));
+    let docs_w = scaled(dims::DOCS_WIDTH, scale_factor).min(side_space);
+    let DocumentationPlan {
+        code: docs_code_plan,
+        text: docs_plan,
+        viewport: docs_viewport,
+        gap: docs_gap,
+    } = spec
         .docs
-        .map(|docs| plan_docs(docs, docs_w, scale_factor, measure))
-        .unwrap_or((None, None));
+        .as_ref()
+        .map(|docs| plan_docs(docs, docs_w, window_height, scale_factor, measure))
+        .unwrap_or_default();
 
     let mut tree = UiTree::new();
     tree.node(ElementDecl::default(), |t| {
@@ -1164,10 +1239,10 @@ pub fn layout_measured(
         // The docs card: a second float attached to the panel's top-right
         // (declared after it, so the solver sees the panel's solved rect),
         // flipping to its left when the window lacks room on the right.
-        if docs_code_plan.is_some() || docs_plan.is_some() {
+        if docs_viewport.is_some() {
             let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
             let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
-            let gap = scaled(dims::ZONE_GAP, scale_factor);
+            let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
             t.node(
                 ElementDecl {
                     key: Some(UiKey::OverlayDocsPanel),
@@ -1193,9 +1268,9 @@ pub fn layout_measured(
                             padding: Padding::xy(pad_x as f32, 0.0),
                             ..Default::default()
                         });
-                        if docs_plan.is_some() {
-                            spacer(t, gap);
-                        }
+                    }
+                    if docs_gap {
+                        spacer(t, line_h);
                     }
                     if let Some((_, _, text_h)) = &docs_plan {
                         t.leaf(ElementDecl {
@@ -1205,6 +1280,12 @@ pub fn layout_measured(
                             ..Default::default()
                         });
                     }
+                    t.leaf(ElementDecl {
+                        key: Some(UiKey::OverlayDocsFooter),
+                        sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(line_h as f32)),
+                        padding: Padding::xy(pad_x as f32, 0.0),
+                        ..Default::default()
+                    });
                     spacer(t, pad_y);
                 },
             );
@@ -1232,7 +1313,7 @@ pub fn layout_measured(
         })
         .unwrap_or_default();
     let header = solved_rect(&snapshot, UiKey::OverlayHeader);
-    let rows = snapshot
+    let rows: Vec<WidgetRect> = snapshot
         .row_list(UiKey::OverlayRows)
         .map(|rows| {
             rows.drawn_range()
@@ -1262,6 +1343,7 @@ pub fn layout_measured(
     let docs_panel = solved_rect(&snapshot, UiKey::OverlayDocsPanel);
     let docs_text = solved_content_rect(&snapshot, UiKey::OverlayDocsText);
     let docs_code = solved_content_rect(&snapshot, UiKey::OverlayDocsCode);
+    let docs_footer = solved_content_rect(&snapshot, UiKey::OverlayDocsFooter);
     let footer = solved_rect(&snapshot, UiKey::OverlayFooter);
     let scrollbar = list_info.and_then(|(start, visible, total, max_visible)| {
         if total <= max_visible {
@@ -1275,9 +1357,20 @@ pub fn layout_measured(
         ))
     });
 
+    let mut choices = Vec::new();
+    if let Some((start, _, _, _)) = list_info {
+        for (entry, rect) in display_rows.iter().skip(start).zip(&rows) {
+            if let DisplayRow::Row(row, index) = entry {
+                if let Accessory::Choices { labels, .. } = &row.accessory {
+                    choices.push((*index, choice_rects(*rect, labels.len(), scale_factor)));
+                }
+            }
+        }
+    }
     let mut result = OverlayLayout {
         scale_factor,
         snapshot,
+        choices,
         panel,
         tab_bar,
         tab_rects,
@@ -1296,6 +1389,8 @@ pub fn layout_measured(
         zone_plan,
         docs_plan,
         docs_code_plan,
+        docs_footer,
+        docs_viewport,
     };
     if matches!(spec.anchor, Anchor::Settings { .. }) {
         settings_page::layout(spec, &mut result, window_width, window_height, scale_factor);
@@ -1311,20 +1406,24 @@ pub fn layout_measured(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayHit {
     Scrollbar,
-    Choice {
-        row: FlatIndex,
-        choice: usize,
-    },
     /// Outside the panel entirely (dismiss on click).
     Outside,
     /// A selectable row (`Body::List` only).
     Row(FlatIndex),
+    Choice {
+        row: FlatIndex,
+        choice: usize,
+    },
     /// An available tab (`Unavailable` tabs are unclickable — the click
     /// lands as `Inside` instead, per Visual Language > TabCount states).
     Tab(usize),
     /// Inside the panel but not on a specific row (header, footer, section
     /// header, padding, a `Fields`/`Zones` body) — consumed, no action.
     Inside,
+    Documentation {
+        viewport: DocumentationViewport,
+        toggle: bool,
+    },
 }
 
 /// Hit-test a point (physical px) against a laid-out `OverlaySpec`.
@@ -1338,6 +1437,21 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
     }
     if matches!(spec.anchor, Anchor::Settings { .. }) {
         return settings_page::hit_test(spec, layout, x, y);
+    }
+    if let (Some(panel), Some(viewport)) = (layout.docs_panel, layout.docs_viewport) {
+        if x >= panel.x && x < panel.x + panel.w && y >= panel.y && y < panel.y + panel.h {
+            let toggle = layout
+                .docs_footer
+                .is_some_and(|footer| y >= footer.y && y < footer.y + footer.h);
+            return OverlayHit::Documentation { viewport, toggle };
+        }
+    }
+    for (row, choices) in &layout.choices {
+        for (choice, rect) in choices.iter().enumerate() {
+            if x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h {
+                return OverlayHit::Choice { row: *row, choice };
+            }
+        }
     }
     match layout.snapshot.hit(x as f32, y as f32) {
         Some(UiKey::OverlayTab(index)) => {
@@ -1373,28 +1487,7 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
                 return OverlayHit::Inside;
             };
             match display_rows.get(start + slot) {
-                Some(DisplayRow::Row(row, flat_index)) => {
-                    if let Accessory::Choices { labels, .. } = &row.accessory {
-                        if let Some(rect) = layout.rows.get(slot) {
-                            for (choice, chip) in choice_rects(rect, labels, layout.scale_factor)
-                                .iter()
-                                .enumerate()
-                            {
-                                if x >= chip.x
-                                    && x < chip.x + chip.w
-                                    && y >= chip.y
-                                    && y < chip.y + chip.h
-                                {
-                                    return OverlayHit::Choice {
-                                        row: *flat_index,
-                                        choice,
-                                    };
-                                }
-                            }
-                        }
-                    }
-                    OverlayHit::Row(*flat_index)
-                }
+                Some(DisplayRow::Row(_, flat_index)) => OverlayHit::Row(*flat_index),
                 Some(DisplayRow::SectionHeader(_) | DisplayRow::Separator) | None => {
                     OverlayHit::Inside
                 }
@@ -1412,6 +1505,7 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
             | UiKey::OverlayDocsPanel
             | UiKey::OverlayDocsText
             | UiKey::OverlayDocsCode
+            | UiKey::OverlayDocsFooter
             | UiKey::OverlayFooter,
         ) => OverlayHit::Inside,
         Some(
@@ -1528,21 +1622,22 @@ fn blend_opaque(fg: u32, bg: u32, alpha_pct: u32) -> u32 {
     0xFF00_0000 | (mix(16) << 16) | (mix(8) << 8) | mix(0)
 }
 
-impl CompletionKind {
+impl MenuItemKind {
     /// Badge background, pre-blended to opaque over the panel (Visual
     /// Language > Colors: "syntax color @ 20% over panel"). Colors are
     /// picked from the existing overlay palette rather than new
-    /// `overlay.kind_*` theme keys — see the `CompletionKind` doc comment.
+    /// `overlay.kind_*` theme keys. Methods share the function palette.
     fn badge_color(self, colors: &Palette) -> u32 {
         let source = match self {
-            CompletionKind::Function => colors.accent,
-            CompletionKind::Variable => colors.severity_info,
-            CompletionKind::Type => colors.accent_bright,
-            CompletionKind::Keyword => colors.severity_warning,
-            CompletionKind::Field => colors.text_dim,
-            CompletionKind::Module => colors.keycap_fg,
-            CompletionKind::Constant => colors.severity_error,
-            CompletionKind::Other => colors.text_dim,
+            Self::Function | Self::Method => colors.accent,
+            Self::Variable => colors.severity_info,
+            Self::Type => colors.accent_bright,
+            Self::Keyword => colors.severity_warning,
+            Self::Field => colors.text_dim,
+            Self::Module | Self::Folder => colors.keycap_fg,
+            Self::File => colors.text_dim,
+            Self::Constant => colors.severity_error,
+            Self::Other => colors.text_dim,
         };
         blend_opaque(source, colors.panel_bg, 20)
     }
@@ -1756,6 +1851,29 @@ pub fn render(
                 SIZE_ROW,
                 colors.text_primary,
                 scale_factor,
+            );
+        }
+        if let (Some(footer), Some(viewport)) = (layout.docs_footer, layout.docs_viewport) {
+            let expanded = spec.docs.as_ref().is_some_and(|docs| docs.expanded);
+            let action = if expanded { "Collapse" } else { "Expand" };
+            let first = if viewport.visible == 0 {
+                0
+            } else {
+                viewport.scroll + 1
+            };
+            let label = format!(
+                "{first}–{} / {} · {action} (F1)",
+                viewport.scroll + viewport.visible,
+                viewport.total
+            );
+            painter.draw_sized(
+                frame,
+                footer.x,
+                footer.y,
+                &label,
+                size_px(SIZE_ROW, scale_factor),
+                0.0,
+                colors.text_dim,
             );
         }
         frame.clear_clip();
@@ -2115,7 +2233,7 @@ fn render_list(
                         );
                         let glyph_size = size_px(SIZE_META, scale_factor);
                         let mut buf = [0u8; 4];
-                        let glyph = kind.glyph().encode_utf8(&mut buf);
+                        let glyph = kind.badge_glyph().encode_utf8(&mut buf);
                         let glyph_w = painter.measure_sized(glyph, glyph_size, 0.0);
                         let glyph_x = x + (badge_size.saturating_sub(glyph_w.ceil() as usize)) / 2;
                         let glyph_y = badge_y
@@ -2136,20 +2254,18 @@ fn render_list(
                 x += icon_w;
 
                 // Reserve the accessory's measured width so it never truncates.
-                let accessory_w = if let Accessory::Choices { labels, .. } = &row.accessory {
-                    choice_rects(rect, labels, scale_factor)
-                        .first()
-                        .map_or(0, |chip| {
-                            (rect.x + rect.w).saturating_sub(inset + text_pad + chip.x)
-                        })
-                } else {
-                    accessory_width(painter, &row.accessory, meta_size, scale_factor)
-                };
-                let accessory_gap = if accessory_w == 0 { 0 } else { text_pad };
-                let label_right = rect.x
-                    + rect
-                        .w
-                        .saturating_sub(inset + text_pad + accessory_w + accessory_gap);
+                let choice_rects = layout
+                    .choices
+                    .iter()
+                    .find(|(id, _)| id == flat_index)
+                    .map(|(_, rects)| rects.as_slice())
+                    .unwrap_or_default();
+                let accessory_w = choice_rects.first().map_or_else(
+                    || accessory_width(painter, &row.accessory, meta_size, scale_factor),
+                    |first| (rect.x + rect.w).saturating_sub(inset + text_pad + first.x),
+                );
+                let label_right = (rect.x + rect.w.saturating_sub(inset + text_pad + accessory_w))
+                    .saturating_sub(if accessory_w > 0 { text_pad } else { 0 });
                 let available = label_right.saturating_sub(x);
                 let text_y = rect.y
                     + (rect
@@ -2225,31 +2341,19 @@ fn render_list(
                             / 2;
                     match &row.accessory {
                         Accessory::Choices { labels, active } => {
-                            for (index, (label, chip)) in labels
-                                .iter()
-                                .zip(choice_rects(rect, labels, scale_factor))
-                                .enumerate()
+                            for (index, (label, chip)) in
+                                labels.iter().zip(choice_rects).enumerate()
                             {
+                                if chip.w == 0 || chip.h == 0 {
+                                    continue;
+                                }
                                 let selected = *active == Some(index);
                                 frame.fill_rounded_rect(
                                     chip.x,
                                     chip.y,
                                     chip.w,
                                     chip.h,
-                                    scaled(3.0, scale_factor),
-                                    if selected {
-                                        colors.selection_wash
-                                    } else {
-                                        colors.keycap_bg
-                                    },
-                                    mask_cache,
-                                );
-                                frame.stroke_rounded_rect(
-                                    chip.x,
-                                    chip.y,
-                                    chip.w,
-                                    chip.h,
-                                    scaled(3.0, scale_factor),
+                                    scaled(4.0, scale_factor),
                                     if selected {
                                         colors.accent
                                     } else {
@@ -2257,33 +2361,44 @@ fn render_list(
                                     },
                                     mask_cache,
                                 );
-                                let padding = scaled(4.0, scale_factor);
-                                let text = truncate_tail(
+                                if !selected && chip.w > 2 && chip.h > 2 {
+                                    frame.fill_rounded_rect(
+                                        chip.x + 1,
+                                        chip.y + 1,
+                                        chip.w - 2,
+                                        chip.h - 2,
+                                        scaled(4.0, scale_factor).saturating_sub(1),
+                                        colors.keycap_bg,
+                                        mask_cache,
+                                    );
+                                }
+                                let pad = scaled(4.0, scale_factor).min(chip.w / 2);
+                                let label = truncate_tail(
                                     painter,
                                     meta_size,
                                     label,
-                                    chip.w.saturating_sub(padding * 2) as f32,
+                                    chip.w.saturating_sub(pad * 2) as f32,
                                 );
-                                let width =
-                                    painter.measure_sized(&text, meta_size, 0.0).ceil() as usize;
-                                let y = chip.y
-                                    + chip
-                                        .h
-                                        .saturating_sub(painter.line_height_for_size(meta_size))
-                                        / 2;
-                                painter.draw_sized(
-                                    frame,
-                                    chip.x + chip.w.saturating_sub(width) / 2,
-                                    y,
-                                    &text,
-                                    meta_size,
-                                    0.0,
-                                    if selected {
-                                        colors.accent_bright
-                                    } else {
-                                        colors.keycap_fg
-                                    },
-                                );
+                                if painter.measure_sized(&label, meta_size, 0.0)
+                                    <= chip.w.saturating_sub(pad * 2) as f32
+                                    && painter.line_height_for_size(meta_size) <= chip.h
+                                {
+                                    painter.draw_sized(
+                                        frame,
+                                        chip.x + pad,
+                                        chip.y
+                                            + (chip.h - painter.line_height_for_size(meta_size))
+                                                / 2,
+                                        &label,
+                                        meta_size,
+                                        0.0,
+                                        if selected {
+                                            colors.text_bright
+                                        } else {
+                                            colors.keycap_fg
+                                        },
+                                    );
+                                }
                             }
                         }
                         Accessory::DimText(text) | Accessory::SettingValue { text, .. } => {
@@ -2417,48 +2532,25 @@ fn render_list_scrollbar(frame: &mut Frame, layout: &OverlayLayout, colors: &Pal
     }
 }
 
-fn choice_width(label: &str, scale_factor: f64) -> usize {
-    scaled(label.chars().count() as f32 * 7.0 + 16.0, scale_factor)
-}
-
-/// Fixed preset slots keep paint and pointer geometry identical without a glyph
-/// cache in hit testing. Narrow windows shrink slots; labels truncate inside.
-fn choice_rects(row: &WidgetRect, labels: &[&str], scale_factor: f64) -> Vec<WidgetRect> {
-    let margin = scaled(dims::ROW_INSET + dims::ROW_TEXT_PAD_X, scale_factor);
-    let budget = row.w.saturating_sub(margin * 2).saturating_mul(2) / 3;
-    choice_rects_with_budget(row, labels, scale_factor, margin, budget)
-}
-
-fn choice_rects_with_budget(
-    row: &WidgetRect,
-    labels: &[&str],
-    scale_factor: f64,
-    margin: usize,
-    budget: usize,
-) -> Vec<WidgetRect> {
-    if labels.is_empty() {
+/// Equal-width chips shrink within the accessory budget on narrow windows.
+/// Labels may truncate, but every choice keeps its own exact hit target.
+fn choice_rects(row: WidgetRect, count: usize, scale: f64) -> Vec<WidgetRect> {
+    if count == 0 {
         return Vec::new();
     }
-    let gap = scaled(dims::CHIP_GAP, scale_factor);
-    let max_width = budget.saturating_sub(gap * labels.len().saturating_sub(1)) / labels.len();
-    let widths: Vec<_> = labels
-        .iter()
-        .map(|label| choice_width(label, scale_factor).min(max_width))
-        .collect();
-    let total = widths.iter().sum::<usize>() + gap * labels.len().saturating_sub(1);
-    let mut x = row.x + row.w.saturating_sub(margin + total);
-    let h = scaled(22.0, scale_factor).min(row.h);
-    widths
-        .into_iter()
-        .map(|w| {
-            let rect = WidgetRect {
-                x,
-                y: row.y + row.h.saturating_sub(h) / 2,
-                w,
-                h,
-            };
-            x += w + gap;
-            rect
+    let pad = scaled(dims::ROW_INSET + dims::ROW_TEXT_PAD_X, scale).min(row.w / 2);
+    let budget = row.w.saturating_sub(pad * 2) * 2 / 3;
+    let gap = scaled(dims::CHIP_GAP, scale).min(budget / count);
+    let width = scaled(72.0, scale).min(budget.saturating_sub(gap * (count - 1)) / count);
+    let height = scaled(22.0, scale).min(row.h);
+    let total = width * count + gap * (count - 1);
+    let start = row.x + row.w.saturating_sub(pad + total);
+    (0..count)
+        .map(|i| WidgetRect {
+            x: start + i * (width + gap),
+            y: row.y + (row.h - height) / 2,
+            w: width,
+            h: height,
         })
         .collect()
 }
@@ -2470,13 +2562,8 @@ fn accessory_width(
     scale_factor: f64,
 ) -> usize {
     match accessory {
-        Accessory::Choices { labels, .. } => {
-            labels
-                .iter()
-                .map(|label| choice_width(label, scale_factor))
-                .sum::<usize>()
-                + labels.len().saturating_sub(1) * scaled(dims::CHIP_GAP, scale_factor)
-        }
+        // Choice widths are solved with the row, not independently measured.
+        Accessory::Choices { .. } => 0,
         Accessory::None => 0,
         Accessory::DimText(text) | Accessory::SettingValue { text, .. } => {
             painter.measure_sized(text, meta_size, 0.0).ceil() as usize
@@ -2581,17 +2668,13 @@ fn render_footer(
     let size = size_px(SIZE_META, scale_factor);
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
     let text_y = rect.y + (rect.h.saturating_sub(painter.line_height_for_size(size))) / 2;
-
     let room = rect.w.saturating_sub(pad_x * 2);
-    let trailing = fit_with_ellipsis(painter, footer.trailing, size, room);
-    let trailing_w = painter.measure_sized(&trailing, size, 0.0).ceil() as usize;
-    let gap = if trailing.is_empty() { 0 } else { pad_x };
-    let leading = fit_with_ellipsis(
-        painter,
-        footer.leading,
-        size,
-        room.saturating_sub(trailing_w + gap),
-    );
+    let leading = fit_with_ellipsis(painter, footer.leading, size, room);
+    let leading_w = painter.measure_sized(&leading, size, 0.0).ceil() as usize;
+    if leading_w > room {
+        return;
+    }
+
     painter.draw_sized(
         frame,
         rect.x + pad_x,
@@ -2602,12 +2685,17 @@ fn render_footer(
         colors.text_dim,
     );
 
+    let trailing_w = painter.measure_sized(footer.trailing, size, 0.0).ceil() as usize;
+    // Secondary hints yield to navigation hints on narrow windows.
+    if leading_w + scaled(8.0, scale_factor) + trailing_w > room {
+        return;
+    }
     let trailing_x = rect.x + rect.w.saturating_sub(pad_x + trailing_w);
     painter.draw_sized(
         frame,
         trailing_x,
         text_y,
-        &trailing,
+        footer.trailing,
         size,
         0.0,
         colors.text_dim,
@@ -2848,7 +2936,7 @@ const MAX_ZONE_TEXT_LINES: usize = 14;
 /// Cap on wrapped banner-message lines.
 const MAX_ZONE_BANNER_LINES: usize = 4;
 
-/// Cap on wrapped docs-card lines (completion docs beside the menu).
+/// Default viewport height for completion documentation, before expansion.
 const MAX_DOCS_LINES: usize = 12;
 
 /// `(lines, truncated, height)` for one wrapped text zone.
@@ -3039,51 +3127,94 @@ fn plan_text_zone(
     (lines, truncated, h)
 }
 
-/// The docs card's plan: a leading code fence (rust-analyzer's signature
-/// block) as a code block, then the prose wrapped at row size and capped at
-/// `MAX_DOCS_LINES`. Either half may be absent.
+#[derive(Default)]
+struct DocumentationPlan {
+    code: Option<(Vec<StyledLine>, usize)>,
+    text: Option<TextZonePlan>,
+    viewport: Option<DocumentationViewport>,
+    gap: bool,
+}
+
+/// A single row window over code, separator and prose. Both halves scroll,
+/// including a signature longer than the screen; no content is discarded.
 fn plan_docs(
-    docs: &StyledText,
+    docs: &Documentation<'_>,
     panel_w: usize,
+    window_h: usize,
     scale_factor: f64,
     measure: &mut dyn crate::layout::TextMeasure,
-) -> (Option<(Vec<StyledLine>, usize)>, Option<TextZonePlan>) {
+) -> DocumentationPlan {
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
-    let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
+    let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
+    let line_h = scaled(dims::ZONE_LINE_H, scale_factor).max(1);
     let style = crate::layout::TextStyle::sized(size_px(SIZE_ROW, scale_factor));
-    let content_w = panel_w.saturating_sub(2 * pad_x) as f32;
-    let min_wrap_w = size_px(8.0 * dims::ZONE_CELL_W, scale_factor);
-    let (code, prose) = docs.split_leading_code();
-    let code = code.map(|code| {
-        let lines = styled_lines(
-            &code.text,
-            &code.spans,
-            crate::layout::text::wrap_to_width(
-                &code.text,
-                style,
-                content_w.max(min_wrap_w),
-                measure,
-            )
-            .into_iter()
-            .map(|line| line.range),
-        );
-        let gap = scaled(dims::ZONE_GAP, scale_factor);
-        let h = lines.len().max(1) * line_h + 2 * (gap / 2);
-        (lines, h)
-    });
-    let text = (!prose.text.trim().is_empty()).then(|| {
-        plan_text_zone(
-            &prose.text,
-            &prose.spans,
-            style,
-            content_w,
-            min_wrap_w,
-            MAX_DOCS_LINES,
-            line_h,
-            measure,
+    let width = panel_w.saturating_sub(2 * pad_x) as f32;
+    let available =
+        window_h.saturating_sub(2 * pad_y + line_h + scaled(16.0, scale_factor)) / line_h;
+    if available == 0 || width <= 0.0 {
+        return DocumentationPlan::default();
+    }
+    let wrap = |text: &StyledText, measure: &mut dyn crate::layout::TextMeasure| {
+        if text.text.is_empty() {
+            return Vec::new();
+        }
+        styled_lines(
+            &text.text,
+            &text.spans,
+            crate::layout::text::wrap_to_width(&text.text, style, width.max(1.0), measure)
+                .into_iter()
+                .map(|line| line.range),
         )
-    });
-    (code, text)
+    };
+    let (code, prose) = docs.text.split_leading_code();
+    let code = code
+        .as_ref()
+        .map(|code| wrap(code, measure))
+        .unwrap_or_default();
+    let prose = wrap(&prose, measure);
+    let gap = usize::from(!code.is_empty() && !prose.is_empty());
+    let total = code.len() + gap + prose.len();
+    if total == 0 {
+        return DocumentationPlan::default();
+    }
+    // Reserve the persistent footer and window-edge breathing room before
+    // choosing a row count. The solver still owns final anchoring/flipping.
+    let capacity = if docs.expanded {
+        available
+    } else {
+        available.min(MAX_DOCS_LINES)
+    };
+    let visible = total.min(capacity);
+    let scroll = docs.scroll.min(total.saturating_sub(visible));
+    let end = scroll + visible;
+    let code_count = code.len();
+    let prose_start = code_count + gap;
+    let code: Vec<_> = code
+        .into_iter()
+        .enumerate()
+        .filter_map(|(row, line)| (scroll..end).contains(&row).then_some(line))
+        .collect();
+    let prose: Vec<_> = prose
+        .into_iter()
+        .enumerate()
+        .filter_map(|(row, line)| (scroll..end).contains(&(row + prose_start)).then_some(line))
+        .collect();
+    DocumentationPlan {
+        code: (!code.is_empty()).then(|| {
+            let h = code.len() * line_h;
+            (code, h)
+        }),
+        text: (!prose.is_empty()).then(|| {
+            let h = prose.len() * line_h;
+            (prose, false, h)
+        }),
+        viewport: Some(DocumentationViewport {
+            scroll,
+            visible,
+            total,
+        }),
+        gap: gap > 0 && (scroll..end).contains(&code_count),
+    }
 }
 
 /// Draw pre-wrapped `lines` stacked in `rect`, clipped to it; a zone
@@ -3233,45 +3364,218 @@ mod tests {
     use super::*;
     use fontdue::Font;
 
+    #[test]
+    fn documentation_viewport_does_not_cover_the_menu_in_a_narrow_window() {
+        let docs = StyledText::plain("Long documentation ".repeat(100));
+        for width in [320, 400, 600, 800] {
+            let mut spec = documentation_spec(&docs, 0, true);
+            if let Anchor::Cursor { x, .. } = &mut spec.anchor {
+                *x = width / 3;
+            }
+            let l = layout(&spec, width, 500, 1.0);
+            let panel = l.docs_panel.unwrap();
+            assert!(
+                panel.x + panel.w <= l.panel.x || panel.x >= l.panel.x + l.panel.w,
+                "{width}: docs {panel:?}, menu {:?}",
+                l.panel
+            );
+        }
+        assert!(layout(&documentation_spec(&docs, 0, true), 1000, 10, 1.0)
+            .docs_panel
+            .is_none());
+    }
+
+    fn documentation_spec(docs: &StyledText, scroll: usize, expanded: bool) -> OverlaySpec<'_> {
+        OverlaySpec {
+            anchor: Anchor::Cursor {
+                x: 60,
+                y: 100,
+                h: 18,
+                prefer_below: true,
+                width: WidthRule {
+                    pct: 0.0,
+                    min: 240.0,
+                    max: 320.0,
+                },
+            },
+            tabs: None,
+            header: None,
+            body: Body::Zones(Zones::default()),
+            footer: None,
+            hover_row: None,
+            docs: Some(Documentation {
+                text: docs,
+                scroll,
+                expanded,
+            }),
+        }
+    }
+
+    #[test]
+    fn documentation_viewport_reaches_every_row_and_clamps_after_resize() {
+        let docs = StyledText::plain(
+            (0..40)
+                .map(|i| format!("row {i}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+        let first = layout(&documentation_spec(&docs, 0, false), 1000, 600, 1.0);
+        let viewport = first.docs_viewport.unwrap();
+        assert_eq!(viewport.visible, MAX_DOCS_LINES);
+        assert_eq!(viewport.total, 40);
+        let mut seen = std::collections::HashSet::new();
+        for scroll in 0..=viewport.max_scroll() {
+            let l = layout(&documentation_spec(&docs, scroll, false), 1000, 600, 1.0);
+            let (lines, truncated, _) = l.docs_plan.unwrap();
+            assert!(!truncated);
+            seen.extend(lines.into_iter().map(|line| line.text));
+        }
+        assert_eq!(seen.len(), 40);
+        let expanded = layout(&documentation_spec(&docs, usize::MAX, true), 1000, 600, 1.0);
+        let vp = expanded.docs_viewport.unwrap();
+        assert!(vp.visible > viewport.visible);
+        assert_eq!(vp.scroll + vp.visible, vp.total);
+        assert_eq!(expanded.docs_plan.unwrap().0.last().unwrap().text, "row 39");
+        for sf in [1.0, 1.5, 2.0] {
+            let l = layout(&documentation_spec(&docs, usize::MAX, true), 1200, 160, sf);
+            let panel = l.docs_panel.unwrap();
+            assert!(panel.y + panel.h <= 160, "{sf}: {panel:?}");
+            assert!(panel.x + panel.w <= 1200);
+            let vp = l.docs_viewport.unwrap();
+            assert_eq!(vp.scroll, vp.max_scroll());
+        }
+    }
+
+    #[test]
+    fn documentation_viewport_scrolls_long_code_into_prose_and_keeps_styles() {
+        let code = (0..80)
+            .map(|i| format!("fn line_{i}();"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let docs = crate::lsp::markdown::markdown_to_styled(&format!(
+            "```rust\n{code}\n```\nLast **paragraph**."
+        ));
+        let top = layout(&documentation_spec(&docs, 0, false), 1000, 400, 1.0);
+        assert_eq!(top.docs_code_plan.unwrap().0.len(), MAX_DOCS_LINES);
+        assert!(top.docs_plan.is_none());
+        assert!(top.docs_panel.unwrap().h < 400);
+        let bottom = layout(
+            &documentation_spec(&docs, usize::MAX, false),
+            1000,
+            400,
+            1.0,
+        );
+        let vp = bottom.docs_viewport.unwrap();
+        assert_eq!(vp.scroll + vp.visible, 82);
+        let lines = bottom.docs_plan.unwrap().0;
+        assert_eq!(lines.last().unwrap().text, "Last paragraph.");
+        assert_eq!(lines.last().unwrap().runs, vec![(5..14, SpanStyle::Strong)]);
+    }
+
+    #[test]
+    fn documentation_viewport_hit_testing_separates_footer_from_content() {
+        let docs = StyledText::plain("one\ntwo\nthree");
+        let spec = documentation_spec(&docs, 0, false);
+        let l = layout(&spec, 1000, 500, 1.0);
+        let viewport = l.docs_viewport.unwrap();
+        let text = l.docs_text.unwrap();
+        let footer = l.docs_footer.unwrap();
+        assert_eq!(
+            hit_test(&spec, &l, text.x + 1, text.y + 1),
+            OverlayHit::Documentation {
+                viewport,
+                toggle: false
+            }
+        );
+        assert_eq!(
+            hit_test(&spec, &l, footer.x + 1, footer.y + 1),
+            OverlayHit::Documentation {
+                viewport,
+                toggle: true
+            }
+        );
+    }
+
+    #[test]
+    fn documentation_viewport_paints_scrolled_text_only_inside_the_card() {
+        let docs = StyledText::plain(
+            (0..40)
+                .map(|i| format!("Documentation row {i}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+        let (font, mut cache) = test_painter_and_frame();
+        let mut draw = |scroll| {
+            let spec = documentation_spec(&docs, scroll, false);
+            let mut buffer = vec![0u32; 1000 * 600];
+            let mut frame = Frame::new(&mut buffer, 1000, 600);
+            let mut painter = test_painter(&font, &mut cache);
+            let l = layout_measured(
+                &spec,
+                1000,
+                600,
+                1.0,
+                &mut crate::layout::PainterMeasure::new(&mut painter),
+            );
+            render(
+                &mut frame,
+                &mut painter,
+                &mut RoundedRectMaskCache::new(),
+                &crate::theme::Theme::default(),
+                &spec,
+                1000,
+                600,
+                1.0,
+                false,
+            );
+            (buffer, l.docs_panel.unwrap())
+        };
+        let (first, panel) = draw(0);
+        let (last, last_panel) = draw(usize::MAX);
+        assert_eq!(panel, last_panel);
+        let changed: Vec<_> = first
+            .iter()
+            .zip(&last)
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, _)| i)
+            .collect();
+        assert!(changed.len() > 10);
+        for index in changed {
+            let (x, y) = (index % 1000, index / 1000);
+            assert!(x >= panel.x && x < panel.x + panel.w && y >= panel.y && y < panel.y + panel.h);
+        }
+    }
+
+    #[test]
+    fn completion_badges_distinguish_methods_functions_and_modules() {
+        for (kind, glyph) in [
+            (MenuItemKind::Function, 'f'),
+            (MenuItemKind::Method, 'M'),
+            (MenuItemKind::Variable, 'v'),
+            (MenuItemKind::Type, 't'),
+            (MenuItemKind::Keyword, 'k'),
+            (MenuItemKind::Field, '.'),
+            (MenuItemKind::Module, 'm'),
+            (MenuItemKind::File, 'F'),
+            (MenuItemKind::Folder, '/'),
+            (MenuItemKind::Constant, 'c'),
+            (MenuItemKind::Other, '?'),
+        ] {
+            assert_eq!(kind.badge_glyph(), glyph);
+        }
+        let colors = Palette::from_theme(&crate::theme::Theme::default());
+        assert_eq!(
+            MenuItemKind::Method.badge_color(&colors),
+            MenuItemKind::Function.badge_color(&colors)
+        );
+    }
+
     fn test_painter<'a>(
         font: &'a Font,
         glyph_cache: &'a mut super::super::GlyphCache,
     ) -> TextPainter<'a> {
         TextPainter::new(font, glyph_cache, 14.0, 11.0, 8.0, 18)
-    }
-
-    #[test]
-    fn settings_form_render_preserves_nested_clipping() {
-        let font = Font::from_bytes(
-            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
-            fontdue::FontSettings::default(),
-        )
-        .unwrap();
-        let mut glyph_cache = super::super::GlyphCache::default();
-        for (w, h, scale) in [(1000, 800, 1.0), (1600, 1100, 2.0), (400, 750, 1.0)] {
-            let model = crate::model::AppModel::new(w, h, scale, vec![]);
-            let state = crate::model::ui::SettingsState::default();
-            let mut buffer = vec![0u32; w as usize * h as usize];
-            let mut frame = Frame::new(&mut buffer, w as usize, h as usize);
-            frame.push_clip(Rect::new(0.0, 0.0, w as f32, h as f32));
-            let mut painter = test_painter(&font, &mut glyph_cache);
-            crate::view::modal::with_settings_spec(&model, &state, |spec| {
-                render(
-                    &mut frame,
-                    &mut painter,
-                    &mut RoundedRectMaskCache::new(),
-                    &crate::theme::Theme::default(),
-                    spec,
-                    w as usize,
-                    h as usize,
-                    scale,
-                    true,
-                );
-            });
-            // The settings panel and its search header must each restore their
-            // enclosing clip; popping here catches an unbalanced render stack.
-            frame.pop_clip();
-        }
     }
 
     /// Regression: the tab bar and footer used to `fill_rect_px` a plain
@@ -3582,7 +3886,7 @@ mod tests {
                 },
                 footer: None,
                 hover_row: None,
-                docs: Some(docs),
+                docs: Some(docs.into()),
             };
             layout(&spec, 1200, 800, 1.0)
         };
@@ -4435,11 +4739,6 @@ mod tests {
         let display_rows = flatten_rows(&sections);
         // display_rows = [header, row0, row1, row2, row3, row4] (6 slots).
         assert_eq!(display_rows.len(), 6);
-        let (start, _) = resolve_visible_window(&display_rows, 0, 2);
-        assert!(
-            matches!(display_rows[start], DisplayRow::SectionHeader("Group")),
-            "opening a sectioned list must show its first category"
-        );
 
         // scroll = 3 (FlatIndex space) must land on display slot 4 (row3),
         // not display slot 3 (row2), because of the header ahead of it.
@@ -4495,6 +4794,57 @@ mod tests {
                 "selected {selected} (display {selected_display}) not in window [{start}, {})",
                 start + visible
             );
+        }
+    }
+
+    #[test]
+    fn settings_section_heading_and_selection_share_window_bounds() {
+        let rows: Vec<Row> = (0..12)
+            .map(|_| Row {
+                icon: RowIcon::None,
+                label: "Setting",
+                match_indices: &[],
+                detail: None,
+                detail_style: None,
+                accessory: Accessory::None,
+            })
+            .collect();
+        let sections = [
+            Section {
+                title: Some("Appearance"),
+                rows: &rows[..5],
+            },
+            Section {
+                title: Some("Editor"),
+                rows: &rows[5..],
+            },
+        ];
+        let display = flatten_rows(&sections);
+        let shapes = [
+            SectionShape {
+                has_title: true,
+                len: 5,
+            },
+            SectionShape {
+                has_title: true,
+                len: 7,
+            },
+        ];
+        assert_eq!(resolve_visible_window(&display, 0, 10).0, 0);
+        for max_visible in 1..=14 {
+            for previous in 0..12 {
+                for selected in 0..12 {
+                    let scroll =
+                        resolve_scroll_for_selection(&shapes, selected, max_visible, previous);
+                    let (start, visible) = resolve_visible_window(&display, scroll, max_visible);
+                    assert!(
+                        display[start..start + visible].iter().any(
+                            |r| matches!(r, DisplayRow::Row(_, FlatIndex(i)) if *i == selected)
+                        ),
+                        "selected={selected} previous={previous} visible={max_visible}"
+                    );
+                }
+            }
         }
     }
 
@@ -4677,6 +5027,29 @@ mod tests {
     }
 
     #[test]
+    fn shortcut_hints_split_textual_platform_modifiers_and_preserve_plus_key() {
+        let steps = binding_chips("Ctrl+Shift+K Alt+F12");
+        assert_eq!(
+            steps
+                .iter()
+                .map(|step| step
+                    .iter()
+                    .map(|chip| chip.label.as_str())
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+            vec![vec!["Ctrl", "Shift", "K"], vec!["Alt", "F12"]]
+        );
+        let plus = binding_chips("Ctrl++");
+        assert_eq!(
+            plus[0]
+                .iter()
+                .map(|chip| chip.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Ctrl", "+"]
+        );
+    }
+
+    #[test]
     fn chip_count_sums_across_chord_steps_for_the_dim_text_fallback() {
         // ⇧⌥⌘H: 3 modifiers + 1 key = 4 chips, at the fallback threshold.
         let steps = binding_chips("\u{21e7}\u{2325}\u{2318}H");
@@ -4740,6 +5113,61 @@ mod tests {
         let spec = list_spec(&sections);
         let l = layout(&spec, 1000, 800, 1.0);
         assert_eq!(hit_test(&spec, &l, 0, 0), OverlayHit::Outside);
+    }
+
+    #[test]
+    fn settings_choice_geometry_matches_hits_with_headers_scroll_and_scale() {
+        let rows: Vec<Row> = (0..16)
+            .map(|_| Row {
+                icon: RowIcon::None,
+                label: "Setting",
+                match_indices: &[],
+                detail: None,
+                detail_style: None,
+                accessory: Accessory::Choices {
+                    labels: &["Off", "Slow", "Normal", "Fast"],
+                    active: None,
+                },
+            })
+            .collect();
+        let sections = [Section {
+            title: Some("Editor"),
+            rows: &rows,
+        }];
+        for scale in [1.0, 1.5, 2.0] {
+            for width in [180, 500, 1200] {
+                let mut spec = list_spec(&sections);
+                spec.body = Body::List {
+                    sections: &sections,
+                    selected: FlatIndex(8),
+                    scroll: 6,
+                    max_visible: 10,
+                };
+                let layout = layout(&spec, width, 900, scale);
+                assert!(!layout.choices.is_empty());
+                for (flat, chips) in &layout.choices {
+                    assert!(flat.0 >= 6);
+                    assert_eq!(chips.len(), 4);
+                    for (index, chip) in chips.iter().enumerate() {
+                        assert!(
+                            chip.x >= layout.panel.x
+                                && chip.x + chip.w <= layout.panel.x + layout.panel.w
+                        );
+                        assert!(chip.w > 0 && chip.h > 0);
+                        assert_eq!(
+                            hit_test(&spec, &layout, chip.x + chip.w / 2, chip.y + chip.h / 2),
+                            OverlayHit::Choice {
+                                row: *flat,
+                                choice: index
+                            }
+                        );
+                    }
+                    for pair in chips.windows(2) {
+                        assert!(pair[0].x + pair[0].w <= pair[1].x);
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -5349,7 +5777,7 @@ mod tests {
             },
             footer: None,
             hover_row: None,
-            docs: Some(&docs),
+            docs: Some((&docs).into()),
         };
         let l = layout(&spec, 1000, 800, 1.0);
         let docs = l.docs_panel.expect("docs card");

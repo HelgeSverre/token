@@ -137,6 +137,8 @@ pub(crate) struct EditorSnapshot {
     pub selections: Vec<SelectionSnapshot>,
     pub viewport_top_line: usize,
     pub viewport_left_column: usize,
+    pub soft_wrap: bool,
+    pub visual_row_count: usize,
     /// The active overlay (command palette, etc.), if one is open —
     /// `None` when no modal/overlay is showing.
     pub overlay: Option<OverlaySnapshot>,
@@ -148,6 +150,9 @@ pub(crate) struct EditorSnapshot {
     pub completion: Option<CompletionSnapshot>,
     /// Ghost text currently showing at the cursor (autocomplete.md Phase 2).
     pub inline_suggestion: Option<String>,
+    /// One-based position and count of currently compatible alternatives.
+    pub inline_choice: Option<(usize, usize)>,
+    pub inline_in_flight: bool,
     /// LSP server states (lsp-integration.md), keyed by server id (e.g.
     /// `"rust-analyzer"`) — the render-only mirror `LspMsg::ServerStateChanged`
     /// drives, not the runtime's authoritative `LspManager`.
@@ -391,6 +396,9 @@ pub(crate) struct CompletionSnapshot {
 }
 
 fn completion_snapshot(model: &AppModel) -> Option<CompletionSnapshot> {
+    if !model.ui.has_visible_completion() {
+        return None;
+    }
     let menu = model.ui.completion_menu.as_ref()?;
     let selected = model.ui.cursor_overlay.map(|o| o.selected).unwrap_or(0);
     let items = menu
@@ -478,6 +486,58 @@ pub(crate) struct OverlayRowSnapshot {
 
 fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot> {
     match modal {
+        token::model::ModalState::Settings(state) => Some(OverlaySnapshot {
+            context: "settings".to_owned(),
+            query: state.input(),
+            active_tab: Some(
+                token::settings::categories()
+                    .get(state.category)
+                    .copied()
+                    .flatten()
+                    .unwrap_or("All Settings")
+                    .to_owned(),
+            ),
+            rows: state
+                .filtered_rows()
+                .map(|(label, section)| OverlayRowSnapshot {
+                    label: label.to_owned(),
+                    section: Some(section.to_owned()),
+                })
+                .collect(),
+            selected: state.selected_index(),
+            status: (state.tab == token::settings::keymap::SettingsTab::Keymap)
+                .then(|| state.keymap.status.clone()),
+            options: [
+                ("capturing", state.keymap.capture.is_some()),
+                ("saving", state.keymap.saving),
+                ("loading", state.keymap.loading),
+                (
+                    "literal-next",
+                    state
+                        .keymap
+                        .capture
+                        .as_ref()
+                        .is_some_and(|capture| capture.literal_next),
+                ),
+            ]
+            .into_iter()
+            .filter(|(_, enabled)| *enabled)
+            .map(|(name, _)| name.to_owned())
+            .chain(
+                state
+                    .keymap
+                    .capture
+                    .iter()
+                    .flat_map(|capture| capture.strokes.iter())
+                    .map(|stroke| {
+                        format!(
+                            "captured: {}",
+                            token::keymap::preferences::config_stroke(stroke)
+                        )
+                    }),
+            )
+            .collect(),
+        }),
         token::model::ModalState::CommandPalette(state) => {
             use token::model::SearchTab;
 
@@ -489,6 +549,11 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 label: m.filename.clone(),
                 section: None,
             };
+            let symbol_row =
+                |symbol: &token::lsp::workspace_symbols::SymbolItem| OverlayRowSnapshot {
+                    label: symbol.name.clone(),
+                    section: None,
+                };
 
             let (rows, selected): (Vec<OverlayRowSnapshot>, usize) = match state.active_tab {
                 SearchTab::Files => (
@@ -505,6 +570,7 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                     // here, so automation's row order can't drift from what
                     // the view actually renders/selects against.
                     let mut commands = state.matches.iter().map(command_row);
+                    let mut symbols = state.symbols.results.items.iter().map(symbol_row);
                     let mut files = state
                         .files
                         .iter()
@@ -515,6 +581,8 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                             let source: &mut dyn Iterator<Item = OverlayRowSnapshot> =
                                 if title == Some("Files") {
                                     &mut files
+                                } else if title == Some("Symbols") {
+                                    &mut symbols
                                 } else {
                                     &mut commands
                                 };
@@ -529,7 +597,10 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                         .collect();
                     (rows, state.all_selected)
                 }
-                SearchTab::Symbols => (Vec::new(), 0),
+                SearchTab::Symbols => (
+                    state.symbols.results.items.iter().map(symbol_row).collect(),
+                    state.symbols.selected_index,
+                ),
                 SearchTab::Commands => (
                     state
                         .matches
@@ -550,7 +621,10 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 active_tab: Some(format!("{:?}", state.active_tab)),
                 rows,
                 selected,
-                status: None,
+                status: (state.active_tab == SearchTab::Symbols
+                    || (state.active_tab == SearchTab::All && state.symbols.available))
+                    .then(|| state.symbols.status().map(str::to_owned))
+                    .flatten(),
                 options: Vec::new(),
             })
         }
@@ -639,29 +713,6 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                             .unwrap_or_default(),
                         section: Some(recent_group_title(entry).to_owned()),
                     }
-                })
-                .collect(),
-            selected: state.selected_index,
-            status: None,
-            options: Vec::new(),
-        }),
-        token::model::ModalState::Settings(state) => Some(OverlaySnapshot {
-            context: "settings".to_owned(),
-            query: state.editable.text(),
-            active_tab: Some(
-                token::settings::categories()
-                    .get(state.category)
-                    .copied()
-                    .flatten()
-                    .unwrap_or("All Settings")
-                    .to_owned(),
-            ),
-            rows: state
-                .rows
-                .iter()
-                .map(|row| OverlayRowSnapshot {
-                    label: row.label(),
-                    section: Some(row.section().to_owned()),
                 })
                 .collect(),
             selected: state.selected_index,
@@ -757,6 +808,8 @@ impl EditorSnapshot {
                 .collect(),
             viewport_top_line: viewport.top_line,
             viewport_left_column: viewport.left_column,
+            soft_wrap: model.editor().soft_wrap,
+            visual_row_count: model.editor().viewport_map(document).row_count(),
             overlay: model.ui.active_modal.as_ref().and_then(|modal| {
                 let mut overlay = overlay_snapshot(modal)?;
                 if let token::model::ModalState::FindReplace(state) = modal {
@@ -766,10 +819,13 @@ impl EditorSnapshot {
                 }
                 Some(overlay)
             }),
-            gutter_marks: gutter_marks_snapshot(document, viewport),
+            gutter_marks: gutter_marks_snapshot(document, model.editor()),
             completion: completion_snapshot(model),
             inline_suggestion: token::update::inline::visible(model)
                 .map(|state| state.remaining().to_owned()),
+            inline_choice: token::update::inline::visible(model)
+                .map(|state| state.choice_position()),
+            inline_in_flight: model.ui.inline_in_flight,
             lsp_servers: model
                 .lsp
                 .servers
@@ -792,14 +848,11 @@ impl EditorSnapshot {
 /// Marks-lane state for each visible line, per editor-decorations.md.
 fn gutter_marks_snapshot(
     document: &token::model::Document,
-    viewport: &token::model::Viewport,
+    editor: &token::model::EditorState,
 ) -> Vec<GutterMarkSnapshot> {
-    let end_line = viewport
-        .top_line
-        .saturating_add(viewport.visible_lines)
-        .min(document.line_count());
-
-    (viewport.top_line..end_line)
+    editor
+        .viewport_map(document)
+        .visible_doc_lines()
         .filter_map(|line| {
             token::model::collect_line_marks(document, line)
                 .mark
@@ -1465,7 +1518,7 @@ mod tests {
 
     #[test]
     fn snapshot_exposes_lsp_server_states() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model
             .lsp
             .servers
@@ -1478,14 +1531,14 @@ mod tests {
 
     #[test]
     fn problems_snapshot_is_none_when_the_panel_is_closed() {
-        let model = AppModel::new(800, 600, 1.0, vec![]);
+        let model = AppModel::new(800, 600, 1.0);
         let snapshot = EditorSnapshot::from_model(&model);
         assert!(snapshot.problems.is_none());
     }
 
     #[test]
     fn usages_snapshot_uses_shared_rows_and_follows_the_active_dock() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         assert!(EditorSnapshot::from_model(&model).usages.is_none());
         model.usages_panel.items = vec![token::update::navigation::LocationItem {
             path: "/source.rs".into(),
@@ -1524,7 +1577,7 @@ mod tests {
 
     #[test]
     fn problems_snapshot_reports_rows_counts_and_selection_when_open() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model
             .dock_layout
             .bottom
@@ -1556,7 +1609,7 @@ mod tests {
 
     #[test]
     fn problems_snapshot_follows_the_panel_to_the_right_dock() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model
             .dock_layout
             .bottom
@@ -1603,6 +1656,70 @@ mod tests {
     }
 
     #[test]
+    fn workspace_symbols_snapshot_exposes_rows_selection_and_partial_status() {
+        use token::lsp::workspace_symbols::{SymbolItem, SymbolProvider};
+        use token::model::{CommandPaletteState, SearchTab};
+        let mut state = CommandPaletteState {
+            active_tab: SearchTab::All,
+            ..Default::default()
+        };
+        assert!(overlay_snapshot(&ModalState::CommandPalette(state.clone()))
+            .unwrap()
+            .status
+            .is_none());
+        state.symbols.available = true;
+        state.symbols.results.failures = 1;
+        state.symbols.results.items = (0..7)
+            .map(|i| SymbolItem {
+                name: format!("symbol{i}"),
+                detail: "source.rs".into(),
+                kind: lsp_types::SymbolKind::FUNCTION,
+                location: lsp_types::Location {
+                    uri: "file:///ws/source.rs".parse().unwrap(),
+                    range: Default::default(),
+                },
+                provider: SymbolProvider {
+                    server_id: "fake".into(),
+                    root: "/ws".into(),
+                    generation: 1,
+                },
+            })
+            .collect();
+        let all = overlay_snapshot(&ModalState::CommandPalette(state.clone())).unwrap();
+        assert_eq!(
+            all.rows
+                .iter()
+                .filter(|row| row.section.as_deref() == Some("Symbols"))
+                .count(),
+            5
+        );
+        assert_eq!(all.rows.last().unwrap().label, "symbol4");
+        assert!(all.status.unwrap().contains("unavailable"));
+        state.active_tab = SearchTab::Symbols;
+        state.symbols.selected_index = 6;
+        let symbols = overlay_snapshot(&ModalState::CommandPalette(state)).unwrap();
+        assert_eq!(symbols.rows.len(), 7);
+        assert_eq!(symbols.selected, 6);
+        assert_eq!(symbols.rows[6].label, "symbol6");
+    }
+
+    #[test]
+    fn settings_overlay_snapshot_reports_shared_rows_and_sections() {
+        let state = token::settings::SettingsState::default();
+        let expected: Vec<_> = state
+            .filtered_rows()
+            .map(|(label, section)| (label.to_owned(), section))
+            .collect();
+        let snapshot = overlay_snapshot(&ModalState::Settings(state)).unwrap();
+        assert_eq!(snapshot.context, "settings");
+        assert_eq!(snapshot.rows.len(), expected.len());
+        for (row, (label, section)) in snapshot.rows.iter().zip(expected) {
+            assert_eq!(row.label, label);
+            assert_eq!(row.section.as_deref(), Some(section));
+        }
+    }
+
+    #[test]
     fn find_replace_overlay_snapshot_reports_the_query() {
         let mut state = FindReplaceState::default();
         state.set_query("needle");
@@ -1612,7 +1729,7 @@ mod tests {
         assert_eq!(snapshot.query, "needle");
         assert!(snapshot.options.is_empty());
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.document_mut().buffer = ropey::Rope::from_str("needle needle");
         let mut state = FindReplaceState::default();
         state.set_query("needle");
@@ -1834,7 +1951,7 @@ mod tests {
 
     #[test]
     fn snapshot_exposes_instance_id_and_workspace_root() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let dir = tempfile::tempdir().unwrap();
         model.open_workspace(dir.path().to_path_buf());
         let value = serde_json::to_value(EditorSnapshot::from_model(&model)).unwrap();

@@ -17,7 +17,7 @@ use winit::event::MouseButton;
 use winit::keyboard::ModifiersState;
 
 use crate::model::editor_area::{DocumentId, EditorId, GroupId, PreviewId, TabId};
-use crate::model::{AppModel, FocusTarget, TextViewportMap};
+use crate::model::{AppModel, FocusTarget};
 
 use crate::layout::editor::{EditorTabBarLayout, PreviewPaneLayout};
 
@@ -124,6 +124,10 @@ pub enum HitTarget {
     /// `flat_index` is `Some` when a selectable row (`Body::List`) was hit.
     CursorOverlay {
         flat_index: Option<usize>,
+    },
+    CursorOverlayDocumentation {
+        viewport: super::overlay_surface::DocumentationViewport,
+        toggle: bool,
     },
 
     /// Status bar at the bottom of the window
@@ -288,6 +292,7 @@ impl HitTarget {
         match self {
             HitTarget::EditorContent { .. } | HitTarget::CsvCell { .. } => CursorIcon::Text,
             HitTarget::BinaryPlaceholderButton { .. } => CursorIcon::Pointer,
+            HitTarget::CursorOverlayDocumentation { toggle: true, .. } => CursorIcon::Pointer,
             HitTarget::SidebarResize => CursorIcon::ColResize,
             HitTarget::DockResize { position } => match position {
                 crate::panel::DockPosition::Right | crate::panel::DockPosition::Left => {
@@ -311,9 +316,11 @@ impl HitTarget {
             HitTarget::Modal { .. }
             | HitTarget::ModalScrollbar { .. }
             | HitTarget::ModalRow { .. }
-            | HitTarget::ModalTab { .. }
-            | HitTarget::ModalChoice { .. } => HoverRegion::Modal,
-            HitTarget::CursorOverlay { .. } => HoverRegion::CursorOverlay,
+            | HitTarget::ModalChoice { .. }
+            | HitTarget::ModalTab { .. } => HoverRegion::Modal,
+            HitTarget::CursorOverlay { .. } | HitTarget::CursorOverlayDocumentation { .. } => {
+                HoverRegion::CursorOverlay
+            }
             HitTarget::StatusBar => HoverRegion::StatusBar,
             HitTarget::SidebarResize => HoverRegion::SidebarResize,
             HitTarget::SidebarEmpty | HitTarget::SidebarItem { .. } => HoverRegion::Sidebar,
@@ -431,16 +438,19 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
                 .map_or(HitTarget::Modal { inside: true }, |geometry| {
                     HitTarget::ModalScrollbar { geometry }
                 }),
-            super::overlay_surface::OverlayHit::Choice { row, choice } => HitTarget::ModalChoice {
-                flat_index: row.0,
-                choice,
-            },
             super::overlay_surface::OverlayHit::Outside => HitTarget::Modal { inside: false },
             super::overlay_surface::OverlayHit::Row(flat_index) => HitTarget::ModalRow {
                 flat_index: flat_index.0,
             },
-            super::overlay_surface::OverlayHit::Inside => HitTarget::Modal { inside: true },
+            super::overlay_surface::OverlayHit::Inside
+            | super::overlay_surface::OverlayHit::Documentation { .. } => {
+                HitTarget::Modal { inside: true }
+            }
             super::overlay_surface::OverlayHit::Tab(index) => HitTarget::ModalTab { index },
+            super::overlay_surface::OverlayHit::Choice { row, choice } => HitTarget::ModalChoice {
+                flat_index: row.0,
+                choice,
+            },
         }
     })
 }
@@ -468,14 +478,17 @@ pub fn hit_test_cursor_overlay(
         // are the rects that were painted.
         let layout = super::overlay_surface::layout_measured(spec, ww, wh, sf, measure);
         match super::overlay_surface::hit_test(spec, &layout, x, y) {
+            super::overlay_surface::OverlayHit::Documentation { viewport, toggle } => {
+                Some(HitTarget::CursorOverlayDocumentation { viewport, toggle })
+            }
             super::overlay_surface::OverlayHit::Outside => None,
             super::overlay_surface::OverlayHit::Row(flat_index) => Some(HitTarget::CursorOverlay {
                 flat_index: Some(flat_index.0),
             }),
             super::overlay_surface::OverlayHit::Inside
-            | super::overlay_surface::OverlayHit::Choice { .. }
             | super::overlay_surface::OverlayHit::Tab(_)
-            | super::overlay_surface::OverlayHit::Scrollbar => {
+            | super::overlay_surface::OverlayHit::Scrollbar
+            | super::overlay_surface::OverlayHit::Choice { .. } => {
                 Some(HitTarget::CursorOverlay { flat_index: None })
             }
         }
@@ -687,7 +700,7 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
         // Vertical scrollbar
         if let Some(v_track) = layout.v_scrollbar_rect(sw) {
             if v_track.contains(x, y) {
-                let line_count = document.line_count();
+                let line_count = editor.viewport_map(document).row_count();
                 let v_state = ScrollbarState::new(line_count, visible_lines, viewport.top_line);
                 let v_geo = ScrollbarGeometry::vertical(v_track, &v_state);
                 if v_geo.needed && v_geo.hits_thumb(x, y) {
@@ -717,7 +730,7 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
         }
 
         // Horizontal scrollbar
-        if let Some(h_track) = layout.h_scrollbar_rect(sw) {
+        if let Some(h_track) = layout.h_scrollbar_rect(sw).filter(|_| !editor.soft_wrap) {
             if h_track.contains(x, y) {
                 let top = viewport.top_line;
                 let bottom = (top + visible_lines).min(document.line_count());
@@ -773,7 +786,7 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     if pt.x >= group.rect.x as f64 && pt.x < gutter_x_end && pt.y >= content_y_start {
         // Compute which line was clicked
         let local_y = pt.y - content_y_start;
-        let viewport = TextViewportMap::new(&editor.viewport, document.line_count());
+        let viewport = editor.viewport_map(document);
         let line = viewport.doc_line_for_pixel_y(local_y, model.line_height as f64);
         let x_in_gutter = (pt.x - group.rect.x as f64).max(0.0) as usize;
         let lane = layout.gutter.lane_at(x_in_gutter);
@@ -1017,7 +1030,7 @@ mod tests {
 
     #[test]
     fn status_bar_hit_test_uses_the_solved_shell_rect() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.status_bar_height = 20;
 
         assert!(matches!(
@@ -1032,7 +1045,7 @@ mod tests {
     fn dock_hit_guard_includes_contents_and_external_resize_slop() {
         use crate::panel::{DockPosition, PanelId};
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.dock_layout.right.activate(PanelId::Outline);
         model.dock_layout.bottom.activate(PanelId::Terminal);
         let shell = crate::layout::chrome::shell(&model);
@@ -1074,7 +1087,7 @@ mod tests {
     /// `GroupLayout` built for the scrollbar branch above it.
     #[test]
     fn test_hit_test_groups_gutter_content_boundary_matches_group_layout() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let available = crate::model::editor_area::Rect::new(0.0, 0.0, 800.0, 600.0);
         model.editor_area.compute_layout(available);
 

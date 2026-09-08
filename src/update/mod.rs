@@ -29,12 +29,14 @@ pub mod navigation;
 pub(crate) mod outline;
 mod preview;
 pub mod problems;
+mod settings;
 mod syntax;
 mod terminal;
 pub(crate) mod text_edits;
 mod ui;
 pub mod usages;
 mod workspace;
+mod workspace_symbols;
 
 use crate::commands::Cmd;
 use crate::messages::{CsvMsg, Direction, DocumentMsg, EditorMsg, Msg};
@@ -47,17 +49,59 @@ use crate::tracing::CursorSnapshot;
 #[cfg(debug_assertions)]
 use tracing::{debug, span, Level};
 
-pub use app::{create_default_keymap_file, execute_command};
-use completion::update_completion;
-use document::update_document;
-use editor::update_editor;
-use layout::update_layout;
-use lsp::{
-    close_lsp_document, open_lsp_document, save_lsp_document, schedule_lsp_did_change, update_lsp,
-};
-use syntax::{schedule_syntax_parse, SYNTAX_DEBOUNCE_MS};
-use ui::update_ui;
+pub use app::execute_command;
+use lsp::{close_lsp_document, open_lsp_document, schedule_lsp_did_change};
+use syntax::schedule_syntax_parse;
 pub use ui::{resolve_palette_rows, search_everywhere_sections, ALL_TAB_GROUP_CAP};
+
+/// Drive text-file effects explicitly in unit fixtures. Production updates never
+/// call this; real validation, aliases, image/binary loading and worker ordering
+/// are exercised by runtime tests. Preserve generated effects for assertions.
+#[cfg(test)]
+pub(crate) fn finish_test_file_opens(model: &mut AppModel, cmd: Option<Cmd>) -> Option<Cmd> {
+    match cmd? {
+        Cmd::PrepareFileOpen(request) => {
+            let path = request
+                .source
+                .path()
+                .expect("text fixture requires a resolved path")
+                .to_path_buf();
+            let result = match crate::model::Document::from_file(path.clone()) {
+                Ok(document) => Ok(document),
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::NotFound
+                        && request.policy == crate::model::FileOpenPolicy::CreateOrOpen =>
+                {
+                    Ok(crate::model::Document::new_with_path(path.clone()))
+                }
+                Err(error) => Err(error.to_string()),
+            }
+            .map(|document| {
+                Box::new(crate::model::PreparedFile::Loaded {
+                    document: Box::new(document),
+                    view_mode: crate::model::ViewMode::Text,
+                    tab_content: crate::model::TabContent::Text,
+                })
+            });
+            update(
+                model,
+                Msg::Layout(crate::messages::LayoutMsg::FilePrepared { request, result }),
+            )
+        }
+        Cmd::Batch(commands) => {
+            let mut effects = Vec::new();
+            for command in commands {
+                match finish_test_file_opens(model, Some(command)) {
+                    Some(Cmd::Batch(commands)) => effects.extend(commands),
+                    Some(command) => effects.push(command),
+                    None => {}
+                }
+            }
+            Some(Cmd::Batch(effects))
+        }
+        command => Some(command),
+    }
+}
 
 /// Main update function - dispatches to sub-handlers
 ///
@@ -65,15 +109,55 @@ pub use ui::{resolve_palette_rows, search_everywhere_sections, ALL_TAB_GROUP_CAP
 /// In release builds, it's a direct dispatch with zero overhead.
 #[inline]
 pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
+    let was_loading = model.ui.is_loading;
+    let had_path_completion = model.ui.completion_path.is_some();
     #[cfg(debug_assertions)]
     let result = update_traced(model, msg);
     #[cfg(not(debug_assertions))]
     let result = update_inner(model, msg);
-    merge_cmds(result, usages::reconcile(model))
+    let result = merge_cmds(result, usages::reconcile(model));
+    // This wrapper also covers early returns in special-tab dispatch.
+    let completion_cleanup = completion::reconcile_pending_commit(model);
+    let path_cleanup = completion::reconcile_paths(model);
+    let inline_cleanup = inline::reconcile(model);
+    let projection_change = inline::sync_projection(model);
+    // Closed groups cannot retain obsolete activation choices.
+    let area = &mut model.editor_area;
+    // Retain closed-group tokens until the worker replies, so runtime waiters
+    // receive an explicit rejected completion instead of waiting forever.
+    area.file_opens
+        .latest
+        .retain(|group, _| area.groups.contains_key(group));
+    model.ui.is_loading = !area.file_opens.pending.is_empty()
+        || area
+            .documents
+            .values()
+            .any(|doc| doc.file_io.pending(crate::model::FileRequestKind::Read));
+    if inline_cleanup.is_some() {
+        sync_status_bar(model);
+    }
+    let result = merge_cmds(result, completion_cleanup);
+    let result = merge_cmds(result, path_cleanup);
+    let result = if had_path_completion && model.ui.completion_path.is_none() {
+        merge_cmds(result, Some(Cmd::CancelPathCompletion))
+    } else {
+        result
+    };
+    let result = merge_cmds(merge_cmds(result, inline_cleanup), projection_change);
+    let find_search = ui::schedule_find_search(model);
+    let result = merge_cmds(result, find_search);
+    let result = merge_cmds(result, workspace_symbols::reconcile(model));
+    if was_loading != model.ui.is_loading && result.as_ref().is_none_or(|cmd| !cmd.needs_redraw()) {
+        merge_cmds(result, Some(Cmd::redraw_status_bar()))
+    } else {
+        result
+    }
 }
 
 /// Inner update logic (no tracing)
 fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
+    let inline_progress_before = (model.ui.inline_in_flight, model.ui.cursor_visible);
+    model.editor_area.refresh_wrap_caches();
     // Signature help's dismissal anchor: it survives edits and moves
     // along its line, but not the caret leaving that line, a tab switch,
     // or focus leaving the editor — compared once at the bottom for every
@@ -154,29 +238,55 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
             // variants, but `InsertText(String)` carries a full paste/IME
             // payload that a clone would copy for nothing).
             let is_copy = matches!(m, DocumentMsg::Copy);
-            let opens_on_word_char =
-                matches!(&m, DocumentMsg::InsertChar(ch) if char_type(*ch) == CharType::WordChar);
-            // A one-char `InsertText` (IME commit, automation `text`) is
-            // typing too, for the trigger-character and ghost-text paths.
-            let typed_char = match &m {
-                DocumentMsg::InsertChar(ch) => Some(*ch),
-                DocumentMsg::InsertText(text) if text.chars().count() == 1 => text.chars().next(),
-                _ => None,
-            };
-            let backspaced = matches!(m, DocumentMsg::DeleteBackward);
-            let result = document::update_document(model, m);
-            let completion_cmd = completion::sync_after_document_edit(
-                model,
-                is_copy,
-                opens_on_word_char,
-                typed_char,
-            );
-            let inline_cmd = if is_copy {
+            // Only physical character messages commit dropdown items. Paste and
+            // IME/automation text insertion must not accept a highlighted row.
+            let pending_cancel = if is_copy {
                 None
             } else {
-                inline::after_document_edit(model, typed_char, backspaced)
+                completion::cancel_pending_commit(model)
             };
-            merge_cmds(merge_cmds(result, completion_cmd), inline_cmd)
+            let committed = match &m {
+                DocumentMsg::InsertChar(character) => {
+                    completion::try_commit_character(model, *character)
+                }
+                _ => None,
+            };
+            if let Some(committed) = committed {
+                // Stay in the shared update finalization: status, wrap caches
+                // and signature dismissal must see the accepted document too.
+                merge_cmds(pending_cancel, Some(committed))
+            } else {
+                let opens_on_word_char = matches!(&m, DocumentMsg::InsertChar(ch) if char_type(*ch) == CharType::WordChar);
+                // A one-char `InsertText` (IME commit, automation `text`) is
+                // typing too, for the trigger-character and ghost-text paths.
+                let typed_char = match &m {
+                    DocumentMsg::InsertChar(ch) => Some(*ch),
+                    DocumentMsg::InsertText(text) if text.chars().count() == 1 => {
+                        text.chars().next()
+                    }
+                    _ => None,
+                };
+                let backspaced = matches!(m, DocumentMsg::DeleteBackward);
+                let result = document::update_document(model, m);
+                // Reconcile typed-through ghost text before auto-opening a menu.
+                // In the middle of an identifier, fallback words can otherwise hide
+                // the compatible remainder before it consumes the typed character.
+                let inline_cmd = if is_copy {
+                    None
+                } else {
+                    inline::after_document_edit(model, typed_char, backspaced)
+                };
+                let completion_cmd = completion::sync_after_document_edit(
+                    model,
+                    is_copy,
+                    opens_on_word_char,
+                    typed_char,
+                );
+                merge_cmds(
+                    pending_cancel,
+                    merge_cmds(merge_cmds(result, completion_cmd), inline_cmd),
+                )
+            }
         }
         Msg::Ui(m) => ui::update_ui(model, m),
         Msg::Layout(m) => layout::update_layout(model, m),
@@ -219,8 +329,15 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         _ => result,
     };
 
+    model.editor_area.refresh_wrap_caches();
     sync_status_bar(model);
-    result
+    if inline_progress_before.0 != model.ui.inline_in_flight
+        || (model.ui.inline_in_flight && inline_progress_before.1 != model.ui.cursor_visible)
+    {
+        merge_cmds(result, Some(Cmd::redraw_status_bar()))
+    } else {
+        result
+    }
 }
 
 /// `(focus, focused document, caret line)` — signature help closes when
@@ -366,6 +483,18 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Document(m) => format!("Document::{:?}", m),
         Msg::Ui(m) => format!("Ui::{:?}", m),
         Msg::Layout(m) => format!("Layout::{:?}", m),
+        Msg::App(crate::messages::AppMsg::SaveCompleted { target, result, .. }) => format!(
+            "App::SaveCompleted(document={:?}, revision={}, success={})",
+            target.document_id,
+            target.revision,
+            result.is_ok()
+        ),
+        Msg::App(crate::messages::AppMsg::FileLoaded { target, result, .. }) => format!(
+            "App::FileLoaded(document={:?}, revision={}, success={})",
+            target.document_id,
+            target.revision,
+            result.is_ok()
+        ),
         Msg::App(m) => format!("App::{:?}", m),
         Msg::Syntax(m) => format!("Syntax::{:?}", m),
         Msg::Csv(m) => format!("Csv::{:?}", m),
@@ -380,5 +509,35 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Completion(m) => format!("Completion::{:?}", m),
         Msg::Lsp(m) => format!("Lsp::{:?}", m),
         Msg::ContextMenu(m) => format!("ContextMenu::{:?}", m),
+    }
+}
+
+#[cfg(all(test, debug_assertions))]
+#[test]
+fn file_io_reply_trace_names_exclude_buffer_contents() {
+    use crate::messages::AppMsg;
+    use crate::model::{Document, DocumentId, FileRequestKind};
+    let mut doc = Document::with_text("do-not-log-file-contents");
+    doc.id = Some(DocumentId(1));
+    let target = doc.begin_file_request(FileRequestKind::Write).unwrap();
+    let save = Msg::App(AppMsg::SaveCompleted {
+        identity: None,
+        target,
+        path: "/fixture/a.txt".into(),
+        content: doc.buffer.clone(),
+        result: Ok(()),
+    });
+    let target = doc.begin_file_request(FileRequestKind::Read).unwrap();
+    let load = Msg::App(AppMsg::FileLoaded {
+        identity: None,
+        target,
+        path: "/fixture/a.txt".into(),
+        result: Ok(doc.buffer.to_string()),
+    });
+    for message in [save, load] {
+        let name = msg_type_name(&message);
+        assert!(name.contains("success=true"));
+        assert!(!name.contains("do-not-log-file-contents"));
+        assert!(name.chars().count() < 128);
     }
 }

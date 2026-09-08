@@ -141,7 +141,7 @@ mod tests {
     fn settings_scrollbar_pointer_drag_and_track_click_reach_both_ends() {
         use token::model::{ModalId, ModalState};
         for width in [400, 800] {
-            let mut model = AppModel::new(width, 750, 1.0, vec![]);
+            let mut model = AppModel::new(width, 750, 1.0);
             model
                 .ui
                 .open_modal(ModalState::Settings(Default::default()));
@@ -192,7 +192,8 @@ mod tests {
                 panic!("page closed");
             };
             assert_eq!(
-                state.selected_index, 0,
+                state.selected_index(),
+                0,
                 "scrolling must not change selection"
             );
             assert_eq!(
@@ -211,7 +212,7 @@ mod tests {
             ModalMsg::NextTab,
             ModalMsg::Close,
         ] {
-            let mut model = AppModel::new(800, 750, 1.0, vec![]);
+            let mut model = AppModel::new(800, 750, 1.0);
             model
                 .ui
                 .open_modal(ModalState::Settings(Default::default()));
@@ -226,7 +227,7 @@ mod tests {
             )
             .is_none());
         }
-        let mut model = AppModel::new(800, 750, 1.0, vec![]);
+        let mut model = AppModel::new(800, 750, 1.0);
         model
             .ui
             .open_modal(ModalState::Settings(Default::default()));
@@ -237,25 +238,25 @@ mod tests {
 
     #[test]
     fn settings_scrollbar_wheel_preserves_scroll_delta_magnitude() {
-        let mut model = AppModel::new(800, 750, 1.0, vec![]);
+        let mut model = AppModel::new(800, 750, 1.0);
         model
             .ui
             .open_modal(token::model::ModalState::Settings(Default::default()));
         model.ui.hover = token::model::HoverRegion::Modal;
-        handle_mouse_wheel(&mut model, None, 0, 1);
+        scroll_hovered_region(&mut model, None, 0, 1);
         let one = settings_scrollbar(&model).state.position;
         update(
             &mut model,
             Msg::Ui(UiMsg::Modal(ModalMsg::SetInput(String::new()))),
         );
-        handle_mouse_wheel(&mut model, None, 0, 5);
+        scroll_hovered_region(&mut model, None, 0, 5);
         assert!(settings_scrollbar(&model).state.position > one);
     }
 
     #[test]
     fn modal_pointer_row_preserves_palette_command_effect() {
         use token::model::ModalId;
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         update(
             &mut model,
             Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette)),
@@ -280,9 +281,276 @@ mod tests {
     }
 
     #[test]
+    fn settings_keymap_modal_pointer_preserves_load_and_save_effects() {
+        use token::keymap::preferences::{parse_sequence, KeymapSnapshot};
+        use token::messages::SettingsMsg;
+        use token::model::{ModalId, ModalState};
+        fn keymap_effect(command: &Cmd, saving: bool) -> bool {
+            match command {
+                Cmd::PrepareKeymap { save, .. } => save.is_some() == saving,
+                Cmd::Batch(commands) => commands
+                    .iter()
+                    .any(|command| keymap_effect(command, saving)),
+                _ => false,
+            }
+        }
+        let mut model = AppModel::new(800, 600, 1.0);
+        update(&mut model, Msg::Ui(UiMsg::ToggleModal(ModalId::Settings)));
+        let EventResult::Consumed {
+            cmd: Some(command), ..
+        } = modal_press(
+            &mut model,
+            ModalMsg::ActivateTab(token::settings::categories().len() - 1),
+        )
+        else {
+            panic!("load effect lost")
+        };
+        assert!(keymap_effect(&command, false));
+        let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+            panic!("settings")
+        };
+        let session = state.keymap.session.clone();
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Settings(SettingsMsg::KeymapResult {
+                session,
+                saved: false,
+                result: Ok(Box::new(KeymapSnapshot::parse(None).unwrap())),
+            })),
+        );
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("SaveFile".into()))),
+        );
+        modal_press(&mut model, ModalMsg::ActivateRow(0));
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Settings(SettingsMsg::CaptureKey(
+                parse_sequence("ctrl+f24").unwrap()[0],
+            ))),
+        );
+        let EventResult::Consumed {
+            cmd: Some(command), ..
+        } = modal_press(&mut model, ModalMsg::ChooseSetting { row: 0, choice: 0 })
+        else {
+            panic!("save effect lost")
+        };
+        assert!(keymap_effect(&command, true));
+    }
+
+    #[test]
+    fn modal_pointer_close_preserves_theme_restore_effect() {
+        use token::model::ModalId;
+        let mut model = AppModel::new(800, 600, 1.0);
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::ToggleModal(ModalId::ThemePicker)),
+        );
+        let EventResult::Consumed {
+            cmd: Some(Cmd::Batch(commands)),
+            focus: None,
+            ..
+        } = modal_press(&mut model, ModalMsg::Close)
+        else {
+            panic!("restore effect lost")
+        };
+        assert!(commands
+            .iter()
+            .any(|command| matches!(command, Cmd::LoadTheme { persist: false, .. })));
+        assert!(model.ui.active_modal.is_none());
+    }
+
+    fn documentation_model() -> AppModel {
+        use token::completion::menu::CompletionMenuState;
+        use token::model::{Cursor, CursorOverlayKind, CursorOverlayState};
+        let mut model = AppModel::new(1000, 600, 1.0);
+        model.config.lsp.enabled = false;
+        model.document_mut().buffer = "va\n".into();
+        model.editor_mut().cursors[0] = Cursor::at(0, 2);
+        model.editor_mut().clear_selection();
+        model.resize(1000, 600);
+        let docs = (0..60)
+            .map(|i| format!("documentation line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let items = token::completion::lsp::items_to_menu_items(
+            ["value_a", "value_b"]
+                .into_iter()
+                .map(|label| lsp_types::CompletionItem {
+                    label: label.into(),
+                    documentation: Some(lsp_types::Documentation::String(docs.clone())),
+                    ..Default::default()
+                })
+                .collect(),
+            &token::lsp::LspServerId::from("fixture"),
+            std::path::Path::new("/tmp/fixture"),
+            None,
+        );
+        model.ui.completion_menu = Some(CompletionMenuState {
+            document_id: model.document().id.unwrap(),
+            revision: model.document().revision,
+            query_start: Cursor::at(0, 0),
+            query: "va".into(),
+            items,
+            filtered: vec![(0, 0, vec![]), (0, 1, vec![])],
+            context: Default::default(),
+            selection_changed: false,
+            is_incomplete: false,
+            pending_resolve: None,
+        });
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Completion));
+        model
+    }
+
+    #[test]
+    fn documentation_viewport_wheel_and_footer_do_not_accept_or_move_selection() {
+        let mut model = documentation_model();
+        let mut measure = token::view::overlay_surface::cell_measure(1.0);
+        let layout = token::view::modal::with_cursor_overlay_spec(&model, |spec| {
+            token::view::overlay_surface::layout_measured(spec, 1000, 600, 1.0, &mut measure)
+        })
+        .unwrap();
+        let text = layout.docs_text.unwrap();
+        let footer = layout.docs_footer.unwrap();
+        let cursors = model.editor().cursors.clone();
+        // Deliberately stale hover: hit-test the actual card on this event.
+        model.ui.hover = HoverRegion::EditorText;
+        assert!(handle_mouse_wheel(
+            &mut model,
+            Some(((text.x + 1) as f64, (text.y + 1) as f64)),
+            0,
+            1,
+            Some(&mut measure)
+        )
+        .is_some());
+        let state = model.ui.cursor_overlay.unwrap();
+        assert_eq!(state.docs_scroll, 3);
+        assert_eq!((state.scroll, state.selected), (0, 0));
+        assert_eq!(model.editor().cursors, cursors);
+        assert_eq!(model.document().buffer.to_string(), "va\n");
+        let target = token::view::hit_test::hit_test_cursor_overlay(
+            &model,
+            token::view::hit_test::Point::new((footer.x + 1) as f64, (footer.y + 1) as f64),
+            &mut measure,
+        )
+        .unwrap();
+        assert!(matches!(
+            target,
+            HitTarget::CursorOverlayDocumentation { toggle: true, .. }
+        ));
+        let dismissal = dismiss_overlay_for_press(&mut model, &target, MouseButton::Left);
+        assert!(!dismissal.dismissed);
+        update(
+            &mut model,
+            Msg::Completion(CompletionMsg::ToggleDocumentation),
+        );
+        assert!(model.ui.cursor_overlay.unwrap().docs_expanded);
+        update(&mut model, Msg::Completion(CompletionMsg::MenuNext));
+        let state = model.ui.cursor_overlay.unwrap();
+        assert_eq!(state.selected, 1);
+        assert_eq!(state.docs_scroll, 0);
+        assert!(!state.docs_expanded);
+        update(&mut model, Msg::Completion(CompletionMsg::Dismiss));
+        assert!(update(
+            &mut model,
+            Msg::Completion(CompletionMsg::DocumentationScrolled(100))
+        )
+        .is_none());
+        assert!(model.ui.cursor_overlay.is_none());
+    }
+
+    #[test]
+    fn documentation_viewport_rechecks_hover_when_the_pointer_is_outside() {
+        let mut model = documentation_model();
+        model.ui.hover = HoverRegion::CursorOverlay;
+        let mut measure = token::view::overlay_surface::cell_measure(1.0);
+        let point = (50..1000)
+            .step_by(50)
+            .flat_map(|x| (100..500).step_by(100).map(move |y| (x as f64, y as f64)))
+            .find(|&(x, y)| {
+                matches!(
+                    token::view::hit_test::hit_test_ui(
+                        &model,
+                        token::view::hit_test::Point::new(x, y),
+                        model.char_width,
+                        &mut measure
+                    ),
+                    Some(HitTarget::EditorContent { .. })
+                )
+            })
+            .expect("editor content outside the card");
+        handle_mouse_wheel(&mut model, Some(point), 0, 1, Some(&mut measure));
+        assert!(
+            model.ui.completion_menu.is_none(),
+            "scrolling the editor dismisses the attached menu"
+        );
+        assert_eq!(model.document().buffer.to_string(), "va\n");
+    }
+
+    #[test]
+    fn documentation_viewport_noop_selection_and_focus_guards() {
+        let mut model = documentation_model();
+        model
+            .ui
+            .completion_menu
+            .as_mut()
+            .unwrap()
+            .filtered
+            .truncate(1);
+        let overlay = model.ui.cursor_overlay.as_mut().unwrap();
+        overlay.docs_scroll = 8;
+        overlay.docs_expanded = true;
+        update(&mut model, Msg::Completion(CompletionMsg::MenuNext));
+        assert_eq!(model.ui.cursor_overlay.unwrap().docs_scroll, 8);
+        assert!(model.ui.cursor_overlay.unwrap().docs_expanded);
+        model
+            .ui
+            .open_modal(token::model::ModalState::GotoLine(Default::default()));
+        // The outer update dismisses the hidden completion and may redraw.
+        // Later documentation actions must not reopen it behind the modal.
+        update(
+            &mut model,
+            Msg::Completion(CompletionMsg::ToggleDocumentation),
+        );
+        assert!(model.ui.cursor_overlay.is_none());
+        update(
+            &mut model,
+            Msg::Completion(CompletionMsg::DocumentationScrolled(0)),
+        );
+        assert!(model.ui.cursor_overlay.is_none());
+        assert!(model.ui.has_modal());
+    }
+
+    #[test]
+    fn documentation_viewport_keyboard_routes_without_changing_the_buffer() {
+        use winit::keyboard::{Key, NamedKey};
+        let mut model = documentation_model();
+        let cmd = crate::runtime::input::handle_cursor_overlay_key(
+            &mut model,
+            &Key::Named(NamedKey::PageDown),
+            crate::runtime::input::KeyModifiers {
+                alt: true,
+                ..Default::default()
+            },
+        );
+        assert!(matches!(
+            cmd,
+            Some(Some(Cmd::PageCompletionDocumentation { forward: true }))
+        ));
+        crate::runtime::input::handle_cursor_overlay_key(
+            &mut model,
+            &Key::Named(NamedKey::F1),
+            Default::default(),
+        );
+        assert!(model.ui.cursor_overlay.unwrap().docs_expanded);
+        assert_eq!(model.document().buffer.to_string(), "va\n");
+        assert_eq!(model.ui.cursor_overlay.unwrap().selected, 0);
+    }
+
+    #[test]
     fn popup_hover_requests_repaint_only_on_row_changes_and_preserves_selection() {
         use token::model::{CursorOverlayKind, CursorOverlayState};
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         for kind in [
             CursorOverlayKind::Completion,
             CursorOverlayKind::ContextMenu,
@@ -316,7 +584,7 @@ mod tests {
     use token::terminal::{PtyHandle, TerminalSession};
 
     fn terminal_model_with_history() -> AppModel {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.dock_layout.bottom.activate(PanelId::TERMINAL);
         model.ui.hover = HoverRegion::Dock(DockPosition::Bottom);
 
@@ -390,7 +658,7 @@ mod tests {
         use token::messages::DocumentMsg;
         use token::model::{Cursor, CursorOverlayKind, CursorOverlayState};
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.document_mut().buffer = ropey::Rope::from_str("value_one\n\n");
         model.editor_mut().cursors[0] = Cursor::at(1, 0);
         model.editor_mut().clear_selection();
@@ -417,7 +685,7 @@ mod tests {
         use token::messages::LayoutMsg;
         use token::model::{ContextMenuState, CursorOverlayKind, CursorOverlayState};
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         // A second tab so "Close" (targeting tab 0) has something to close
         // without hitting the "can't close the last tab" guard.
         update(&mut model, Msg::Layout(LayoutMsg::NewTab));
@@ -461,7 +729,7 @@ mod tests {
         use token::messages::ContextMenuMsg;
         use token::model::{ContextMenuState, CursorOverlayKind, CursorOverlayState};
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let path = std::path::PathBuf::from("/tmp/x.rs");
         let items = vec![MenuItem::custom(
             "Copy Absolute Path",
@@ -497,7 +765,7 @@ mod tests {
     fn mouse_wheel_up_over_terminal_dock_scrolls_scrollback() {
         let mut model = terminal_model_with_history();
 
-        let cmd = handle_mouse_wheel(&mut model, Some((0.0, 0.0)), 0, -3);
+        let cmd = handle_mouse_wheel(&mut model, Some((0.0, 0.0)), 0, -3, None);
 
         assert!(cmd.as_ref().is_some_and(Cmd::needs_redraw));
         assert_eq!(model.terminal.active_session().unwrap().scroll_offset, 3);
@@ -508,7 +776,7 @@ mod tests {
         let mut model = terminal_model_with_history();
         model.terminal.active_session_mut().unwrap().scroll_offset = 4;
 
-        let cmd = handle_mouse_wheel(&mut model, Some((0.0, 0.0)), 0, 2);
+        let cmd = handle_mouse_wheel(&mut model, Some((0.0, 0.0)), 0, 2, None);
 
         assert!(cmd.as_ref().is_some_and(Cmd::needs_redraw));
         assert_eq!(model.terminal.active_session().unwrap().scroll_offset, 2);
@@ -522,7 +790,7 @@ mod tests {
         // than accumulating unboundedly (regression: previously required
         // as many upward notches to "unwind" before the (already-fully-
         // visible) window would move again).
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.hover = HoverRegion::CursorOverlay;
         model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
             token::model::CursorOverlayKind::DebugCompletion,
@@ -533,11 +801,11 @@ mod tests {
         );
 
         for _ in 0..20 {
-            handle_mouse_wheel(&mut model, None, 0, 3);
+            handle_mouse_wheel(&mut model, None, 0, 3, None);
         }
         assert_eq!(model.ui.cursor_overlay.unwrap().scroll, 0);
 
-        handle_mouse_wheel(&mut model, None, 0, -3);
+        handle_mouse_wheel(&mut model, None, 0, -3, None);
         assert_eq!(model.ui.cursor_overlay.unwrap().scroll, 0);
     }
 
@@ -577,7 +845,7 @@ mod tests {
 
     #[test]
     fn right_click_on_editor_content_opens_the_editor_menu() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let group_id = model.editor_area.focused_group_id;
         let editor_id = model.editor_area.focused_editor_id().unwrap();
         let document_id = model.editor_area.focused_document_id().unwrap();
@@ -599,7 +867,7 @@ mod tests {
 
     #[test]
     fn right_click_on_a_sidebar_item_opens_the_file_tree_menu() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let target = HitTarget::SidebarItem {
             path: std::path::PathBuf::from("/tmp/foo.rs"),
             row: 0,
@@ -617,7 +885,7 @@ mod tests {
 
     #[test]
     fn right_click_on_a_region_with_no_v1_menu_bubbles() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let result = handle_right_click(&mut model, &HitTarget::StatusBar, &right_click_event());
         assert!(matches!(result, EventResult::Bubble));
         assert!(model.ui.context_menu.is_none());
@@ -625,7 +893,7 @@ mod tests {
 
     #[test]
     fn right_click_is_a_no_op_while_a_modal_is_open() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.active_modal = Some(token::model::ModalState::GotoLine(Default::default()));
         let target = HitTarget::SidebarItem {
             path: std::path::PathBuf::from("/tmp/foo.rs"),
@@ -650,7 +918,7 @@ mod tests {
 
     #[test]
     fn click_away_from_a_context_menu_dismisses_and_swallows_the_click() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
             token::model::CursorOverlayKind::ContextMenu,
         ));
@@ -674,7 +942,7 @@ mod tests {
 
     #[test]
     fn a_right_click_dismisses_a_context_menu_without_swallowing_so_it_can_reopen() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
             token::model::CursorOverlayKind::ContextMenu,
         ));
@@ -699,7 +967,7 @@ mod tests {
         // Completion/hover/references are non-blocking (overlay-surface.md
         // Phase 5): click-away dismisses but falls through to whatever's
         // under it — only the context menu swallows.
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
             token::model::CursorOverlayKind::Completion,
         ));
@@ -713,7 +981,7 @@ mod tests {
 
     #[test]
     fn click_on_the_cursor_overlay_itself_never_dismisses() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
             token::model::CursorOverlayKind::ContextMenu,
         ));
@@ -733,7 +1001,7 @@ mod tests {
 
     #[test]
     fn no_open_overlay_is_a_no_op() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let dismissal =
             dismiss_overlay_for_press(&mut model, &HitTarget::StatusBar, MouseButton::Left);
         assert!(!dismissal.dismissed);
@@ -742,7 +1010,7 @@ mod tests {
 
     #[test]
     fn tab_file_path_resolves_the_tabs_document_not_the_focused_one() {
-        let model = AppModel::new(800, 600, 1.0, vec![]);
+        let model = AppModel::new(800, 600, 1.0);
         let group_id = model.editor_area.focused_group_id;
         let tab_id = model
             .editor_area
@@ -1015,8 +1283,11 @@ fn dismiss_overlay_for_press(
     button: MouseButton,
 ) -> OverlayDismissal {
     let dismissed_kind = model.ui.cursor_overlay.map(|s| s.kind);
-    let dismissed =
-        model.ui.cursor_overlay.is_some() && !matches!(target, HitTarget::CursorOverlay { .. });
+    let dismissed = model.ui.cursor_overlay.is_some()
+        && !matches!(
+            target,
+            HitTarget::CursorOverlay { .. } | HitTarget::CursorOverlayDocumentation { .. }
+        );
     if dismissed {
         model.ui.cursor_overlay = None;
         model.ui.completion_menu = None;
@@ -1165,6 +1436,9 @@ fn handle_cursor_overlay_click(model: &mut AppModel, flat_index: Option<usize>) 
     };
     let kind = model.ui.cursor_overlay.map(|state| state.kind);
     if let Some(state) = &mut model.ui.cursor_overlay {
+        if state.selected != idx {
+            state.reset_documentation();
+        }
         state.selected = idx;
     }
     // The activation message may return a Cmd (e.g. CopyToClipboard) that
@@ -1276,7 +1550,7 @@ fn handle_left_click(
         }
         HitTarget::ModalChoice { flat_index, choice } => modal_press(
             model,
-            ModalMsg::SelectSettingChoice {
+            ModalMsg::ChooseSetting {
                 row: *flat_index,
                 choice: *choice,
             },
@@ -1293,6 +1567,18 @@ fn handle_left_click(
         // Enter — otherwise the real popup could only ever be used with the
         // keyboard).
         HitTarget::CursorOverlay { flat_index } => handle_cursor_overlay_click(model, *flat_index),
+        HitTarget::CursorOverlayDocumentation { toggle, .. } => {
+            let cmd = if *toggle {
+                update(model, Msg::Completion(CompletionMsg::ToggleDocumentation))
+            } else {
+                None
+            };
+            EventResult::Consumed {
+                cmd,
+                focus: None,
+                redraw: false,
+            }
+        }
 
         // Status bar - consume but do nothing
         HitTarget::StatusBar => EventResult::consumed_no_redraw(),
@@ -1960,8 +2246,8 @@ fn handle_middle_click(
         HitTarget::Modal { .. }
         | HitTarget::ModalScrollbar { .. }
         | HitTarget::ModalRow { .. }
-        | HitTarget::ModalTab { .. }
-        | HitTarget::ModalChoice { .. } => EventResult::consumed_no_redraw(),
+        | HitTarget::ModalChoice { .. }
+        | HitTarget::ModalTab { .. } => EventResult::consumed_no_redraw(),
 
         // Sidebar targets - consume, no action for middle-click
         HitTarget::SidebarEmpty | HitTarget::SidebarItem { .. } => {
@@ -1988,7 +2274,9 @@ fn handle_middle_click(
         | HitTarget::ScrollbarTrackHorizontal { .. } => EventResult::consumed_no_redraw(),
 
         // Cursor overlay - no middle-click action
-        HitTarget::CursorOverlay { .. } => EventResult::consumed_no_redraw(),
+        HitTarget::CursorOverlay { .. } | HitTarget::CursorOverlayDocumentation { .. } => {
+            EventResult::consumed_no_redraw()
+        }
     }
 }
 
@@ -2151,9 +2439,48 @@ pub fn handle_mouse_wheel(
     mouse_position: Option<(f64, f64)>,
     h_delta: i32,
     v_delta: i32,
+    measure: Option<&mut dyn token::layout::TextMeasure>,
+) -> Option<Cmd> {
+    // Re-hit-test with current font/window geometry: a resize or a new reply
+    // can move the card without moving the pointer. Never use stale row bounds.
+    let mut hover_changed = false;
+    if model.ui.has_visible_completion() {
+        if let (Some(measure), Some((x, y))) = (measure, mouse_position) {
+            let target = token::view::hit_test::hit_test_ui(
+                model,
+                token::view::hit_test::Point::new(x, y),
+                model.char_width,
+                measure,
+            );
+            hover_changed = update_hover_target(model, target.as_ref());
+            if let Some(HitTarget::CursorOverlayDocumentation { viewport, .. }) = target {
+                let scroll = viewport.scrolled((v_delta.signum() * 3) as isize);
+                let cmd = update(
+                    model,
+                    Msg::Completion(CompletionMsg::DocumentationScrolled(scroll)),
+                );
+                return merge(hover_changed.then_some(Cmd::Redraw), cmd);
+            }
+        }
+    }
+    let cmd = scroll_hovered_region(model, mouse_position, h_delta, v_delta);
+    merge(hover_changed.then_some(Cmd::Redraw), cmd)
+}
+
+fn merge(a: Option<Cmd>, b: Option<Cmd>) -> Option<Cmd> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(Cmd::Batch(vec![a, b])),
+        (a, b) => a.or(b),
+    }
+}
+
+fn scroll_hovered_region(
+    model: &mut AppModel,
+    mouse_position: Option<(f64, f64)>,
+    h_delta: i32,
+    v_delta: i32,
 ) -> Option<Cmd> {
     use token::model::HoverRegion;
-
     match model.ui.hover {
         // Sidebar: scroll the file tree
         HoverRegion::Sidebar => {
@@ -2198,7 +2525,6 @@ pub fn handle_mouse_wheel(
                 None
             }
         }
-
         // Preview panes: webview handles its own scrolling
         HoverRegion::Preview => None,
 
@@ -2303,10 +2629,6 @@ pub fn handle_mouse_wheel(
                 update(model, Msg::Completion(CompletionMsg::Dismiss))
             } else {
                 None
-            };
-            let merge = |a: Option<Cmd>, b: Option<Cmd>| match (a, b) {
-                (Some(a), Some(b)) => Some(Cmd::Batch(vec![a, b])),
-                (a, b) => a.or(b),
             };
 
             let in_image_mode = model

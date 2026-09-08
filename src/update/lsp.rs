@@ -74,11 +74,6 @@ pub fn close_lsp_document(document_id: DocumentId) -> Cmd {
     Cmd::LspDidClose { document_id }
 }
 
-/// `didSave` after a successful save.
-pub fn save_lsp_document(document_id: DocumentId) -> Cmd {
-    Cmd::LspDidSave { document_id }
-}
-
 /// Schedules a debounced `didChange` for an edited document — pair with
 /// `schedule_syntax_parse` at edit sites.
 pub fn schedule_lsp_did_change(model: &AppModel, document_id: DocumentId) -> Option<Cmd> {
@@ -121,15 +116,15 @@ fn apply_lsp_server_toggle(lsp: &mut crate::config::LspConfig, server_id: &str) 
 /// matching open/edit, matching the design doc's Process Model.
 pub fn toggle_lsp_enabled(model: &mut AppModel) -> Option<Cmd> {
     let enabled = apply_lsp_master_toggle(&mut model.config);
-    if let Err(e) = model.config.save() {
-        tracing::warn!("Failed to save LSP toggle: {}", e);
-    }
     model.ui.set_status(if enabled {
         "LSP enabled"
     } else {
         "LSP disabled"
     });
     Some(Cmd::Batch(vec![
+        Cmd::SaveConfiguration {
+            config: Box::new(model.config.clone()),
+        },
         Cmd::LspSetEnabled { enabled },
         Cmd::redraw_status_bar(),
     ]))
@@ -141,10 +136,10 @@ pub fn toggle_lsp_enabled(model: &mut AppModel) -> Option<Cmd> {
 /// `None` only if the config can't be reached (never for a valid `id`).
 pub fn toggle_lsp_server_enabled(model: &mut AppModel, server_id: &str) -> Option<Cmd> {
     let enabled = apply_lsp_server_toggle(&mut model.config.lsp, server_id);
-    if let Err(e) = model.config.save() {
-        tracing::warn!("Failed to save LSP server toggle: {}", e);
-    }
     Some(Cmd::Batch(vec![
+        Cmd::SaveConfiguration {
+            config: Box::new(model.config.clone()),
+        },
         Cmd::LspSetServerEnabled {
             server_id: crate::lsp::LspServerId::from(server_id),
             enabled,
@@ -328,6 +323,27 @@ pub(crate) fn request_formatting(
 
 pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
     match msg {
+        LspMsg::WorkspaceSymbolProviders(providers) => {
+            model.lsp.workspace_symbol_providers = providers;
+            Some(Cmd::Redraw)
+        }
+        LspMsg::WorkspaceSymbolsReady { request, results } => {
+            if model.ui.workspace_symbol_request.as_ref() != Some(&request) {
+                return None;
+            }
+            let Some(crate::model::ModalState::CommandPalette(state)) = &mut model.ui.active_modal
+            else {
+                return None;
+            };
+            if state.input() != request.query {
+                return None;
+            }
+            state.symbols.results = results;
+            state.symbols.searching = false;
+            state.symbols.selected_index = 0;
+            state.symbols.scroll_offset = 0;
+            Some(Cmd::Redraw)
+        }
         LspMsg::WorkspaceSymbolsResponseFromServer { .. } => None,
         LspMsg::FormatDocument { selection_only } => {
             request_formatting(model, selection_only, false)
@@ -350,7 +366,12 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                     Some(edits) => {
                         let planned =
                             plan_text_edits(model.editor_area.documents.get(&document_id)?, edits);
-                        cmd = apply_planned_edits(model, document_id, &planned);
+                        cmd = apply_planned_edits(
+                            model,
+                            document_id,
+                            &planned,
+                            super::text_edits::EditCarets::Preserve,
+                        );
                     }
                     None if then_save => {}
                     None => model
@@ -418,20 +439,11 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                 model.ui.set_status("Nothing to rename");
                 return Some(Cmd::redraw_status_bar());
             };
-            let (cmd, report) = crate::update::text_edits::apply_workspace_edit(model, *edit);
-            if report.files == 0 && report.skipped.is_empty() {
-                model.ui.set_status("Nothing to rename");
-                return Some(Cmd::redraw_status_bar());
-            }
-            let mut status = format!(
-                "Renamed in {} file(s), {} edit(s)",
-                report.files, report.edits
-            );
-            if !report.skipped.is_empty() {
-                status.push_str(&format!(" (skipped: {})", report.skipped.join("; ")));
-            }
-            model.ui.set_status(status);
-            navigation::combine(cmd, Some(Cmd::redraw_status_bar()))
+            super::text_edits::start_workspace_edit(
+                model,
+                *edit,
+                crate::model::WorkspaceEditAction::Rename,
+            )
         }
         LspMsg::RenameResponseFromServer { .. } => None,
         LspMsg::ServerSignatureTriggers {
@@ -475,14 +487,19 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                 model.ui.set_status(message);
             }
             model.lsp.servers.insert(server_id, state);
-            if matches!(
-                model.ui.active_modal,
-                Some(crate::model::ModalState::Settings(_))
-            ) {
-                Some(Cmd::Redraw)
-            } else {
-                Some(Cmd::redraw_status_bar())
-            }
+            Some(
+                if matches!(
+                    model.ui.active_modal,
+                    Some(
+                        crate::model::ModalState::Settings(_)
+                            | crate::model::ModalState::LspServers(_)
+                    )
+                ) {
+                    Cmd::Redraw
+                } else {
+                    Cmd::redraw_status_bar()
+                },
+            )
         }
         // The runtime's `LspManager` owns backoff/restart bookkeeping;
         // the model mirror just reflects whatever state it reports next.
@@ -855,24 +872,15 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                 return Some(Cmd::Redraw);
             };
             let document_id = model.try_document().and_then(|d| d.id);
-            let mut cmds = vec![Cmd::Redraw];
-            if let Some(edit) = item.edit {
-                let (cmd, report) = super::text_edits::apply_workspace_edit(model, *edit);
-                let mut status = format!("Applied: {}", item.title);
-                if !report.skipped.is_empty() {
-                    status.push_str(&format!(" (skipped: {})", report.skipped.join("; ")));
-                }
-                model.ui.set_status(status);
-                cmds.extend(cmd);
-            }
-            if let (Some(command), Some(document_id)) = (item.command, document_id) {
-                cmds.push(Cmd::LspExecuteCommand {
+            super::text_edits::start_workspace_edit(
+                model,
+                item.edit.map(|edit| *edit).unwrap_or_default(),
+                crate::model::WorkspaceEditAction::CodeAction {
+                    title: item.title,
+                    command: item.command,
                     document_id,
-                    command: command.command,
-                    arguments: command.arguments,
-                });
-            }
-            Some(Cmd::Batch(cmds))
+                },
+            )
         }
 
         LspMsg::FindReferences => super::usages::request(model, false),
@@ -989,32 +997,26 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             request_id,
             edit,
             label,
-        } => {
-            let (cmd, report) = super::text_edits::apply_workspace_edit(model, *edit);
-            model.ui.set_status(label.unwrap_or_else(|| {
-                format!("Applied {} edits in {} files", report.edits, report.files)
-            }));
-            let result = if report.skipped.is_empty() {
-                serde_json::json!({ "applied": true })
-            } else {
-                serde_json::json!({
-                    "applied": false,
-                    "failureReason": report.skipped.join("; "),
-                })
-            };
-            Some(Cmd::Batch(vec![
-                cmd.unwrap_or_else(Cmd::redraw_editor),
-                Cmd::LspRespondToServer {
-                    server_id,
-                    root,
-                    request_id,
-                    result,
-                },
-            ]))
-        }
+        } => super::text_edits::start_workspace_edit(
+            model,
+            *edit,
+            crate::model::WorkspaceEditAction::Server {
+                server_id,
+                root,
+                request_id,
+                label,
+            },
+        ),
     }
 }
 
+/// A stored `LocationItem` resolves its own open path when activated — set
+/// `model.lsp.route_hint` from the item's own resolving server/root
+/// (`None` inside the workspace) before jumping, so an out-of-workspace
+/// target still reuses the server that resolved it instead of letting
+/// `open_lsp_document`'s generic path derive (and possibly spawn) its own
+/// root (lsp-integration.md "never spawn a new server rooted in a
+/// toolchain directory").
 /// Shared activation for a resolved `LocationItem` list with more than one
 /// entry — the Show Usages popup, and the multi-def upgrade to
 /// `DefinitionResolved`. Exactly one entry jumps directly (`jump_to_location`,
@@ -1054,7 +1056,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     fn model() -> AppModel {
-        AppModel::new(800, 600, 1.0, vec![])
+        AppModel::new(800, 600, 1.0)
     }
 
     #[test]
@@ -1089,7 +1091,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("a.rs");
         std::fs::write(&path, "x\n".repeat(12)).unwrap();
-        let mut model = AppModel::new(800, 600, 1.0, vec![path]);
+        let mut model = AppModel::with_document(
+            800,
+            600,
+            1.0,
+            crate::model::Document::from_file(path).unwrap(),
+        );
         let diag = |line: u32, message: &str| lsp_types::Diagnostic {
             range: lsp_types::Range::new(
                 lsp_types::Position::new(line, 0),
@@ -1384,17 +1391,19 @@ mod tests {
         );
     }
 
-    /// A definition target that fails to open (permission denied, gone,
-    /// binary the loader rejects) must never move the cursor in the
-    /// *origin* document — `open_or_focus` falls through leaving the
-    /// origin focused, and `focused_tab_shows` must catch that mismatch
-    /// (design doc: "no stale result ever moves a cursor").
+    /// A failed deferred open must never apply destination coordinates to the
+    /// origin document ("no stale result ever moves a cursor").
     #[test]
     fn definition_resolved_to_an_unopenable_target_does_not_move_the_origin_cursor() {
         let dir = tempfile::tempdir().unwrap();
         let origin_path = dir.path().join("origin.rs");
         std::fs::write(&origin_path, "one\ntwo\nthree\n").unwrap();
-        let mut model = AppModel::new(800, 600, 1.0, vec![origin_path.clone()]);
+        let mut model = AppModel::with_document(
+            800,
+            600,
+            1.0,
+            crate::model::Document::from_file(origin_path.clone()).unwrap(),
+        );
         model.editor_mut().cursors[0].line = 0;
         model.editor_mut().cursors[0].column = 0;
 
@@ -1404,13 +1413,12 @@ mod tests {
 
         // A directory "location" (a server bug, but not one the client may
         // trust) makes `validate_file_for_opening` reject it as
-        // `IsDirectory` — `open_file_in_new_tab` returns without touching
-        // focus, exactly the real failure mode this guard exists for.
+        // `IsDirectory` — rejection leaves the origin view unchanged.
         let target_path = dir.path().join("target_dir");
         std::fs::create_dir(&target_path).unwrap();
         let target_uri = crate::lsp::path_to_uri(&target_path);
 
-        update_lsp(
+        let cmd = update_lsp(
             &mut model,
             LspMsg::DefinitionResolved {
                 document_id: doc_id,
@@ -1435,6 +1443,7 @@ mod tests {
                 },
             },
         );
+        crate::update::finish_test_file_opens(&mut model, cmd);
 
         assert_eq!(
             model.document().file_path.as_deref(),
@@ -1455,7 +1464,12 @@ mod tests {
     fn definition_outside_the_workspace_sets_a_route_hint_the_open_path_consumes() {
         let ws_dir = tempfile::tempdir().unwrap();
         std::fs::write(ws_dir.path().join("main.rs"), "fn main() {}\n").unwrap();
-        let mut model = AppModel::new(800, 600, 1.0, vec![ws_dir.path().join("main.rs")]);
+        let mut model = AppModel::with_document(
+            800,
+            600,
+            1.0,
+            crate::model::Document::from_file(ws_dir.path().join("main.rs")).unwrap(),
+        );
         model.workspace =
             crate::model::workspace::Workspace::new(ws_dir.path().to_path_buf(), &model.metrics)
                 .ok();
@@ -1500,15 +1514,15 @@ mod tests {
                 _ => false,
             }
         }
+        let cmd = crate::update::finish_test_file_opens(&mut model, cmd);
         assert!(
             cmd.is_some_and(|c| contains_did_open_on_server(&c, &server_id, &resolving_root)),
             "opening the out-of-workspace target must route didOpen to the resolving server, \
              not the generic ensure-server/resolve-root path"
         );
 
-        // The hint is consumed synchronously by `open_lsp_document` inside
-        // the same `update_lsp` call (`navigation::open_or_focus` ->
-        // `LayoutMsg::OpenFileInNewTab`) — nothing should be left pending.
+        // The hint was captured by the open intent and consumed after the
+        // destination loaded, never left in global state across the async gap.
         assert!(
             model.lsp.route_hint.is_none(),
             "the one-shot hint must be consumed by the same update"
@@ -1583,7 +1597,12 @@ mod tests {
         let link_path = dir.path().join("link.rs");
         symlink(&real_path, &link_path).unwrap();
 
-        let model = AppModel::new(800, 600, 1.0, vec![link_path.clone()]);
+        let model = AppModel::with_document(
+            800,
+            600,
+            1.0,
+            crate::model::Document::from_file(link_path.clone()).unwrap(),
+        );
         let doc_id = model.document().id.unwrap();
         assert_eq!(
             model.document().file_path.as_deref(),
@@ -1604,7 +1623,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("main.rs");
         std::fs::write(&path, "fn main() {}\n").unwrap();
-        let model = AppModel::new(800, 600, 1.0, vec![path]);
+        let model = AppModel::with_document(
+            800,
+            600,
+            1.0,
+            crate::model::Document::from_file(path).unwrap(),
+        );
         (dir, model)
     }
 
@@ -1824,7 +1848,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("main.rs");
         std::fs::write(&path, "one\ntwo\nthree\nfour\nfive\nsix\n").unwrap();
-        let mut model = AppModel::new(800, 600, 1.0, vec![path.clone()]);
+        let mut model = AppModel::with_document(
+            800,
+            600,
+            1.0,
+            crate::model::Document::from_file(path.clone()).unwrap(),
+        );
         model.ui.reference_list = Some(vec![loc(&path, 0, 0, "a"), loc(&path, 5, 0, "b")]);
         model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::References));
 
@@ -1847,7 +1876,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let origin_path = dir.path().join("origin.rs");
         std::fs::write(&origin_path, "one\ntwo\n").unwrap();
-        let mut model = AppModel::new(800, 600, 1.0, vec![origin_path.clone()]);
+        let mut model = AppModel::with_document(
+            800,
+            600,
+            1.0,
+            crate::model::Document::from_file(origin_path.clone()).unwrap(),
+        );
         let origin = navigation::current_jump_entry(&model).unwrap();
         let doc_id = model.document().id.unwrap();
         let revision = model.document().revision;
@@ -2055,7 +2089,7 @@ mod tests {
         );
         assert!(has_cmd(&cmd, &|c| matches!(
             c,
-            Cmd::SaveFile { content, .. } if content == "FN main() {}\n"
+            Cmd::SaveFile { content, .. } if content.chars().eq("FN main() {}\n".chars())
         )));
         assert!(model.ui.is_saving);
     }
@@ -2153,7 +2187,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("main.rs");
         std::fs::write(&path, "fn main() {}\nfn other() { main() }\n").unwrap();
-        let mut model = AppModel::new(800, 600, 1.0, vec![path]);
+        let mut model = AppModel::with_document(
+            800,
+            600,
+            1.0,
+            crate::model::Document::from_file(path).unwrap(),
+        );
         model.editor_mut().cursors[0] = crate::model::Cursor::at(0, 5);
         model.editor_mut().collapse_selections_to_cursors();
         (dir, model)

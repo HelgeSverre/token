@@ -33,7 +33,6 @@ use token::messages::{
 };
 use token::model::editor::Position;
 use token::model::{AppModel, JumpEntry};
-use token::panel::DockPosition;
 use token::syntax::{LanguageId, ParserState};
 use token::update::update;
 
@@ -44,6 +43,8 @@ use super::input::{
 use super::lsp_slot::{FeatureSlot, PendingRequest, RequestKey};
 #[path = "references.rs"]
 mod references;
+#[path = "workspace_symbols.rs"]
+mod workspace_symbols;
 use super::mouse::{
     end_tab_drag, handle_mouse_press, handle_mouse_wheel, make_mouse_event, update_hover_target,
     update_tab_drag, ClickTracker, DragState,
@@ -97,7 +98,6 @@ fn should_skip_non_global_keymap(
 
 struct PreparedApp {
     model: AppModel,
-    keymap: Keymap,
     workspace_root: Option<PathBuf>,
 }
 
@@ -158,7 +158,14 @@ fn prepare_app(
         } => (false, initial_files, Some(root)),
     };
 
-    let mut model = AppModel::new(window_width, window_height, 1.0, file_paths);
+    let mut model = AppModel::new(window_width, window_height, 1.0);
+    super::configuration::load_startup(&mut model);
+    model.ui.keymap = keymap;
+    if let Some(root) = &workspace_root {
+        model.open_workspace(root.clone());
+    }
+    model.resize(window_width, window_height);
+    super::file_io::prepare_startup_files(&mut model, file_paths);
     if demo_mode {
         let document_id = model.document().id;
         *model.document_mut() = token::model::Document::with_text(DEMO_DOCUMENT);
@@ -167,21 +174,10 @@ fn prepare_app(
         model.document_mut().language = LanguageId::Rust;
     }
 
-    let cli_paths: Vec<_> = model
-        .editor_area
-        .documents
-        .values()
-        .filter_map(|doc| doc.file_path.clone())
-        .collect();
-    for path in cli_paths {
-        model.record_file_opened(path);
-    }
-
-    if let Some(root) = &workspace_root {
-        model.open_workspace(root.clone());
-    }
-
     if let Some((line, column)) = startup_config.initial_position {
+        let document = model.document();
+        let line = line.min(document.line_count().saturating_sub(1));
+        let column = column.min(document.line_length(line));
         let editor = model.editor_mut();
         editor.cursors[0].line = line;
         editor.cursors[0].column = column;
@@ -192,14 +188,12 @@ fn prepare_app(
 
     PreparedApp {
         model,
-        keymap,
         workspace_root,
     }
 }
 
 pub struct App {
     model: AppModel,
-    keymap: Keymap,
     renderer: Option<Renderer>,
     renderer_preparation: Option<RendererPreparation>,
     window: Option<Rc<Window>>,
@@ -219,6 +213,9 @@ pub struct App {
     drag: DragState,
     msg_tx: Sender<Msg>,
     msg_rx: Receiver<Msg>,
+    file_io_tx: Option<super::file_io::FileWorker>,
+    find_worker: Option<super::find_worker::FindWorker>,
+    path_worker: Option<super::path_completion::PathWorker>,
     perf: PerfStats,
     /// Channel to send parse requests to syntax worker
     syntax_tx: Sender<SyntaxWorkerRequest>,
@@ -252,11 +249,12 @@ pub struct App {
     automation_profile: Option<AutomationProfile>,
     /// `--wait` handoffs still waiting for their documents to close.
     document_waiters: Vec<DocumentWaiter>,
-    /// Inline-suggestion debounces: document → (deadline, revision,
-    /// explicit). Re-arming replaces the entry (autocomplete.md Phase 2).
-    inline_deadlines: HashMap<token::model::editor_area::DocumentId, (Instant, u64, bool)>,
+    /// Only the focused pane can own an inline debounce/request.
+    inline_deadline: Option<(Instant, token::completion::inline::RequestSnapshot, bool)>,
+    inline_context: super::inline_context::InlineContextRing,
     /// Requests for the completion worker thread.
-    inline_tx: Sender<token::completion::inline::InlineRequest>,
+    inline_tx:
+        tokio::sync::watch::Sender<Option<std::sync::Arc<token::completion::provider::InlineJob>>>,
     /// When this window last gained focus (process start until then);
     /// automation clients pick the most recently focused instance.
     focused_at: std::time::SystemTime,
@@ -266,10 +264,10 @@ pub struct App {
     latest_syntax_performance: Option<crate::automation::SyntaxPerfSnapshot>,
     lsp: LspManager,
     reference_previews: references::ReferencePreviews,
-    /// Wakes the event loop from an LSP worker thread; `None` in tests
+    /// Wakes the event loop from file/LSP workers; `None` in tests
     /// that construct `App` without a real event loop (matches
     /// `automation_proxy`'s optionality).
-    lsp_wake: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    worker_wake: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     /// Debounced `didChange` deadlines (max-wait capped), keyed by
     /// document — mirrors `syntax_deadlines`'s shape.
     lsp_change_deadlines: lsp::sync::DidChangeDeadlines<token::model::editor_area::DocumentId>,
@@ -284,6 +282,8 @@ struct AutomationProfile {
 /// in `remaining` has been released (closed in every group), or on exit.
 /// `exit_only` waiters (no files, or none resolvable) answer on exit only.
 struct DocumentWaiter {
+    opening: HashSet<u64>,
+    wait_for_close: bool,
     remaining: HashSet<token::model::editor_area::DocumentId>,
     exit_only: bool,
     response_tx: mpsc::SyncSender<AutomationResponse>,
@@ -383,6 +383,7 @@ const HOVER_DWELL_MOVE_THRESHOLD_PX: f64 = 3.0;
 /// design doc's Process Model (non-`Debug`/`Clone` handles must never
 /// reach `AppModel`, which the automation layer snapshots wholesale).
 struct LspManager {
+    symbols: workspace_symbols::SymbolSearch,
     servers: HashMap<(LspServerId, PathBuf), ServerHandle>,
     detached_roots: Vec<PathBuf>,
     /// Crash count per `(server_id, root)` — keyed the same as `servers`
@@ -988,6 +989,7 @@ struct OpenDocState {
 impl LspManager {
     fn new() -> Self {
         Self {
+            symbols: workspace_symbols::SymbolSearch::default(),
             servers: HashMap::new(),
             detached_roots: Vec::new(),
             restart_attempts: HashMap::new(),
@@ -1045,14 +1047,14 @@ impl App {
         }
         // LSP worker threads wake the event loop the same way the syntax
         // worker does; cloned before `automation_proxy` is moved below.
-        let lsp_wake: Option<std::sync::Arc<dyn Fn() + Send + Sync>> =
+        let worker_wake: Option<std::sync::Arc<dyn Fn() + Send + Sync>> =
             automation_proxy.clone().map(|proxy| {
                 std::sync::Arc::new(move || {
                     let _ = proxy.send_event(());
                 }) as std::sync::Arc<dyn Fn() + Send + Sync>
             });
         // Spawn the inline-suggestion worker (autocomplete.md Phase 2).
-        let (inline_tx, inline_rx) = mpsc::channel();
+        let (inline_tx, inline_rx) = tokio::sync::watch::channel(None);
         {
             let msg_tx_clone = msg_tx.clone();
             let proxy = automation_proxy.clone();
@@ -1078,7 +1080,6 @@ impl App {
 
         let PreparedApp {
             model,
-            keymap,
             workspace_root,
         } = app_preparation
             .and_then(AppPreparation::finish)
@@ -1086,7 +1087,6 @@ impl App {
 
         let mut app = Self {
             model,
-            keymap,
             renderer: None,
             renderer_preparation,
             window: None,
@@ -1100,6 +1100,9 @@ impl App {
             drag: DragState::default(),
             msg_tx,
             msg_rx,
+            file_io_tx: None,
+            find_worker: None,
+            path_worker: None,
             perf: PerfStats::default(),
             syntax_tx,
             fs_watcher: None,
@@ -1116,7 +1119,8 @@ impl App {
             automation_tx,
             automation_profile: None,
             document_waiters: Vec::new(),
-            inline_deadlines: HashMap::new(),
+            inline_deadline: None,
+            inline_context: super::inline_context::InlineContextRing::default(),
             inline_tx,
             focused_at: std::time::SystemTime::now(),
             syntax_scheduled: HashMap::new(),
@@ -1125,7 +1129,7 @@ impl App {
             latest_syntax_performance: None,
             lsp: LspManager::new(),
             reference_previews: references::ReferencePreviews::default(),
-            lsp_wake,
+            worker_wake,
             lsp_change_deadlines: lsp::sync::DidChangeDeadlines::new(),
         };
 
@@ -1209,18 +1213,35 @@ impl App {
 
     /// Extract current context from the model for keybinding evaluation
     fn get_key_context(&self) -> KeyContext {
-        use token::model::FocusTarget;
+        KeyContext::from_model(&self.model)
+    }
 
-        let focus = self.model.ui.focus;
-
-        KeyContext {
-            has_selection: !self.model.editor().active_selection().is_empty(),
-            has_multiple_cursors: self.model.editor().has_multiple_cursors(),
-            modal_active: self.model.ui.has_modal(),
-            editor_focused: matches!(focus, FocusTarget::Editor),
-            sidebar_focused: matches!(focus, FocusTarget::Dock(DockPosition::Left)),
-            overlay_routes_keys: self.model.ui.cursor_overlay.is_some(),
-            inline_suggestion_visible: token::update::inline::visible(&self.model).is_some(),
+    /// Resolve each key exactly once: a global probe must not consume a chord
+    /// that the editor dispatcher then tries to resolve for a second time.
+    fn resolve_keymap_action(
+        &mut self,
+        candidates: impl IntoIterator<Item = token::keymap::Keystroke>,
+        alt: bool,
+    ) -> KeyAction {
+        let context = self.get_key_context();
+        let skip_non_global =
+            should_skip_non_global_keymap(&self.model, self.option_gesture.double_tapped, alt);
+        let action = self
+            .model
+            .ui
+            .keymap
+            .handle_keystroke_with_context(candidates, Some(&context));
+        match action {
+            KeyAction::Execute(command)
+                if command.is_global() || (!skip_non_global && command.is_simple()) =>
+            {
+                KeyAction::Execute(command)
+            }
+            KeyAction::AwaitMore if !skip_non_global => KeyAction::AwaitMore,
+            _ => {
+                self.model.ui.keymap.reset();
+                KeyAction::NoMatch
+            }
         }
     }
 
@@ -1446,12 +1467,14 @@ impl App {
                 if !focused {
                     let mut commands = Vec::new();
                     commands.extend(update(&mut self.model, Msg::Ui(UiMsg::ScrollbarDragEnd)));
-                    if self.model.ui.completion_menu.is_some() {
-                        commands.extend(update(
-                            &mut self.model,
-                            Msg::Completion(CompletionMsg::Dismiss),
-                        ));
-                    }
+                    commands.extend(update(
+                        &mut self.model,
+                        Msg::Completion(CompletionMsg::Dismiss),
+                    ));
+                    commands.extend(update(
+                        &mut self.model,
+                        Msg::Completion(CompletionMsg::DismissInline),
+                    ));
                     (!commands.is_empty()).then_some(Cmd::Batch(commands))
                 } else {
                     None
@@ -1476,6 +1499,23 @@ impl App {
                 }
 
                 if event.state == ElementState::Pressed {
+                    if matches!(&self.model.ui.active_modal, Some(token::model::ModalState::Settings(state)) if state.keymap.capture.is_some())
+                    {
+                        if event.repeat {
+                            return Some(Cmd::Redraw);
+                        }
+                        return super::input::handle_settings_capture_key(
+                            &mut self.model,
+                            &event.logical_key,
+                            event.physical_key,
+                            KeyModifiers {
+                                ctrl: self.modifiers.control_key(),
+                                shift: self.modifiers.shift_key(),
+                                alt: self.modifiers.alt_key(),
+                                logo: self.modifiers.super_key(),
+                            },
+                        );
+                    }
                     #[cfg(debug_assertions)]
                     if event.logical_key == Key::Named(NamedKey::F2) {
                         self.perf.show_overlay = !self.perf.show_overlay;
@@ -1519,12 +1559,23 @@ impl App {
                         logo,
                     };
 
-                    // Convert the raw winit event to our Keystroke type once. This is a
-                    // pure conversion of the event + modifiers and doesn't depend on
-                    // keymap state, so the same value can be reused for both the
-                    // global-command check below and the non-global check further down
-                    // (previously this called keystroke_from_winit twice with identical
-                    // arguments).
+                    // Prefer the typed character: some layouts need Option to
+                    // type brackets. If unbound, try the unmodified layout key
+                    // for shortcuts such as Option+] on US keyboards. Unbound
+                    // text input below still receives the original character.
+                    #[cfg(target_os = "macos")]
+                    let fallback = {
+                        use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+                        alt.then(|| event.key_without_modifiers()).and_then(|key| {
+                            keystroke_from_winit(&key, event.physical_key, ctrl, shift, alt, logo)
+                        })
+                    };
+                    #[cfg(not(target_os = "macos"))]
+                    let fallback = None;
+
+                    // Convert the primary key without changing dispatch state.
+                    // Popup priority runs
+                    // before the single shared global/editor keymap resolution below.
                     let keystroke = keystroke_from_winit(
                         &event.logical_key,
                         event.physical_key,
@@ -1553,52 +1604,12 @@ impl App {
                         }
                     }
 
-                    // Check for global commands first (work regardless of focus state)
-                    // These include command palette, save, quit, etc.
-                    if let Some(keystroke) = keystroke {
-                        let context = self.get_key_context();
-                        if let KeyAction::Execute(command) = self
-                            .keymap
-                            .handle_keystroke_with_context(keystroke, Some(&context))
+                    if keystroke.is_some() || fallback.is_some() {
+                        match self.resolve_keymap_action(keystroke.into_iter().chain(fallback), alt)
                         {
-                            if command.is_global() {
-                                return self.dispatch_command(command);
-                            }
-                        }
-                        // Reset keymap state after global check (we'll re-check below if needed)
-                        self.keymap.reset();
-                    }
-
-                    // Try keymap for non-global commands, but only when:
-                    // - No modal is active (modals handled by handle_modal_key in input.rs)
-                    // - Not in option double-tap mode with alt pressed (multi-cursor gesture)
-                    // - Sidebar is not focused (sidebar keys handled by handle_sidebar_key in input.rs)
-                    // - Outline is not focused (outline keys handled by handle_outline_dock_key in input.rs)
-                    // - Not editing a CSV cell (CSV cell editor handled by handle_csv_edit_key in input.rs)
-                    let skip_keymap = should_skip_non_global_keymap(
-                        &self.model,
-                        self.option_gesture.double_tapped,
-                        alt,
-                    );
-
-                    if !skip_keymap {
-                        if let Some(keystroke) = keystroke {
-                            let context = self.get_key_context();
-                            match self
-                                .keymap
-                                .handle_keystroke_with_context(keystroke, Some(&context))
-                            {
-                                KeyAction::Execute(command) if command.is_simple() => {
-                                    return self.dispatch_command(command);
-                                }
-                                KeyAction::AwaitMore => {
-                                    // Chord in progress - don't fall through to handle_key
-                                    return Some(Cmd::Redraw);
-                                }
-                                _ => {
-                                    // NoMatch or complex command - fall through to handle_key
-                                }
-                            }
+                            KeyAction::Execute(command) => return self.dispatch_command(command),
+                            KeyAction::AwaitMore => return Some(Cmd::Redraw),
+                            KeyAction::NoMatch => {}
                         }
                     }
 
@@ -1922,7 +1933,19 @@ impl App {
                     wheel_row_height(&self.model),
                 );
 
-                handle_mouse_wheel(&mut self.model, self.mouse_position, h_delta, v_delta)
+                if let Some(renderer) = &mut self.renderer {
+                    let mut painter = renderer.text_painter();
+                    let mut measure = token::layout::PainterMeasure::new(&mut painter);
+                    handle_mouse_wheel(
+                        &mut self.model,
+                        self.mouse_position,
+                        h_delta,
+                        v_delta,
+                        Some(&mut measure),
+                    )
+                } else {
+                    handle_mouse_wheel(&mut self.model, self.mouse_position, h_delta, v_delta, None)
+                }
             }
             WindowEvent::DroppedFile(path) => {
                 // Clear hover state first
@@ -2011,7 +2034,11 @@ impl App {
         self.deferred_startup_complete = true;
 
         #[cfg(target_os = "macos")]
-        super::macos_menu::install();
+        {
+            super::macos_menu::install();
+            super::macos_menu::set_shortcut_capture(matches!(&self.model.ui.active_modal,
+                Some(token::model::ModalState::Settings(state)) if state.keymap.capture.is_some()));
+        }
 
         if let Some(root) = self.pending_fs_watcher_root.take() {
             match FileSystemWatcher::new(root) {
@@ -2211,8 +2238,118 @@ impl App {
         }
     }
 
+    fn enqueue_file_job(&mut self, job: super::file_io::FileJob) {
+        if self.file_io_tx.is_none() {
+            match super::file_io::start_worker(self.msg_tx.clone(), self.worker_wake.clone()) {
+                Ok(sender) => self.file_io_tx = Some(sender),
+                Err(error) => {
+                    let _ = self.msg_tx.send(job.failed(error.to_string()));
+                    return;
+                }
+            }
+        }
+        if let Some(sender) = &self.file_io_tx {
+            if let Err(error) = sender.send(job) {
+                self.file_io_tx = None;
+                let _ = self
+                    .msg_tx
+                    .send(error.0.failed("File worker stopped".to_owned()));
+            }
+        }
+    }
+
     fn process_cmd(&mut self, cmd: Cmd) {
+        #[cfg(target_os = "macos")]
+        super::macos_menu::set_shortcut_capture(matches!(&self.model.ui.active_modal,
+            Some(token::model::ModalState::Settings(state)) if state.keymap.capture.is_some()));
+        // Observe intermediate tab/edit states even when one event-loop turn
+        // dispatches several commands (including automation batches).
+        self.inline_context.observe(&self.model, Instant::now());
         match cmd {
+            Cmd::PrepareKeymap { session, save } => {
+                self.enqueue_file_job(super::file_io::FileJob::Keymap { session, save })
+            }
+            Cmd::PageCompletionDocumentation { forward } => {
+                let viewport = self.renderer.as_mut().and_then(|renderer| {
+                    let mut painter = renderer.text_painter();
+                    let mut measure = token::layout::PainterMeasure::new(&mut painter);
+                    token::view::modal::with_cursor_overlay_spec(&self.model, |spec| {
+                        token::view::overlay_surface::layout_measured(
+                            spec,
+                            self.model.window_size.0 as usize,
+                            self.model.window_size.1 as usize,
+                            self.model.metrics.scale_factor,
+                            &mut measure,
+                        )
+                        .docs_viewport
+                    })
+                    .flatten()
+                });
+                if let Some(viewport) = viewport {
+                    let lines = if forward {
+                        viewport.visible as isize
+                    } else {
+                        -(viewport.visible as isize)
+                    };
+                    let scroll = viewport.scrolled(lines);
+                    let cmd = update(
+                        &mut self.model,
+                        Msg::Completion(CompletionMsg::DocumentationScrolled(scroll)),
+                    );
+                    if let Some(cmd) = cmd {
+                        self.process_cmd(cmd);
+                    }
+                }
+            }
+            Cmd::CompletePaths(request) => {
+                if self.path_worker.is_none() {
+                    match super::path_completion::start(
+                        self.msg_tx.clone(),
+                        self.worker_wake.clone(),
+                    ) {
+                        Ok(worker) => self.path_worker = Some(worker),
+                        Err(error) => {
+                            let _ = self.msg_tx.send(Msg::Completion(
+                                token::messages::CompletionMsg::PathsReady {
+                                    request,
+                                    result: Err(error.to_string()),
+                                },
+                            ));
+                            return;
+                        }
+                    }
+                }
+                if let Some(worker) = &self.path_worker {
+                    worker.submit(request);
+                }
+            }
+            Cmd::CancelPathCompletion => {
+                if let Some(worker) = &self.path_worker {
+                    worker.cancel();
+                }
+            }
+            Cmd::RunFindSearch(request) => {
+                if self.find_worker.is_none() {
+                    match super::find_worker::FindWorker::start(
+                        self.msg_tx.clone(),
+                        self.worker_wake.clone(),
+                    ) {
+                        Ok(worker) => self.find_worker = Some(worker),
+                        Err(error) => {
+                            let _ = self.msg_tx.send(Msg::Ui(
+                                token::messages::UiMsg::FindSearchCompleted {
+                                    request,
+                                    result: Err(error.to_string()),
+                                },
+                            ));
+                            return;
+                        }
+                    }
+                }
+                if let Some(worker) = &self.find_worker {
+                    worker.submit(request);
+                }
+            }
             Cmd::None => {}
             Cmd::Redraw => {}
             Cmd::RedrawAreas(_) => {} // Partial redraw - handled by damage tracking in render()
@@ -2231,43 +2368,35 @@ impl App {
                     tracing::error!("Failed to reinitialize renderer: {}", e);
                 }
             }
-            Cmd::SaveFile { path, content } => {
-                let tx = self.msg_tx.clone();
-                std::thread::spawn(move || {
-                    let result = std::fs::write(&path, content).map_err(|e| e.to_string());
-                    if let Err(e) = tx.send(Msg::App(AppMsg::SaveCompleted(result))) {
-                        tracing::warn!("Failed to send save completion to main thread: {}", e);
-                    }
-                });
-            }
-            Cmd::SaveFileAs {
-                document_id,
-                old_path,
-                new_path,
+            Cmd::SaveFile {
+                target,
+                path,
                 content,
             } => {
-                let tx = self.msg_tx.clone();
-                std::thread::spawn(move || {
-                    let result = std::fs::write(&new_path, content).map_err(|e| e.to_string());
-                    let msg = Msg::App(AppMsg::SaveAsCompleted {
-                        document_id,
-                        old_path,
-                        new_path,
-                        result,
-                    });
-                    if let Err(e) = tx.send(msg) {
-                        tracing::warn!("Failed to send save-as completion to main thread: {}", e);
-                    }
+                self.enqueue_file_job(super::file_io::FileJob::Write {
+                    target,
+                    path,
+                    content,
                 });
             }
-            Cmd::LoadFile { path } => {
-                let tx = self.msg_tx.clone();
-                std::thread::spawn(move || {
-                    let result = std::fs::read_to_string(&path).map_err(|e| e.to_string());
-                    if let Err(e) = tx.send(Msg::App(AppMsg::FileLoaded { path, result })) {
-                        tracing::warn!("Failed to send file load result to main thread: {}", e);
+            Cmd::LoadFile { target, path } => {
+                self.enqueue_file_job(super::file_io::FileJob::Read { target, path });
+            }
+            Cmd::PrepareFileOpen(request) => {
+                self.enqueue_file_job(super::file_io::FileJob::Open(request));
+            }
+            Cmd::FileOpenFinished {
+                request_id,
+                document_id,
+            } => {
+                for waiter in &mut self.document_waiters {
+                    if waiter.opening.remove(&request_id) {
+                        if let Some(document_id) = document_id {
+                            waiter.remaining.insert(document_id);
+                            waiter.exit_only = false;
+                        }
                     }
-                });
+                }
             }
             Cmd::OpenInExplorer { path } => {
                 #[cfg(target_os = "macos")]
@@ -2319,22 +2448,6 @@ impl App {
                     }
                 }
             }
-            Cmd::OpenFileInEditor { path } => {
-                let tx = self.msg_tx.clone();
-                std::thread::spawn(move || {
-                    let result = std::fs::read_to_string(&path).map_err(|e| e.to_string());
-                    if let Err(e) = tx.send(Msg::App(AppMsg::FileLoaded { path, result })) {
-                        tracing::warn!("Failed to send file load result to main thread: {}", e);
-                    }
-                });
-            }
-            Cmd::SaveConfiguration { config } => {
-                if let Err(error) = config.save() {
-                    self.model
-                        .ui
-                        .set_status(format!("Could not save settings: {error}"));
-                }
-            }
             Cmd::SaveRecentFiles { recent } => {
                 std::thread::spawn(move || {
                     if let Err(e) = recent.save() {
@@ -2348,6 +2461,9 @@ impl App {
                         tracing::warn!("Failed to save command history: {}", e);
                     }
                 });
+            }
+            Cmd::RecordInlineUsage(event) => {
+                self.enqueue_file_job(super::file_io::FileJob::InlineUsage(event));
             }
             Cmd::CopyToClipboard(text) => {
                 std::thread::spawn(move || {
@@ -2377,17 +2493,31 @@ impl App {
                     }
                 });
             }
-            Cmd::CreateDefaultKeymapFile { path } => {
-                let tx = self.msg_tx.clone();
-                std::thread::spawn(move || {
-                    let result = token::update::create_default_keymap_file(&path);
-                    if let Err(e) = tx.send(Msg::App(AppMsg::KeymapCreated { path, result })) {
-                        tracing::warn!(
-                            "Failed to send keymap created message to main thread: {}",
-                            e
-                        );
-                    }
-                });
+            Cmd::SaveConfiguration { config } => {
+                // Keep saves ordered: independent writer threads can overwrite newer choices.
+                let result = config.save().map_err(|error| error.to_string());
+                let _ = self
+                    .msg_tx
+                    .send(Msg::App(AppMsg::ConfigurationSaved(result)));
+            }
+            Cmd::ReloadConfiguration => {
+                let (config, result) = token::config::EditorConfig::reload();
+                let theme = token::theme::load_theme(&config.theme).unwrap_or_default();
+                let _ = self.msg_tx.send(Msg::App(AppMsg::ConfigurationLoaded {
+                    config: Box::new(config),
+                    theme: Box::new(theme),
+                    result,
+                }));
+            }
+            Cmd::LoadTheme { id, persist } => {
+                let result = token::theme::load_theme(&id)
+                    .map(Box::new)
+                    .map_err(|error| error.to_string());
+                let _ = self.msg_tx.send(Msg::App(AppMsg::ThemeLoaded {
+                    id,
+                    persist,
+                    result,
+                }));
             }
             Cmd::SpawnTerminal {
                 session_id,
@@ -2440,6 +2570,7 @@ impl App {
             // File Dialogs (using rfd)
             // =====================================================================
             Cmd::ShowOpenFileDialog {
+                group_id,
                 allow_multi,
                 start_dir,
             } => {
@@ -2456,7 +2587,9 @@ impl App {
                         dlg.pick_file().into_iter().collect()
                     };
 
-                    if let Err(e) = tx.send(Msg::App(AppMsg::OpenFileDialogResult { paths })) {
+                    if let Err(e) =
+                        tx.send(Msg::App(AppMsg::OpenFileDialogResult { group_id, paths }))
+                    {
                         tracing::warn!(
                             "Failed to send open file dialog result to main thread: {}",
                             e
@@ -2465,7 +2598,10 @@ impl App {
                 });
             }
 
-            Cmd::ShowSaveFileDialog { suggested_path } => {
+            Cmd::ShowSaveFileDialog {
+                target,
+                suggested_path,
+            } => {
                 let tx = self.msg_tx.clone();
                 std::thread::spawn(move || {
                     let mut dlg = rfd::FileDialog::new();
@@ -2479,7 +2615,9 @@ impl App {
                     }
 
                     let path = dlg.save_file();
-                    if let Err(e) = tx.send(Msg::App(AppMsg::SaveFileAsDialogResult { path })) {
+                    if let Err(e) =
+                        tx.send(Msg::App(AppMsg::SaveFileAsDialogResult { target, path }))
+                    {
                         tracing::warn!(
                             "Failed to send save file dialog result to main thread: {}",
                             e
@@ -2624,9 +2762,12 @@ impl App {
                     Duration::from_millis(lsp::sync::DID_CHANGE_MAX_WAIT_MS),
                 );
             }
-            Cmd::LspDidSave { document_id } => {
+            Cmd::LspDidSave {
+                document_id,
+                saved_text,
+            } => {
                 self.flush_lsp_did_change(document_id);
-                self.lsp_save_document(document_id);
+                self.lsp_save_document(document_id, &saved_text);
             }
             Cmd::LspDidClose { document_id } => {
                 self.lsp_close_document(document_id);
@@ -2736,6 +2877,7 @@ impl App {
             } => {
                 self.request_lsp_formatting(document_id, revision, range, options, then_save);
             }
+            Cmd::WorkspaceSymbols(request) => self.set_workspace_symbol_query(request),
             Cmd::LspRequestReferences {
                 target,
                 document_id,
@@ -2793,25 +2935,32 @@ impl App {
                 );
             }
             Cmd::ScheduleInlineRequest {
-                document_id,
-                revision,
+                snapshot,
                 delay_ms,
                 explicit,
             } => {
-                self.inline_deadlines.insert(
-                    document_id,
-                    (
-                        Instant::now() + Duration::from_millis(delay_ms),
-                        revision,
-                        explicit,
-                    ),
-                );
+                self.inline_deadline = Some((
+                    Instant::now() + Duration::from_millis(delay_ms),
+                    snapshot,
+                    explicit,
+                ));
             }
-            Cmd::RunInlineRequest(request) => {
-                if self.inline_tx.send(*request).is_err() {
+            Cmd::RunInlineRequest(mut request) => {
+                self.inline_context
+                    .attach(&self.model, &mut request, Instant::now());
+                if self
+                    .inline_tx
+                    .send(Some(std::sync::Arc::from(request)))
+                    .is_err()
+                {
                     tracing::warn!("inline suggestion worker is gone");
                     self.model.ui.inline_in_flight = false;
+                    self.model.ui.inline_session = None;
                 }
+            }
+            Cmd::CancelInlineRequest => {
+                self.inline_deadline = None;
+                let _ = self.inline_tx.send(None);
             }
             Cmd::LspCancelCompletion { document_id } => {
                 // Drop the pending debounce and supersede any in-flight
@@ -2912,6 +3061,7 @@ impl App {
             // Application Commands
             // =====================================================================
             Cmd::Quit => {
+                self.process_automation_msg(Msg::Completion(CompletionMsg::DismissInline));
                 // No quit-time teardown existed anywhere in the runtime
                 // before this (not even for PTY children); this is the
                 // first one. Runs the design doc's shutdown sequence per
@@ -2938,6 +3088,7 @@ impl App {
             messages.push(msg);
         }
         messages = self.intercept_definition_replies(messages);
+        messages = self.intercept_workspace_symbols(messages);
         messages = self.intercept_hover_replies(messages);
         messages = self.intercept_signature_help_replies(messages);
         messages = self.intercept_rename_replies(messages);
@@ -2997,6 +3148,14 @@ impl App {
             }
         });
         for msg in messages {
+            let saved_document = match &msg {
+                Msg::App(AppMsg::SaveCompleted {
+                    target,
+                    result: Ok(()),
+                    ..
+                }) => Some(target.document_id),
+                _ => None,
+            };
             if let Msg::Lsp(LspMsg::DiagnosticsPublished {
                 ref uri,
                 version,
@@ -3060,6 +3219,10 @@ impl App {
             }
             if let Some((server_id, generation)) = lsp_exited {
                 self.handle_lsp_server_exited(&server_id, generation);
+            }
+            if let Some(document) = saved_document {
+                self.inline_context
+                    .saved(&self.model, document, Instant::now());
             }
             if let Some((server_id, root)) = lsp_ready {
                 self.lsp
@@ -3430,7 +3593,7 @@ impl App {
                     items,
                     buffers,
                     outcome,
-                    self.lsp_wake.clone(),
+                    self.worker_wake.clone(),
                 )
             })
             .collect()
@@ -3439,8 +3602,8 @@ impl App {
     // Same interception for `textDocument/completion` replies. The
     // conversion to menu items happens here (mirroring
     // `build_reference_items`'s "real work before update()" rule):
-    // `can_resolve` comes from the responding server's capability
-    // snapshot, which only the runtime can consult.
+    // Server defaults come from the responding server's capability snapshot,
+    // which only the runtime can consult. Conversion owns the inheritance rules.
     fn intercept_completion_replies(&mut self, messages: Vec<Msg>) -> Vec<Msg> {
         messages
             .into_iter()
@@ -3465,14 +3628,19 @@ impl App {
                 // forwarded as-is (empty): the menu keeps its offline
                 // items and the next keystroke re-requests — there is no
                 // "still indexing" transient for completion.
-                let can_resolve = self
+                let capabilities = self
                     .lsp
                     .servers
                     .get(&(key.0.clone(), key.1.clone()))
-                    .and_then(|handle| handle.capabilities_snapshot())
-                    .is_some_and(|caps| lsp::client::supports_completion_resolve(&caps));
-                let menu_items =
-                    token::completion::lsp::items_to_menu_items(items, &key.0, &key.1, can_resolve);
+                    .and_then(|handle| handle.capabilities_snapshot());
+                let menu_items = token::completion::lsp::items_to_menu_items(
+                    items,
+                    &key.0,
+                    &key.1,
+                    capabilities
+                        .as_ref()
+                        .and_then(|caps| caps.completion_provider.as_ref()),
+                );
                 Some(Msg::Lsp(LspMsg::CompletionResolved {
                     document_id: pending.document_id,
                     revision: pending.revision,
@@ -3522,7 +3690,9 @@ impl App {
                         .as_ref()
                         .and_then(token::completion::lsp::documentation_to_styled)
                 });
-                let detail = item.and_then(|resolved| resolved.detail);
+                let detail = item
+                    .as_deref()
+                    .and_then(token::completion::lsp::item_detail);
                 Some(Msg::Lsp(LspMsg::CompletionItemResolved {
                     document_id: pending.document_id,
                     revision: pending.revision,
@@ -3747,7 +3917,7 @@ impl App {
             root,
             resolved.id.clone(),
             self.msg_tx.clone(),
-            self.lsp_wake.clone(),
+            self.worker_wake.clone(),
             resolved.initialization_options.clone(),
             resolved.settings.clone(),
         ) {
@@ -4031,7 +4201,11 @@ impl App {
 
     /// `textDocument/didSave` — with text iff the server's capabilities
     /// asked for it (`save: { includeText: true }`).
-    fn lsp_save_document(&mut self, document_id: token::model::editor_area::DocumentId) {
+    fn lsp_save_document(
+        &mut self,
+        document_id: token::model::editor_area::DocumentId,
+        saved_text: &ropey::Rope,
+    ) {
         let Some(state) = self.lsp.open_documents.get(&document_id) else {
             return;
         };
@@ -4048,9 +4222,7 @@ impl App {
         }
         let mut params = serde_json::json!({ "textDocument": { "uri": state.uri.as_str() } });
         if lsp::client::save_includes_text(&caps) {
-            if let Some(doc) = self.model.editor_area.documents.get(&document_id) {
-                params["text"] = serde_json::json!(doc.buffer.to_string());
-            }
+            params["text"] = serde_json::json!(saved_text.to_string());
         }
         let _ = handle.outbound_tx.send(lsp::client::WorkerCmd::Notify {
             method: "textDocument/didSave".to_owned(),
@@ -4833,21 +5005,16 @@ impl App {
     /// Replay elapsed inline-suggestion debounces into the update layer,
     /// which re-checks the revision and snapshots the request.
     fn check_inline_deadlines(&mut self) {
-        if self.inline_deadlines.is_empty() {
+        if !self
+            .inline_deadline
+            .as_ref()
+            .is_some_and(|(deadline, _, _)| Instant::now() >= *deadline)
+        {
             return;
         }
-        let now = Instant::now();
-        let due: Vec<_> = self
-            .inline_deadlines
-            .iter()
-            .filter(|(_, (deadline, _, _))| now >= *deadline)
-            .map(|(document_id, (_, revision, explicit))| (*document_id, *revision, *explicit))
-            .collect();
-        for (document_id, revision, explicit) in due {
-            self.inline_deadlines.remove(&document_id);
+        if let Some((_, snapshot, explicit)) = self.inline_deadline.take() {
             self.process_automation_msg(Msg::Completion(CompletionMsg::InlineDeadlineFired {
-                document_id,
-                revision,
+                snapshot,
                 explicit,
             }));
         }
@@ -5107,6 +5274,7 @@ impl ApplicationHandler for App {
             // Window-close (titlebar X / OS gesture) bypasses Cmd::Quit, so
             // run the same LSP shutdown->exit->kill sequence here.
             if should_exit {
+                self.process_automation_msg(Msg::Completion(CompletionMsg::DismissInline));
                 self.graceful_lsp_teardown();
             }
             event_loop.exit();
@@ -5134,6 +5302,8 @@ impl ApplicationHandler for App {
         if self.process_async_messages() {
             needs_redraw = true;
         }
+        self.refresh_workspace_symbol_providers();
+        self.check_workspace_symbols();
 
         // `Cmd::Quit` from a non-window source (automation, menu) only sets
         // the flag; `window_event` is the only other place that acts on it.
@@ -5175,6 +5345,7 @@ impl ApplicationHandler for App {
         self.check_lsp_code_action_deadlines();
         self.check_lsp_completion_debounces();
         self.check_lsp_completion_deadlines();
+        self.inline_context.observe(&self.model, Instant::now());
         self.check_inline_deadlines();
         self.check_lsp_resolve_debounces();
         self.check_lsp_resolve_deadlines();
@@ -5198,9 +5369,9 @@ impl ApplicationHandler for App {
         // Check if cursor blink timer has elapsed
         let now = Instant::now();
         let time_since_tick = now.duration_since(self.last_tick);
-        let blink_interval = Duration::from_millis(self.model.config.cursor_blink_ms);
+        let blink_interval = self.cursor_tick_interval();
 
-        if !blink_interval.is_zero() && time_since_tick >= blink_interval {
+        if time_since_tick >= blink_interval {
             self.last_tick = now;
             if let Some(cmd) = self.tick() {
                 // Accumulate damage from cursor blink
@@ -5219,19 +5390,27 @@ impl ApplicationHandler for App {
 }
 
 impl App {
+    /// Keep maintenance ticks alive with blinking disabled, without a zero-delay loop.
+    fn cursor_tick_interval(&self) -> Duration {
+        Duration::from_millis(if self.model.config.cursor_blink_ms == 0 {
+            250
+        } else {
+            self.model.config.cursor_blink_ms
+        })
+    }
+
     /// Earliest instant `about_to_wait` must run again: the next cursor
     /// blink or the earliest pending deadline. Deadlines already in the
     /// past are excluded — their check ran this tick and either fired or
     /// declined, and `WaitUntil` on a past instant spins the loop at 100%
     /// CPU.
     pub(super) fn next_wake(&self, now: Instant) -> Instant {
-        let mut next_wake = if self.model.config.cursor_blink_ms == 0 {
-            // Retain a modest maintenance wake for transient-message expiry.
-            now + Duration::from_millis(600)
-        } else {
-            self.last_tick + Duration::from_millis(self.model.config.cursor_blink_ms)
-        };
+        let blink_interval = self.cursor_tick_interval();
+        let mut next_wake = self.last_tick + blink_interval;
         if let Some(deadline) = self.reference_previews.deadline() {
+            next_wake = next_wake.min(deadline);
+        }
+        if let Some(deadline) = self.lsp.symbols.deadline() {
             next_wake = next_wake.min(deadline);
         }
         if let Some(earliest_deadline) = self.syntax_deadlines.values().map(|(d, _)| *d).min() {
@@ -5240,8 +5419,11 @@ impl App {
         if let Some(earliest_deadline) = self.lsp_change_deadlines.next_deadline() {
             next_wake = next_wake.min(earliest_deadline);
         }
-        if let Some(earliest_deadline) = self.inline_deadlines.values().map(|(d, _, _)| *d).min() {
-            next_wake = next_wake.min(earliest_deadline);
+        if let Some((deadline, _, _)) = &self.inline_deadline {
+            next_wake = next_wake.min(*deadline);
+        }
+        if let Some(deadline) = self.inline_context.deadline() {
+            next_wake = next_wake.min(deadline);
         }
         if let Some(earliest_deadline) = self.lsp.restart_deadlines.values().min() {
             next_wake = next_wake.min(*earliest_deadline);
@@ -5338,6 +5520,8 @@ impl App {
                 }
                 AutomationRequest::Actions => {
                     let mut actions: Vec<_> = self
+                        .model
+                        .ui
                         .keymap
                         .bindings()
                         .iter()
@@ -5485,35 +5669,56 @@ impl App {
                     }
                 }
                 AutomationRequest::OpenPaths { paths, wait } => {
-                    let mut remaining = HashSet::new();
+                    fn collect_ids(cmd: &Cmd, opening: &mut HashSet<u64>) {
+                        match cmd {
+                            Cmd::PrepareFileOpen(request) => {
+                                opening.insert(request.id());
+                            }
+                            Cmd::FileOpenFinished { request_id, .. } => {
+                                opening.insert(*request_id);
+                            }
+                            Cmd::Batch(commands) => {
+                                for cmd in commands {
+                                    collect_ids(cmd, opening);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    let mut opening = HashSet::new();
+                    let mut commands = Vec::new();
                     for crate::automation::OpenPath { path, line, column } in paths {
                         if path.is_dir() {
                             self.start_editor_for_directory(path);
                             continue;
                         }
-                        self.open_path_at(&path, line, column);
-                        if wait {
-                            if let Some((document_id, _, _)) =
-                                self.model.editor_area.find_open_file(&path)
-                            {
-                                remaining.insert(document_id);
-                            }
+                        if let Some(cmd) = token::update::navigation::open_path_at(
+                            &mut self.model,
+                            path,
+                            line,
+                            column,
+                        ) {
+                            collect_ids(&cmd, &mut opening);
+                            commands.push(cmd);
                         }
                     }
                     if let Some(window) = &self.window {
                         window.focus_window();
                     }
-                    if wait {
-                        self.document_waiters.push(DocumentWaiter {
-                            exit_only: remaining.is_empty(),
-                            remaining,
-                            response_tx: envelope.response_tx,
-                        });
-                    } else {
-                        let _ = envelope
-                            .response_tx
-                            .send(self.automation_response("opened"));
+                    // Register before executing: exact-path reuse completes inline,
+                    // while disk preparation will complete in a later event turn.
+                    self.document_waiters.push(DocumentWaiter {
+                        opening,
+                        wait_for_close: wait,
+                        exit_only: true,
+                        remaining: HashSet::new(),
+                        response_tx: envelope.response_tx,
+                    });
+                    for cmd in commands {
+                        self.pending_damage.merge(cmd.damage());
+                        self.process_cmd(cmd);
                     }
+                    self.poll_document_waiters();
                     redraw = true;
                 }
                 AutomationRequest::ProfileFrames { frames } => {
@@ -5550,28 +5755,6 @@ impl App {
     /// The macOS open-file hook pushes `OpenPaths` requests through this.
     pub fn automation_sender(&self) -> Sender<AutomationEnvelope> {
         self.automation_tx.clone()
-    }
-
-    /// Open (or focus) `path` in the focused group and, when a 1-indexed
-    /// `line` is given, place the cursor there.
-    fn open_path_at(&mut self, path: &Path, line: Option<usize>, column: Option<usize>) {
-        use token::update::navigation::{focused_tab_shows, open_or_focus, place_cursor_char};
-        if let Some(cmd) = open_or_focus(&mut self.model, path.to_path_buf()) {
-            self.pending_damage.merge(cmd.damage());
-            self.process_cmd(cmd);
-        }
-        if let Some(line) = line {
-            if focused_tab_shows(&self.model, path) {
-                let column = column.unwrap_or(1).saturating_sub(1);
-                if let Some(cmd) =
-                    place_cursor_char(&mut self.model, line.saturating_sub(1), column)
-                {
-                    self.pending_damage.merge(cmd.damage());
-                    self.process_cmd(cmd);
-                }
-            }
-        }
-        self.model.record_file_opened(path.to_path_buf());
     }
 
     /// A window owns one workspace, so a directory delivered to a running
@@ -5613,6 +5796,13 @@ impl App {
         let documents = &self.model.editor_area.documents;
         let mut finished = Vec::new();
         self.document_waiters.retain_mut(|waiter| {
+            if !waiter.opening.is_empty() {
+                return true;
+            }
+            if !waiter.wait_for_close {
+                finished.push((waiter.response_tx.clone(), "opened"));
+                return false;
+            }
             if waiter.exit_only {
                 return true;
             }
@@ -5620,14 +5810,14 @@ impl App {
                 .remaining
                 .retain(|document_id| documents.contains_key(document_id));
             if waiter.remaining.is_empty() {
-                finished.push(waiter.response_tx.clone());
+                finished.push((waiter.response_tx.clone(), "closed"));
                 false
             } else {
                 true
             }
         });
-        for response_tx in finished {
-            let _ = response_tx.send(self.automation_response("closed"));
+        for (response_tx, message) in finished {
+            let _ = response_tx.send(self.automation_response(message));
         }
     }
 
@@ -6006,7 +6196,7 @@ mod scrollbar_wheel_tests {
     #[test]
     fn settings_scrollbar_trackpad_uses_painted_rows_at_each_scale() {
         for scale in [1.0, 1.5, 2.0] {
-            let mut model = AppModel::new(800, 600, scale, vec![]);
+            let mut model = AppModel::new(800, 600, scale);
             assert_eq!(wheel_row_height(&model), model.line_height as f64);
             model.ui.active_modal = Some(token::model::ModalState::Settings(Default::default()));
             let row = wheel_row_height(&model);

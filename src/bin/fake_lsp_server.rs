@@ -54,7 +54,7 @@ fn main() {
 }
 
 /// A short summary of a `textDocument/*` notification's identifying
-/// fields (uri + version), for the transcript file — enough to assert
+/// fields (uri + version + optional saved text), for the transcript file — enough to assert
 /// ordering and version monotonicity without parsing full JSON back out
 /// in the test.
 fn body_of(message: &Value) -> String {
@@ -62,7 +62,8 @@ fn body_of(message: &Value) -> String {
         .pointer("/params/textDocument/uri")
         .and_then(Value::as_str);
     let version = message.pointer("/params/textDocument/version");
-    format!("uri={uri:?} version={version:?}")
+    let saved_text = message.pointer("/params/text").and_then(Value::as_str);
+    format!("uri={uri:?} version={version:?} saved_text={saved_text:?}")
 }
 
 fn run_step(step: &Value, reader: &mut impl BufRead, writer: &mut impl Write) {

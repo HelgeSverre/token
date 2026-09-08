@@ -37,6 +37,169 @@ fn empty_startup_config() -> StartupConfig {
     }
 }
 
+#[test]
+fn path_completion_runtime_reads_directory_accepts_and_undoes() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("assets")).unwrap();
+    std::fs::write(dir.path().join("assets/logo.svg"), "fixture").unwrap();
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.lsp.enabled = false;
+    app.model.document_mut().file_path = Some(dir.path().join("readme.txt"));
+    app.model.document_mut().buffer = "./as".into();
+    app.model.editor_mut().cursors[0] = token::model::Cursor::at(0, 4);
+    app.model.editor_mut().clear_selection();
+    app.process_automation_msg(Msg::Completion(token::messages::CompletionMsg::TriggerMenu));
+    assert!(app.path_worker.is_some());
+    assert!(
+        app.file_io_tx.is_none(),
+        "speculative reads cannot delay ordered saves"
+    );
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| app
+        .model
+        .ui
+        .cursor_overlay
+        .is_some()));
+    let menu = app.model.ui.completion_menu.as_ref().unwrap();
+    assert_eq!(menu.selected_item(0).unwrap().label, "assets/");
+    app.process_automation_msg(Msg::Completion(
+        token::messages::CompletionMsg::AcceptMenuItem,
+    ));
+    assert_eq!(app.model.document().buffer.to_string(), "./assets/");
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+        app.model
+            .ui
+            .completion_menu
+            .as_ref()
+            .is_some_and(|menu| menu.items.iter().any(|item| item.label == "logo.svg"))
+    }));
+    app.process_automation_msg(Msg::Completion(
+        token::messages::CompletionMsg::AcceptMenuItem,
+    ));
+    assert_eq!(app.model.document().buffer.to_string(), "./assets/logo.svg");
+    app.process_automation_msg(Msg::Document(DocumentMsg::Undo));
+    assert_eq!(app.model.document().buffer.to_string(), "./assets/");
+    app.process_automation_msg(Msg::Document(DocumentMsg::Undo));
+    assert_eq!(app.model.document().buffer.to_string(), "./as");
+}
+
+#[test]
+fn file_io_runtime_dispatch_keeps_saved_snapshot_and_target_after_focus_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("saved.txt");
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.format_on_save = false;
+    app.model.config.lsp.enabled = false;
+    app.model.document_mut().file_path = Some(path.clone());
+    app.model.document_mut().buffer = "snapshot".into();
+    let original = app.model.document().id.unwrap();
+    let cmd = update(&mut app.model, Msg::App(AppMsg::SaveFile)).unwrap();
+    app.process_cmd(cmd);
+    update(&mut app.model, Msg::Document(DocumentMsg::InsertChar('X')));
+    update(&mut app.model, Msg::Layout(LayoutMsg::NewTab));
+    update(&mut app.model, Msg::Document(DocumentMsg::InsertChar('B')));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_saving));
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "snapshot");
+    assert!(app.model.editor_area.documents[&original].is_modified);
+    assert_eq!(app.model.document().buffer.to_string(), "B");
+    assert!(app.model.document().is_modified);
+}
+
+#[test]
+fn shortcut_hints_and_runtime_dispatch_share_user_overrides_and_context() {
+    use token::keymap::{
+        default_bindings, merge_bindings, parse_keymap_yaml, KeyCode, Keystroke, Modifiers,
+    };
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let overrides = parse_keymap_yaml("bindings:\n  - key: cmd+c\n    command: Unbound\n  - key: ctrl+k ctrl+c\n    command: Copy\n    when: [has_selection]\n").unwrap();
+    app.model.ui.keymap = Keymap::with_bindings(merge_bindings(default_bindings(), overrides));
+    app.model.document_mut().buffer = "selected".into();
+    let context = app.get_key_context();
+    assert!(app
+        .model
+        .ui
+        .keymap
+        .display_for(Command::Copy, &context)
+        .is_none());
+    update(
+        &mut app.model,
+        Msg::Editor(token::messages::EditorMsg::SelectAll),
+    );
+    let context = app.get_key_context();
+    assert!(context.has_selection);
+    let hint = app
+        .model
+        .ui
+        .keymap
+        .display_for(Command::Copy, &context)
+        .unwrap();
+    let first = Keystroke::new(KeyCode::Char('k'), Modifiers::CTRL);
+    let second = Keystroke::new(KeyCode::Char('c'), Modifiers::CTRL);
+    assert_eq!(
+        hint,
+        format!("{} {}", first.display_string(), second.display_string())
+    );
+    assert_eq!(
+        app.resolve_keymap_action([first], false),
+        KeyAction::AwaitMore
+    );
+    assert_eq!(
+        app.resolve_keymap_action([second], false),
+        KeyAction::Execute(Command::Copy)
+    );
+    assert_eq!(
+        app.model.ui.keymap.lookup_with_context(
+            &Keystroke::new(KeyCode::Char('c'), Modifiers::cmd()),
+            Some(&context)
+        ),
+        None
+    );
+}
+
+#[test]
+fn shortcut_resolution_retains_global_commands_and_focus_gates() {
+    use token::keymap::{KeyCode, Keybinding, Keystroke, Modifiers};
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let save = Keystroke::new(KeyCode::Char('s'), Modifiers::CTRL);
+    let copy = Keystroke::new(KeyCode::Char('c'), Modifiers::CTRL);
+    let prefix = Keystroke::new(KeyCode::Char('k'), Modifiers::CTRL);
+    app.model.ui.keymap = Keymap::with_bindings(vec![
+        Keybinding::new(save, Command::SaveFile),
+        Keybinding::new(copy, Command::Copy),
+        Keybinding::chord(vec![prefix, save], Command::SaveFile),
+    ]);
+    assert_eq!(
+        app.resolve_keymap_action([prefix], false),
+        KeyAction::AwaitMore
+    );
+    assert_eq!(
+        app.resolve_keymap_action([save], false),
+        KeyAction::Execute(Command::SaveFile)
+    );
+    app.model
+        .ui
+        .open_modal(token::model::ModalState::CommandPalette(Default::default()));
+    assert_eq!(
+        app.resolve_keymap_action([save], false),
+        KeyAction::Execute(Command::SaveFile)
+    );
+    assert_eq!(app.resolve_keymap_action([copy], false), KeyAction::NoMatch);
+    assert_eq!(
+        app.resolve_keymap_action([prefix], false),
+        KeyAction::NoMatch
+    );
+    assert!(!app.model.ui.keymap.has_pending_chord());
+    app.model.ui.close_modal();
+    app.model.ui.focus_dock(token::panel::DockPosition::Left);
+    assert_eq!(
+        app.resolve_keymap_action([save], false),
+        KeyAction::Execute(Command::SaveFile)
+    );
+    assert_eq!(app.resolve_keymap_action([copy], false), KeyAction::NoMatch);
+}
+
 fn focus_outline_with_symbols(app: &mut App) {
     app.model
         .dock_layout
@@ -146,6 +309,71 @@ fn multiple_startup_files_open_as_distinct_tabs() {
     assert_eq!(tab_count, 2);
     assert!(open_paths.contains(&first));
     assert!(open_paths.contains(&second));
+    assert_eq!(app.model.document().file_path.as_ref(), Some(&first));
+}
+
+#[test]
+fn startup_position_is_clamped_to_the_first_successful_document() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.txt");
+    let second = dir.path().join("second.txt");
+    std::fs::write(&first, "first\ncafé").unwrap();
+    std::fs::write(&second, "second\nlonger line").unwrap();
+    let prepared = prepare_app(
+        800,
+        600,
+        StartupConfig {
+            mode: StartupMode::MultipleFiles(vec![dir.path().into(), first.clone(), second]),
+            initial_position: Some((usize::MAX, usize::MAX)),
+            wait_mode: false,
+        },
+    );
+    assert_eq!(prepared.model.document().file_path.as_ref(), Some(&first));
+    assert_eq!(prepared.model.editor().active_cursor().line, 1);
+    assert_eq!(prepared.model.editor().active_cursor().column, 4);
+    assert_eq!(
+        prepared.model.editor().selections[0],
+        token::model::Selection::new(token::model::Position::new(1, 4))
+    );
+}
+
+#[test]
+fn startup_workspace_files_record_the_workspace_and_keep_an_empty_workspace_usable() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let path = dir.path().join("main.txt");
+    std::fs::write(&path, "ready").unwrap();
+    for files in [vec![path.clone()], vec![]] {
+        let prepared = prepare_app(
+            800,
+            600,
+            StartupConfig {
+                mode: StartupMode::Workspace {
+                    root: dir.path().into(),
+                    initial_files: files.clone(),
+                },
+                initial_position: None,
+                wait_mode: false,
+            },
+        );
+        assert_eq!(
+            prepared.model.workspace_root().map(|path| path.as_path()),
+            Some(root.as_path())
+        );
+        assert_eq!(prepared.model.editor_area.documents.len(), 1);
+        if files.is_empty() {
+            assert!(prepared.model.document().file_path.is_none());
+        } else {
+            let entry = prepared
+                .model
+                .recent_files
+                .entries
+                .iter()
+                .find(|entry| entry.path == path.canonicalize().unwrap())
+                .unwrap();
+            assert_eq!(entry.workspace.as_deref(), Some(root.as_path()));
+        }
+    }
 }
 
 #[test]
@@ -275,9 +503,16 @@ fn send_automation_request(app: &mut App, request: AutomationRequest) -> Automat
         })
         .expect("automation channel should still be open");
     app.process_automation_requests();
-    response_rx
-        .try_recv()
-        .expect("a response should have been sent for the request")
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        app.process_async_messages();
+        app.poll_document_waiters();
+        if let Ok(response) = response_rx.try_recv() {
+            return response;
+        }
+        assert!(Instant::now() < deadline, "automation response timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 /// Like `send_automation_request`, but for requests that may defer their
@@ -294,6 +529,10 @@ fn send_deferred_automation_request(
         })
         .expect("automation channel should still be open");
     app.process_automation_requests();
+    assert!(pump_until(app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_loading));
     response_rx
 }
 
@@ -353,20 +592,60 @@ fn focus_gain_bumps_focused_at_and_state_reports_it() {
     assert_eq!(state.focused_at_ms, expected_ms);
 }
 
+#[test]
+fn soft_wrap_automation_reports_visual_rows_and_preserves_document() {
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let text = "a long line that wraps into several visual rows ".repeat(30);
+    app.model.document_mut().buffer = ropey::Rope::from_str(&text);
+    let response = send_automation_request(
+        &mut app,
+        AutomationRequest::ExecuteAction {
+            name: "ToggleSoftWrap".into(),
+        },
+    );
+    assert!(response.ok, "{response:?}");
+    let state = send_automation_request(&mut app, AutomationRequest::State)
+        .state
+        .unwrap();
+    assert!(state.soft_wrap);
+    assert!(state.visual_row_count > state.line_count);
+    assert_eq!(state.viewport_left_column, 0);
+    assert_eq!(app.model.document().buffer.to_string(), text);
+    let response = send_automation_request(
+        &mut app,
+        AutomationRequest::ExecuteAction {
+            name: "MoveCursorDown".into(),
+        },
+    );
+    assert!(response.ok);
+    assert_eq!(app.model.editor().cursors[0].line, 0);
+    assert!(app.model.editor().cursors[0].column > 0);
+}
+
 /// A fake llama-server answering every `/infill` with `content`.
 fn fake_infill_server(content: &'static str) -> String {
+    fake_inline_server("/infill", serde_json::json!({ "content": content }))
+}
+
+fn fake_inline_server(path: &'static str, reply: serde_json::Value) -> String {
     use std::io::{BufRead, BufReader, Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
+    let reply = reply.to_string();
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let mut stream = stream;
             let mut reader = BufReader::new(stream.try_clone().unwrap());
             let mut length = 0;
+            let mut first_line = true;
             loop {
                 let mut line = String::new();
                 if reader.read_line(&mut line).is_err() || line.is_empty() {
                     return;
+                }
+                if first_line {
+                    assert!(line.starts_with(&format!("POST {path} HTTP/1.1")), "{line}");
+                    first_line = false;
                 }
                 if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
                     length = value.trim().parse().unwrap_or(0);
@@ -377,7 +656,6 @@ fn fake_infill_server(content: &'static str) -> String {
             }
             let mut body = vec![0; length];
             let _ = reader.read_exact(&mut body);
-            let reply = serde_json::json!({ "content": content }).to_string();
             let _ = stream.write_all(
                 format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{reply}",
@@ -395,11 +673,12 @@ fn fake_infill_server(content: &'static str) -> String {
 /// becomes ghost text, typing through it consumes it, Tab accepts the
 /// rest as one undo step, and the automation snapshot reports it all.
 #[test]
-fn inline_suggestion_round_trips_through_the_worker_and_accepts() {
+fn recency_inline_suggestion_round_trips_through_the_worker_and_accepts() {
     let url = fake_infill_server("1 + 2;\n    let y = x;");
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.completion.inline = token::config::InlineConfig {
         enabled: true,
+        statistics: false,
         provider: "local".into(),
         debounce_ms: 0,
         max_line_suffix: 8,
@@ -419,12 +698,55 @@ fn inline_suggestion_round_trips_through_the_worker_and_accepts() {
         column: 12,
     }));
 
+    app.model
+        .config
+        .completion
+        .providers
+        .get_mut("local")
+        .unwrap()
+        .context = token::completion::recency::ContextStrategy::RecencyRing {
+        max_chunks: 8,
+        chunk_lines: 64,
+    };
+    let now = Instant::now();
+    app.inline_context.observe(&app.model, now);
+    let idle = app.inline_context.deadline().unwrap();
+    assert!(
+        app.next_wake(now) <= idle,
+        "idle work participates in the existing wake scheduler"
+    );
+    app.inline_context.observe(&app.model, idle);
+
     // Typing arms the debounce; the (zero) deadline sends the request.
     app.process_automation_msg(Msg::Document(DocumentMsg::InsertChar(' ')));
-    assert!(app.inline_deadlines.len() == 1, "debounce armed");
+    assert!(app.inline_deadline.is_some(), "debounce armed");
     app.check_inline_deadlines();
-    assert!(app.inline_deadlines.is_empty());
+    assert!(app.inline_deadline.is_none());
     assert!(app.model.ui.inline_in_flight);
+    {
+        let latest = app.inline_tx.borrow();
+        let request = &latest.as_ref().unwrap().request;
+        assert_eq!(request.extra_context.len(), 1);
+        assert!(request.extra_context[0].text.contains("fn main()"));
+        assert!(
+            !request.prefix.contains("Path:"),
+            "context never rewrites the cursor prefix"
+        );
+    }
+    assert!(!app
+        .model
+        .ui
+        .status_bar
+        .get_segment(token::model::status_bar::SegmentId::InlineSuggestion)
+        .unwrap()
+        .content
+        .is_empty());
+    assert!(
+        send_automation_request(&mut app, AutomationRequest::State)
+            .state
+            .unwrap()
+            .inline_in_flight
+    );
 
     assert!(
         pump_until(&mut app, Duration::from_secs(5), |app| {
@@ -433,6 +755,15 @@ fn inline_suggestion_round_trips_through_the_worker_and_accepts() {
         "the worker's reply never became ghost text"
     );
     let response = send_automation_request(&mut app, AutomationRequest::State);
+    assert!(!response.state.as_ref().unwrap().inline_in_flight);
+    assert!(app
+        .model
+        .ui
+        .status_bar
+        .get_segment(token::model::status_bar::SegmentId::InlineSuggestion)
+        .unwrap()
+        .content
+        .is_empty());
     assert_eq!(
         response.state.unwrap().inline_suggestion.as_deref(),
         Some("1 + 2;\n    let y = x;")
@@ -446,7 +777,9 @@ fn inline_suggestion_round_trips_through_the_worker_and_accepts() {
             .remaining(),
         " + 2;\n    let y = x;"
     );
-    app.process_automation_msg(Msg::Completion(CompletionMsg::AcceptInline));
+    app.process_automation_msg(Msg::Completion(CompletionMsg::AcceptInline(
+        token::completion::inline::AcceptGranularity::Full,
+    )));
     assert_eq!(
         app.model.document().buffer.to_string(),
         "fn main() {\n    let x =  1 + 2;\n    let y = x;\n}\n"
@@ -460,8 +793,388 @@ fn inline_suggestion_round_trips_through_the_worker_and_accepts() {
     );
 }
 
-/// The gate's failure half: a dead backend is a status transient, never
-/// a modal, and the editor keeps working.
+/// Real worker arrival followed by partial/full acceptance through named actions.
+#[test]
+fn inline_partial_accept_is_available_through_automation() {
+    let url = fake_infill_server("héllo_world\nnext();");
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.completion.inline.enabled = true;
+    app.model.config.completion.inline.statistics = false;
+    app.model.config.completion.providers.insert(
+        "local".into(),
+        token::config::ProviderConfig {
+            url,
+            timeout_ms: 2000,
+            ..Default::default()
+        },
+    );
+    app.model.document_mut().buffer = ropey::Rope::from_str("\n");
+    app.process_automation_msg(Msg::Completion(CompletionMsg::TriggerInline {
+        explicit: true,
+    }));
+    app.check_inline_deadlines();
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+        token::update::inline::visible(&app.model).is_some()
+    }));
+    for (action, text, remaining) in [
+        ("AcceptInlineWord", "héllo\n", Some("_world\nnext();")),
+        ("AcceptInlineLine", "héllo_world\n\n", Some("next();")),
+        ("AcceptInlineSuggestion", "héllo_world\nnext();\n", None),
+    ] {
+        let response = send_automation_request(
+            &mut app,
+            AutomationRequest::ExecuteAction {
+                name: action.into(),
+            },
+        );
+        assert!(response.ok, "{response:?}");
+        assert_eq!(app.model.document().buffer.to_string(), text);
+        let snapshot = send_automation_request(&mut app, AutomationRequest::State)
+            .state
+            .unwrap();
+        assert_eq!(snapshot.inline_suggestion.as_deref(), remaining);
+        if remaining.is_some() {
+            assert!(
+                app.inline_deadline.is_none(),
+                "partial acceptance keeps the existing suggestion"
+            );
+        }
+    }
+}
+
+#[test]
+fn ollama_native_and_raw_fim_round_trips_and_accepts() {
+    for prompt_format in [
+        token::completion::prompt::PromptFormat::Native,
+        token::completion::prompt::PromptFormat::DeepSeek,
+    ] {
+        let url = fake_inline_server(
+            "/api/generate",
+            serde_json::json!({ "response": "hello_world();<｜fim▁end｜>leaked", "done": true }),
+        );
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.completion.inline.enabled = true;
+        app.model.config.completion.inline.statistics = false;
+        app.model.config.completion.providers.insert(
+            "local".into(),
+            token::config::ProviderConfig {
+                url,
+                transport: token::config::TransportKind::Ollama,
+                prompt_format,
+                model: Some("code-model".into()),
+                ..Default::default()
+            },
+        );
+        app.model.document_mut().buffer = "\n".into();
+        app.process_automation_msg(Msg::Completion(CompletionMsg::TriggerInline {
+            explicit: true,
+        }));
+        app.check_inline_deadlines();
+        assert!(pump_until(&mut app, Duration::from_secs(3), |app| {
+            token::update::inline::visible(&app.model).is_some()
+        }));
+        app.process_automation_msg(Msg::Completion(CompletionMsg::AcceptInline(
+            token::completion::inline::AcceptGranularity::Full,
+        )));
+        assert_eq!(app.model.document().buffer.to_string(), "hello_world();\n");
+        app.process_automation_msg(Msg::Document(DocumentMsg::Undo));
+        assert_eq!(app.model.document().buffer.to_string(), "\n");
+    }
+}
+
+#[test]
+fn inline_dismissal_and_window_focus_loss_clear_runtime_debounces() {
+    for window_focus_loss in [false, true] {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.config.completion.inline.enabled = true;
+        app.model.config.completion.inline.statistics = false;
+        app.model
+            .config
+            .completion
+            .providers
+            .insert("local".into(), Default::default());
+        app.process_automation_msg(Msg::Completion(CompletionMsg::TriggerInline {
+            explicit: true,
+        }));
+        assert!(app.inline_deadline.is_some());
+        if window_focus_loss {
+            if let Some(cmd) = app.handle_event(&WindowEvent::Focused(false)) {
+                app.process_cmd(cmd);
+            }
+        } else {
+            app.process_automation_msg(Msg::Completion(CompletionMsg::DismissInline));
+        }
+        assert!(app.inline_deadline.is_none());
+        assert!(app.model.ui.inline_session.is_none());
+        app.check_inline_deadlines();
+        assert!(!app.model.ui.inline_in_flight);
+    }
+}
+
+#[test]
+fn openai_compatible_inline_worker_supports_partial_accept_and_undo() {
+    inline_transport_partial_accept_and_undo(token::config::TransportKind::OpenAiCompat);
+}
+
+#[test]
+fn tabby_inline_worker_supports_partial_accept_and_undo() {
+    inline_transport_partial_accept_and_undo(token::config::TransportKind::Tabby);
+}
+
+#[test]
+fn tabby_empty_result_does_not_count_as_backend_failure() {
+    let url = fake_inline_server(
+        "/v1/completions",
+        serde_json::json!({ "id": "empty", "choices": [] }),
+    );
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.completion.inline.enabled = true;
+    app.model.config.completion.inline.statistics = false;
+    app.model.config.completion.providers.insert(
+        "local".into(),
+        token::config::ProviderConfig {
+            url,
+            transport: token::config::TransportKind::Tabby,
+            ..Default::default()
+        },
+    );
+    app.model.document_mut().buffer = "\n".into();
+    app.process_automation_msg(Msg::Completion(CompletionMsg::TriggerInline {
+        explicit: true,
+    }));
+    app.check_inline_deadlines();
+    assert!(app.model.ui.inline_in_flight);
+    assert!(pump_until(&mut app, Duration::from_secs(3), |app| !app
+        .model
+        .ui
+        .inline_in_flight));
+    assert_eq!(app.model.ui.inline_failures, 0);
+    assert!(token::update::inline::visible(&app.model).is_none());
+    assert!(app.model.ui.inline_session.is_none());
+    assert_eq!(app.model.document().buffer.to_string(), "\n");
+}
+
+fn inline_transport_partial_accept_and_undo(transport: token::config::TransportKind) {
+    let url = fake_inline_server(
+        "/v1/completions",
+        serde_json::json!({ "choices": [{ "text": "héllo_world();<|fim_suffix|>discarded" }] }),
+    );
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.completion.inline.enabled = true;
+    app.model.config.completion.inline.statistics = false;
+    app.model.config.completion.providers.insert(
+        "local".into(),
+        token::config::ProviderConfig {
+            url,
+            transport,
+            model: (transport == token::config::TransportKind::OpenAiCompat)
+                .then(|| "fixture-fim-model".into()),
+            ..Default::default()
+        },
+    );
+    app.model.document_mut().buffer = "\n".into();
+    app.process_automation_msg(Msg::Completion(CompletionMsg::TriggerInline {
+        explicit: true,
+    }));
+    app.check_inline_deadlines();
+    assert!(pump_until(&mut app, Duration::from_secs(3), |app| {
+        token::update::inline::visible(&app.model).is_some()
+    }));
+    for (action, expected, remainder) in [
+        ("AcceptInlineWord", "héllo\n", Some("_world();")),
+        ("AcceptInlineSuggestion", "héllo_world();\n", None),
+    ] {
+        let response = send_automation_request(
+            &mut app,
+            AutomationRequest::ExecuteAction {
+                name: action.into(),
+            },
+        );
+        assert!(response.ok);
+        assert_eq!(app.model.document().buffer.to_string(), expected);
+        let state = send_automation_request(&mut app, AutomationRequest::State)
+            .state
+            .unwrap();
+        assert_eq!(state.inline_suggestion.as_deref(), remainder);
+    }
+    for expected in ["héllo\n", "\n"] {
+        app.process_automation_msg(Msg::Document(DocumentMsg::Undo));
+        assert_eq!(app.model.document().buffer.to_string(), expected);
+    }
+}
+
+/// Run the environment lookup in an isolated test process. The parent never
+/// mutates its global environment or reads the user's API credentials.
+#[test]
+fn mistral_inline_worker_resolves_environment_reference_and_accepts() {
+    const CHILD: &str = "TOKEN_TEST_MISTRAL_WORKER_CHILD";
+    const KEY: &str = "TOKEN_TEST_MISTRAL_WORKER_KEY";
+    if std::env::var(CHILD).as_deref() != Ok("1") {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "runtime::app::tests::mistral_inline_worker_resolves_environment_reference_and_accepts", "--nocapture"])
+            .env(CHILD, "1")
+            .env(KEY, "synthetic-fixture-only")
+            .output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+            "child test must actually run"
+        );
+        return;
+    }
+    let url = fake_inline_server(
+        "/v1/fim/completions",
+        serde_json::json!({ "choices": [{ "message": { "content": "mistral_fixture();" } }] }),
+    );
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.completion.inline.enabled = true;
+    app.model.config.completion.inline.statistics = false;
+    app.model.config.completion.providers.insert(
+        "local".into(),
+        token::config::ProviderConfig {
+            url,
+            transport: token::config::TransportKind::MistralFim,
+            model: Some("fixture-fim-model".into()),
+            api_key_env: Some(KEY.into()),
+            ..Default::default()
+        },
+    );
+    app.model.document_mut().buffer = "\n".into();
+    app.process_automation_msg(Msg::Completion(CompletionMsg::TriggerInline {
+        explicit: true,
+    }));
+    app.check_inline_deadlines();
+    assert!(pump_until(&mut app, Duration::from_secs(3), |app| {
+        token::update::inline::visible(&app.model).is_some()
+    }));
+    assert!(
+        send_automation_request(
+            &mut app,
+            AutomationRequest::ExecuteAction {
+                name: "AcceptInlineSuggestion".into()
+            }
+        )
+        .ok
+    );
+    assert_eq!(
+        app.model.document().buffer.to_string(),
+        "mistral_fixture();\n"
+    );
+    let config = serde_yaml::to_string(&app.model.config).unwrap();
+    assert!(config.contains(KEY));
+    assert!(!config.contains("synthetic-fixture-only"));
+    app.process_automation_msg(Msg::Document(DocumentMsg::Undo));
+    assert_eq!(app.model.document().buffer.to_string(), "\n");
+}
+
+#[test]
+fn inline_alternatives_cycle_through_automation_without_editing_or_requesting() {
+    let url = fake_inline_server(
+        "/v1/completions",
+        serde_json::json!({ "choices": [
+        {"text": "<|fim_middle|>discarded"}, {"text": "héllo_one();"},
+        {"text": "héllo_one();"}, {"text": "héllo_two();"}, {"text": "different();"}
+    ] }),
+    );
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.completion.inline.enabled = true;
+    app.model.config.completion.inline.statistics = false;
+    app.model.config.completion.providers.insert(
+        "local".into(),
+        token::config::ProviderConfig {
+            url,
+            transport: token::config::TransportKind::OpenAiCompat,
+            model: Some("fixture".into()),
+            n: 5,
+            ..Default::default()
+        },
+    );
+    app.model.document_mut().buffer = "\n".into();
+    app.process_automation_msg(Msg::Completion(CompletionMsg::TriggerInline {
+        explicit: true,
+    }));
+    app.check_inline_deadlines();
+    assert!(pump_until(&mut app, Duration::from_secs(3), |app| {
+        token::update::inline::visible(&app.model).is_some()
+    }));
+    let initial = send_automation_request(&mut app, AutomationRequest::State)
+        .state
+        .unwrap();
+    assert_eq!(initial.inline_choice, Some((1, 3)));
+    assert_eq!(initial.inline_suggestion.as_deref(), Some("héllo_one();"));
+    let revision = app.model.document().revision;
+    let undo_len = app.model.document().undo_stack.len();
+    let request_id = app.model.ui.inline_next_request_id;
+    for (action, expected, choice) in [
+        ("PrevInlineSuggestion", "different();", (3, 3)),
+        ("NextInlineSuggestion", "héllo_one();", (1, 3)),
+        ("NextInlineSuggestion", "héllo_two();", (2, 3)),
+    ] {
+        assert!(
+            send_automation_request(
+                &mut app,
+                AutomationRequest::ExecuteAction {
+                    name: action.into()
+                }
+            )
+            .ok
+        );
+        let state = send_automation_request(&mut app, AutomationRequest::State)
+            .state
+            .unwrap();
+        assert_eq!(state.inline_suggestion.as_deref(), Some(expected));
+        assert_eq!(state.inline_choice, Some(choice));
+        assert_eq!(app.model.document().buffer.to_string(), "\n");
+        assert_eq!(app.model.document().revision, revision);
+        assert_eq!(app.model.document().undo_stack.len(), undo_len);
+        assert_eq!(app.model.ui.inline_next_request_id, request_id);
+        assert!(!state.inline_in_flight && app.inline_deadline.is_none());
+    }
+    assert!(
+        send_automation_request(
+            &mut app,
+            AutomationRequest::ExecuteAction {
+                name: "AcceptInlineWord".into()
+            }
+        )
+        .ok
+    );
+    assert!(
+        send_automation_request(
+            &mut app,
+            AutomationRequest::ExecuteAction {
+                name: "NextInlineSuggestion".into()
+            }
+        )
+        .ok
+    );
+    let state = send_automation_request(&mut app, AutomationRequest::State)
+        .state
+        .unwrap();
+    assert_eq!(state.inline_suggestion.as_deref(), Some("_one();"));
+    assert_eq!(state.inline_choice, Some((1, 2)));
+    assert!(
+        send_automation_request(
+            &mut app,
+            AutomationRequest::ExecuteAction {
+                name: "AcceptInlineSuggestion".into()
+            }
+        )
+        .ok
+    );
+    assert_eq!(app.model.document().buffer.to_string(), "héllo_one();\n");
+    for expected in ["héllo\n", "\n"] {
+        app.process_automation_msg(Msg::Document(DocumentMsg::Undo));
+        assert_eq!(app.model.document().buffer.to_string(), expected);
+    }
+}
+
+/// A dead backend is a status transient, never a modal.
 #[test]
 fn inline_suggestion_backend_failure_is_a_transient() {
     let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -469,6 +1182,7 @@ fn inline_suggestion_backend_failure_is_a_transient() {
     drop(closed);
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.completion.inline.enabled = true;
+    app.model.config.completion.inline.statistics = false;
     app.model.config.completion.providers.insert(
         "local".into(),
         token::config::ProviderConfig {
@@ -1637,6 +2351,73 @@ fn an_abandoned_completion_response_is_consumed_and_discarded() {
     assert!(app.lsp.completion.by_doc.is_empty());
 }
 
+#[test]
+fn a_member_response_opens_a_hidden_session_with_structured_method_details() {
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.document_mut().buffer = ropey::Rope::from("cc::Build::new().");
+    app.model.document_mut().language = token::syntax::LanguageId::Rust;
+    app.model.document_mut().file_path = Some("/tmp/proj-completion/build.rs".into());
+    app.model.editor_mut().cursors[0] = token::model::Cursor::at(0, 16);
+    app.model.editor_mut().clear_selection();
+    token::update::update(
+        &mut app.model,
+        Msg::Completion(token::messages::CompletionMsg::TriggerMenu),
+    );
+    assert!(app.model.ui.completion_menu.is_some());
+    assert!(app.model.ui.cursor_overlay.is_none());
+    assert!(send_automation_request(&mut app, AutomationRequest::State)
+        .state
+        .unwrap()
+        .completion
+        .is_none());
+
+    let doc = app.model.document();
+    let (document_id, revision) = (doc.id.unwrap(), doc.revision);
+    let server_id = LspServerId::from("rust-analyzer");
+    let root = PathBuf::from("/tmp/proj-completion");
+    let handle = spawn_fake_handle(&server_id);
+    *handle.capabilities.lock().unwrap() = Some(
+        serde_json::from_value(serde_json::json!({
+            "completionProvider": {}
+        }))
+        .unwrap(),
+    );
+    app.lsp
+        .servers
+        .insert((server_id.clone(), root.clone()), handle);
+    app.lsp.completion.insert(
+        (server_id.clone(), root.clone(), 91),
+        document_id,
+        PendingCompletion {
+            document_id,
+            revision,
+        },
+    );
+    let item = serde_json::from_value(serde_json::json!({
+        "label": "compile", "kind": 2, "preselect": true,
+        "labelDetails": { "detail": "(output: &str)", "description": "()" }
+    }))
+    .unwrap();
+    app.msg_tx
+        .send(Msg::Lsp(LspMsg::CompletionResponseFromServer {
+            server_id,
+            root,
+            request_id: 91,
+            items: vec![item],
+            is_incomplete: false,
+            abandoned: false,
+        }))
+        .unwrap();
+    app.process_async_messages();
+    assert!(app.model.ui.has_visible_completion());
+    let menu = app.model.ui.completion_menu.as_ref().unwrap();
+    assert_eq!(menu.items.len(), 1);
+    let item = menu.selected_item(0).unwrap();
+    assert_eq!(item.label, "compile");
+    assert_eq!(item.detail.as_deref(), Some("(output: &str) ()"));
+    assert!(item.preselect);
+}
+
 /// The per-document completion debounce fires exactly one request's
 /// worth of bookkeeping after its deadline, and re-arming the same
 /// document replaces the pending entry instead of accumulating.
@@ -1743,6 +2524,109 @@ fn a_resolve_past_its_deadline_unblocks_the_accept_with_no_extras() {
     assert!(app.lsp.resolve.by_doc.is_empty());
 }
 
+#[test]
+fn commit_character_runtime_reply_timeout_and_missing_server_preserve_the_transaction() {
+    use token::completion::lsp::items_to_menu_items;
+    for outcome in ["reply", "timeout", "missing"] {
+        let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+        app.model.document_mut().language = token::syntax::LanguageId::Rust;
+        app.model.document_mut().file_path = Some("/tmp/proj-commit/lib.rs".into());
+        for ch in "va".chars() {
+            app.process_automation_msg(Msg::Document(DocumentMsg::InsertChar(ch)));
+        }
+        let menu = app.model.ui.completion_menu.clone().unwrap();
+        let server = LspServerId::from("rust-analyzer");
+        let root = PathBuf::from("/tmp/proj-commit");
+        let options = lsp_types::CompletionOptions {
+            resolve_provider: Some(true),
+            all_commit_characters: Some(vec!["(".into()]),
+            ..Default::default()
+        };
+        if outcome != "missing" {
+            let handle = spawn_fake_handle(&server);
+            *handle.capabilities.lock().unwrap() = Some(lsp_types::ServerCapabilities {
+                completion_provider: Some(options.clone()),
+                ..Default::default()
+            });
+            app.lsp
+                .servers
+                .insert((server.clone(), root.clone()), handle);
+        }
+        let import = |text: &str| lsp_types::TextEdit {
+            range: lsp_types::Range::new(
+                lsp_types::Position::new(0, 0),
+                lsp_types::Position::new(0, 0),
+            ),
+            new_text: text.into(),
+        };
+        let items = items_to_menu_items(
+            vec![lsp_types::CompletionItem {
+                label: "vacuum".into(),
+                additional_text_edits: Some(vec![import("// upfront\n")]),
+                ..Default::default()
+            }],
+            &server,
+            &root,
+            Some(&options),
+        );
+        app.process_automation_msg(Msg::Lsp(LspMsg::CompletionResolved {
+            document_id: menu.document_id,
+            revision: menu.revision,
+            items,
+            is_incomplete: false,
+        }));
+        let history = app.model.document().undo_stack.len();
+        app.process_automation_msg(Msg::Document(DocumentMsg::InsertChar('(')));
+        if outcome != "missing" {
+            assert_eq!(app.model.document().buffer.to_string(), "va(");
+        }
+        match outcome {
+            "reply" => {
+                let (server_id, root, request_id) =
+                    app.lsp.resolve.requests.keys().next().cloned().unwrap();
+                app.msg_tx
+                    .send(Msg::Lsp(LspMsg::ResolveResponseFromServer {
+                        server_id,
+                        root,
+                        request_id,
+                        abandoned: false,
+                        item: Some(Box::new(lsp_types::CompletionItem {
+                            label: "vacuum".into(),
+                            additional_text_edits: Some(vec![import("// resolved\n")]),
+                            ..Default::default()
+                        })),
+                    }))
+                    .unwrap();
+                app.process_async_messages();
+            }
+            "timeout" => {
+                for deadline in app.lsp.resolve.deadlines.values_mut() {
+                    *deadline = Instant::now() - Duration::from_secs(1);
+                }
+                app.check_lsp_resolve_deadlines();
+            }
+            "missing" => {}
+            _ => unreachable!(),
+        }
+        let expected = if outcome == "reply" {
+            "// resolved\nvacuum("
+        } else {
+            "// upfront\nvacuum("
+        };
+        assert_eq!(app.model.document().buffer.to_string(), expected);
+        assert_eq!(app.model.document().undo_stack.len(), history + 1);
+        assert_eq!(
+            app.syntax_deadlines[&menu.document_id].1,
+            app.model.document().revision
+        );
+        assert!(app.lsp.resolve.requests.is_empty());
+        app.process_automation_msg(Msg::Document(DocumentMsg::Undo));
+        assert_eq!(app.model.document().buffer.to_string(), "va");
+        app.process_automation_msg(Msg::Document(DocumentMsg::Redo));
+        assert_eq!(app.model.document().buffer.to_string(), expected);
+    }
+}
+
 /// A docs-purpose resolve that times out is dropped silently: no
 /// `CompletionItemResolved` reaches the menu (the item stays unresolved
 /// so the next selection change may retry), and the slot is cleaned up.
@@ -1774,6 +2658,7 @@ fn a_docs_resolve_past_its_deadline_is_dropped_silently() {
                 resolved: false,
                 text_edit: None,
                 additional_text_edits: Vec::new(),
+                commit_characters: std::sync::Arc::from([]),
                 documentation: None,
                 caret_offset: None,
             })),
@@ -1781,10 +2666,13 @@ fn a_docs_resolve_past_its_deadline_is_dropped_silently() {
             source: MenuSourceId::Lsp,
             detail: None,
             sort_text: None,
+            preselect: false,
         }],
         filtered: vec![(0, 0, Vec::new())],
         is_incomplete: false,
         pending_resolve: None,
+        context: Default::default(),
+        selection_changed: false,
     });
     app.model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
         token::model::CursorOverlayKind::Completion,
@@ -2500,11 +3388,12 @@ fn next_wake_ignores_an_expired_dwell_deadline() {
 }
 
 #[test]
-fn disabled_cursor_blink_schedules_a_future_maintenance_wake() {
+fn settings_blink_off_uses_a_positive_maintenance_interval() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.cursor_blink_ms = 0;
-    app.last_tick = Instant::now() - Duration::from_secs(10);
     let now = Instant::now();
+    app.last_tick = now;
+    assert_eq!(app.cursor_tick_interval(), Duration::from_millis(250));
     assert!(app.next_wake(now) > now);
 }
 
@@ -2556,6 +3445,10 @@ fn hover_resolved_opens_the_card_with_plaintext_content() {
     );
 
     app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_loading));
     let server_id = LspServerId::from("rust-analyzer");
     assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
         app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
@@ -2622,6 +3515,10 @@ fn a_stale_hover_response_after_a_revision_bump_is_dropped() {
     );
 
     app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_loading));
     let server_id = LspServerId::from("rust-analyzer");
     assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
         app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
@@ -2827,6 +3724,10 @@ fn stale_references_response_after_a_revision_bump_is_dropped() {
     );
 
     app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_loading));
     let server_id = LspServerId::from("rust-analyzer");
     assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
         app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
@@ -2916,6 +3817,10 @@ fn goto_definition_with_multiple_locations_opens_the_popup() {
     );
 
     app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_loading));
     let server_id = LspServerId::from("rust-analyzer");
     assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
         app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
@@ -3004,6 +3909,10 @@ fn hover_on_a_diagnostic_line_includes_related_information() {
     );
 
     app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_loading));
     let server_id = LspServerId::from("rust-analyzer");
     assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
         app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
@@ -3111,6 +4020,10 @@ fn problems_panel_end_to_end_via_fake_server_publish_and_command() {
     app.process_automation_msg(Msg::Layout(token::messages::LayoutMsg::OpenFileInNewTab(
         canon_path,
     )));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_loading));
 
     // "Invoke by command name": the same `execute_command` path the
     // command palette's confirm handler runs.
@@ -3219,6 +4132,10 @@ fn server_exit_empties_the_open_problems_panel() {
     app.process_automation_msg(Msg::Layout(token::messages::LayoutMsg::OpenFileInNewTab(
         file_path.clone(),
     )));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_loading));
     app.model
         .dock_layout
         .bottom
@@ -3414,6 +4331,7 @@ fn edit_heavy_session_stays_in_sync_with_fake_lsp_server() {
     // Save: didSave (with text, since the fake server's initialize
     // response advertised `save: { includeText: true }`).
     app.process_cmd(Cmd::LspDidSave {
+        saved_text: "the saved snapshot, not the current buffer".into(),
         document_id: doc_id,
     });
     let lines = wait_for_transcript_lines(&transcript_path, 5);
@@ -3421,6 +4339,7 @@ fn edit_heavy_session_stays_in_sync_with_fake_lsp_server() {
         lines[4].starts_with("notify:textDocument/didSave"),
         "expected didSave fifth, got {lines:?}"
     );
+    assert!(lines[4].contains("the saved snapshot, not the current buffer"));
 
     // Close: didClose, and the document is forgotten by the manager.
     app.process_cmd(Cmd::LspDidClose {
@@ -3732,9 +4651,12 @@ fn goto_definition_into_an_unopened_file_opens_it_and_places_the_cursor() {
         },
     );
 
-    // Open main.rs the way a real session does — synchronous open,
-    // synchronous `LspEnsureServer`/`LspDidOpen` dispatch.
+    // Open main.rs through the real worker and complete its deferred effects.
     app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_loading));
     assert_eq!(
         app.model.document().file_path.as_deref(),
         Some(file_path.as_path())
@@ -3756,7 +4678,14 @@ fn goto_definition_into_an_unopened_file_opens_it_and_places_the_cursor() {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         app.process_async_messages();
-        if app.model.editor_area.find_open_file(&target_path).is_some() {
+        // The definition opened the server's canonical URI spelling. Unknown
+        // alternate spellings need worker resolution, not a querying syscall.
+        if app
+            .model
+            .editor_area
+            .find_open_file(&token::lsp::uri_to_path(&target_uri).unwrap())
+            .is_some()
+        {
             break;
         }
         assert!(
@@ -3833,6 +4762,10 @@ fn goto_definition_and_hover_flush_a_pending_did_change_ahead_of_their_request()
     );
 
     app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(file_path.clone())));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_loading));
     let server_id = LspServerId::from("rust-analyzer");
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
