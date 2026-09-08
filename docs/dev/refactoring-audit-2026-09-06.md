@@ -1,5 +1,61 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Code-quality and abstraction cleanup sweep — 2026-09-08
+
+This follow-up inventories the source tree, searches for repeated implementations
+and API wrappers, and inspects callers across update/model, rendering/layout,
+completion, LSP/runtime workers and configuration/history persistence. A
+normalized nine-line duplicate-block scan supplied candidates, not an automatic
+rewrite list. This is a scoped cleanup pass, not an exhaustive correctness or
+security certification of every source file.
+
+| Area | Consolidation |
+| --- | --- |
+| Effects | Removed navigation's identical `combine` helper; all six callers use the existing update-layer `merge_cmds`, preserving ordering and optional effects. |
+| Tab columns | Removed the rendering copy and its public facade; renderers use `util::text`, whose whole-line conversions reuse the segment-aware implementations. |
+| Split geometry | `SplitContainer::child_rects` supplies layout, read-only splitter hit testing and resize-container lookup. Splitter rectangles also have one implementation. Existing traversal order, ratios and equal-share fallbacks are unchanged. |
+| Problems | Grouping is a borrowed iterator, preserving focused-file-first and path ordering. Workspace mode trades temporary group vectors for two borrowed traversals. Diagnostic activation copies only its position. |
+| UI text | One character-boundary ellipsis routine serves default-size and sized painting, preserving each painter's advance rules. Unchanged text can remain borrowed; head truncation no longer builds/reverses a character vector. |
+
+The UI-text cleanup intentionally fixes one edge case: when even the ellipsis
+cannot fit, the result is empty instead of exceeding the width budget. Existing
+truncation tests cover borrowed short text, multibyte boundaries and zero/tiny
+budgets. The existing splitter comparison was expanded for nested axes,
+unequal outer ratios, missing inner ratios and a translated origin. No new
+test framework, dependency, configuration option or generic service layer was
+introduced. Settings remains its separate opaque preferences page; font roles,
+completion eligibility and worker lifecycle policies are unchanged.
+
+Reviewed but deliberately not generalized in this pass:
+
+- Path completion and commit-character eligibility look similar, but only one
+  requires LSP capabilities. Any future common predicate must keep that policy
+  distinction explicit.
+- Keymap saving, statistics updates and recent/history persistence have different
+  conflict, locking and failure semantics. A generic “save JSON/config” layer
+  would hide those differences.
+- Workspace-symbol fan-out and latest-only preview workers have different
+  ownership/cancellation models. They do not need one general worker framework.
+- Renderer/update file size alone is not a reason to split orchestrators. The
+  existing split-tree snapshot clone and broader traversal redesign remain
+  separate candidates, not claimed performance problems.
+
+Verification: macOS `just test` passed 2,585 tests (five skipped) and two
+doctests, run `4b2cfe50-a8d9-4569-8550-aca709df9699`; `just lint` passed with
+all targets/features and warnings denied. Focused splitter tests passed before
+the full run; the expanded nested-splitter regression also passed afterward
+(`e82a87be-5d49-4a77-99a6-51534e68b766`). Core/layout cleanup is commit `cf9a19c`;
+shared text truncation is `c6aa66d`.
+The final full rerun (`aa398616-2ceb-4ee3-8f62-c025a0314fbe`) again passed all
+2,585 tests and both doctests; strict lint and `just fmt-check` passed as well.
+No benchmark speedup or fresh Linux/Windows native certification
+is claimed by this cleanup.
+
+The idiomatic-rust skill guided borrowed iterators, reduced visibility and reuse
+of existing helpers; code-review guided diff-based checks of ordering, fallback
+behavior, UTF-8 boundaries and accidental UI changes. Self-review found no
+blocking issues. Verdict: **Approve**.
+
 ## Font roles and context-menu layout — 2026-09-08
 
 `a06e1e7` separates file-configured editor and UI families. Bundled defaults are
