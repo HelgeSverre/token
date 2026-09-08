@@ -1,5 +1,83 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Font roles and context-menu layout — 2026-09-08
+
+`a06e1e7` separates file-configured editor and UI families. Bundled defaults are
+JetBrains Mono and Inter; the editor family also owns the file explorer, tab
+titles and every editable text field. The existing painter switches roles and
+retains separate glyph caches. UI measurements use glyph advances; grid and
+input caret metrics remain monospaced. Installed-family discovery happens at
+startup/configuration changes, never during frame rendering. Inter's upstream
+license is included in source and packaging.
+
+The font change passed macOS nextest (2,585 passed, five skipped, run
+`3c714996-c9dd-4945-889e-3110aca3522d`) and Linux nextest (2,590 passed, one
+skipped, run `63d57945-1085-4f10-bd7c-3d10bfbd11f6`), two doctests on each
+platform, strict all-target/all-feature lint and native debug builds. Test count
+decreased by three because four obsolete panel-local truncation tests were
+removed with their helper and one shared font-role regression was added.
+Native macOS Settings showed Inter labels and monospace search input; changing
+`ui_font` to JetBrains Mono and running Reload Configuration changed the labels
+without restarting. This is not a Windows font-discovery certification.
+
+Commit `3c32795` addresses the user's context-menu screenshot: a fixed minimum width despite a
+larger configured maximum, plus an icon column reserved even for iconless rows.
+Menus now request their measured label/shortcut width, capped at 520 logical
+pixels and constrained by the window. Iconless lists omit the empty column;
+menu keycaps use 80% of the ordinary chip scale. The shared keycap width/height
+and overlay layout drive painting and pointer targets, including edge clamping.
+Existing layout/hover and keycap tests were extended instead of adding another
+fixture or rendering framework.
+
+Native macOS [menu capture](data/2026-09-08/context-menu-content-width.png)
+shows all editor-menu labels untruncated, with compact centered shortcuts and
+the selected row aligned to the panel. It was captured from the task-owned
+debug app with isolated configuration and an unmodified temporary document;
+Quit closed that instance afterward.
+
+Final menu verification: macOS nextest run
+`e8f2e66c-bbc2-442f-9cfe-9a703ae1732e` passed all 2,585 tests (five skipped),
+with two doctests, strict lint, formatting and the native debug build passing.
+Self-review verdict: **Approve**; no blocking findings in the final patch.
+The Rust and code-review skills guided reuse of shared measurement/geometry;
+Context7 and official API documentation informed the font-loading integration.
+
+Verification interruptions are retained rather than hidden by the final pass:
+
+- macOS run `d90dbef3-57ab-4ccd-9c32-5cd877e18b31` stopped on `StorageFull`
+  while creating a Usages fixture. The host had about 411 MiB available. Removing
+  only the task-owned temporary cache's generated `debug/incremental` directory
+  freed about 11 GiB; no project files were deleted. The unchanged full suite
+  then passed. Cargo can regenerate that cache.
+- Linux run `2d84ff2c-c0b4-494a-92e5-8c01ae9b1d00` passed 2,461 tests but failed
+  the unchanged statistics worker and independent-writer tests on timeout/busy
+  deadlines; 127 tests did not run. The focused statistics retry ended with
+  status 255 and the OrbStack Docker socket was subsequently absent. A final
+  Linux suite/lint pass for the menu patch is therefore **not established**.
+  No deadlines were extended and no daemon restart or host settings change was
+  attempted. Disk pressure coincided with this interruption but is not proven
+  to explain those Linux timeouts.
+
+The missing editor I-beam report is **still open**. Source inspection confirms
+that editor hit targets request `CursorIcon::Text`; a native cursor restoration
+failure has not been isolated. No speculative cursor reset was added.
+
+## Partial Wayland verification — 2026-09-08
+
+An isolated Weston 10 X11-backend compositor ran Token with `WAYLAND_DISPLAY`
+set and `DISPLAY` unset in the task-owned Linux container. The saved global
+Settings chord opened from editor and terminal focus, and two independent shell
+sessions printed distinct markers. Terminal pointer verification is incomplete:
+the nested compositor's pointer coordinates did not match the XTest harness,
+so attempted tab/selection clicks do not establish an application failure or
+success. The app quit normally; no IME work was resumed.
+
+Source inspection also found that the locked arboard configuration lacks its
+optional Wayland data-control support, while the nested Weston advertised only
+the standard clipboard protocol. This is a portability follow-up, not a verified
+clipboard failure: a successful native selection/copy event was not obtained.
+Wayland tabs/selection/clipboard/link acceptance remains in the handoff.
+
 ## Global shortcuts across input contexts — 2026-09-08
 
 Commit `5b9a502` fixes a native Linux X11 mismatch: the persisted

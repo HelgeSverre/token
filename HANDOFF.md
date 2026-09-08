@@ -6,6 +6,21 @@ using fixture tests alone.
 
 ## Current checkpoint
 
+Context-menu layout: `3c32795` sizes menus to labels/shortcuts, removes the empty
+icon column and reduces menu chips by 20%. Native macOS rendering, the full
+macOS suite and strict lint passed. The Linux rerun remains incomplete after
+statistics-test timeouts and Docker becoming unavailable; see the
+[verification record](docs/dev/refactoring-audit-2026-09-06.md#font-roles-and-context-menu-layout--2026-09-08).
+
+Font split: `a06e1e7` adds file-configured `editor_font` (JetBrains Mono) and
+`ui_font` (Inter). File explorer, tab text and all text inputs retain the editor
+font. Full macOS/Linux suites and strict lint passed. Native macOS Settings
+rendering and switching the UI back to the bundled monospace family were checked.
+
+The reported missing editor I-beam remains open: editor hit testing still maps
+to `CursorIcon::Text`. Native cursor-state restoration is not yet reproduced or
+fixed; do not treat the font or context-menu layout work as resolving it.
+
 Latest implementation: `5b9a502` fixes global shortcut chords across focus
 contexts and makes Settings a global action. Linux X11 checks passed from the
 terminal, command palette, file explorer and CSV cell editing, including intact
