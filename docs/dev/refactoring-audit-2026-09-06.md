@@ -1,5 +1,53 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Terminal selection and copy — 2026-09-08
+
+Selection uses the installed `alacritty_terminal` 0.26 core's selection ranges
+and `selection_to_string`, rather than another text-extraction loop. The Rust
+and library-reference skills guided that reuse; the installed source was checked
+alongside upstream documentation. A shared `TerminalViewport` supplies cell
+rectangles and pointer-to-grid coordinates, including half-cell endpoints,
+scrollback offsets and scaled metrics. Selection painting stays in the existing
+terminal cell loop and uses the shared blended-fill primitive.
+
+Drag capture belongs to a session and ends on release, focus loss or tab actions.
+The editor's drag threshold and auto-scroll throttle are reused; terminal grid
+coordinates never enter editor cursor updates. Copy reuses the existing
+clipboard effect and paste's visible/focused-terminal check. Cmd+C on macOS and
+Ctrl+Shift+C elsewhere copy without PTY input; plain Ctrl+C still reaches the
+shell. A plain empty selection leaves the clipboard untouched. Terminal-driven
+clipboard escape sequences remain disabled.
+
+An isolated macOS editor (PID 16452, window 80678, scale 2) used `/bin/sh`, a
+separate configuration, disabled LSP/completion and an unchanged text fixture.
+Native checks used guarded pointer events and PID-targeted keys:
+
+- Reverse drag selected `copy this text`, with a visible selection wash;
+  [capture](data/2026-09-08/terminal-selection.png). Cmd+C copied that exact text.
+- Double-click selected/copied `this`; triple-click selected/copied
+  `copy this text\n`.
+- Creating another shell and returning to the first retained its line selection;
+  Cmd+C still returned the same exact line with its newline.
+- For each copy check, a temporary verifier retained all previous clipboard
+  item/type data in memory and restored it after the expected copy matched.
+  No previous clipboard data was logged or saved to disk.
+- Both owned shells (17353/22171) were closed explicitly. Quit exited the editor
+  with status 0; subsequent process inspection found all three PIDs absent.
+  The editor document remained unchanged.
+
+Focused checks passed all 61 tests (`2cd64ec9-04a0-4611-95c9-fe64cafb06bf`),
+including wrapped CJK/emoji/combining text copied from scrollback, whole-emoji
+copy from its trailing cell, geometry at scale 1/2, empty-copy behavior after
+clear, and copy-vs-interrupt keyboard routing. The first full run passed all
+2,585 tests plus two doctests (`14c7b9d2-4078-406a-bbd7-ffba6bd2cbc8`);
+strict all-target/all-feature lint also passed. After consolidating the focus
+predicate, the final full run again passed 2,585 tests and two doctests
+(`e9442a4b-aa08-46b8-a86f-8a8d2a7571f2`), and strict lint passed again.
+This does not close earlier
+intermittent startup failures or certify native Windows/Linux/IME behavior.
+Modifier-click links remain unfinished. Scoped review: **Approve**; the review
+consolidated the copy/paste focus predicate, with no outstanding findings.
+
 ## Terminal tabs — 2026-09-08
 
 Commit `0620310` gives terminal sessions a strip with create, close, select and cycle actions,

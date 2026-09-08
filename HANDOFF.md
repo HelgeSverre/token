@@ -11,10 +11,11 @@ Completed implementation history and detailed evidence are in the
 [benchmark reports](docs/benchmark/README.md), with earlier handoff entries
 preserved in Git history.
 
-Latest implementation: `0620310` adds terminal session tabs using shared dock
-geometry, stable session IDs and runtime-owned close effects. Native macOS
-creation, switching, retained history and isolated close passed; selection/copy
-and modifier-click links remain below.
+Latest implementation: `0020f0e` adds terminal selection/copy using shared grid
+geometry and the terminal core's text extraction. Native macOS drag, word/line
+copy and retained selection across tabs passed, as did full tests and lint.
+Terminal session tabs (`0620310`) also passed native creation, switching,
+retained history and isolated close. Modifier-click links remain below.
 
 Earlier implementation: `f0e1c4e` reuses coincident caret/selection coordinate
 conversions. The [multi-cursor report](docs/benchmark/2026-09-08-multicursor.md)
@@ -51,8 +52,9 @@ The default `target/` previously disappeared outside this task.
   - Tabs with create, switch and close controls are implemented and live-checked
     on macOS: independent shells, retained scrollback, and isolated close.
     [Verification](docs/dev/refactoring-audit-2026-09-06.md#terminal-tabs--2026-09-08).
-  - Support mouse text selection and copying to the system clipboard, including
-    scrollback, wrapped lines and Unicode. Preserve normal shell interrupt keys.
+  - Selection/copy is implemented: native macOS drag, word/line selection and
+    retained selection across tabs passed; focused checks cover wrapped Unicode
+    in scrollback and preserving Ctrl+C. [Verification](docs/dev/refactoring-audit-2026-09-06.md#terminal-selection-and-copy--2026-09-08).
   - Make links clickable while a modifier is held, with a visible hover cue.
     Follow the app's platform modifier conventions; ordinary clicks must not
     open links or interfere with selection. Reuse existing URL-opening effects.

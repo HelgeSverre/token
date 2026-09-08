@@ -2,7 +2,7 @@
 
 Integrated terminal panel at the bottom of the editor
 
-> **Status:** ✅ Shipped — MVP (Phases 1–4); archived 2026-09-02. Terminal tabs added as a follow-on on 2026-09-08; selection/copy and modifier-click links remain in progress.
+> **Status:** ✅ Shipped — MVP (Phases 1–4); archived 2026-09-02. Terminal tabs and selection/copy added as follow-ons on 2026-09-08; modifier-click links remain in progress.
 > **Priority:** P2
 > **Effort:** L (8–14 days)
 > **Created:** 2025-12-20
@@ -374,6 +374,14 @@ Added 2026-09-08, after the initial MVP:
 5. [x] Close the active terminal without affecting other sessions.
 
 See [live verification](../dev/refactoring-audit-2026-09-06.md#terminal-tabs--2026-09-08).
+
+### Post-MVP: Selection and Copy
+
+Added 2026-09-08: drag selection, double-click words, triple-click lines and
+copy using Cmd+C (macOS) or Ctrl+Shift+C (other platforms). Plain Ctrl+C still
+reaches the shell. Selections stay with their session; the existing terminal
+engine handles wrapped lines, Unicode and scrollback during extraction.
+See [verification](../dev/refactoring-audit-2026-09-06.md#terminal-selection-and-copy--2026-09-08).
 
 ---
 
