@@ -6,6 +6,7 @@
 //! throughout this codebase's document API (`Document::cursor_to_offset`),
 //! unlike the `regex` crate which reports byte offsets on `&str`.
 
+use aho_corasick::AhoCorasick;
 use regex::Regex;
 
 /// One match's char-offset range in a document, half-open like `Selection`.
@@ -20,6 +21,9 @@ pub struct Match {
 pub struct SearchQuery {
     pattern: String,
     compiled: Option<Regex>,
+    /// Optional acceleration for plain ASCII literals on ASCII-only text.
+    /// The regex remains authoritative for validation and Unicode case folding.
+    ascii_literal: Option<AhoCorasick>,
     /// Error message if regex compilation failed (invalid regex, or an
     /// invalid literal pattern once escaped with word boundaries).
     pub error: Option<String>,
@@ -30,9 +34,18 @@ impl SearchQuery {
         let mut query = Self {
             pattern: pattern.to_string(),
             compiled: None,
+            ascii_literal: None,
             error: None,
         };
         query.compile(case_sensitive, whole_word, is_regex);
+        if query.is_valid() && !whole_word && !is_regex && pattern.is_ascii() {
+            // One fixed-length pattern has the same non-overlapping match order
+            // as the regex. Construction failure simply keeps the regex path.
+            query.ascii_literal = AhoCorasick::builder()
+                .ascii_case_insensitive(!case_sensitive)
+                .build([pattern])
+                .ok();
+        }
         query
     }
 
@@ -88,6 +101,17 @@ impl SearchQuery {
             return Vec::new();
         };
 
+        if let Some(literal) = self.ascii_literal.as_ref().filter(|_| text.is_ascii()) {
+            // Byte and character offsets coincide only under this text gate.
+            return literal
+                .find_iter(text)
+                .map(|m| Match {
+                    start: m.start(),
+                    end: m.end(),
+                })
+                .collect();
+        }
+
         let mut matches = Vec::new();
         let mut prev_byte = 0;
         let mut prev_char = 0;
@@ -112,6 +136,37 @@ mod tests {
         let query = SearchQuery::new("hello", false, false, false);
         let matches = query.find_all("Hello world, hello there");
         assert_eq!(matches.len(), 2);
+
+        // Compare the fast path to the unchanged engine, including overlapping
+        // candidates, literal regex punctuation and Unicode fold equivalents.
+        for pattern in [
+            "hello", "aa", "a.a", "[", "\n", "\0", "k", "s", "İ", "σ", "",
+        ] {
+            for case_sensitive in [false, true] {
+                let query = SearchQuery::new(pattern, case_sensitive, false, false);
+                let mut fallback = query.clone();
+                fallback.ascii_literal = None;
+                assert_eq!(
+                    query.ascii_literal.is_some(),
+                    !pattern.is_empty() && pattern.is_ascii()
+                );
+                for text in [
+                    "",
+                    "Hello hello HELLO",
+                    "aaaaa",
+                    "a.a [\n\0",
+                    "kKK sSſ",
+                    "İi σΣς",
+                    "猫hello🙂",
+                ] {
+                    assert_eq!(
+                        query.find_all(text),
+                        fallback.find_all(text),
+                        "pattern={pattern:?}, text={text:?}, case_sensitive={case_sensitive}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -124,6 +179,7 @@ mod tests {
     #[test]
     fn whole_word_excludes_partial_matches() {
         let query = SearchQuery::new("the", false, true, false);
+        assert!(query.ascii_literal.is_none());
         let matches = query.find_all("the other there");
         assert_eq!(matches, vec![Match { start: 0, end: 3 }]);
     }
@@ -131,6 +187,7 @@ mod tests {
     #[test]
     fn regex_search_finds_digit_runs() {
         let query = SearchQuery::new(r"\d+", false, false, true);
+        assert!(query.ascii_literal.is_none());
         let matches = query.find_all("abc 123 def 456 ghi");
         assert_eq!(
             matches,

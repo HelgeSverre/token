@@ -197,8 +197,8 @@ profile-workloads-debug *args:
     cargo bench --profile dev --bench editor_workloads -- {{args}}
 
 [group('bench')]
-bench-search:
-    cargo bench --bench search
+bench-search *args:
+    cargo bench --bench search -- {{args}}
 
 [group('bench')]
 bench-wrap:

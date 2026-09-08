@@ -8,6 +8,9 @@ All notable changes to rust-editor are documented in this file.
 
 ### Performance investigation
 
+- Plain Find queries can use a non-overlapping literal matcher when both query
+  and document are ASCII. Unicode, regex and whole-word queries retain the
+  existing engine and character-offset semantics.
 - Find overview markers reuse Rope chunk coordinates instead of constructing a
   Rope slice for every matched line. Newline semantics and snapshot-bound,
   lazy overview caching remain unchanged.

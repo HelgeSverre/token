@@ -12,6 +12,19 @@ fn main() {
     divan::main();
 }
 
+/// Same literal and text through the accelerated path (false) and regex (true).
+/// Includes query construction, but excludes the already-materialized text.
+#[divan::bench(args = [false, true])]
+fn find_ascii_literal_vs_regex(bencher: divan::Bencher, is_regex: bool) {
+    let text = "ordinary text on a short line\n".repeat(100_000);
+    let query = token::search::SearchQuery::new("ordinary", false, false, is_regex);
+    assert_eq!(query.find_all(&text).len(), 100_000);
+    bencher.bench_local(|| {
+        let query = token::search::SearchQuery::new("ordinary", false, false, is_regex);
+        divan::black_box(query.find_all(&text))
+    });
+}
+
 #[divan::bench(args = [10_000, 100_000])]
 fn document_find_all_occurrences(bencher: divan::Bencher, line_count: usize) {
     let document =
