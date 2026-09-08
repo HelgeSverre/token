@@ -4,7 +4,7 @@ use crate::csv::render::CsvRenderLayout;
 use crate::model::ui::{FindReplaceField, GotoLineState, ModalState, RenameSymbolState};
 use crate::model::{AppModel, FocusTarget};
 
-use super::geometry::{column_to_pixel_x, GroupLayout, WidgetRect};
+use super::geometry::{GroupLayout, WidgetRect};
 use super::{TextFieldOptions, TextFieldRenderer};
 
 const CARET_WIDTH: usize = 2;
@@ -65,7 +65,11 @@ pub fn editor_text_rect_at(
     let (visual_row, visual_col) = viewport.display_position(document, line, column);
     let screen_row = viewport.visible_row_for_position(line, column);
     let y = screen_row
-        .map(|row| layout.content_y() + row * line_height)
+        .map(|row| {
+            (layout.content_y() as f64 + viewport.row_pixel_offset(row, line_height as f64))
+                .round()
+                .max(layout.content_y() as f64) as usize
+        })
         .unwrap_or_else(|| {
             if visual_row < viewport.top_line() {
                 layout.content_y()
@@ -76,12 +80,9 @@ pub fn editor_text_rect_at(
             }
         });
 
-    let x = column_to_pixel_x(
-        visual_col,
-        viewport.left_column(),
-        layout.text_start_x,
-        char_width,
-    );
+    let x = (layout.text_start_x as f64 + viewport.column_pixel_offset(visual_col, char_width))
+        .round()
+        .max(0.0) as usize;
     let max_x = layout
         .rect_x()
         .saturating_add(layout.rect_w())

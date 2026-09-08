@@ -39,6 +39,21 @@ fn empty_startup_config() -> StartupConfig {
 }
 
 #[test]
+fn wheel_easing_deadline_disappears_when_the_viewport_settles() {
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.document_mut().buffer = "line\n".repeat(100).into();
+    let now = Instant::now();
+    app.last_tick = now;
+    let idle = app.next_wake(now);
+    let id = app.model.editor_area.focused_editor_id().unwrap();
+    app.model.scroll_editor_pixels_by(id, 0.0, 60.0, true);
+    assert_eq!(app.next_wake(now), idle.min(now + Duration::from_millis(8)));
+    app.model.advance_scroll_animations(1.0);
+    assert!(!app.model.has_scroll_animations());
+    assert_eq!(app.next_wake(now), idle);
+}
+
+#[test]
 fn path_completion_runtime_reads_directory_accepts_and_undoes() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join("assets")).unwrap();

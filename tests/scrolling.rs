@@ -6,6 +6,51 @@ use common::test_model;
 use token::messages::{Direction, DocumentMsg, EditorMsg, Msg};
 use token::update::update;
 
+#[test]
+fn pixel_scroll_preserves_clicks_and_cancels_easing_on_navigation_and_resize() {
+    let mut model = test_model(&format!("{}\n", "abcdefghij".repeat(30)).repeat(100), 0, 0);
+    model.resize(800, 600);
+    let editor_id = model.editor_area.focused_editor_id().unwrap();
+    let scroll = |model: &mut token::model::AppModel, x, y, animated| {
+        update(
+            model,
+            Msg::Editor(EditorMsg::ScrollPixels {
+                editor_id,
+                delta_x: x,
+                delta_y: y,
+                animated,
+            }),
+        );
+    };
+    scroll(&mut model, 3.25, 7.75, false);
+    assert_eq!(model.editor().pixel_scroll_position(), (3.25, 7.75));
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::SetCursorPosition { line: 0, column: 0 }),
+    );
+    assert_eq!(model.editor().pixel_scroll_position(), (3.25, 7.75));
+    scroll(&mut model, 0.0, 60.0, true);
+    assert!(model.has_scroll_animations());
+    assert_eq!(model.editor().pixel_scroll_position().1, 7.75);
+    assert!(model.advance_scroll_animations(0.04));
+    let displayed = model.editor().pixel_scroll_position().1;
+    assert!(displayed > 7.75 && displayed < 67.75);
+    scroll(&mut model, 0.0, -10.0, true);
+    model.advance_scroll_animations(1.0);
+    assert_eq!(model.editor().pixel_scroll_position().1, displayed - 10.0);
+    assert!(!model.has_scroll_animations());
+    assert!(!model.advance_scroll_animations(1.0));
+    scroll(&mut model, 0.0, 60.0, true);
+    update(
+        &mut model,
+        Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
+    );
+    assert!(!model.has_scroll_animations());
+    scroll(&mut model, 0.0, 60.0, true);
+    model.resize(700, 500);
+    assert!(!model.has_scroll_animations());
+}
+
 // ========================================================================
 // Vertical Scrolling tests - JetBrains-Style Boundary Scrolling
 // ========================================================================
@@ -747,9 +792,9 @@ fn test_horizontal_scroll_right_boundary() {
     model.editor_mut().viewport.visible_columns = 80;
     model.editor_mut().viewport.left_column = 0;
 
-    // Try to scroll right past max (100 - 80 = 20)
+    // Include the insertion caret and four-column reveal margin at the right edge.
     update(&mut model, Msg::Editor(EditorMsg::ScrollHorizontal(50)));
-    assert_eq!(model.editor().viewport.left_column, 20); // max_left = 100 - 80 = 20
+    assert_eq!(model.editor().viewport.left_column, 25);
 }
 
 #[test]

@@ -698,20 +698,21 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
         && matches!(editor.tab_content, crate::model::TabContent::Text)
         && !editor.view_mode.is_csv()
     {
-        use super::scrollbar::{ScrollbarGeometry, ScrollbarState};
+        use super::scrollbar::ScrollbarGeometry;
         let sw = model.metrics.scrollbar_width;
-        let viewport = &editor.viewport;
-        let visible_lines = layout.visible_lines(model.line_height);
-        let visible_columns = layout.visible_columns(char_width);
+        // Most pointer motion is over text. Measure horizontal content only if
+        // the pointer actually reaches a track, not on every editor hover hit.
+        let states = std::cell::LazyCell::new(|| {
+            super::editor_scrollbars::scrollbar_states(model, editor, document, &layout)
+        });
         let x = pt.x as f32;
         let y = pt.y as f32;
 
         // Vertical scrollbar
         if let Some(v_track) = layout.v_scrollbar_rect(sw) {
             if v_track.contains(x, y) {
-                let line_count = editor.viewport_map(document).row_count();
-                let v_state = ScrollbarState::new(line_count, visible_lines, viewport.top_line);
-                let v_geo = ScrollbarGeometry::vertical(v_track, &v_state);
+                let (v_state, _) = &*states;
+                let v_geo = ScrollbarGeometry::vertical(v_track, v_state);
                 if v_geo.needed && v_geo.hits_thumb(x, y) {
                     let grab_offset = y - v_geo.thumb_rect.y;
                     return Some(HitTarget::ScrollbarThumbVertical {
@@ -740,38 +741,30 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
 
         // Horizontal scrollbar
         if let Some(h_track) = layout.h_scrollbar_rect(sw).filter(|_| !editor.soft_wrap) {
-            if h_track.contains(x, y) {
-                let top = viewport.top_line;
-                let bottom = (top + visible_lines).min(document.line_count());
-                let max_len = (top..bottom)
-                    .map(|i| document.line_length(i))
-                    .max()
-                    .unwrap_or(0);
-                let h_state = ScrollbarState::new(max_len, visible_columns, viewport.left_column);
-                if h_state.needs_scroll() {
-                    let h_geo = ScrollbarGeometry::horizontal(h_track, &h_state);
-                    if h_geo.hits_thumb(x, y) {
-                        let grab_offset = x - h_geo.thumb_rect.x;
-                        return Some(HitTarget::ScrollbarThumbHorizontal {
-                            group_id,
-                            editor_id,
-                            grab_offset,
-                            track_x: h_track.x,
-                            track_w: h_track.width,
-                            thumb_w: h_geo.thumb_rect.width,
-                            max_scroll: h_state.max_position(),
-                        });
-                    }
-                    return Some(HitTarget::ScrollbarTrackHorizontal {
+            if h_track.contains(x, y) && states.1.needs_scroll() {
+                let h_state = &states.1;
+                let h_geo = ScrollbarGeometry::horizontal(h_track, h_state);
+                if h_geo.hits_thumb(x, y) {
+                    let grab_offset = x - h_geo.thumb_rect.x;
+                    return Some(HitTarget::ScrollbarThumbHorizontal {
                         group_id,
                         editor_id,
-                        coord: x,
+                        grab_offset,
                         track_x: h_track.x,
                         track_w: h_track.width,
                         thumb_w: h_geo.thumb_rect.width,
                         max_scroll: h_state.max_position(),
                     });
                 }
+                return Some(HitTarget::ScrollbarTrackHorizontal {
+                    group_id,
+                    editor_id,
+                    coord: x,
+                    track_x: h_track.x,
+                    track_w: h_track.width,
+                    thumb_w: h_geo.thumb_rect.width,
+                    max_scroll: h_state.max_position(),
+                });
             }
         }
     }

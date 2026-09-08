@@ -2250,12 +2250,18 @@ impl Renderer {
                                             continue;
                                         };
                                         let viewport = editor.viewport_map(document);
-                                        for row in 0..editor.viewport.visible_lines {
+                                        frame.push_clip(layout.content_rect);
+                                        for row in 0..viewport.drawn_rows() {
                                             if viewport
                                                 .doc_line_for_visible_row(row)
                                                 .is_some_and(|line| lines.contains(&line))
                                             {
-                                                let y = layout.content_y() + row * line_height;
+                                                let y = (layout.content_y() as f64
+                                                    + viewport
+                                                        .row_pixel_offset(row, line_height as f64))
+                                                .round()
+                                                .max(0.0)
+                                                    as usize;
                                                 // Fill with semi-transparent green
                                                 frame.blend_rect_px(
                                                     layout.rect_x(),
@@ -2266,6 +2272,7 @@ impl Renderer {
                                                 );
                                             }
                                         }
+                                        frame.pop_clip();
                                     }
                                 }
                             }

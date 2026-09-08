@@ -86,6 +86,7 @@ pub(super) fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd>
         msg,
         EditorMsg::Scroll(_)
             | EditorMsg::ScrollHorizontal(_)
+            | EditorMsg::ScrollPixels { .. }
             | EditorMsg::ToggleSoftWrap
             | EditorMsg::StartRectangleSelection { .. }
     ) {
@@ -102,7 +103,9 @@ pub(super) fn update_editor(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd>
 
 fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
     // Skip cursor/selection operations for non-text tabs
-    if !matches!(model.editor().tab_content, crate::model::TabContent::Text) {
+    if !matches!(msg, EditorMsg::ScrollPixels { .. })
+        && !matches!(model.editor().tab_content, crate::model::TabContent::Text)
+    {
         return None;
     }
 
@@ -223,6 +226,19 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
         EditorMsg::Scroll(delta) => {
             let scrolled = model.scroll_focused_editor_vertical_by(delta as isize);
+            if scrolled {
+                dismiss_hover_on_scroll(model);
+            }
+            scrolled.then_some(Cmd::redraw_editor())
+        }
+
+        EditorMsg::ScrollPixels {
+            editor_id,
+            delta_x,
+            delta_y,
+            animated,
+        } => {
+            let scrolled = model.scroll_editor_pixels_by(editor_id, delta_x, delta_y, animated);
             if scrolled {
                 dismiss_hover_on_scroll(model);
             }

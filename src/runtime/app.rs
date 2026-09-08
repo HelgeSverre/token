@@ -212,6 +212,7 @@ pub struct App {
     window: Option<Rc<Window>>,
     context: Option<Context<Rc<Window>>>,
     last_tick: Instant,
+    last_scroll_frame: Option<Instant>,
     modifiers: ModifiersState,
     mouse_position: Option<(f64, f64)>,
     /// Mouse-dwell hover tracking (Zed-style `hover_on_mouse`): the pixel
@@ -1099,6 +1100,7 @@ impl App {
             window: None,
             context: None,
             last_tick: Instant::now(),
+            last_scroll_frame: None,
             modifiers: ModifiersState::empty(),
             mouse_position: None,
             hover_dwell: None,
@@ -1479,6 +1481,7 @@ impl App {
                 // another app has focus leaves dead keys behind; the user's
                 // next interaction with a refocused editor reopens it.
                 if !focused {
+                    self.model.cancel_scroll_animations();
                     self.drag.end();
                     self.model.terminal.selection_drag = None;
                     self.model.terminal.hovered_link = None;
@@ -1997,9 +2000,24 @@ impl App {
                 None
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                self.hover_dwell = None;
                 let (h_delta, v_delta) = self
                     .scroll_accumulator
                     .deltas_for_model(*delta, &self.model);
+                let pixels = match delta {
+                    winit::event::MouseScrollDelta::PixelDelta(position) => {
+                        (-position.x, -position.y)
+                    }
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => (
+                        -*x as f64 * LINES_PER_WHEEL_NOTCH * self.model.char_width as f64,
+                        -*y as f64 * LINES_PER_WHEEL_NOTCH * self.model.line_height as f64,
+                    ),
+                };
+                let scroll = super::mouse::WheelScroll {
+                    rows: (h_delta, v_delta),
+                    pixels: Some(pixels),
+                    animated: matches!(delta, winit::event::MouseScrollDelta::LineDelta(..)),
+                };
 
                 if let Some(renderer) = &mut self.renderer {
                     let mut painter = renderer.text_painter();
@@ -2007,12 +2025,11 @@ impl App {
                     handle_mouse_wheel(
                         &mut self.model,
                         self.mouse_position,
-                        h_delta,
-                        v_delta,
+                        scroll,
                         Some(&mut measure),
                     )
                 } else {
-                    handle_mouse_wheel(&mut self.model, self.mouse_position, h_delta, v_delta, None)
+                    handle_mouse_wheel(&mut self.model, self.mouse_position, scroll, None)
                 }
             }
             WindowEvent::DroppedFile(path) => {
@@ -5579,6 +5596,27 @@ impl ApplicationHandler for App {
             needs_redraw = true;
         }
 
+        // Advance only while a discrete-wheel animation is active.
+        if self.model.has_scroll_animations() {
+            let now = Instant::now();
+            let previous = *self.last_scroll_frame.get_or_insert(now);
+            if now.duration_since(previous) >= Duration::from_millis(8) {
+                self.last_scroll_frame = Some(now);
+                if let Some(cmd) = update(
+                    &mut self.model,
+                    Msg::App(AppMsg::ScrollAnimationTick {
+                        seconds: now.duration_since(previous).as_secs_f64(),
+                    }),
+                ) {
+                    needs_redraw |= cmd.needs_redraw();
+                    self.pending_damage.merge(cmd.damage());
+                    self.process_cmd(cmd);
+                }
+            }
+        } else {
+            self.last_scroll_frame = None;
+        }
+
         // Expire status flash messages
         if self.model.ui.expire_status_message() {
             self.pending_damage
@@ -5633,6 +5671,10 @@ impl App {
     pub(super) fn next_wake(&self, now: Instant) -> Instant {
         let blink_interval = self.cursor_tick_interval();
         let mut next_wake = self.last_tick + blink_interval;
+        if self.model.has_scroll_animations() {
+            next_wake =
+                next_wake.min(self.last_scroll_frame.unwrap_or(now) + Duration::from_millis(8));
+        }
         if let Some(due) = self.file_change_due {
             next_wake = next_wake.min(due);
         }

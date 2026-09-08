@@ -302,13 +302,13 @@ mod tests {
             .ui
             .open_modal(token::model::ModalState::Settings(Default::default()));
         model.ui.hover = token::model::HoverRegion::Modal;
-        scroll_hovered_region(&mut model, None, 0, 1);
+        scroll_hovered_region(&mut model, None, (0, 1).into());
         let one = settings_scrollbar(&model).state.position;
         update(
             &mut model,
             Msg::Ui(UiMsg::Modal(ModalMsg::SetInput(String::new()))),
         );
-        scroll_hovered_region(&mut model, None, 0, 5);
+        scroll_hovered_region(&mut model, None, (0, 5).into());
         assert_eq!(one, 1);
         assert_eq!(settings_scrollbar(&model).state.position, 5);
     }
@@ -516,8 +516,7 @@ mod tests {
         assert!(handle_mouse_wheel(
             &mut model,
             Some(((text.x + 1) as f64, (text.y + 1) as f64)),
-            0,
-            1,
+            (0, 1).into(),
             Some(&mut measure)
         )
         .is_some());
@@ -577,7 +576,7 @@ mod tests {
                 )
             })
             .expect("editor content outside the card");
-        handle_mouse_wheel(&mut model, Some(point), 0, 1, Some(&mut measure));
+        handle_mouse_wheel(&mut model, Some(point), (0, 1).into(), Some(&mut measure));
         assert!(
             model.ui.completion_menu.is_none(),
             "scrolling the editor dismisses the attached menu"
@@ -915,10 +914,76 @@ mod tests {
     }
 
     #[test]
+    fn pixel_wheel_targets_hovered_split_without_changing_keyboard_focus() {
+        let mut model = AppModel::new(1000, 600, 1.0);
+        model.document_mut().buffer = ropey::Rope::from_str(&"long text line\n".repeat(200));
+        let original = model.editor_area.focused_editor_id().unwrap();
+        update(
+            &mut model,
+            Msg::Layout(LayoutMsg::SplitFocused(
+                token::model::SplitDirection::Horizontal,
+            )),
+        );
+        let focused = model.editor_area.focused_editor_id().unwrap();
+        assert_ne!(original, focused);
+        model.resize(1000, 600);
+        let group = model
+            .editor_area
+            .groups
+            .values()
+            .find(|g| g.active_editor_id() == Some(original))
+            .unwrap();
+        let point = (group.rect.x as f64 + 100.0, group.rect.y as f64 + 100.0);
+        model.ui.hover = HoverRegion::EditorText;
+        handle_mouse_wheel(
+            &mut model,
+            Some(point),
+            WheelScroll {
+                rows: (0, 0),
+                pixels: Some((0.0, 7.25)),
+                animated: false,
+            },
+            None,
+        );
+        assert_eq!(model.editor_area.focused_editor_id(), Some(focused));
+        assert_eq!(
+            model.editor_area.editors[&original]
+                .pixel_scroll_position()
+                .1,
+            7.25
+        );
+        assert_eq!(model.editor().pixel_scroll_position().1, 0.0);
+        // A special tab owning keyboard focus must not block the explicit
+        // plain-text target or accidentally enter its text editing path.
+        model.editor_mut().tab_content =
+            token::model::TabContent::BinaryPlaceholder(token::model::BinaryPlaceholderState {
+                path: "fixture.bin".into(),
+                size_bytes: 1,
+            });
+        handle_mouse_wheel(
+            &mut model,
+            Some(point),
+            WheelScroll {
+                rows: (0, 0),
+                pixels: Some((0.0, 7.25)),
+                animated: false,
+            },
+            None,
+        );
+        assert_eq!(
+            model.editor_area.editors[&original]
+                .pixel_scroll_position()
+                .1,
+            14.5
+        );
+        assert_eq!(model.editor_area.focused_editor_id(), Some(focused));
+    }
+
+    #[test]
     fn mouse_wheel_up_over_terminal_dock_scrolls_scrollback() {
         let mut model = terminal_model_with_history();
 
-        let cmd = handle_mouse_wheel(&mut model, Some((0.0, 0.0)), 0, -3, None);
+        let cmd = handle_mouse_wheel(&mut model, Some((0.0, 0.0)), (0, -3).into(), None);
 
         assert!(cmd.as_ref().is_some_and(Cmd::needs_redraw));
         assert_eq!(model.terminal.active_session().unwrap().scroll_offset, 3);
@@ -929,7 +994,7 @@ mod tests {
         let mut model = terminal_model_with_history();
         model.terminal.active_session_mut().unwrap().scroll_offset = 4;
 
-        let cmd = handle_mouse_wheel(&mut model, Some((0.0, 0.0)), 0, 2, None);
+        let cmd = handle_mouse_wheel(&mut model, Some((0.0, 0.0)), (0, 2).into(), None);
 
         assert!(cmd.as_ref().is_some_and(Cmd::needs_redraw));
         assert_eq!(model.terminal.active_session().unwrap().scroll_offset, 2);
@@ -954,11 +1019,11 @@ mod tests {
         );
 
         for _ in 0..20 {
-            handle_mouse_wheel(&mut model, None, 0, 3, None);
+            handle_mouse_wheel(&mut model, None, (0, 3).into(), None);
         }
         assert_eq!(model.ui.cursor_overlay.unwrap().scroll, 0);
 
-        handle_mouse_wheel(&mut model, None, 0, -3, None);
+        handle_mouse_wheel(&mut model, None, (0, -3).into(), None);
         assert_eq!(model.ui.cursor_overlay.unwrap().scroll, 0);
     }
 
@@ -2648,13 +2713,32 @@ fn tab_bar_scroll_delta_px(h_delta: i32, v_delta: i32, scroll_step: i32) -> Opti
 
 /// Handle mouse wheel scroll events, routing to the appropriate target
 /// based on the current hover region.
-pub fn handle_mouse_wheel(
+/// Row-oriented widgets keep accumulated row deltas. Text panes consume the
+/// original pixel displacement, without rounding it to a row or column first.
+#[derive(Clone, Copy)]
+pub(super) struct WheelScroll {
+    pub rows: (i32, i32),
+    pub pixels: Option<(f64, f64)>,
+    pub animated: bool,
+}
+
+impl From<(i32, i32)> for WheelScroll {
+    fn from(rows: (i32, i32)) -> Self {
+        Self {
+            rows,
+            pixels: None,
+            animated: false,
+        }
+    }
+}
+
+pub(super) fn handle_mouse_wheel(
     model: &mut AppModel,
     mouse_position: Option<(f64, f64)>,
-    h_delta: i32,
-    v_delta: i32,
+    scroll: WheelScroll,
     measure: Option<&mut dyn token::layout::TextMeasure>,
 ) -> Option<Cmd> {
+    let (_, v_delta) = scroll.rows;
     if model.terminal.selection_drag.is_some() {
         let scroll = if v_delta < 0 {
             TerminalMsg::ScrollUp(v_delta.unsigned_abs() as usize)
@@ -2687,7 +2771,7 @@ pub fn handle_mouse_wheel(
             }
         }
     }
-    let cmd = scroll_hovered_region(model, mouse_position, h_delta, v_delta);
+    let cmd = scroll_hovered_region(model, mouse_position, scroll);
     merge(hover_changed.then_some(Cmd::Redraw), cmd)
 }
 
@@ -2715,10 +2799,10 @@ fn merge(a: Option<Cmd>, b: Option<Cmd>) -> Option<Cmd> {
 fn scroll_hovered_region(
     model: &mut AppModel,
     mouse_position: Option<(f64, f64)>,
-    h_delta: i32,
-    v_delta: i32,
+    scroll: WheelScroll,
 ) -> Option<Cmd> {
     use token::model::HoverRegion;
+    let (h_delta, v_delta) = scroll.rows;
     match model.ui.hover {
         // Sidebar: scroll the file tree
         HoverRegion::Sidebar => {
@@ -2868,6 +2952,39 @@ fn scroll_hovered_region(
             } else {
                 None
             };
+
+            if let Some((delta_x, delta_y)) = scroll.pixels {
+                let target = mouse_position
+                    .and_then(|(x, y)| {
+                        model
+                            .editor_area
+                            .groups
+                            .values()
+                            .find(|group| group.rect.contains(x as f32, y as f32))
+                            .and_then(|group| group.active_editor_id())
+                    })
+                    .or_else(|| model.editor_area.focused_editor_id());
+                if let Some(editor_id) = target.filter(|id| {
+                    model
+                        .editor_area
+                        .editors
+                        .get(id)
+                        .is_some_and(|editor| editor.is_plain_text_mode())
+                }) {
+                    return merge(
+                        completion_dismiss,
+                        update(
+                            model,
+                            Msg::Editor(EditorMsg::ScrollPixels {
+                                editor_id,
+                                delta_x,
+                                delta_y,
+                                animated: scroll.animated,
+                            }),
+                        ),
+                    );
+                }
+            }
 
             let in_image_mode = model
                 .editor_area

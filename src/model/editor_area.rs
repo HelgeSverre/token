@@ -784,9 +784,27 @@ impl EditorArea {
                         editor.soft_wrap,
                         metrics.scrollbar_width,
                     );
+                    let previous_pixels = editor.viewport.pixels;
                     editor.resize_viewport(visible_lines, visible_columns);
+                    editor
+                        .viewport
+                        .pixels
+                        .x
+                        .resize(char_width as f64, (width as f64 - text_x as f64).max(0.0));
+                    editor
+                        .viewport
+                        .pixels
+                        .y
+                        .resize(line_height as f64, content_height as f64);
+                    if editor.viewport.pixels != previous_pixels {
+                        editor.viewport.animation = None;
+                    }
                     if let Some(doc) = doc {
                         editor.ensure_wrap_cache(doc);
+                        if editor.viewport.pixels != previous_pixels {
+                            let (x, y) = editor.pixel_scroll_position();
+                            editor.set_pixel_scroll(doc, x, y);
+                        }
                     }
 
                     if let Some(image) = editor.view_mode.as_image_mut() {

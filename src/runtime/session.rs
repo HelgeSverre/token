@@ -316,6 +316,7 @@ mod tests {
         original.editor_mut().soft_wrap = true;
         original.resize(650, 500);
         original.editor_mut().viewport.top_line = 53;
+        original.editor_mut().viewport.pixels.y.offset = original.line_height as f64 * 0.375;
         let top = original
             .editor()
             .viewport_map(original.document())
@@ -330,6 +331,10 @@ mod tests {
             .visual_line_for_position(top.line, top.column);
         assert_eq!(restored.editor().viewport.top_line, expected);
         assert_eq!(restored.editor().viewport.left_column, 0);
+        assert_eq!(
+            restored.editor().viewport.pixels.y.offset / restored.line_height as f64,
+            0.375
+        );
         assert_ne!(expected, 53);
     }
 

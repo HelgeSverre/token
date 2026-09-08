@@ -199,6 +199,7 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             new_position,
         } => scroll_target(model, target, axis, new_position),
         UiMsg::ScrollbarThumbPressed(drag) => {
+            model.cancel_scroll_animations();
             model.ui.scrollbar_drag = Some(drag);
             Some(Cmd::Redraw)
         }
@@ -223,12 +224,17 @@ fn scroll_target(
 ) -> Option<Cmd> {
     use crate::model::ui::{ScrollbarDragAxis, ScrollbarTarget};
     match (target, axis) {
-        (ScrollbarTarget::Editor(editor), ScrollbarDragAxis::Vertical) => model
-            .set_editor_vertical_scroll(editor, position)
-            .then_some(Cmd::redraw_editor()),
-        (ScrollbarTarget::Editor(editor), ScrollbarDragAxis::Horizontal) => model
-            .set_editor_horizontal_scroll(editor, position)
-            .then_some(Cmd::redraw_editor()),
+        (ScrollbarTarget::Editor(editor_id), axis) => {
+            let editor = model.editor_area.editors.get(&editor_id)?;
+            let (x, y) = editor.pixel_scroll_position();
+            let (dx, dy) = match axis {
+                ScrollbarDragAxis::Vertical => (0.0, position as f64 - y),
+                ScrollbarDragAxis::Horizontal => (position as f64 - x, 0.0),
+            };
+            model
+                .scroll_editor_pixels_by(editor_id, dx, dy, false)
+                .then_some(Cmd::redraw_editor())
+        }
         (ScrollbarTarget::Modal(id), ScrollbarDragAxis::Vertical)
             if model
                 .ui

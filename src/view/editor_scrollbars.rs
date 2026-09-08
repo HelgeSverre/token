@@ -121,8 +121,33 @@ fn overview_mark_color(model: &AppModel, mark: Mark) -> u32 {
     }
 }
 
-/// Render vertical (and horizontal if needed) scrollbars for a text editor
-/// pane. Find and diagnostics share one cached overview projection.
+/// Physical-pixel extents shared by scrollbar painting and hit testing.
+pub(super) fn scrollbar_states(
+    model: &AppModel,
+    editor: &EditorState,
+    document: &Document,
+    layout: &geometry::GroupLayout,
+) -> (ScrollbarState, ScrollbarState) {
+    let viewport = &editor.viewport;
+    let vertical = ScrollbarState::new(
+        editor
+            .viewport_map(document)
+            .row_count()
+            .saturating_mul(model.line_height),
+        layout.content_h(),
+        (viewport.top_line as f64 * model.line_height as f64 + viewport.pixels.y.offset).round()
+            as usize,
+    );
+    let horizontal = ScrollbarState::new(
+        (editor.scrollable_columns(document) as f64 * model.char_width as f64).ceil() as usize,
+        (layout.rect_x() + layout.rect_w()).saturating_sub(layout.text_start_x),
+        (viewport.left_column as f64 * model.char_width as f64 + viewport.pixels.x.offset).round()
+            as usize,
+    );
+    (vertical, horizontal)
+}
+
+/// Paint scrollbars using the same pixel extents used by pointer hit testing.
 pub fn render_editor_scrollbars(
     frame: &mut Frame,
     model: &AppModel,
@@ -134,14 +159,9 @@ pub fn render_editor_scrollbars(
     let sw = model.metrics.scrollbar_width;
     let colors = ScrollbarColors::from(&model.theme.scrollbar);
 
-    let viewport = &editor.viewport;
-    let map = editor.viewport_map(document);
-    let line_count = map.row_count();
-    let visible_lines = layout.visible_lines(model.line_height);
-    let visible_columns = layout.visible_columns(model.char_width);
+    let (v_state, h_state) = scrollbar_states(model, editor, document, layout);
 
     if let Some(v_track) = layout.v_scrollbar_rect(sw) {
-        let v_state = ScrollbarState::new(line_count, visible_lines, viewport.top_line);
         let v_geo = ScrollbarGeometry::vertical(v_track, &v_state);
         render_scrollbar(frame, &v_geo, false, &colors);
 
@@ -162,8 +182,6 @@ pub fn render_editor_scrollbars(
     }
 
     if let Some(h_track) = layout.h_scrollbar_rect(sw).filter(|_| !editor.soft_wrap) {
-        let max_len = editor.max_visible_line_length(document);
-        let h_state = ScrollbarState::new(max_len, visible_columns, viewport.left_column);
         if h_state.needs_scroll() {
             let h_geo = ScrollbarGeometry::horizontal(h_track, &h_state);
             render_scrollbar(frame, &h_geo, false, &colors);

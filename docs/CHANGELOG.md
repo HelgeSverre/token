@@ -6,6 +6,18 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Pixel scrolling
+
+- Plain-text panes scroll vertically and horizontally by pixels, including
+  partially visible rows and characters. Text, gutter, selections, decorations,
+  pointer hit testing and scrollbar interaction share the viewport offsets.
+- Discrete mouse-wheel steps ease toward their target; trackpad pixel events and
+  scrollbar dragging remain direct. Navigation, edits and layout changes cancel
+  pending animation. Settings, terminal and special-document scrolling retain
+  their existing behavior.
+- Saved sessions retain within-row/column positions across display metric
+  changes; older session files default to aligned positions.
+
 ### Session restore
 
 - Restore saved-file tabs, split layout and ratios, focused tabs, selections,

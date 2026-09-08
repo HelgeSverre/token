@@ -110,6 +110,11 @@ pub(crate) fn finish_test_file_opens(model: &mut AppModel, cmd: Option<Cmd>) -> 
 /// In release builds, it's a direct dispatch with zero overhead.
 #[inline]
 pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
+    match &msg {
+        Msg::Editor(crate::messages::EditorMsg::ScrollPixels { .. }) => {}
+        Msg::Editor(_) | Msg::Document(_) | Msg::Layout(_) => model.cancel_scroll_animations(),
+        _ => {}
+    }
     let was_loading = model.ui.is_loading;
     let had_path_completion = model.ui.completion_path.is_some();
     #[cfg(debug_assertions)]
@@ -118,6 +123,9 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let result = update_inner(model, msg);
     let result = merge_cmds(result, usages::reconcile(model));
     let result = merge_cmds(result, file_change::reconcile(model));
+    if model.ui.has_modal() || model.ui.context_menu.is_some() {
+        model.cancel_scroll_animations();
+    }
     // This wrapper also covers early returns in special-tab dispatch.
     let completion_cleanup = completion::reconcile_pending_commit(model);
     let path_cleanup = completion::reconcile_paths(model);
@@ -170,6 +178,15 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         .is_some()
         .then(|| signature_help_anchor(model));
     let result = match msg {
+        Msg::Editor(m @ crate::messages::EditorMsg::ScrollPixels { .. }) => {
+            // Pixel wheel input explicitly targets the pane under the pointer,
+            // which need not own keyboard focus (or share its view mode).
+            let dismissed = completion::dismiss(model);
+            merge_cmds(
+                editor::update_editor(model, m),
+                dismissed.then(Cmd::redraw_editor),
+            )
+        }
         Msg::Editor(m) => {
             // Any cursor/selection movement invalidates the completion
             // query (autocomplete.md dismiss rule: "cursor line change").

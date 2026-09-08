@@ -8,7 +8,7 @@ use crate::model::{collect_line_marks, AppModel, Document, EditorState, Mark, Te
 use crate::perf::{PerfStage, PerfStats};
 
 use super::frame::{Frame, TextPainter};
-use super::geometry::{self, column_to_pixel_x, expand_tabs_for_display};
+use super::geometry::{self, expand_tabs_for_display};
 use crate::util::text::{char_col_to_visual_col, TABULATOR_WIDTH};
 
 /// Cursor width in pixels.
@@ -119,11 +119,22 @@ impl<'a> EditorRenderContext<'a> {
         line_height: usize,
     ) -> Self {
         let viewport = editor.viewport_map(document);
-        let visible_lines = layout.visible_lines(line_height);
+        let visible_lines = crate::model::scroll::PixelAxis {
+            unit: line_height.max(1) as f64,
+            extent: layout.content_h() as f64,
+            ..editor.viewport.pixels.y
+        }
+        .drawn_count();
         let visible_columns = if editor.soft_wrap {
             editor.viewport.visible_columns.saturating_add(1)
         } else {
-            layout.visible_columns(char_width)
+            crate::model::scroll::PixelAxis {
+                unit: (char_width as f64).max(1.0),
+                extent: (layout.rect_x() + layout.rect_w()).saturating_sub(layout.text_start_x)
+                    as f64,
+                ..editor.viewport.pixels.x
+            }
+            .drawn_count()
         };
 
         Self {
@@ -150,11 +161,27 @@ impl<'a> EditorRenderContext<'a> {
 
     #[inline]
     fn pixel_x(&self, visual_col: usize, viewport_left: usize) -> usize {
-        column_to_pixel_x(
-            visual_col,
-            viewport_left,
-            self.text_start_x,
-            self.char_width,
+        debug_assert_eq!(viewport_left, self.viewport.left_column());
+        (self.text_start_x as f64
+            + self
+                .viewport
+                .column_pixel_offset(visual_col, self.char_width))
+        .round()
+        .max(0.0) as usize
+    }
+
+    fn pixel_y(&self, row: usize) -> usize {
+        (self.content_y as f64 + self.viewport.row_pixel_offset(row, self.line_height as f64))
+            .round()
+            .max(0.0) as usize
+    }
+
+    fn text_clip(&self) -> crate::model::Rect {
+        crate::model::Rect::new(
+            self.text_start_x as f32,
+            self.content_y as f32,
+            self.text_right_x().saturating_sub(self.text_start_x) as f32,
+            self.content_h as f32,
         )
     }
 
@@ -480,8 +507,9 @@ impl<'a> TextEditorRenderer<'a> {
             .viewport
             .segment_for_visible_row(self.document, screen_line)?;
         let segment_end = segment.end_col().min(self.document.line_length(doc_line));
-        let bottom_y = self.ctx.content_y + self.ctx.content_h;
-        let height = (y + self.ctx.line_height).min(bottom_y) - y;
+        // Keep the original line box. Viewport clipping, not shortening the box,
+        // determines visible glyphs, underlines, cursors and decorations.
+        let height = self.ctx.line_height;
 
         Some(VisibleTextLine {
             doc_line,
@@ -502,7 +530,7 @@ impl<'a> TextEditorRenderer<'a> {
 
     fn render_current_line_background_stage(&self, frame: &mut Frame) {
         for row in 0..self.ctx.visible_lines {
-            let y = self.ctx.content_y + row * self.ctx.line_height;
+            let y = self.ctx.pixel_y(row);
             let Some(line) = self.prepare_visible_line(row, y) else {
                 break;
             };
@@ -721,7 +749,7 @@ impl<'a> TextEditorRenderer<'a> {
         if text_buffers.adjusted_tokens.is_empty() {
             painter.draw(
                 frame,
-                ctx.text_start_x,
+                ctx.pixel_x(viewport_left, viewport_left),
                 line.y,
                 &text_buffers.display_text,
                 self.palette.text,
@@ -729,7 +757,7 @@ impl<'a> TextEditorRenderer<'a> {
         } else {
             painter.draw_with_highlights(
                 frame,
-                ctx.text_start_x,
+                ctx.pixel_x(viewport_left, viewport_left),
                 line.y,
                 &text_buffers.display_text,
                 &text_buffers.adjusted_tokens,
@@ -818,7 +846,7 @@ impl<'a> TextEditorRenderer<'a> {
         // most once per intersecting row, never for rows no decoration touches.
         let rows: Vec<_> = (0..self.ctx.visible_lines)
             .filter_map(|row| {
-                let y = self.ctx.content_y + row * self.ctx.line_height;
+                let y = self.ctx.pixel_y(row);
                 self.prepare_visible_line(row, y)
                     .map(|line| (line, std::cell::OnceCell::new()))
             })
@@ -962,7 +990,7 @@ impl<'a> TextEditorRenderer<'a> {
             else {
                 continue;
             };
-            let y = self.ctx.content_y + screen_line * self.ctx.line_height;
+            let y = self.ctx.pixel_y(screen_line);
             let Some(line) = self.prepare_visible_line(screen_line, y) else {
                 continue;
             };
@@ -988,7 +1016,7 @@ impl<'a> TextEditorRenderer<'a> {
             else {
                 continue;
             };
-            let y = self.ctx.content_y + screen_line * self.ctx.line_height;
+            let y = self.ctx.pixel_y(screen_line);
             let Some(line) = self.prepare_visible_line(screen_line, y) else {
                 continue;
             };
@@ -1084,7 +1112,7 @@ impl<'a> TextEditorRenderer<'a> {
         decorations: &[RangeDecoration],
     ) {
         for screen_line in 0..self.ctx.visible_lines {
-            let y = self.ctx.content_y + screen_line * self.ctx.line_height;
+            let y = self.ctx.pixel_y(screen_line);
             let Some(line) = self.prepare_visible_line(screen_line, y) else {
                 break;
             };
@@ -1099,10 +1127,14 @@ impl<'a> TextEditorRenderer<'a> {
             // erased squiggles and gutter dots whenever the cursor or a
             // selection touched a diagnostic line.
             self.render_gutter_mark(frame, &line);
+            frame.push_clip(self.ctx.text_clip());
             self.render_line_content_stages(frame, painter, &line);
             self.render_dirty_line_cursor_stage(frame, &line);
+            frame.pop_clip();
         }
+        frame.push_clip(self.ctx.text_clip());
         self.render_range_decorations_stage(frame, decorations);
+        frame.pop_clip();
     }
 
     fn render_text_area(
@@ -1134,8 +1166,9 @@ impl<'a> TextEditorRenderer<'a> {
         #[cfg(not(debug_assertions))]
         self.render_current_line_background_stage(frame);
 
+        frame.push_clip(self.ctx.text_clip());
         for screen_line in 0..self.ctx.visible_lines {
-            let y = self.ctx.content_y + screen_line * self.ctx.line_height;
+            let y = self.ctx.pixel_y(screen_line);
             if y >= self.ctx.content_y + self.ctx.content_h {
                 break;
             }
@@ -1190,6 +1223,7 @@ impl<'a> TextEditorRenderer<'a> {
             perf.record_stage_elapsed(PerfStage::TextGlyphs, glyph_time);
             perf.record_stage_elapsed(PerfStage::TextCursors, cursor_time);
         }
+        frame.pop_clip();
     }
 
     fn render_gutter(&self, frame: &mut Frame, painter: &mut TextPainter) {
@@ -1202,7 +1236,7 @@ impl<'a> TextEditorRenderer<'a> {
         );
 
         for screen_line in 0..self.ctx.visible_lines {
-            let y = self.ctx.content_y + screen_line * self.ctx.line_height;
+            let y = self.ctx.pixel_y(screen_line);
             if y >= self.ctx.content_y + self.ctx.content_h {
                 break;
             }
@@ -1317,7 +1351,9 @@ pub fn render_text_area(
     let line_height = painter.line_height();
     let mut renderer =
         TextEditorRenderer::new(model, editor, document, layout, char_width, line_height);
+    frame.push_clip(layout.content_rect);
     renderer.render_text_area(frame, painter, is_focused, decorations, perf);
+    frame.pop_clip();
 }
 
 /// Render the gutter (line numbers) for an editor group.
@@ -1334,7 +1370,14 @@ pub fn render_gutter(
     let line_height = painter.line_height();
     let renderer =
         TextEditorRenderer::new(model, editor, document, layout, char_width, line_height);
+    frame.push_clip(crate::model::Rect::new(
+        layout.rect_x() as f32,
+        layout.content_y() as f32,
+        (layout.gutter_width() + 1) as f32,
+        layout.content_h() as f32,
+    ));
     perf.measure_stage(PerfStage::Gutter, || renderer.render_gutter(frame, painter));
+    frame.pop_clip();
 }
 
 #[cfg(test)]
@@ -1820,7 +1863,8 @@ mod tests {
     fn render_full_editor_group(model: &AppModel) -> Vec<u32> {
         let width = model.window_size.0 as usize;
         let height = model.window_size.1 as usize;
-        let mut buffer = vec![0; width * height];
+        // The top-level renderer clears the surface before rendering groups.
+        let mut buffer = vec![model.theme.editor.background.to_argb_u32(); width * height];
         let mut frame = Frame::new(&mut buffer, width, height);
         let (font, font_size, ascent, char_width, line_height) = load_test_font();
         let mut glyph_cache = GlyphCache::default();
@@ -1867,6 +1911,70 @@ mod tests {
         );
 
         render_cursor_lines_only(&mut frame, &mut painter, model, dirty_lines);
+    }
+
+    #[test]
+    fn pixel_scrolled_text_gutter_hits_and_cursor_redraw_share_geometry() {
+        let mut model = make_text_model();
+        model.document_mut().buffer =
+            Rope::from_str(&"    alpha beta gamma delta epsilon\n".repeat(30));
+        let (_, _, _, char_width, line_height) = load_test_font();
+        model.char_width = char_width;
+        model.line_height = line_height;
+        model.config.show_scrollbar = false;
+        model.ui.cursor_visible = false;
+        model.editor_mut().cursors = vec![Cursor::at(1, 6)];
+        model.editor_mut().clear_selection();
+        model.resize(220, 140);
+        let normal = render_full_editor_group(&model);
+        let id = model.editor_area.focused_editor_id().unwrap();
+        let doc_id = model.editor_area.focused_document_id().unwrap();
+        model
+            .editor_area
+            .editors
+            .get_mut(&id)
+            .unwrap()
+            .set_pixel_scroll(&model.editor_area.documents[&doc_id], 3.0, 7.0);
+        assert_eq!(model.editor().viewport.pixels.x.offset, 3.0);
+        assert_eq!(model.editor().viewport.pixels.y.offset, 7.0);
+        let scrolled = render_full_editor_group(&model);
+        let group = model.editor_area.focused_group().unwrap();
+        let layout = crate::view::geometry::GroupLayout::new(group, &model, char_width);
+        let width = model.window_size.0 as usize;
+        let y0 = layout.content_y();
+        let bottom = (y0 + layout.content_h()).min(model.window_size.1 as usize);
+        // Content and gutter move by the same vertical displacement; the gutter
+        // does not follow horizontal scrolling. Exclude clipped edges.
+        for y in y0..bottom.saturating_sub(7) {
+            for x in layout.rect_x()..layout.gutter_right_x.saturating_sub(1) {
+                assert_eq!(scrolled[y * width + x], normal[(y + 7) * width + x]);
+            }
+            for x in layout.text_start_x..width.saturating_sub(3) {
+                assert_eq!(scrolled[y * width + x], normal[(y + 7) * width + x + 3]);
+            }
+        }
+        assert_eq!(
+            &scrolled[..y0 * width],
+            &normal[..y0 * width],
+            "tab bar stays fixed"
+        );
+        let map = model.editor().viewport_map(model.document());
+        assert_eq!(
+            map.doc_line_for_pixel_y(line_height as f64 - 8.0, line_height as f64),
+            0
+        );
+        assert_eq!(
+            map.doc_line_for_pixel_y(line_height as f64 - 7.0, line_height as f64),
+            1
+        );
+        let mut incremental = scrolled.clone();
+        rerender_cursor_lines(&model, &mut incremental, &[0, 1, 2, 3, 4, 5, 6]);
+        let mismatch = incremental.iter().zip(&scrolled).position(|(a, b)| a != b);
+        assert!(
+            mismatch.is_none(),
+            "cursor-only mismatch {:?}",
+            mismatch.map(|i| (i % width, i / width, incremental[i], scrolled[i]))
+        );
     }
 
     #[test]

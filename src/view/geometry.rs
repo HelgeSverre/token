@@ -188,11 +188,7 @@ pub fn pixel_to_line_and_visual_column_in_group(
 
     let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (local_y - text_start_y).max(0.0);
-    let visible_row = if line_height > 0.0 {
-        (adjusted_y / line_height).floor() as usize
-    } else {
-        0
-    };
+    let visible_row = viewport.visible_row_at_pixel(adjusted_y, line_height);
     let line = viewport
         .top_line()
         .saturating_add(visible_row)

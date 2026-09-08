@@ -137,6 +137,8 @@ pub(crate) struct EditorSnapshot {
     pub selections: Vec<SelectionSnapshot>,
     pub viewport_top_line: usize,
     pub viewport_left_column: usize,
+    pub viewport_pixel_position: (f64, f64),
+    pub scroll_animating: bool,
     pub soft_wrap: bool,
     pub visual_row_count: usize,
     /// The active overlay (command palette, etc.), if one is open —
@@ -823,6 +825,8 @@ impl EditorSnapshot {
                 })
                 .collect(),
             viewport_top_line: viewport.top_line,
+            viewport_pixel_position: model.editor().pixel_scroll_position(),
+            scroll_animating: viewport.animation.is_some(),
             viewport_left_column: viewport.left_column,
             soft_wrap: model.editor().soft_wrap,
             visual_row_count: model.editor().viewport_map(document).row_count(),

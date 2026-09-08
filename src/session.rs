@@ -41,6 +41,9 @@ struct SavedTab {
     active_cursor: usize,
     top_position: (usize, usize),
     left_column: usize,
+    /// Fractions of a column/row, independent of the previous display's DPI.
+    #[serde(default)]
+    scroll_fraction: (f64, f64),
     soft_wrap: bool,
     had_unsaved_changes: bool,
     csv: Option<SavedCsv>,
@@ -58,6 +61,13 @@ struct SavedCsv {
     cell: (usize, usize),
     scroll: (usize, usize),
     header: bool,
+}
+
+struct PendingViewport {
+    editor_id: crate::model::EditorId,
+    top_position: (usize, usize),
+    left_column: usize,
+    fraction: (f64, f64),
 }
 
 impl Session {
@@ -170,21 +180,28 @@ impl Session {
             .documents
             .retain(|id, _| used.contains(id));
         model.resize(model.window_size.0, model.window_size.1);
-        for (id, (line, column), left_column) in viewports {
-            let Some(editor) = model.editor_area.editors.get_mut(&id) else {
+        for pending in viewports {
+            let Some(editor) = model.editor_area.editors.get_mut(&pending.editor_id) else {
                 continue;
             };
             if let Some(doc) = editor
                 .document_id
                 .and_then(|id| model.editor_area.documents.get(&id))
             {
-                let line = line.min(doc.line_count().saturating_sub(1));
-                let column = column.min(doc.line_length(line));
+                let line = pending
+                    .top_position
+                    .0
+                    .min(doc.line_count().saturating_sub(1));
+                let column = pending.top_position.1.min(doc.line_length(line));
                 let top = editor
                     .viewport_map(doc)
                     .visual_line_for_position(line, column);
-                editor.set_top_line_clamped(doc, top);
-                editor.set_left_column_clamped(doc, left_column);
+                editor.set_pixel_scroll(
+                    doc,
+                    (pending.left_column as f64 + pending.fraction.0)
+                        * editor.viewport.pixels.x.unit,
+                    (top as f64 + pending.fraction.1) * editor.viewport.pixels.y.unit,
+                );
             }
         }
         let mut unsaved = false;
@@ -258,6 +275,10 @@ impl Node {
                         active_cursor: editor.active_cursor_index,
                         top_position: (top.line, top.column),
                         left_column: editor.viewport.left_column,
+                        scroll_fraction: (
+                            editor.viewport.pixels.x.offset / editor.viewport.pixels.x.unit,
+                            editor.viewport.pixels.y.offset / editor.viewport.pixels.y.unit,
+                        ),
                         soft_wrap: editor.soft_wrap,
                         had_unsaved_changes: doc.is_modified
                             || editor
@@ -333,6 +354,12 @@ impl Node {
                     if tab.path.as_os_str().is_empty() || tab.selections.len() > 4096 {
                         return Err("Invalid session tab");
                     }
+                    if [tab.scroll_fraction.0, tab.scroll_fraction.1]
+                        .into_iter()
+                        .any(|fraction| !fraction.is_finite() || !(0.0..1.0).contains(&fraction))
+                    {
+                        return Err("Invalid session scroll fraction");
+                    }
                 }
             }
             Self::Split {
@@ -361,7 +388,7 @@ impl Node {
         bases: &std::collections::HashMap<crate::model::EditorId, EditorState>,
         focused: &mut Option<GroupId>,
         count: &mut usize,
-        viewports: &mut Vec<(crate::model::EditorId, (usize, usize), usize)>,
+        viewports: &mut Vec<PendingViewport>,
     ) -> Option<LayoutNode> {
         match self {
             Self::Group {
@@ -387,7 +414,12 @@ impl Node {
                     let editor_id = area.next_editor_id();
                     editor.id = Some(editor_id);
                     tab.apply(&mut editor, &area.documents[&doc_id]);
-                    viewports.push((editor_id, tab.top_position, tab.left_column));
+                    viewports.push(PendingViewport {
+                        editor_id,
+                        top_position: tab.top_position,
+                        left_column: tab.left_column,
+                        fraction: tab.scroll_fraction,
+                    });
                     area.editors.insert(editor_id, editor);
                     if index <= *active {
                         active_index = installed.len();
@@ -491,6 +523,9 @@ impl SavedTab {
         // pane's width. Saving a visual row would drift across wrapping/DPI changes.
         editor.viewport.top_line = 0;
         editor.viewport.left_column = 0;
+        editor.viewport.pixels.x.offset = 0.0;
+        editor.viewport.pixels.y.offset = 0.0;
+        editor.viewport.animation = None;
         if let Some(saved) = &self.csv {
             let delimiter = match saved.delimiter {
                 ',' => crate::csv::Delimiter::Comma,

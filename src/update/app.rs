@@ -36,6 +36,9 @@ pub(super) fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
 
 fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
     match msg {
+        AppMsg::ScrollAnimationTick { seconds } => model
+            .advance_scroll_animations(seconds)
+            .then_some(Cmd::redraw_editor()),
         AppMsg::Resize(width, height) => {
             model.resize(width, height);
 
@@ -546,7 +549,9 @@ pub(super) fn finish_load(
                     position.column = position.column.min(doc.line_length(position.line));
                 }
             }
-            editor.set_top_line_clamped(doc, editor.viewport.top_line);
+            editor.ensure_wrap_cache(doc);
+            let (x, y) = editor.pixel_scroll_position();
+            editor.set_pixel_scroll(doc, x, y);
         } else {
             editor.collapse_selections_to_cursors();
         }

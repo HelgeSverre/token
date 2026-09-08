@@ -41,6 +41,13 @@ pub enum EditorMsg {
     Scroll(i32),
     /// Scroll viewport horizontally (positive = right, negative = left)
     ScrollHorizontal(i32),
+    /// Physical-pixel wheel displacement for a specific plain-text pane.
+    ScrollPixels {
+        editor_id: crate::model::EditorId,
+        delta_x: f64,
+        delta_y: f64,
+        animated: bool,
+    },
     /// Toggle soft wrapping for this editor pane.
     ToggleSoftWrap,
 
@@ -430,6 +437,10 @@ pub enum LayoutMsg {
 /// Application-level messages (file operations, window events)
 #[derive(Debug, Clone)]
 pub enum AppMsg {
+    /// Elapsed animation time supplied by the runtime, never sampled by update.
+    ScrollAnimationTick {
+        seconds: f64,
+    },
     /// Window resized
     Resize(u32, u32),
     /// Display scale factor changed (e.g., moving between monitors)

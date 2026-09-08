@@ -19,6 +19,7 @@ mod ghost_text;
 pub use ghost_text::GhostText;
 pub(crate) use ghost_text::{GhostProjection, GhostRow};
 mod overview;
+pub mod scroll;
 pub mod status_bar;
 pub mod styled_text;
 pub mod ui;
@@ -816,6 +817,77 @@ impl AppModel {
         };
         let editor = self.editor_area.editors.get_mut(&editor_id).unwrap();
         editor.set_left_column_clamped(document, left_column)
+    }
+
+    /// Scroll a specific plain-text editor continuously on both axes.
+    pub fn scroll_editor_pixels_by(
+        &mut self,
+        editor_id: EditorId,
+        dx: f64,
+        dy: f64,
+        animated: bool,
+    ) -> bool {
+        let Some(editor) = self.editor_area.editors.get_mut(&editor_id) else {
+            return false;
+        };
+        let Some(document) = editor
+            .document_id
+            .and_then(|id| self.editor_area.documents.get(&id))
+        else {
+            return false;
+        };
+        let changed = editor.scroll_pixels(document, dx, dy, animated);
+        if changed && self.editor_area.focused_editor_id() == Some(editor_id) {
+            self.sync_preview_scroll();
+        }
+        changed
+    }
+
+    pub fn cancel_scroll_animations(&mut self) {
+        for editor in self.editor_area.editors.values_mut() {
+            editor.viewport.animation = None;
+        }
+    }
+
+    pub fn has_scroll_animations(&self) -> bool {
+        self.editor_area
+            .editors
+            .values()
+            .any(|editor| editor.viewport.animation.is_some())
+    }
+
+    pub fn advance_scroll_animations(&mut self, seconds: f64) -> bool {
+        let mut changed = false;
+        for editor in self.editor_area.editors.values_mut() {
+            let Some(mut animation) = editor.viewport.animation.take() else {
+                continue;
+            };
+            let Some(document) = editor
+                .document_id
+                .and_then(|id| self.editor_area.documents.get(&id))
+            else {
+                continue;
+            };
+            let position = editor.pixel_scroll_position();
+            let cursor = editor.active_cursor();
+            if document.revision != animation.revision
+                || (cursor.line, cursor.column) != animation.cursor
+                || (position.0 - animation.last_position.0).abs() > 0.01
+                || (position.1 - animation.last_position.1).abs() > 0.01
+            {
+                continue;
+            }
+            let (x, y) = animation.advance(seconds);
+            changed |= editor.set_pixel_scroll(document, x, y);
+            animation.last_position = editor.pixel_scroll_position();
+            if !animation.finished() {
+                editor.viewport.animation = Some(animation);
+            }
+        }
+        if changed {
+            self.sync_preview_scroll();
+        }
+        changed
     }
 
     /// Scroll the focused editor vertically, clamped to its current document.
