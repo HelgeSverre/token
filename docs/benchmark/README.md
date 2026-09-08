@@ -4,6 +4,8 @@ This document describes how to run benchmarks and profile the Token editor.
 
 ## Reports
 
+- [2026-09-08: workspace retrieval](2026-09-08-workspace-retrieval.md) — optimized
+  warm declaration-ranking costs and allocations; collection and inference excluded.
 - [2026-09-08: Settings scrolling](2026-09-08-settings-scroll.md) — debug versus
   optimized CPU costs, shared backdrop dimming and the opaque-panel follow-up.
 - [2026-09-07: current optimized working tree](2026-09-07-current.md) — fresh
@@ -40,6 +42,7 @@ just profile-workloads-debug settings
 # Completion suite; this recipe forwards filters/options to Divan
 just bench-completion
 just bench-completion recency
+just bench-completion workspace_retrieval_rank
 just bench-completion ghost
 
 # Profilers (interactive recipes launch the editor)

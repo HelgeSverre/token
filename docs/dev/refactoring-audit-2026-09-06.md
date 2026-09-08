@@ -1,5 +1,60 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Workspace retrieval context — 2026-09-08
+
+Commit `09895c3` adds `workspace_retrieval` as an opt-in alternative to recency context. A single
+shared `LatestWorker` performs ignore-aware collection; no new scheduler,
+filesystem work on the UI thread, persistent index or provider-specific context
+pipeline. The existing grammar/outline registry supplies declaration ranges.
+Exact source equality reuses those ranges; each traversal evicts sources that
+were deleted, excluded or not observed within its limits. Eligible unsaved
+buffers replace saved content. BM25 selection excludes zero-overlap chunks and
+deduplicates overlapping regions/identical text before shared serialization.
+
+The additional command/message stage reflects an actual asynchronous boundary:
+prepare context, revalidate document/cursor/provider/workspace identity, then
+submit to the existing provider worker. Recency remains synchronous and keeps
+its idle behavior. Disable/strategy changes drop the retrieval worker and cache;
+ordinary cancellation retains the cache but supersedes pending work.
+See [configuration and resource/transmission limits](../user/config-editor.md#workspace-retrieval-context).
+
+Four focused tests cover declaration relevance and Unicode bounds; ignore,
+buffer and cache refresh policy; stale preparation replies; and the actual
+background preparation-to-provider flow. Existing config and wire fixtures were
+extended rather than duplicating the transport acceptance suite.
+
+Final full-suite verification passed **2,581 tests**, five skipped, plus **two
+doctests**, six ignored (`93feaa76-18f1-422e-9137-b18083c10d84`), without
+process-exit warnings. This includes the review corrections below and
+closest-to-cursor query priority. Strict all-target/all-feature lint, formatting
+and diff checks also passed. The optimized ranking probe and independent
+repeat measured **139–143 µs** at 32 files and **1.15–1.19 ms** at 256 files.
+See the [benchmark report](../benchmark/2026-09-08-workspace-retrieval.md) for
+allocations, raw output and exclusions; this is not total collection latency.
+
+Scoped self-review corrected the following issues:
+
+| Severity | File | Finding / resolution |
+| --- | --- | --- |
+| High | `src/update/mod.rs` | Generic debug tracing would include active source/provider configuration. The new message's trace label contains only its request ID, checked by the lifecycle test. |
+| Medium | `src/runtime/inline_retrieval.rs` | Failed/invalid reads initially did not consume the budget. All attempted read bytes now count. |
+| Medium | `src/completion/retrieval.rs` | Hash-map iteration could vary floating-point score summation. Term-frequency maps now sum in lexical order. |
+
+No outstanding critical/high findings. Verdict: **Approve** for the implementation; native/live model relevance
+and end-to-end latency are not established by fixture tests.
+
+Reference APIs: [`ignore` WalkBuilder](https://docs.rs/ignore/0.4.32/ignore/struct.WalkBuilder.html)
+and [BM25 term-frequency/length normalization](https://nlp.stanford.edu/IR-book/html/htmledition/okapi-bm25-a-non-binary-model-1.html).
+The implementation uses the [positive IDF variant and defaults documented by Lucene](https://lucene.apache.org/core/9_12_3/core/org/apache/lucene/search/similarities/BM25Similarity.html),
+`k1=1.2`, `b=0.75`.
+
+Native checks remain open. The isolated context-menu window received edits and
+palette input not sent by this task, then exited cleanly before pointer testing;
+that uncontrolled session is not acceptance evidence. During process-exit
+diagnosis, PID 38373 looked like an old watcher-test invocation, but its sampled
+stack showed a normal winit/App event loop, not a stuck test. It was left untouched.
+Neither observation identifies the intermittent nextest warning's cause.
+
 ## Managed local llama-server — 2026-09-08
 
 Commit `31e3ff4` implements opt-in child ownership on the existing inline worker.

@@ -1,0 +1,32 @@
+CARGO_TARGET_DIR=/tmp/token-managed-server-check.5prvI4 CARGO_BUILD_JOBS=1 just bench-completion workspace_retrieval_rank
+    Finished `bench` profile [optimized] target(s) in 1.08s
+     Running benches/completion.rs (/tmp/token-managed-server-check.5prvI4/release/deps/completion-c0d9f7660b6ce718)
+Timer precision: 41 ns
+completion                   fastest       │ slowest       │ median        │ mean          │ samples │ iters
+╰─ workspace_retrieval_rank                │               │               │               │         │
+   ├─ 32                     134.4 µs      │ 181.3 µs      │ 138.6 µs      │ 140.8 µs      │ 100     │ 100
+   │                         max alloc:    │               │               │               │         │
+   │                           515         │ 515           │ 515           │ 515           │         │
+   │                           172.2 KB    │ 172.2 KB      │ 172.2 KB      │ 172.2 KB      │         │
+   │                         alloc:        │               │               │               │         │
+   │                           534         │ 534           │ 534           │ 534           │         │
+   │                           161.1 KB    │ 161.1 KB      │ 161.1 KB      │ 161.1 KB      │         │
+   │                         dealloc:      │               │               │               │         │
+   │                           517         │ 517           │ 517           │ 517           │         │
+   │                           188.7 KB    │ 188.7 KB      │ 188.7 KB      │ 188.7 KB      │         │
+   │                         grow:         │               │               │               │         │
+   │                           9           │ 9             │ 9             │ 9             │         │
+   │                           28.73 KB    │ 28.73 KB      │ 28.73 KB      │ 28.73 KB      │         │
+   ╰─ 256                    1.087 ms      │ 1.406 ms      │ 1.15 ms       │ 1.162 ms      │ 100     │ 100
+                             max alloc:    │               │               │               │         │
+                               4099        │ 4099          │ 4099          │ 4099          │         │
+                               1.376 MB    │ 1.376 MB      │ 1.376 MB      │ 1.376 MB      │         │
+                             alloc:        │               │               │               │         │
+                               4118        │ 4118          │ 4118          │ 4118          │         │
+                               1.279 MB    │ 1.279 MB      │ 1.279 MB      │ 1.279 MB      │         │
+                             dealloc:      │               │               │               │         │
+                               4101        │ 4101          │ 4101          │ 4101          │         │
+                               1.507 MB    │ 1.507 MB      │ 1.507 MB      │ 1.507 MB      │         │
+                             grow:         │               │               │               │         │
+                               12          │ 12            │ 12            │ 12            │         │
+                               229.4 KB    │ 229.4 KB      │ 229.4 KB      │ 229.4 KB      │         │

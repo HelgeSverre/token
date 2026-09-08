@@ -24,6 +24,24 @@ fn main() {
     divan::main();
 }
 
+/// Warm in-memory declaration ranking; excludes traversal, parsing and HTTP.
+#[divan::bench(args = [32, 256], sample_count = 100)]
+fn workspace_retrieval_rank(bencher: divan::Bencher, files: usize) {
+    use token::completion::retrieval::RetrievalIndex;
+    let cancelled = std::sync::atomic::AtomicBool::new(false);
+    let mut index = RetrievalIndex::default();
+    for file in 0..files {
+        let source: String = (0..16).map(|item| format!(
+            "fn helper_{file}_{item}(widget: Widget) -> Widget {{\n    transform_widget(widget)\n}}\n"
+        )).collect();
+        index.update(format!("module_{file}.rs"), source, 64, &cancelled);
+    }
+    assert!(!index
+        .select("let result = helper_17_3(widget", ");", 8, &cancelled)
+        .is_empty());
+    bencher.bench_local(|| index.select("let result = helper_17_3(widget", ");", 8, &cancelled));
+}
+
 /// ts-ls-shaped items: label + kind + sortText + detail + textEdit + data.
 fn server_items(n: usize) -> Vec<lsp_types::CompletionItem> {
     (0..n)

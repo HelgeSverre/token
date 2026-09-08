@@ -47,6 +47,14 @@ The verified local build cache is `/tmp/token-managed-server-check.5prvI4`;
 the default `target/` disappeared during verification. Reuse that directory via
 `CARGO_TARGET_DIR` for subsequent local checks if it still exists.
 
+Workspace retrieval context is committed in `09895c3`: opt-in, ignore-aware
+source collection on the shared worker, existing outline extraction, BM25
+ranking, unsaved-buffer precedence and guarded provider submission. The final
+suite passed 2,581 tests and two doctests, plus strict lint and formatting.
+Optimized ranking measured 139–143 µs at 32 files and 1.15–1.19 ms at 256 files;
+collection/inference are excluded. See the
+[retrieval report](docs/benchmark/2026-09-08-workspace-retrieval.md).
+
 ## Settings scrolling correction
 
 Preserve the separate Settings page, category navigation and form controls.
@@ -79,7 +87,7 @@ measurements, not native presentation checks.
 
 ## Remaining implementation
 
-- Autocomplete: edit prediction and workspace retrieval context.
+- Autocomplete: edit prediction.
   See [autocomplete](docs/feature/autocomplete.md).
 - Address measured performance targets as warranted: cold explicit Find scans,
   completion-response allocations, larger recency refreshes and forward
@@ -94,7 +102,8 @@ measurements, not native presentation checks.
 - Actual IME composition/candidate windows, CJK/emoji positioning and the remaining
   completion native-input matrix. Existing unit/macOS evidence is not a full
   platform certification.
-- Live hosted model/provider compatibility, Tabby service/model behavior, and
+- Live hosted model/provider compatibility, retrieval-context relevance,
+  Tabby service/model behavior, and
   workspace-symbol/Usages live-server interaction. Fixture coverage is not live
   service verification.
 - Native context-menu pointer acceptance; automated runtime/pixel checks already pass.
