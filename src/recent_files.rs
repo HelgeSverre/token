@@ -183,13 +183,11 @@ impl RecentFiles {
         std::fs::write(path, contents)
     }
 
-    /// Add a file to recent list (or update if already present)
+    /// Add a boundary-resolved path (or update if already present), without I/O.
+    /// Callers with an open document should use its captured file identity.
     pub fn add(&mut self, path: PathBuf, workspace: Option<PathBuf>) {
-        // Canonicalize path for consistent matching
-        let canonical = path.canonicalize().unwrap_or(path);
-
         // Check if already in list
-        if let Some(idx) = self.find_index(&canonical) {
+        if let Some(idx) = self.find_index(&path) {
             // Update existing entry and move to front
             self.entries[idx].touch();
             if let Some(ws) = workspace {
@@ -199,7 +197,7 @@ impl RecentFiles {
             self.entries.insert(0, entry);
         } else {
             // Add new entry at front
-            let entry = RecentEntry::new(canonical, workspace);
+            let entry = RecentEntry::new(path, workspace);
             self.entries.insert(0, entry);
         }
 

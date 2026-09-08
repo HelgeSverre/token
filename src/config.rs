@@ -79,21 +79,20 @@ pub struct EditorConfig {
 /// ```yaml
 /// completion:
 ///   enabled: true
-///   words: fallback
+///   menu:
+///     enabled: true
+///     min_word_length: 3
+///     words: fallback
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CompletionConfig {
-    /// Master switch; `false` never opens the menu (typing or Ctrl+Space).
-    #[serde(default = "default_true")]
+    /// Master switch for both menu and inline suggestions, including explicit requests.
     pub enabled: bool,
-    /// When buffer words are offered as completion items.
-    #[serde(default)]
-    pub words: WordsMode,
+    /// Dropdown policy, independent of inline suggestions.
+    pub menu: CompletionMenuConfig,
     /// Inline (ghost-text) suggestions — off until a provider is configured.
-    #[serde(default)]
     pub inline: InlineConfig,
     /// Named backends `inline.provider` picks from.
-    #[serde(default)]
     pub providers: std::collections::HashMap<String, ProviderConfig>,
 }
 
@@ -101,10 +100,71 @@ impl Default for CompletionConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            words: WordsMode::default(),
+            menu: CompletionMenuConfig::default(),
             inline: InlineConfig::default(),
             providers: std::collections::HashMap::new(),
         }
+    }
+}
+
+/// Dropdown settings. `enabled` controls automatic opening, not Ctrl+Space.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CompletionMenuConfig {
+    pub enabled: bool,
+    /// Minimum candidate identifier length in characters, with an effective floor of one.
+    pub min_word_length: usize,
+    pub words: WordsMode,
+}
+
+impl Default for CompletionMenuConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_word_length: 3,
+            words: WordsMode::default(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CompletionConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Keep legacy input compatibility at the serialization boundary, never
+        // as a second runtime setting. New menu.words wins when both are present.
+        #[derive(Default, Deserialize)]
+        #[serde(default)]
+        struct MenuInput {
+            enabled: Option<bool>,
+            min_word_length: Option<usize>,
+            words: Option<WordsMode>,
+        }
+        #[derive(Deserialize)]
+        struct Input {
+            #[serde(default = "default_true")]
+            enabled: bool,
+            #[serde(default)]
+            menu: MenuInput,
+            words: Option<WordsMode>,
+            #[serde(default)]
+            inline: InlineConfig,
+            #[serde(default)]
+            providers: std::collections::HashMap<String, ProviderConfig>,
+        }
+        let input = Input::deserialize(deserializer)?;
+        let defaults = CompletionMenuConfig::default();
+        Ok(Self {
+            enabled: input.enabled,
+            menu: CompletionMenuConfig {
+                enabled: input.menu.enabled.unwrap_or(defaults.enabled),
+                min_word_length: input
+                    .menu
+                    .min_word_length
+                    .unwrap_or(defaults.min_word_length),
+                words: input.menu.words.or(input.words).unwrap_or(defaults.words),
+            },
+            inline: input.inline,
+            providers: input.providers,
+        })
     }
 }
 
@@ -128,6 +188,9 @@ impl Default for CompletionConfig {
 pub struct InlineConfig {
     #[serde(default)]
     pub enabled: bool,
+    /// Store only aggregate response outcomes per provider on this machine.
+    #[serde(default = "default_true")]
+    pub statistics: bool,
     /// Key into `completion.providers`.
     #[serde(default = "default_inline_provider")]
     pub provider: String,
@@ -145,6 +208,7 @@ impl Default for InlineConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            statistics: true,
             provider: default_inline_provider(),
             debounce_ms: default_inline_debounce_ms(),
             max_line_suffix: default_max_line_suffix(),
@@ -162,33 +226,63 @@ fn default_max_line_suffix() -> usize {
     8
 }
 
-/// One inline-suggestion backend. Only llama.cpp's `/infill` exists so
-/// far; other transports are autocomplete.md Phase 3.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// One inline-suggestion backend. Credentials and network work stay runtime-side.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderConfig {
     #[serde(default)]
     pub transport: TransportKind,
+    /// Native by default; an explicit format selects raw FIM on compatible transports.
+    #[serde(default)]
+    pub prompt_format: crate::completion::prompt::PromptFormat,
+    /// Opt-in snippets from open buffers; collected and committed on idle.
+    #[serde(default)]
+    pub context: crate::completion::recency::ContextStrategy,
     #[serde(default = "default_provider_url")]
     pub url: String,
     #[serde(default = "default_max_tokens")]
     pub max_tokens: u32,
     #[serde(default = "default_provider_timeout_ms")]
     pub timeout_ms: u64,
+    /// Required except for llama.cpp and Tabby, which select models server-side.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Ollama residency in seconds. Negative keeps the model loaded.
+    #[serde(default = "default_keep_alive")]
+    pub keep_alive: i64,
+    /// Environment variable name, never the credential itself. Resolved only by
+    /// the worker when constructing a provider; required for Mistral FIM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key_env: Option<String>,
+    /// Number of alternatives requested. Only OpenAI-compatible supports >1.
+    #[serde(default = "default_provider_n")]
+    pub n: u8,
 }
 
 impl Default for ProviderConfig {
     fn default() -> Self {
         Self {
             transport: TransportKind::default(),
+            prompt_format: crate::completion::prompt::PromptFormat::default(),
+            context: crate::completion::recency::ContextStrategy::default(),
             url: default_provider_url(),
             max_tokens: default_max_tokens(),
             timeout_ms: default_provider_timeout_ms(),
+            model: None,
+            keep_alive: default_keep_alive(),
+            api_key_env: None,
+            n: default_provider_n(),
         }
     }
 }
 
 fn default_provider_url() -> String {
     "http://127.0.0.1:8012".to_owned()
+}
+fn default_provider_n() -> u8 {
+    1
+}
+fn default_keep_alive() -> i64 {
+    -1
 }
 fn default_max_tokens() -> u32 {
     128
@@ -202,9 +296,13 @@ fn default_provider_timeout_ms() -> u64 {
 pub enum TransportKind {
     #[default]
     LlamaCpp,
+    Ollama,
+    OpenAiCompat,
+    MistralFim,
+    Tabby,
 }
 
-/// `completion.words`: `enabled` always lists buffer words, `fallback`
+/// `completion.menu.words`: `enabled` always lists buffer words, `fallback`
 /// (default) lists them only until the language server answers, `disabled`
 /// never lists them. Snippets are unaffected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -393,7 +491,7 @@ impl EditorConfig {
             serde_yaml::to_value(self).map_err(|e| format!("Failed to serialize config: {}", e))?;
         match std::fs::read_to_string(path) {
             Ok(content) => {
-                let old: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
+                let mut old: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
                     format!(
                         "Refusing to overwrite invalid config at {}: {e}",
                         path.display()
@@ -412,6 +510,14 @@ impl EditorConfig {
                     })?;
                     let known = serde_yaml::to_value(known)
                         .map_err(|e| format!("Failed to serialize existing config: {e}"))?;
+                    // The legacy key is recognized on input but deliberately
+                    // absent from canonical output, not an unknown user key.
+                    if let Some(completion) = old
+                        .get_mut("completion")
+                        .and_then(serde_yaml::Value::as_mapping_mut)
+                    {
+                        completion.remove(serde_yaml::Value::String("words".into()));
+                    }
                     keep_unknown(&mut value, old, &known);
                 }
             }
@@ -463,6 +569,51 @@ fn keep_unknown(new: &mut serde_yaml::Value, old: serde_yaml::Value, known: &ser
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hosted_provider_configuration_roundtrips_only_a_credential_reference() {
+        for transport in ["open_ai_compat", "mistral_fim"] {
+            let provider: ProviderConfig = serde_yaml::from_str(&format!(
+                "transport: {transport}\nurl: https://example.invalid/v1\nmodel: fixture\napi_key_env: TOKEN_FIM_KEY\n"
+            )).unwrap();
+            assert_eq!(provider.api_key_env.as_deref(), Some("TOKEN_FIM_KEY"));
+            let yaml = serde_yaml::to_string(&provider).unwrap();
+            assert_eq!(
+                serde_yaml::from_str::<ProviderConfig>(&yaml).unwrap(),
+                provider
+            );
+            assert!(!yaml.contains("api_key:"));
+        }
+        assert!(ProviderConfig::default().api_key_env.is_none());
+        assert_eq!(ProviderConfig::default().n, 1);
+        let config: ProviderConfig =
+            serde_yaml::from_str("transport: open_ai_compat\nmodel: fixture\nn: 3\n").unwrap();
+        assert_eq!(config.n, 3);
+        assert_eq!(
+            serde_yaml::from_str::<ProviderConfig>(&serde_yaml::to_string(&config).unwrap())
+                .unwrap(),
+            config
+        );
+    }
+
+    #[test]
+    fn ollama_inline_config_defaults_and_round_trip() {
+        let provider: ProviderConfig = serde_yaml::from_str(
+            "transport: ollama\nurl: http://localhost:11434\nmodel: code-model\n",
+        )
+        .unwrap();
+        assert_eq!(provider.transport, TransportKind::Ollama);
+        assert_eq!(provider.keep_alive, -1);
+        assert_eq!(provider.model.as_deref(), Some("code-model"));
+        let encoded = serde_yaml::to_string(&provider).unwrap();
+        assert_eq!(
+            serde_yaml::from_str::<ProviderConfig>(&encoded).unwrap(),
+            provider
+        );
+        let legacy: ProviderConfig = serde_yaml::from_str("url: http://localhost:8012\n").unwrap();
+        assert_eq!(legacy.transport, TransportKind::LlamaCpp);
+        assert!(legacy.model.is_none());
+    }
 
     #[test]
     fn save_preserves_unknown_keys_and_updates_known_values() {
@@ -544,11 +695,73 @@ mod tests {
         let parsed: EditorConfig =
             serde_yaml::from_str("completion:\n  enabled: false\n  words: disabled\n").unwrap();
         assert!(!parsed.completion.enabled);
-        assert_eq!(parsed.completion.words, WordsMode::Disabled);
+        assert_eq!(parsed.completion.menu.words, WordsMode::Disabled);
 
         let defaulted: EditorConfig = serde_yaml::from_str("theme: default-dark\n").unwrap();
         assert!(defaulted.completion.enabled);
-        assert_eq!(defaulted.completion.words, WordsMode::Fallback);
+        assert_eq!(defaulted.completion.menu.words, WordsMode::Fallback);
+    }
+
+    #[test]
+    fn completion_menu_config_migrates_legacy_words_with_fieldwise_precedence() {
+        let parsed: CompletionConfig = serde_yaml::from_str(
+            "enabled: false\nwords: disabled\nmenu:\n  enabled: false\n  min_word_length: 5\n",
+        )
+        .unwrap();
+        assert!(!parsed.enabled);
+        assert!(!parsed.menu.enabled);
+        assert_eq!(parsed.menu.min_word_length, 5);
+        assert_eq!(parsed.menu.words, WordsMode::Disabled);
+        let both: CompletionConfig =
+            serde_yaml::from_str("words: disabled\nmenu:\n  words: enabled\n").unwrap();
+        assert_eq!(both.menu.words, WordsMode::Enabled);
+        assert!(both.menu.enabled);
+        assert_eq!(both.menu.min_word_length, 3);
+        assert_eq!(
+            serde_yaml::from_str::<CompletionConfig>("{}").unwrap().menu,
+            CompletionMenuConfig::default()
+        );
+        let json = serde_json::to_value(&parsed).unwrap();
+        assert!(json.get("words").is_none());
+        assert_eq!(
+            serde_json::from_value::<CompletionConfig>(json)
+                .unwrap()
+                .menu,
+            parsed.menu
+        );
+    }
+
+    #[test]
+    fn completion_menu_config_save_removes_legacy_key_and_preserves_unknowns() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        let original = "completion:\n  enabled: false\n  words: disabled\n  future: preserved\n  menu:\n    min_word_length: 5\n    future: nested\n";
+        std::fs::write(&path, original).unwrap();
+        let config: EditorConfig = serde_yaml::from_str(original).unwrap();
+        for _ in 0..2 {
+            config.save_to(&path).unwrap();
+            let content = std::fs::read_to_string(&path).unwrap();
+            let value: serde_yaml::Value = serde_yaml::from_str(&content).unwrap();
+            assert!(value["completion"].get("words").is_none());
+            assert_eq!(value["completion"]["future"], "preserved");
+            assert_eq!(value["completion"]["menu"]["future"], "nested");
+            let reloaded: EditorConfig = serde_yaml::from_str(&content).unwrap();
+            assert!(!reloaded.completion.enabled);
+            assert_eq!(reloaded.completion.menu, config.completion.menu);
+        }
+    }
+
+    #[test]
+    fn completion_menu_config_invalid_values_are_not_overwritten_on_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        for setting in ["enabled: wrong", "min_word_length: -1", "words: wrong"] {
+            let original = format!("completion:\n  menu:\n    {setting}\n");
+            assert!(serde_yaml::from_str::<EditorConfig>(&original).is_err());
+            std::fs::write(&path, &original).unwrap();
+            assert!(EditorConfig::default().save_to(&path).is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        }
     }
 
     #[test]

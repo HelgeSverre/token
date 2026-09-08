@@ -2,20 +2,39 @@
 
 use std::path::PathBuf;
 
-use crate::commands::{Cmd, CommandId};
-use crate::config::EditorConfig;
-use crate::config_paths;
-use crate::keymap::get_default_keymap_yaml;
-use crate::messages::{AppMsg, DockMsg, DocumentMsg, LayoutMsg, TerminalMsg, UiMsg};
-use crate::model::{AppModel, ModalId, SplitDirection};
+use crate::commands::{Cmd, CommandId, ConfigResource};
+use crate::messages::{AppMsg, DockMsg, LayoutMsg, TerminalMsg, UiMsg};
+use crate::model::{AppModel, FileRequestKind, ModalId};
 use crate::panel::PanelId;
 use crate::syntax::LanguageId;
-use crate::theme::{load_theme, Theme};
 
-use super::{update_document, update_layout, update_ui, SYNTAX_DEBOUNCE_MS};
+use super::{layout::update_layout, ui::update_ui};
 
 /// Handle app messages (file operations, window events)
 pub(super) fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
+    let before = (model.ui.is_saving, model.ui.is_loading);
+    let result = update_app_inner(model, msg);
+    model.ui.is_saving = model
+        .editor_area
+        .documents
+        .values()
+        .any(|doc| doc.file_io.pending(FileRequestKind::Write));
+    model.ui.is_loading = !model.editor_area.file_opens.pending.is_empty()
+        || model
+            .editor_area
+            .documents
+            .values()
+            .any(|doc| doc.file_io.pending(FileRequestKind::Read));
+    if before != (model.ui.is_saving, model.ui.is_loading)
+        && result.as_ref().is_none_or(|cmd| !cmd.needs_redraw())
+    {
+        super::navigation::combine(result, Some(Cmd::redraw_status_bar()))
+    } else {
+        result
+    }
+}
+
+fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
     match msg {
         AppMsg::Resize(width, height) => {
             model.resize(width, height);
@@ -44,9 +63,12 @@ pub(super) fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
         }
 
         AppMsg::LoadFile(path) => {
+            let target = model
+                .document_mut()
+                .begin_file_request(FileRequestKind::Read)?;
             model.ui.is_loading = true;
             model.ui.set_status("Loading...");
-            Some(Cmd::LoadFile { path })
+            Some(Cmd::LoadFile { target, path })
         }
 
         AppMsg::NewFile => {
@@ -55,137 +77,70 @@ pub(super) fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             Some(Cmd::redraw_status_bar())
         }
 
-        AppMsg::SaveCompleted(result) => {
-            model.ui.is_saving = false;
-            let mut lsp_cmd = None;
-            match result {
-                Ok(_) => {
-                    let doc = model.document_mut();
-                    doc.is_modified = false;
-                    doc.saved_revision = Some(doc.undo_stack.len());
-                    if let Some(path) = &model.document().file_path {
-                        model.ui.set_status(format!("Saved: {}", path.display()));
-                    }
-                    if let Some(doc_id) = model.document().id {
-                        lsp_cmd = Some(super::save_lsp_document(doc_id));
-                    }
-                }
-                Err(e) => {
-                    model.ui.set_status(format!("Error: {}", e));
-                }
-            }
-            match lsp_cmd {
-                Some(cmd) => Some(Cmd::Batch(vec![Cmd::redraw_status_bar(), cmd])),
-                None => Some(Cmd::redraw_status_bar()),
-            }
+        AppMsg::SaveCompleted {
+            target,
+            path,
+            content,
+            identity,
+            result,
+        } => finish_save(model, target, path, content, identity, result),
+
+        AppMsg::OpenConfigResource(resource) => {
+            super::layout::open_config_resource(model, resource)
         }
 
-        AppMsg::KeymapCreated { path, result } => match result {
-            Ok(_) => Some(Cmd::OpenFileInEditor { path }),
-            Err(e) => {
-                model
-                    .ui
-                    .set_status(format!("Failed to create keymap: {}", e));
-                Some(Cmd::redraw_status_bar())
-            }
-        },
-
-        AppMsg::FileLoaded { path, result } => {
-            model.ui.is_loading = false;
-            match result {
-                Ok(content) => {
-                    let old_path = model.document().file_path.clone();
-
-                    let doc = model.document_mut();
-                    doc.buffer = ropey::Rope::from(content);
-                    doc.file_path = Some(path.clone());
-                    doc.is_modified = false;
-                    doc.undo_stack.clear();
-                    doc.redo_stack.clear();
-                    doc.saved_revision = Some(0);
-                    // A "Set Language..." pin outlives external reloads.
-                    if !doc.language_pinned {
-                        doc.language = LanguageId::from_path(&path);
-                    }
-                    doc.syntax_highlights = None;
-                    doc.syntax_tree = None;
-                    doc.revision = doc.revision.wrapping_add(1);
-
-                    // External reload = revision bump = normal didChange
-                    // (see design doc's Document Synchronization). If the
-                    // path itself changed (tab reused for a different
-                    // file), the LSP identity changes too: didClose(old) +
-                    // didOpen(new), same as Save As.
-                    let mut lsp_cmds = Vec::new();
-                    if let Some(doc_id) = model.document().id {
-                        if old_path.as_deref() == Some(path.as_path()) {
-                            lsp_cmds.extend(super::schedule_lsp_did_change(model, doc_id));
-                        } else {
-                            if old_path.is_some() {
-                                lsp_cmds.push(super::close_lsp_document(doc_id));
-                            }
-                            lsp_cmds.extend(super::open_lsp_document(model, doc_id));
-                        }
-                    }
-
-                    // Cmd::OpenFileInEditor (e.g. OpenKeybindings/OpenLogFile)
-                    // reuses the focused tab regardless of what it was
-                    // previously showing, so a non-text tab (image/CSV/binary)
-                    // could otherwise end up rendering text content with the
-                    // wrong renderer still active.
-                    let editor = model.editor_mut();
-                    editor.view_mode = crate::model::editor::ViewMode::Text;
-                    editor.tab_content = crate::model::editor::TabContent::Text;
-                    editor.collapse_to_primary();
-                    model.ui.set_status(format!("Loaded: {}", path.display()));
-
-                    // Record in recent files
-                    model.record_file_opened(path.clone());
-
-                    // Trigger syntax parsing if language has highlighting
-                    if model.document().language.has_highlighting() {
-                        if let Some(doc_id) = model.document().id {
-                            let revision = model.document().revision;
-                            let mut cmds = vec![
-                                Cmd::redraw_editor(),
-                                Cmd::DebouncedSyntaxParse {
-                                    document_id: doc_id,
-                                    revision,
-                                    delay_ms: SYNTAX_DEBOUNCE_MS,
-                                },
-                                Cmd::SaveRecentFiles {
-                                    recent: model.recent_files.clone(),
-                                },
-                            ];
-                            cmds.extend(lsp_cmds);
-                            return Some(Cmd::Batch(cmds));
-                        }
-                    }
-                    let mut cmds = vec![
-                        Cmd::redraw_editor(),
-                        Cmd::SaveRecentFiles {
-                            recent: model.recent_files.clone(),
-                        },
-                    ];
-                    cmds.extend(lsp_cmds);
-                    Some(Cmd::Batch(cmds))
-                }
-                Err(e) => {
-                    model.ui.set_status(format!("Error: {}", e));
-                    Some(Cmd::redraw_status_bar())
-                }
-            }
-        }
+        AppMsg::FileLoaded {
+            target,
+            path,
+            identity,
+            result,
+        } => finish_load(model, target, path, identity, result),
 
         AppMsg::Quit => Some(Cmd::Quit),
 
-        AppMsg::ReloadConfiguration => {
+        AppMsg::ReloadConfiguration => Some(Cmd::ReloadConfiguration),
+        AppMsg::ThemeLoaded {
+            id,
+            persist,
+            result,
+        } => {
+            match result {
+                Ok(theme) => {
+                    model.theme = *theme;
+                    if persist {
+                        model.config.theme = id;
+                        return Some(Cmd::Batch(vec![
+                            Cmd::SaveConfiguration {
+                                config: Box::new(model.config.clone()),
+                            },
+                            Cmd::Redraw,
+                        ]));
+                    }
+                }
+                Err(error) => model
+                    .ui
+                    .set_status(format!("Could not load theme: {error}")),
+            }
+            Some(Cmd::Redraw)
+        }
+        AppMsg::ConfigurationSaved(result) => {
+            if let Err(error) = result {
+                model
+                    .ui
+                    .set_status(format!("Could not save configuration: {error}"));
+                return Some(Cmd::redraw_status_bar());
+            }
+            None
+        }
+        AppMsg::ConfigurationLoaded {
+            config,
+            theme,
+            result,
+        } => {
             use crate::config::ReloadResult;
 
-            let (new_config, result) = EditorConfig::reload();
-            let new_theme = load_theme(&new_config.theme).unwrap_or_else(|_| Theme::default());
-            model.config = new_config;
-            model.theme = new_theme;
+            model.config = *config;
+            model.theme = *theme;
 
             let msg = match result {
                 ReloadResult::Loaded => "Configuration reloaded",
@@ -215,7 +170,10 @@ pub(super) fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 .map(|def| crate::lsp::LspServerId::from(def.id))
             {
                 Some(server_id) if model.lsp.servers.contains_key(&server_id) => {
-                    super::update_lsp(model, crate::messages::LspMsg::RestartServer { server_id })
+                    super::lsp::update_lsp(
+                        model,
+                        crate::messages::LspMsg::RestartServer { server_id },
+                    )
                 }
                 Some(server_id) => {
                     model
@@ -234,96 +192,30 @@ pub(super) fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
         // File Dialog Messages
         // =====================================================================
         AppMsg::SaveFileAs => {
-            let suggested = model.document().file_path.clone();
+            if !can_save_document(model, model.document().id?) {
+                return Some(Cmd::redraw_status_bar());
+            }
+            let target = model
+                .document_mut()
+                .begin_file_request(FileRequestKind::SaveDialog)?;
             Some(Cmd::ShowSaveFileDialog {
-                suggested_path: suggested,
+                suggested_path: target.source_path.clone(),
+                target,
             })
         }
 
-        AppMsg::SaveFileAsDialogResult { path } => {
-            if let Some(new_path) = path {
-                // Save As is a didClose(old) + didOpen(new) pair, not a
-                // rename (design doc's Document Synchronization) — but the
-                // file doesn't exist at `new_path` yet, and `path_to_uri`
-                // canonicalizes only once it does, so `file_path` and the
-                // LSP traffic wait for `SaveAsCompleted` rather than firing
-                // here against a URI the write will invalidate.
-                let old_path = model.document().file_path.clone();
-                let Some(document_id) = model.document().id else {
-                    model.ui.set_status("Save cancelled");
-                    return Some(Cmd::redraw_status_bar());
-                };
-                let content = model.document().buffer.to_string();
-                model.ui.is_saving = true;
-                model.ui.set_status("Saving...");
-                Some(Cmd::SaveFileAs {
-                    document_id,
-                    old_path,
-                    new_path,
-                    content,
-                })
+        AppMsg::SaveFileAsDialogResult { target, path } => {
+            let doc = model.editor_area.documents.get_mut(&target.document_id)?;
+            if !doc.file_io.finish(&target, FileRequestKind::SaveDialog)
+                || doc.file_path != target.source_path
+            {
+                return None;
+            }
+            if let Some(path) = path {
+                begin_save(model, target.document_id, path)
             } else {
                 model.ui.set_status("Save cancelled");
                 Some(Cmd::redraw_status_bar())
-            }
-        }
-
-        AppMsg::SaveAsCompleted {
-            document_id,
-            old_path,
-            new_path,
-            result,
-        } => {
-            model.ui.is_saving = false;
-            match result {
-                Ok(_) => {
-                    let mut had_marks = false;
-                    let mut relanguage = None;
-                    if let Some(doc) = model.editor_area.documents.get_mut(&document_id) {
-                        doc.file_path = Some(new_path.clone());
-                        // Unpinned documents follow the new extension
-                        // (`.txt` -> `.rs` starts highlighting as Rust).
-                        let detected = LanguageId::from_path(&new_path);
-                        if !doc.language_pinned && detected != doc.language {
-                            relanguage = Some(detected);
-                        }
-                        doc.is_modified = false;
-                        doc.saved_revision = Some(doc.undo_stack.len());
-                        // The old path's diagnostics no longer describe
-                        // this document's identity — Save As is otherwise
-                        // the one didClose/didOpen pair with no
-                        // `LanguageChanged`-style projection clear (that
-                        // handler's the only existing sibling).
-                        had_marks = !doc.diagnostics.is_empty();
-                        doc.diagnostics.clear();
-                    }
-                    if had_marks {
-                        model.resync_viewports();
-                    }
-                    model
-                        .ui
-                        .set_status(format!("Saved: {}", new_path.display()));
-                    let mut cmds = vec![Cmd::redraw_editor()];
-                    // Language fields only — the didClose/didOpen pair
-                    // below already carries the LSP side of the switch.
-                    if let Some(language) = relanguage {
-                        cmds.extend(
-                            super::syntax::apply_language(model, document_id, language)
-                                .unwrap_or_default(),
-                        );
-                    }
-                    if old_path.is_some() {
-                        cmds.push(super::close_lsp_document(document_id));
-                    }
-                    if let Some(open_cmd) = super::open_lsp_document(model, document_id) {
-                        cmds.push(open_cmd);
-                    }
-                    Some(Cmd::Batch(cmds))
-                }
-                Err(e) => {
-                    model.ui.set_status(format!("Error: {}", e));
-                    Some(Cmd::redraw_status_bar())
-                }
             }
         }
 
@@ -335,12 +227,16 @@ pub(super) fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 .and_then(|p| p.parent().map(PathBuf::from))
                 .or_else(|| model.workspace_root().cloned());
             Some(Cmd::ShowOpenFileDialog {
+                group_id: model.editor_area.focused_group_id,
                 allow_multi: true,
                 start_dir,
             })
         }
 
-        AppMsg::OpenFileDialogResult { paths } => {
+        AppMsg::OpenFileDialogResult { group_id, paths } => {
+            if !model.editor_area.groups.contains_key(&group_id) {
+                return None;
+            }
             if paths.is_empty() {
                 model.ui.set_status("Open cancelled");
                 return Some(Cmd::Redraw);
@@ -352,7 +248,7 @@ pub(super) fn update_app(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             // batches so callers can scan the result with a single pass.
             let mut cmds: Vec<Cmd> = Vec::new();
             for path in paths {
-                if let Some(cmd) = update_layout(model, LayoutMsg::OpenFileInNewTab(path)) {
+                if let Some(cmd) = super::layout::open_file_in_group(model, path, group_id, None) {
                     match cmd {
                         Cmd::Batch(inner) => cmds.extend(inner),
                         other => cmds.push(other),
@@ -418,13 +314,10 @@ fn is_terminal_dock_focused(model: &AppModel) -> bool {
 /// `format_on_save` chain in `update/lsp.rs`, which must not re-enter the
 /// formatting gate.
 pub(super) fn save_document(model: &mut AppModel) -> Option<Cmd> {
-    match model.document().file_path.clone() {
-        Some(path) => {
-            let content = model.document().buffer.to_string();
-            model.ui.is_saving = true;
-            model.ui.set_status("Saving...");
-            Some(Cmd::SaveFile { path, content })
-        }
+    let doc = model.try_document()?;
+    let document_id = doc.id?;
+    match doc.file_path.clone() {
+        Some(path) => begin_save(model, document_id, path),
         None => {
             model.ui.set_status("No file path - cannot save");
             Some(Cmd::redraw_status_bar())
@@ -432,122 +325,206 @@ pub(super) fn save_document(model: &mut AppModel) -> Option<Cmd> {
     }
 }
 
+fn begin_save(
+    model: &mut AppModel,
+    document_id: crate::model::DocumentId,
+    path: PathBuf,
+) -> Option<Cmd> {
+    if !can_save_document(model, document_id) {
+        return Some(Cmd::redraw_status_bar());
+    }
+    let doc = model.editor_area.documents.get_mut(&document_id)?;
+    let target = doc.begin_file_request(FileRequestKind::Write)?;
+    let content = doc.buffer.clone();
+    model.ui.is_saving = true;
+    model.ui.set_status("Saving...");
+    Some(Cmd::SaveFile {
+        target,
+        path,
+        content,
+    })
+}
+
+fn can_save_document(model: &mut AppModel, document_id: crate::model::DocumentId) -> bool {
+    let placeholder = model.editor_area.editors.values().any(|editor| {
+        editor.document_id == Some(document_id)
+            && (editor.view_mode.is_image()
+                || matches!(
+                    editor.tab_content,
+                    crate::model::editor::TabContent::BinaryPlaceholder(_)
+                ))
+    });
+    if placeholder {
+        model
+            .ui
+            .set_status("Saving image/binary tabs is not supported");
+    }
+    !placeholder
+}
+
+fn finish_save(
+    model: &mut AppModel,
+    target: crate::model::FileRequest,
+    path: PathBuf,
+    content: ropey::Rope,
+    identity: Option<crate::util::FileIdentity>,
+    result: Result<(), String>,
+) -> Option<Cmd> {
+    let document_id = target.document_id;
+    let doc = model.editor_area.documents.get_mut(&document_id)?;
+    if !doc.file_io.finish(&target, FileRequestKind::Write) {
+        return None;
+    }
+    if let Err(error) = result {
+        model
+            .ui
+            .set_status(format!("Error saving {}: {error}", path.display()));
+        return Some(Cmd::redraw_status_bar());
+    }
+    doc.file_io.saved(&target);
+    let old_uri = doc.file_identity().map(|identity| identity.uri().clone());
+    let old_path = doc.file_path.replace(path.clone());
+    doc.set_file_identity(identity);
+    let renamed = old_path.as_ref() != Some(&path)
+        || old_uri
+            .as_ref()
+            .zip(doc.file_identity())
+            .is_some_and(|(old, current)| old != current.uri());
+    doc.record_saved_buffer(content.clone());
+    let language = LanguageId::from_path(&path);
+    let relanguage = renamed && !doc.language_pinned && language != doc.language;
+    let had_marks = renamed && !doc.diagnostics.is_empty();
+    if renamed {
+        doc.diagnostics.clear();
+    }
+    if had_marks {
+        model.resync_viewports();
+    }
+    model.ui.set_status(format!("Saved: {}", path.display()));
+    let mut cmds = vec![Cmd::redraw_editor()];
+    if renamed {
+        if relanguage {
+            cmds.extend(
+                super::syntax::apply_language(model, document_id, language).unwrap_or_default(),
+            );
+        }
+        if old_path.is_some() {
+            cmds.push(super::close_lsp_document(document_id));
+        }
+        cmds.extend(super::open_lsp_document(model, document_id));
+    } else {
+        cmds.push(Cmd::LspDidSave {
+            document_id,
+            saved_text: content,
+        });
+    }
+    Some(Cmd::Batch(cmds))
+}
+
+fn finish_load(
+    model: &mut AppModel,
+    target: crate::model::FileRequest,
+    path: PathBuf,
+    identity: Option<crate::util::FileIdentity>,
+    result: Result<String, String>,
+) -> Option<Cmd> {
+    let document_id = target.document_id;
+    let doc = model.editor_area.documents.get_mut(&document_id)?;
+    if !doc.file_io.finish(&target, FileRequestKind::Read) {
+        return None;
+    }
+    if doc.revision != target.revision || doc.file_path != target.source_path {
+        model.ui.set_status(format!(
+            "Load discarded: {} changed while loading",
+            path.display()
+        ));
+        return Some(Cmd::redraw_status_bar());
+    }
+    let content = match result {
+        Ok(content) => content,
+        Err(error) => {
+            model
+                .ui
+                .set_status(format!("Error loading {}: {error}", path.display()));
+            return Some(Cmd::redraw_status_bar());
+        }
+    };
+    let old_uri = doc.file_identity().map(|identity| identity.uri().clone());
+    let old_path = doc.file_path.replace(path.clone());
+    doc.set_file_identity(identity);
+    let renamed = old_path.as_ref() != Some(&path)
+        || old_uri
+            .as_ref()
+            .zip(doc.file_identity())
+            .is_some_and(|(old, current)| old != current.uri());
+    doc.buffer = ropey::Rope::from(content);
+    doc.record_saved_buffer(doc.buffer.clone());
+    doc.undo_stack.clear();
+    doc.redo_stack.clear();
+    doc.file_io.invalidate();
+    if !doc.language_pinned {
+        doc.language = LanguageId::from_path(&path);
+    }
+    doc.syntax_highlights = None;
+    doc.syntax_tree = None;
+    doc.outline = None;
+    doc.revision = doc.revision.wrapping_add(1);
+    if renamed {
+        doc.diagnostics.clear();
+    }
+
+    // Every pane sharing this document must leave image/CSV/binary mode and
+    // clamp its caret against the replacement, without changing global focus.
+    for editor in model
+        .editor_area
+        .editors
+        .values_mut()
+        .filter(|editor| editor.document_id == Some(document_id))
+    {
+        editor.view_mode = crate::model::editor::ViewMode::Text;
+        editor.tab_content = crate::model::editor::TabContent::Text;
+        editor.collapse_to_primary();
+        let cursor = &mut editor.cursors[0];
+        cursor.line = cursor.line.min(doc.line_count().saturating_sub(1));
+        cursor.column = cursor.column.min(doc.line_length(cursor.line));
+        cursor.desired_column = None;
+        editor.collapse_selections_to_cursors();
+    }
+    let mut cmds = vec![Cmd::Redraw];
+    if !renamed {
+        cmds.extend(super::schedule_lsp_did_change(model, document_id));
+    } else {
+        if old_path.is_some() {
+            cmds.push(super::close_lsp_document(document_id));
+        }
+        cmds.extend(super::open_lsp_document(model, document_id));
+    }
+    cmds.extend(super::schedule_syntax_parse(model, document_id));
+    model.resync_viewports();
+    model.ui.set_status(format!("Loaded: {}", path.display()));
+    model.record_file_opened(document_id);
+    cmds.push(Cmd::SaveRecentFiles {
+        recent: model.recent_files.clone(),
+    });
+    Some(Cmd::Batch(cmds))
+}
+
 pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
     match cmd_id {
-        CommandId::NewFile => update_layout(model, LayoutMsg::NewTab),
-        CommandId::OpenFile => update_app(model, AppMsg::OpenFileDialog),
-        CommandId::FuzzyFileFinder => update_ui(model, UiMsg::OpenFuzzyFileFinder),
-        CommandId::SaveFile => update_app(model, AppMsg::SaveFile),
-        CommandId::SaveFileAs => update_app(model, AppMsg::SaveFileAs),
-        CommandId::Undo => update_document(model, DocumentMsg::Undo),
-        CommandId::Redo => update_document(model, DocumentMsg::Redo),
-        CommandId::Cut => update_document(model, DocumentMsg::Cut),
-        CommandId::Copy => update_document(model, DocumentMsg::Copy),
-        CommandId::Paste => update_document(model, DocumentMsg::Paste),
-        CommandId::SelectAll => {
-            // SelectAll is an EditorMsg, so we need to dispatch through update
-            crate::update::update_editor(model, crate::messages::EditorMsg::SelectAll)
-        }
-        CommandId::GotoLine => update_ui(model, UiMsg::ToggleModal(ModalId::GotoLine)),
-        CommandId::GotoDefinition => {
-            crate::update::update_lsp(model, crate::messages::LspMsg::GotoDefinition)
-        }
-        CommandId::NavigateBack => {
-            crate::update::update_lsp(model, crate::messages::LspMsg::NavigateBack)
-        }
-        CommandId::NextDiagnostic => crate::update::update_lsp(
-            model,
-            crate::messages::LspMsg::JumpDiagnostic { forward: true },
-        ),
-        CommandId::PrevDiagnostic => crate::update::update_lsp(
-            model,
-            crate::messages::LspMsg::JumpDiagnostic { forward: false },
-        ),
-        CommandId::NavigateForward => {
-            crate::update::update_lsp(model, crate::messages::LspMsg::NavigateForward)
-        }
-        CommandId::ShowHover => {
-            crate::update::update_lsp(model, crate::messages::LspMsg::ShowHover)
-        }
-        CommandId::ShowSignatureHelp => {
-            crate::update::update_lsp(model, crate::messages::LspMsg::ShowSignatureHelp)
-        }
-        CommandId::RenameSymbol => {
-            crate::update::update_lsp(model, crate::messages::LspMsg::RenameSymbol)
-        }
-        CommandId::ShowCodeActions => {
-            crate::update::update_lsp(model, crate::messages::LspMsg::ShowCodeActions)
-        }
-        CommandId::FormatDocument | CommandId::FormatSelection => crate::update::update_lsp(
-            model,
-            crate::messages::LspMsg::FormatDocument {
-                selection_only: cmd_id == CommandId::FormatSelection,
-            },
-        ),
-        // Both commands open the same cursor-anchored popup for now — a
-        // docked usages panel is a later feature (see LocationItem's doc
-        // comment).
-        CommandId::FindUsages | CommandId::ShowUsages => {
-            crate::update::update_lsp(model, crate::messages::LspMsg::FindReferences)
-        }
-        // Palette-invocation path — no live clipboard read available here
-        // (`update()` must not do I/O); see the function's doc comment.
-        // The keyboard shortcut (Shift+F10) goes through `App::
-        // dispatch_command`'s special case instead, with a real read.
         CommandId::ShowContextMenu => {
             crate::update::context_menu::open_editor_menu_at_caret(model, false)
         }
-        CommandId::SplitHorizontal => {
-            update_layout(model, LayoutMsg::SplitFocused(SplitDirection::Horizontal))
-        }
-        CommandId::SplitVertical => {
-            update_layout(model, LayoutMsg::SplitFocused(SplitDirection::Vertical))
-        }
         CommandId::CloseGroup => update_layout(model, LayoutMsg::CloseFocusedGroup),
-        CommandId::NextTab => update_layout(model, LayoutMsg::NextTab),
-        CommandId::PrevTab => update_layout(model, LayoutMsg::PrevTab),
-        CommandId::CloseTab => update_layout(model, LayoutMsg::CloseFocusedTab),
-        CommandId::Find => update_ui(model, UiMsg::ToggleModal(ModalId::FindReplace)),
-        CommandId::ShowCommandPalette => {
-            update_ui(model, UiMsg::ToggleModal(ModalId::CommandPalette))
-        }
         CommandId::SwitchTheme => update_ui(model, UiMsg::ToggleModal(ModalId::ThemePicker)),
-        CommandId::OpenSettings => update_ui(model, UiMsg::ToggleModal(ModalId::Settings)),
         CommandId::OpenConfigDirectory => {
-            if let Some(config_dir) = config_paths::config_dir() {
-                config_paths::ensure_all_config_dirs();
-                Some(Cmd::OpenInExplorer { path: config_dir })
-            } else {
-                model.ui.set_status("Could not determine config directory");
-                Some(Cmd::redraw_status_bar())
-            }
+            update_app(model, AppMsg::OpenConfigResource(ConfigResource::Directory))
         }
-        CommandId::OpenKeybindings => {
-            if let Some(keymap_path) = config_paths::keymap_file() {
-                config_paths::ensure_all_config_dirs();
-                if !keymap_path.exists() {
-                    Some(Cmd::CreateDefaultKeymapFile { path: keymap_path })
-                } else {
-                    Some(Cmd::OpenFileInEditor { path: keymap_path })
-                }
-            } else {
-                model.ui.set_status("Could not determine keymap path");
-                Some(Cmd::Redraw)
-            }
-        }
-        CommandId::ToggleCsvView => super::csv::update_csv(model, crate::messages::CsvMsg::Toggle),
-        CommandId::ToggleMarkdownPreview => {
-            super::preview::update_preview(model, crate::messages::PreviewMsg::Toggle)
-        }
+        CommandId::OpenKeybindings => update_app(
+            model,
+            AppMsg::OpenConfigResource(ConfigResource::Keybindings),
+        ),
         CommandId::OpenLogFile => {
-            if let Some(log_path) = config_paths::log_file() {
-                // Ensure logs dir exists
-                let _ = config_paths::ensure_logs_dir();
-                Some(Cmd::OpenFileInEditor { path: log_path })
-            } else {
-                model.ui.set_status("Could not determine log file path");
-                Some(Cmd::Redraw)
-            }
+            update_app(model, AppMsg::OpenConfigResource(ConfigResource::Log))
         }
         CommandId::ReloadConfiguration => update_app(model, AppMsg::ReloadConfiguration),
         CommandId::OpenFolder => update_app(model, AppMsg::OpenFolderDialog),
@@ -570,11 +547,6 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::ToggleProblemsScope => {
             super::problems::update_problems(model, crate::messages::ProblemsMsg::ToggleScope)
         }
-        CommandId::CloseFocusedDock => super::dock::update_dock(model, DockMsg::CloseFocusedDock),
-        CommandId::RevealInSidebar => super::workspace::update_workspace(
-            model,
-            crate::messages::WorkspaceMsg::RevealActiveFile,
-        ),
         CommandId::ToggleUsages => {
             super::dock::update_dock(model, DockMsg::TogglePanel(PanelId::Usages))
         }
@@ -615,22 +587,12 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
                 Some(Cmd::Redraw)
             }
         }
-        CommandId::OpenRecentFiles => update_ui(model, UiMsg::ToggleModal(ModalId::RecentFiles)),
-        CommandId::TriggerCompletionMenu => {
-            crate::update::update_completion(model, crate::messages::CompletionMsg::TriggerMenu)
-        }
-        CommandId::TriggerInlineSuggestion => crate::update::update_completion(
-            model,
-            crate::messages::CompletionMsg::TriggerInline { explicit: true },
-        ),
-        CommandId::RestartLanguageServer => update_app(model, AppMsg::RestartLanguageServer),
         CommandId::ToggleLsp => crate::update::lsp::toggle_lsp_enabled(model),
         CommandId::ToggleAutocomplete => crate::update::completion::toggle_enabled(model),
         CommandId::ManageLanguageServers => {
             update_ui(model, UiMsg::ToggleModal(ModalId::LspServers))
         }
         CommandId::SetLanguage => update_ui(model, UiMsg::ToggleModal(ModalId::LanguagePicker)),
-        CommandId::Quit => update_app(model, AppMsg::Quit),
         #[cfg(debug_assertions)]
         CommandId::TogglePerfOverlay => Some(Cmd::TogglePerfOverlay),
         #[cfg(debug_assertions)]
@@ -652,36 +614,91 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             };
             Some(Cmd::Redraw)
         }
+        // Shared actions use the same message dispatch as keyboard bindings.
+        id => {
+            let action = id.to_keymap_command()?;
+            let mut cmds: Vec<_> = action
+                .to_msgs()
+                .into_iter()
+                .filter_map(|msg| super::update(model, msg))
+                .collect();
+            match cmds.len() {
+                0 => None,
+                1 => cmds.pop(),
+                _ => Some(Cmd::Batch(cmds)),
+            }
+        }
     }
-}
-
-pub fn create_default_keymap_file(path: &std::path::Path) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create directory: {}", e))?;
-    }
-    std::fs::write(path, get_default_keymap_yaml())
-        .map_err(|e| format!("Failed to write file: {}", e))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::AppModel;
+
+    fn complete_test_load(
+        model: &mut AppModel,
+        path: PathBuf,
+        result: Result<String, String>,
+    ) -> Option<Cmd> {
+        let target = model
+            .document_mut()
+            .begin_file_request(FileRequestKind::Read)
+            .unwrap();
+        update_app(
+            model,
+            AppMsg::FileLoaded {
+                identity: None,
+                target,
+                path,
+                result,
+            },
+        )
+    }
+
+    fn complete_test_save(
+        model: &mut AppModel,
+        path: PathBuf,
+        result: Result<(), String>,
+    ) -> Option<Cmd> {
+        let target = model
+            .document_mut()
+            .begin_file_request(FileRequestKind::Write)
+            .unwrap();
+        let content = model.document().buffer.clone();
+        update_app(
+            model,
+            AppMsg::SaveCompleted {
+                identity: None,
+                target,
+                path,
+                content,
+                result,
+            },
+        )
+    }
     use crate::panel::DockPosition;
     use crate::panels::terminal::grid_size_for_rect;
     use crate::terminal::{PtyHandle, TerminalSession};
     use std::sync::mpsc;
 
     fn test_model() -> AppModel {
-        AppModel::new(800, 600, 1.0, vec![])
+        AppModel::new(800, 600, 1.0)
     }
 
     fn file_backed_model() -> (tempfile::TempDir, AppModel) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("main.rs");
         std::fs::write(&path, "fn main() {}\n").unwrap();
-        (dir, AppModel::new(800, 600, 1.0, vec![path]))
+        (
+            dir,
+            AppModel::with_document(
+                800,
+                600,
+                1.0,
+                crate::model::Document::from_file(path).unwrap(),
+            ),
+        )
     }
 
     #[test]
@@ -808,12 +825,10 @@ mod tests {
         model.document_mut().file_path = Some(PathBuf::from("/tmp/reloaded.rs"));
         let before = model.document().revision;
 
-        let cmd = update_app(
+        let cmd = complete_test_load(
             &mut model,
-            AppMsg::FileLoaded {
-                path: PathBuf::from("/tmp/reloaded.rs"),
-                result: Ok("fn main() {}".to_owned()),
-            },
+            PathBuf::from("/tmp/reloaded.rs"),
+            Ok("fn main() {}".to_owned()),
         )
         .expect("FileLoaded should produce a command");
 
@@ -836,12 +851,10 @@ mod tests {
         model.document_mut().file_path = Some(PathBuf::from("/tmp/old.rs"));
         let doc_id = model.document().id;
 
-        let cmd = update_app(
+        let cmd = complete_test_load(
             &mut model,
-            AppMsg::FileLoaded {
-                path: PathBuf::from("/tmp/new.rs"),
-                result: Ok("fn main() {}".to_owned()),
-            },
+            PathBuf::from("/tmp/new.rs"),
+            Ok("fn main() {}".to_owned()),
         )
         .expect("FileLoaded should produce a command");
 
@@ -865,9 +878,14 @@ mod tests {
         model.document_mut().file_path = Some(PathBuf::from("/tmp/old.rs"));
         let doc_id = model.document().id.unwrap();
 
+        let target = model
+            .document_mut()
+            .begin_file_request(FileRequestKind::SaveDialog)
+            .unwrap();
         let cmd = update_app(
             &mut model,
             AppMsg::SaveFileAsDialogResult {
+                target,
                 path: Some(PathBuf::from("/tmp/new.rs")),
             },
         )
@@ -881,12 +899,12 @@ mod tests {
         assert_eq!(
             model.document().file_path,
             Some(PathBuf::from("/tmp/old.rs")),
-            "file_path must stay unchanged until SaveAsCompleted"
+            "file_path must stay unchanged until SaveCompleted"
         );
         assert!(matches!(
             cmd,
-            Cmd::SaveFileAs { document_id, old_path: Some(_), new_path, .. }
-                if document_id == doc_id && new_path.as_path() == std::path::Path::new("/tmp/new.rs")
+            Cmd::SaveFile { target, path, .. }
+                if target.document_id == doc_id && path.as_path() == std::path::Path::new("/tmp/new.rs")
         ));
     }
 
@@ -902,16 +920,8 @@ mod tests {
             ..Default::default()
         }];
 
-        let cmd = update_app(
-            &mut model,
-            AppMsg::SaveAsCompleted {
-                document_id: doc_id,
-                old_path: Some(PathBuf::from("/tmp/old.rs")),
-                new_path: PathBuf::from("/tmp/new.rs"),
-                result: Ok(()),
-            },
-        )
-        .expect("SaveAsCompleted should produce a command");
+        let cmd = complete_test_save(&mut model, PathBuf::from("/tmp/new.rs"), Ok(()))
+            .expect("SaveCompleted should produce a command");
 
         assert_eq!(
             model.document().file_path,
@@ -937,16 +947,11 @@ mod tests {
     fn save_as_completed_reports_the_error_and_leaves_path_unchanged_on_failure() {
         let mut model = test_model();
         model.document_mut().file_path = Some(PathBuf::from("/tmp/old.rs"));
-        let doc_id = model.document().id.unwrap();
 
-        update_app(
+        complete_test_save(
             &mut model,
-            AppMsg::SaveAsCompleted {
-                document_id: doc_id,
-                old_path: Some(PathBuf::from("/tmp/old.rs")),
-                new_path: PathBuf::from("/tmp/new.rs"),
-                result: Err("permission denied".to_owned()),
-            },
+            PathBuf::from("/tmp/new.rs"),
+            Err("permission denied".to_owned()),
         );
 
         assert_eq!(
@@ -964,12 +969,10 @@ mod tests {
             model.document_mut().language = LanguageId::Rust;
             model.document_mut().language_pinned = pinned;
 
-            update_app(
+            complete_test_load(
                 &mut model,
-                AppMsg::FileLoaded {
-                    path: PathBuf::from("/tmp/notes.txt"),
-                    result: Ok("fn main() {}".to_owned()),
-                },
+                PathBuf::from("/tmp/notes.txt"),
+                Ok("fn main() {}".to_owned()),
             );
 
             assert_eq!(model.document().language, expected, "pinned={pinned}");
@@ -982,18 +985,9 @@ mod tests {
             let mut model = test_model();
             model.document_mut().file_path = Some(PathBuf::from("/tmp/old.txt"));
             model.document_mut().language_pinned = pinned;
-            let doc_id = model.document().id.unwrap();
 
-            let cmd = update_app(
-                &mut model,
-                AppMsg::SaveAsCompleted {
-                    document_id: doc_id,
-                    old_path: Some(PathBuf::from("/tmp/old.txt")),
-                    new_path: PathBuf::from("/tmp/new.rs"),
-                    result: Ok(()),
-                },
-            )
-            .expect("SaveAsCompleted should produce a command");
+            let cmd = complete_test_save(&mut model, PathBuf::from("/tmp/new.rs"), Ok(()))
+                .expect("SaveCompleted should produce a command");
 
             assert_eq!(model.document().language, expected, "pinned={pinned}");
             let Cmd::Batch(cmds) = cmd else {

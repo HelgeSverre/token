@@ -55,31 +55,27 @@ fn test_themes_dir_is_subdir_of_config() {
     assert!(themes.starts_with(&config));
 }
 
-#[test]
-fn test_log_file_returns_some_when_logs_dir_exists() {
-    // log_file() returns None if logs_dir doesn't exist (e.g., fresh CI environment)
-    // So we only test the structure if it returns Some
-    if let Some(path) = config_paths::log_file() {
-        let path_str = path.to_string_lossy();
-        assert!(
-            path_str.contains("token.log"),
-            "Expected token.log in path, got: {}",
-            path.display()
-        );
-    }
-}
-
-#[test]
-fn test_log_file_is_in_logs_dir_when_exists() {
-    // Only test if both exist (may not on CI without prior runs)
-    if let (Some(logs_dir), Some(log_file)) = (config_paths::logs_dir(), config_paths::log_file()) {
-        assert!(log_file.starts_with(&logs_dir));
-    }
-}
-
 // ========================================================================
 // Editor Config Tests
 // ========================================================================
+
+#[test]
+fn inline_statistics_config_defaults_and_explicit_opt_out_roundtrip() {
+    for yaml in ["{}", "completion: {}", "completion:\n  inline: {}"] {
+        let config: EditorConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.completion.inline.statistics);
+        assert!(!config.completion.inline.enabled);
+    }
+    let config: EditorConfig =
+        serde_yaml::from_str("completion:\n  inline:\n    enabled: true\n    statistics: false")
+            .unwrap();
+    assert!(!config.completion.inline.statistics);
+    assert!(config.completion.inline.enabled);
+    let reloaded: EditorConfig =
+        serde_yaml::from_str(&serde_yaml::to_string(&config).unwrap()).unwrap();
+    assert!(!reloaded.completion.inline.statistics);
+    assert!(reloaded.completion.inline.enabled);
+}
 
 #[test]
 fn test_default_config() {

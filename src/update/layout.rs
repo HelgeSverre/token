@@ -4,15 +4,11 @@ use std::path::PathBuf;
 
 use crate::commands::Cmd;
 use crate::messages::LayoutMsg;
-use crate::model::editor::{BinaryPlaceholderState, TabContent, ViewMode};
+use crate::model::editor::{TabContent, ViewMode};
 use crate::model::ui::SplitterDragState;
 use crate::model::{
     AppModel, Document, EditorGroup, EditorState, GroupId, LayoutNode, Rect, SplitContainer,
     SplitDirection, Tab, TabId,
-};
-use crate::util::{
-    filename_for_display, is_likely_binary, is_supported_image, validate_file_for_opening,
-    FileOpenError,
 };
 
 use super::lsp::{close_lsp_document, open_lsp_document};
@@ -47,11 +43,10 @@ pub(super) fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd>
         }
 
         LayoutMsg::OpenFileInNewTab(path) => {
-            let cmd = open_file_in_new_tab(model, path);
-            sync_viewports(model);
-            ensure_focused_tab_visible(model);
-            cmd
+            open_file_in_group(model, path, model.editor_area.focused_group_id, None)
         }
+
+        LayoutMsg::FilePrepared { request, result } => finish_file_open(model, request, result),
 
         LayoutMsg::OpenWithDefaultApp(path) => Some(Cmd::OpenInExplorer { path }),
 
@@ -366,222 +361,408 @@ fn new_tab_in_focused_group(model: &mut AppModel) {
     }
 }
 
-/// Open a file in a new tab in the focused group
-fn open_file_in_new_tab(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
-    let filename = filename_for_display(&path);
-    let group_id = model.editor_area.focused_group_id;
+/// Capture the target group and post-open action before starting disk work.
+pub(super) fn open_file_in_group(
+    model: &mut AppModel,
+    path: PathBuf,
+    group_id: GroupId,
+    position: Option<crate::model::OpenPosition>,
+) -> Option<Cmd> {
+    begin_file_open(
+        model,
+        crate::model::FileOpenSource::Path(path),
+        group_id,
+        position,
+        crate::model::FileOpenPolicy::CreateOrOpen,
+    )
+}
 
-    // 0. Check if file is already open - if so, reuse it, but never leave
-    // the focused group: a jump/navigation issued in split A must land in
-    // split A, never steal focus into whichever split happened to have the
-    // file open already (design doc's "a jump in split A never yanks split
-    // B"). Already open in the focused group -> just switch tabs there;
-    // open only in a different group -> share the document but open a new
-    // tab/editor for it in the focused group (same pattern `split_group`
-    // uses), rather than reloading it from disk.
-    if let Some((doc_id, found_group_id, tab_idx)) = model.editor_area.find_open_file(&path) {
-        if found_group_id == group_id {
-            if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
-                group.active_tab_index = tab_idx;
-            }
-            model.ui.set_status(format!("Switched to: {}", filename));
-            return Some(Cmd::Redraw);
-        }
+pub(super) fn open_file_for_edit(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
+    begin_file_open(
+        model,
+        crate::model::FileOpenSource::Path(path),
+        model.editor_area.focused_group_id,
+        None,
+        crate::model::FileOpenPolicy::ExistingText,
+    )
+}
 
-        let editor_id = model.editor_area.next_editor_id();
-        let mut editor = EditorState::new();
-        editor.id = Some(editor_id);
-        editor.document_id = Some(doc_id);
-        model.editor_area.editors.insert(editor_id, editor);
+pub(super) fn open_config_resource(
+    model: &mut AppModel,
+    resource: crate::commands::ConfigResource,
+) -> Option<Cmd> {
+    begin_file_open(
+        model,
+        crate::model::FileOpenSource::Configuration(resource),
+        model.editor_area.focused_group_id,
+        None,
+        crate::model::FileOpenPolicy::CreateOrOpen,
+    )
+}
 
-        let tab_id = model.editor_area.next_tab_id();
-        let tab = Tab {
-            id: tab_id,
+fn begin_file_open(
+    model: &mut AppModel,
+    source: crate::model::FileOpenSource,
+    group_id: GroupId,
+    position: Option<crate::model::OpenPosition>,
+    policy: crate::model::FileOpenPolicy,
+) -> Option<Cmd> {
+    use crate::model::{PendingFileOpen, PreparedFile};
+    let group = model.editor_area.groups.get(&group_id)?;
+    let active_tab = group.active_tab().map(|tab| tab.id);
+    let origin = (|| {
+        let editor_id = group.active_editor_id()?;
+        let editor = model.editor_area.editors.get(&editor_id)?;
+        let document_id = editor.document_id?;
+        let document = model.editor_area.documents.get(&document_id)?;
+        Some(crate::model::OpenOrigin {
             editor_id,
-            is_pinned: false,
-            is_preview: false,
-        };
-        if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
-            group.tabs.push(tab);
-            group.active_tab_index = group.tabs.len() - 1;
-        }
-        model.ui.set_status(format!("Opened: {}", filename));
-        return Some(Cmd::Redraw);
+            document_id,
+            revision: document.revision,
+            cursor: *editor.active_cursor(),
+            selection: editor.selections.get(editor.active_cursor_index).cloned(),
+        })
+    })();
+    let activates_tab = policy == crate::model::FileOpenPolicy::CreateOrOpen
+        && !matches!(
+            source,
+            crate::model::FileOpenSource::Configuration(crate::commands::ConfigResource::Directory)
+        );
+    let target = PendingFileOpen {
+        group_id,
+        focus: model.ui.focus,
+        active_tab,
+        position,
+        origin,
+        policy,
+        route_hint: if activates_tab {
+            model.lsp.route_hint.take()
+        } else {
+            None
+        },
+    };
+    let sequence = model.editor_area.file_opens.begin(target, activates_tab);
+    let request = file_open_request(model, source, sequence);
+    // Known original/canonical spellings need no filesystem work. Unknown
+    // aliases are resolved by the worker using the same identity snapshots.
+    let existing = request
+        .source
+        .path()
+        .and_then(|path| model.editor_area.find_document_by_path(path))
+        .and_then(|document_id| {
+            Some(PreparedFile::Existing {
+                document_id,
+                path: model.editor_area.documents[&document_id]
+                    .file_path
+                    .clone()?,
+            })
+        });
+    if let Some(existing) =
+        existing.filter(|_| policy == crate::model::FileOpenPolicy::CreateOrOpen)
+    {
+        return finish_file_open(model, request, Ok(Box::new(existing)));
     }
+    model.ui.is_loading = true;
+    model.ui.set_status(format!("Opening: {}", request.source));
+    Some(Cmd::PrepareFileOpen(request))
+}
 
-    // 1. Validate file and load/create document
-    let doc_id = model.editor_area.next_document_id();
-    let document = match validate_file_for_opening(&path) {
-        Ok(()) => {
-            // File exists - check for image files first
-            if is_supported_image(&path) {
-                let group = model.editor_area.groups.get(&group_id);
-                let vw = group.map(|g| g.rect.width as u32).unwrap_or(800);
-                let vh = group
-                    .map(|g| {
-                        (g.rect.height as usize).saturating_sub(model.metrics.tab_bar_height) as u32
-                    })
-                    .unwrap_or(600);
+fn file_open_request(
+    model: &AppModel,
+    source: crate::model::FileOpenSource,
+    sequence: u64,
+) -> crate::model::FileOpenRequest {
+    crate::model::FileOpenRequest {
+        source,
+        sequence,
+        policy: model.editor_area.file_opens.pending[&sequence].policy,
+        known_documents: model
+            .editor_area
+            .documents
+            .iter()
+            .filter_map(|(id, doc)| {
+                Some(crate::model::KnownFile {
+                    document_id: *id,
+                    path: doc.file_path.clone()?,
+                    identity: doc.file_identity().cloned(),
+                })
+            })
+            .collect(),
+    }
+}
 
-                match crate::image::load_image(&path, vw, vh) {
-                    Some(image_state) => {
-                        let w = image_state.width;
-                        let h = image_state.height;
-
-                        let mut doc = Document::new();
-                        doc.id = Some(doc_id);
-                        doc.file_path = Some(path.clone());
-                        model.editor_area.documents.insert(doc_id, doc);
-                        model.record_file_opened(path.clone());
-
-                        let editor_id = model.editor_area.next_editor_id();
-                        let mut editor = EditorState::new();
-                        editor.id = Some(editor_id);
-                        editor.document_id = Some(doc_id);
-                        editor.view_mode = ViewMode::Image(Box::new(image_state));
-                        model.editor_area.editors.insert(editor_id, editor);
-
-                        let tab_id = model.editor_area.next_tab_id();
-                        let tab = Tab {
-                            id: tab_id,
-                            editor_id,
-                            is_pinned: false,
-                            is_preview: false,
-                        };
-                        if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
-                            group.tabs.push(tab);
-                            group.active_tab_index = group.tabs.len() - 1;
-                        }
-
-                        model
-                            .ui
-                            .set_status(format!("Opened image: {} ({}×{})", filename, w, h));
-                        return Some(Cmd::Batch(vec![
-                            Cmd::Redraw,
-                            Cmd::SaveRecentFiles {
-                                recent: model.recent_files.clone(),
-                            },
-                        ]));
-                    }
-                    None => {
-                        model
-                            .ui
-                            .set_status(format!("Error opening image: {}", filename));
-                        return Some(Cmd::Redraw);
-                    }
-                }
-            }
-
-            // Check for binary content
-            if is_likely_binary(&path) {
-                let size_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-
-                let mut doc = Document::new();
-                doc.id = Some(doc_id);
-                doc.file_path = Some(path.clone());
-                model.editor_area.documents.insert(doc_id, doc);
-                model.record_file_opened(path.clone());
-
-                let editor_id = model.editor_area.next_editor_id();
-                let mut editor = EditorState::new();
-                editor.id = Some(editor_id);
-                editor.document_id = Some(doc_id);
-                editor.tab_content =
-                    TabContent::BinaryPlaceholder(BinaryPlaceholderState { path, size_bytes });
-                model.editor_area.editors.insert(editor_id, editor);
-
-                let tab_id = model.editor_area.next_tab_id();
-                let tab = Tab {
-                    id: tab_id,
-                    editor_id,
-                    is_pinned: false,
-                    is_preview: false,
-                };
-                if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
-                    group.tabs.push(tab);
-                    group.active_tab_index = group.tabs.len() - 1;
-                }
-
-                model
-                    .ui
-                    .set_status(format!("Opened binary file: {}", filename));
-                return Some(Cmd::Batch(vec![
-                    Cmd::Redraw,
-                    Cmd::SaveRecentFiles {
-                        recent: model.recent_files.clone(),
-                    },
-                ]));
-            }
-
-            // Load text document from file
-            match Document::from_file(path.clone()) {
-                Ok(mut doc) => {
-                    doc.id = Some(doc_id);
-                    model.ui.set_status(format!("Opened: {}", path.display()));
-                    doc
-                }
-                Err(e) => {
-                    model
-                        .ui
-                        .set_status(format!("Error opening {}: {}", path.display(), e));
-                    return Some(Cmd::Redraw);
-                }
-            }
-        }
-        Err(FileOpenError::NotFound) => {
-            // File doesn't exist - create new document with this path
-            let mut doc = Document::new_with_path(path.clone());
-            doc.id = Some(doc_id);
-            model.ui.set_status(format!("New file: {}", path.display()));
-            doc
-        }
-        Err(e) => {
-            model.ui.set_status(e.user_message(&filename));
-            return Some(Cmd::Redraw);
+fn finish_file_open(
+    model: &mut AppModel,
+    request: crate::model::FileOpenRequest,
+    result: Result<Box<crate::model::PreparedFile>, String>,
+) -> Option<Cmd> {
+    use crate::model::PreparedFile;
+    let target = model
+        .editor_area
+        .file_opens
+        .pending
+        .remove(&request.sequence)?;
+    model.ui.is_loading = !model.editor_area.file_opens.pending.is_empty()
+        || model
+            .editor_area
+            .documents
+            .values()
+            .any(|doc| doc.file_io.pending(crate::model::FileRequestKind::Read));
+    let Some(group) = model.editor_area.groups.get(&target.group_id) else {
+        return reject_file_open(model, request.sequence, None);
+    };
+    let origin_unchanged = target.origin.as_ref().is_none_or(|origin| {
+        model
+            .editor_area
+            .editors
+            .get(&origin.editor_id)
+            .is_some_and(|editor| {
+                *editor.active_cursor() == origin.cursor
+                    && editor.selections.get(editor.active_cursor_index)
+                        == origin.selection.as_ref()
+                    && editor.document_id == Some(origin.document_id)
+                    && editor
+                        .document_id
+                        .and_then(|id| model.editor_area.documents.get(&id))
+                        .is_some_and(|doc| doc.revision == origin.revision)
+            })
+    });
+    let activate = target.policy == crate::model::FileOpenPolicy::CreateOrOpen
+        && target.focus == model.ui.focus
+        && !model.ui.has_modal()
+        && model.editor_area.file_opens.latest.get(&target.group_id) == Some(&request.sequence)
+        && group.active_tab().map(|tab| tab.id) == target.active_tab
+        && origin_unchanged;
+    let prepared = match result {
+        Ok(prepared) => *prepared,
+        Err(error) => {
+            return reject_file_open(model, request.sequence, Some(error));
         }
     };
-    model.editor_area.documents.insert(doc_id, document);
+    let (document_id, new_document) = match prepared {
+        PreparedFile::Directory { path } => {
+            model.ui.set_status(format!(
+                "Opened configuration directory: {}",
+                path.display()
+            ));
+            return Some(Cmd::Batch(vec![
+                Cmd::OpenInExplorer { path },
+                Cmd::FileOpenFinished {
+                    request_id: request.sequence,
+                    document_id: None,
+                },
+                Cmd::redraw_status_bar(),
+            ]));
+        }
+        PreparedFile::Existing { document_id, path } => {
+            if model
+                .editor_area
+                .documents
+                .get(&document_id)
+                .is_none_or(|doc| {
+                    doc.file_path.as_ref() != Some(&path)
+                        || request
+                            .known_documents
+                            .iter()
+                            .find(|known| known.document_id == document_id)
+                            .and_then(|known| known.identity.as_ref())
+                            .is_some_and(|old| {
+                                doc.file_identity()
+                                    .is_none_or(|current| old.uri() != current.uri())
+                            })
+                })
+            {
+                // The worker's document snapshot was closed or renamed. Retry
+                // against current state, retaining the original group/intent.
+                model
+                    .editor_area
+                    .file_opens
+                    .pending
+                    .insert(request.sequence, target);
+                model.ui.is_loading = true;
+                return Some(Cmd::PrepareFileOpen(file_open_request(
+                    model,
+                    request.source,
+                    request.sequence,
+                )));
+            }
+            (document_id, None)
+        }
+        PreparedFile::Loaded {
+            document,
+            view_mode,
+            tab_content,
+        } => {
+            // Another request may have opened this file while disk work ran.
+            let existing = document
+                .file_path
+                .as_deref()
+                .and_then(|path| model.editor_area.find_document_by_path(path))
+                .or_else(|| {
+                    document.file_identity().and_then(|identity| {
+                        model.editor_area.find_document_by_path(identity.path())
+                    })
+                });
+            if let Some(id) = existing {
+                if target.policy == crate::model::FileOpenPolicy::ExistingText
+                    && model.editor_area.documents[&id].buffer != document.buffer
+                {
+                    return reject_file_open(
+                        model,
+                        request.sequence,
+                        Some("Workspace edit target changed while loading".into()),
+                    );
+                }
+                (id, None)
+            } else {
+                let id = model.editor_area.next_document_id();
+                let mut document = *document;
+                document.id = Some(id);
+                model.editor_area.documents.insert(id, document);
+                (id, Some((view_mode, tab_content)))
+            }
+        }
+    };
+    let is_new = new_document.is_some();
+    let Some((editor_id, created)) =
+        install_file_tab(model, target.group_id, document_id, new_document, activate)
+    else {
+        return reject_file_open(
+            model,
+            request.sequence,
+            Some("Could not open tab: the source view is no longer available".into()),
+        );
+    };
+    sync_viewports(model);
+    ensure_active_tab_visible(model, target.group_id);
+    let mut commands = vec![
+        Cmd::Redraw,
+        Cmd::FileOpenFinished {
+            request_id: request.sequence,
+            document_id: Some(document_id),
+        },
+    ];
+    if is_new {
+        model.record_file_opened(document_id);
+        commands.push(Cmd::SaveRecentFiles {
+            recent: model.recent_files.clone(),
+        });
+        let is_text = model
+            .editor_area
+            .editors
+            .get(&editor_id)
+            .is_some_and(|editor| editor.is_plain_text_mode());
+        if is_text {
+            if let Some(cmd) = schedule_syntax_parse(model, document_id) {
+                commands.push(cmd);
+            }
+            // Keep per-open server routing attached to this completion.
+            let previous_hint = std::mem::replace(&mut model.lsp.route_hint, target.route_hint);
+            if let Some(cmd) = open_lsp_document(model, document_id) {
+                commands.push(cmd);
+            }
+            model.lsp.route_hint = previous_hint;
+        }
+    }
+    if activate || created {
+        if let Some(position) = target.position {
+            super::navigation::place_open_cursor(model, editor_id, position);
+        }
+    }
+    if activate && model.editor_area.focused_group_id == target.group_id {
+        model.ui.set_status(format!("Opened: {}", request.source));
+        if target.position.is_some() {
+            model.ui.focus_editor();
+        }
+    }
+    commands.extend(super::text_edits::resume_workspace_opens(
+        model,
+        request.sequence,
+        Some(document_id),
+    ));
+    Some(Cmd::Batch(commands))
+}
 
-    // Record in recent files
-    model.record_file_opened(path);
+fn reject_file_open(model: &mut AppModel, request_id: u64, status: Option<String>) -> Option<Cmd> {
+    if let Some(status) = status {
+        model.ui.set_status(status);
+    }
+    super::navigation::combine(
+        Some(Cmd::Batch(vec![
+            Cmd::redraw_status_bar(),
+            Cmd::FileOpenFinished {
+                request_id,
+                document_id: None,
+            },
+        ])),
+        super::text_edits::resume_workspace_opens(model, request_id, None),
+    )
+}
 
-    // 4. Create new editor state for this document
+/// One installer for text, images, binary placeholders and shared documents.
+/// Always prefer a tab already in the requesting group over one in another split.
+fn install_file_tab(
+    model: &mut AppModel,
+    group_id: GroupId,
+    document_id: crate::model::DocumentId,
+    content: Option<(ViewMode, TabContent)>,
+    activate: bool,
+) -> Option<(crate::model::EditorId, bool)> {
+    let group = model.editor_area.groups.get(&group_id)?;
+    if let Some((index, editor_id)) = group.tabs.iter().enumerate().find_map(|(index, tab)| {
+        (model.editor_area.editors.get(&tab.editor_id)?.document_id == Some(document_id))
+            .then_some((index, tab.editor_id))
+    }) {
+        if activate {
+            model
+                .editor_area
+                .groups
+                .get_mut(&group_id)?
+                .active_tab_index = index;
+        }
+        return Some((editor_id, false));
+    }
+    let (view_mode, tab_content) = content.or_else(|| {
+        model
+            .editor_area
+            .editors
+            .values()
+            .find(|editor| editor.document_id == Some(document_id))
+            .map(|editor| (editor.view_mode.clone(), editor.tab_content.clone()))
+    })?;
     let editor_id = model.editor_area.next_editor_id();
     let mut editor = EditorState::new();
     editor.id = Some(editor_id);
-    editor.document_id = Some(doc_id);
+    editor.document_id = Some(document_id);
+    editor.view_mode = view_mode;
+    editor.tab_content = tab_content;
+    if let ViewMode::Image(image) = &mut editor.view_mode {
+        let group = model.editor_area.groups.get(&group_id)?;
+        image.scale = crate::image::ImageState::compute_fit_scale(
+            image.width,
+            image.height,
+            group.rect.width as u32,
+            (group.rect.height as usize).saturating_sub(model.metrics.tab_bar_height) as u32,
+        );
+        image.offset_x = 0.0;
+        image.offset_y = 0.0;
+        image.user_zoomed = false;
+        image.drag = None;
+    }
     model.editor_area.editors.insert(editor_id, editor);
-
-    // 5. Create tab in focused group
     let tab_id = model.editor_area.next_tab_id();
-    let tab = Tab {
+    let group = model.editor_area.groups.get_mut(&group_id)?;
+    group.tabs.push(Tab {
         id: tab_id,
         editor_id,
         is_pinned: false,
         is_preview: false,
-    };
-
-    if let Some(group) = model.editor_area.groups.get_mut(&group_id) {
-        group.tabs.push(tab);
+    });
+    if activate {
         group.active_tab_index = group.tabs.len() - 1;
     }
-
-    // 6. Schedule syntax parsing for the new document
-    let mut cmds = vec![
-        Cmd::Redraw,
-        Cmd::SaveRecentFiles {
-            recent: model.recent_files.clone(),
-        },
-    ];
-    if let Some(parse_cmd) = schedule_syntax_parse(model, doc_id) {
-        cmds.push(parse_cmd);
-    }
-    if let Some(lsp_cmd) = open_lsp_document(model, doc_id) {
-        cmds.push(lsp_cmd);
-    }
-    Some(Cmd::Batch(cmds))
+    Some((editor_id, true))
 }
-
 /// Split the focused group in the given direction
 fn split_focused_group(model: &mut AppModel, direction: SplitDirection) {
     let group_id = model.editor_area.focused_group_id;
@@ -590,65 +771,38 @@ fn split_focused_group(model: &mut AppModel, direction: SplitDirection) {
 
 /// Split a specific group in the given direction
 fn split_group(model: &mut AppModel, group_id: GroupId, direction: SplitDirection) {
-    // Get the document ID from the active tab in the group to split
-    let doc_id = {
-        let group = match model.editor_area.groups.get(&group_id) {
-            Some(g) => g,
-            None => return,
-        };
-        let editor_id = match group.active_editor_id() {
-            Some(id) => id,
-            None => return,
-        };
-        match model.editor_area.editors.get(&editor_id) {
-            Some(e) => match e.document_id {
-                Some(id) => id,
-                None => return,
-            },
-            None => return,
-        }
+    let Some(source) = model
+        .editor_area
+        .groups
+        .get(&group_id)
+        .and_then(|group| group.active_editor_id())
+        .and_then(|id| model.editor_area.editors.get(&id))
+    else {
+        return;
     };
-
-    // Create a new editor for the same document
-    let new_editor_id = model.editor_area.next_editor_id();
-    let new_editor = {
-        let mut editor = EditorState::new();
-        editor.id = Some(new_editor_id);
-        editor.document_id = Some(doc_id);
-        editor
+    let Some(document_id) = source.document_id else {
+        return;
     };
-    model.editor_area.editors.insert(new_editor_id, new_editor);
-
-    // Create a new tab for the new editor
-    let new_tab_id = model.editor_area.next_tab_id();
-    let new_tab = Tab {
-        id: new_tab_id,
-        editor_id: new_editor_id,
-        is_pinned: false,
-        is_preview: false,
-    };
-
-    // Create a new group with the new tab
+    let content = (source.view_mode.clone(), source.tab_content.clone());
     let new_group_id = model.editor_area.next_group_id();
-    let new_group = EditorGroup {
-        id: new_group_id,
-        tabs: vec![new_tab],
-        active_tab_index: 0,
-        rect: Default::default(),
-        attached_preview: None,
-        tab_scroll: 0,
-    };
-    model.editor_area.groups.insert(new_group_id, new_group);
-
-    // Update the layout tree to include the new group
+    model.editor_area.groups.insert(
+        new_group_id,
+        EditorGroup {
+            id: new_group_id,
+            tabs: Vec::new(),
+            active_tab_index: 0,
+            rect: Default::default(),
+            attached_preview: None,
+            tab_scroll: 0,
+        },
+    );
+    install_file_tab(model, new_group_id, document_id, Some(content), true);
     insert_split_in_layout(
         &mut model.editor_area.layout,
         group_id,
         new_group_id,
         direction,
     );
-
-    // Focus the new group
     model.editor_area.focused_group_id = new_group_id;
 }
 
@@ -1374,6 +1528,11 @@ fn sync_viewports(model: &mut AppModel) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn open_fixture_layout(model: &mut AppModel, msg: crate::messages::LayoutMsg) -> Option<Cmd> {
+        let cmd = crate::update::layout::update_layout(model, msg);
+        crate::update::finish_test_file_opens(model, cmd)
+    }
     use crate::messages::LayoutMsg;
 
     /// Opening a file already open in another split group must never
@@ -1388,7 +1547,12 @@ mod tests {
         std::fs::write(&a, "fn a() {}\n").unwrap();
         std::fs::write(&b, "fn b() {}\n").unwrap();
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![a.clone()]);
+        let mut model = AppModel::with_document(
+            800,
+            600,
+            1.0,
+            crate::model::Document::from_file(a.clone()).unwrap(),
+        );
         let group_a = model.editor_area.focused_group_id;
 
         split_focused_group(&mut model, SplitDirection::Vertical);
@@ -1398,11 +1562,11 @@ mod tests {
         // Open `b.rs` in group B, then jump back to group A and reopen it
         // from there — group A must end up showing `b.rs`, not steal focus
         // into group B.
-        update_layout(&mut model, LayoutMsg::OpenFileInNewTab(b.clone()));
+        open_fixture_layout(&mut model, LayoutMsg::OpenFileInNewTab(b.clone()));
         assert_eq!(model.editor_area.focused_group_id, group_b);
 
         model.editor_area.focused_group_id = group_a;
-        update_layout(&mut model, LayoutMsg::OpenFileInNewTab(b.clone()));
+        open_fixture_layout(&mut model, LayoutMsg::OpenFileInNewTab(b.clone()));
 
         assert_eq!(
             model.editor_area.focused_group_id, group_a,

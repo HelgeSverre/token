@@ -159,6 +159,10 @@ mod tests {
             view_mode: ViewMode::default(),
             tab_content: TabContent::default(),
             matched_brackets: None,
+            soft_wrap: false,
+            wrap_cache: token::wrap::WrapCache::new(),
+            ghost_text: Default::default(),
+            overview_cache: Default::default(),
         };
         let editor_area = EditorArea::single_document(document, editor);
         AppModel {
@@ -767,6 +771,10 @@ mod tests {
             view_mode: ViewMode::default(),
             tab_content: TabContent::default(),
             matched_brackets: None,
+            soft_wrap: false,
+            wrap_cache: token::wrap::WrapCache::new(),
+            ghost_text: Default::default(),
+            overview_cache: Default::default(),
         };
         let editor_area = EditorArea::single_document(document, editor);
         let mut model = AppModel {
