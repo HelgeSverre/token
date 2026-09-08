@@ -1,6 +1,5 @@
 fn main() {
-    compile_applescript_scanner();
-    compile_janet_scanner();
+    compile_external_scanners();
     compile_fennel_grammar();
     compile_legacy_grammars();
     let version = git_version();
@@ -63,26 +62,28 @@ fn compile_fennel_grammar() {
     println!("cargo:rerun-if-changed={scanner}");
 }
 
-fn compile_janet_scanner() {
-    let scanner = "vendor/tree-sitter-janet-compat/scanner.c";
-    cc::Build::new()
-        .warnings(false)
-        // Reuse the standard Tree-sitter parser header retained with the
-        // AppleScript compatibility source.
-        .include("vendor/tree-sitter-applescript-compat")
-        .file(scanner)
-        .compile("tree-sitter-janet-scanner");
-    println!("cargo:rerun-if-changed={scanner}");
-}
-
-fn compile_applescript_scanner() {
-    let scanner = "vendor/tree-sitter-applescript-compat/scanner.c";
-    cc::Build::new()
-        .warnings(false)
-        .include("vendor/tree-sitter-applescript-compat")
-        .file(scanner)
-        .compile("tree-sitter-applescript-scanner");
-    println!("cargo:rerun-if-changed={scanner}");
+fn compile_external_scanners() {
+    for (name, scanner) in [
+        (
+            "tree-sitter-applescript-scanner",
+            "vendor/tree-sitter-applescript-compat/scanner.c",
+        ),
+        (
+            "tree-sitter-janet-scanner",
+            "vendor/tree-sitter-janet-compat/scanner.c",
+        ),
+    ] {
+        cc::Build::new()
+            .warnings(false)
+            // Both scanners use the retained standard Tree-sitter header.
+            .include("vendor/tree-sitter-applescript-compat")
+            .file(scanner)
+            // Their callers live in dependency archives visited later by GNU
+            // ld. Retain these two small objects regardless of archive order.
+            .link_lib_modifier("+whole-archive")
+            .compile(name);
+        println!("cargo:rerun-if-changed={scanner}");
+    }
 }
 
 fn compile_windows_resources() -> Result<(), Box<dyn std::error::Error>> {

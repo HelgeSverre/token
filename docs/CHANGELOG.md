@@ -6,6 +6,14 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Linux builds
+
+- Fixed missing Janet and AppleScript scanner symbols when linking with GNU ld.
+  Their shared compatibility build now retains the scanner objects independently
+  of archive order.
+- Gate the macOS-only open-file sender to its platform, keeping Linux builds
+  free of unused-code warnings while retaining the shared automation tests.
+
 ### Terminal links
 
 - Hold Cmd on macOS (Ctrl elsewhere) to underline a terminal web link and show

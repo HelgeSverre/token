@@ -245,6 +245,7 @@ pub struct App {
     /// and tests push requests through the exact same
     /// `process_automation_requests` path the socket/MCP server feeds in
     /// production, without standing up a real socket.
+    #[cfg(any(target_os = "macos", test))]
     automation_tx: Sender<AutomationEnvelope>,
     automation_profile: Option<AutomationProfile>,
     /// `--wait` handoffs still waiting for their documents to close.
@@ -1103,6 +1104,7 @@ impl App {
             syntax_deadlines: HashMap::new(),
             terminal_spawn_rx: None,
             automation_rx,
+            #[cfg(any(target_os = "macos", test))]
             automation_tx,
             automation_profile: None,
             document_waiters: Vec::new(),
@@ -5912,6 +5914,7 @@ impl App {
     }
 
     /// The macOS open-file hook pushes `OpenPaths` requests through this.
+    #[cfg(target_os = "macos")]
     pub fn automation_sender(&self) -> Sender<AutomationEnvelope> {
         self.automation_tx.clone()
     }
