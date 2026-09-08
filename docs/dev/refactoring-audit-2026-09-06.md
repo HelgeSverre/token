@@ -1,5 +1,47 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## External-file protection native macOS verification — 2026-09-08
+
+Verified `f5cd8c5` through a real isolated Token window (PID 76369), built with
+`CARGO_BUILD_JOBS=1 just build` in the normal target directory. Its configuration,
+automation socket, fixture files and JSON readbacks were isolated under
+`target/verification/native-file-change/`. No user document or configuration was
+modified. The test instance exited normally through the Quit action.
+
+Passed paths:
+
+- A real outside file edit reloaded the clean buffer, incremented its revision,
+  retained caret line 1/column 3 and left no conflict modal.
+- Native keyboard input created unsaved local text. A second outside edit opened
+  the conflict dialog, with Keep Editing selected and the local buffer intact.
+- Native Enter chose Keep Editing; Cmd+S reopened the unresolved conflict.
+  Down/Down/Enter selected Overwrite. Disk matched the local text afterward and
+  the buffer became clean.
+- Save As from a subsequent conflict opened the actual macOS save dialog.
+  Navigating to the fixture directory and saving `saved-copy.txt` retained both
+  versions: the original file kept the external text; the new file contained the
+  local text. The tab changed to the new path and became clean.
+- A further outside edit to the new path opened another dirty conflict. Native
+  Down/Enter explicitly reloaded it and discarded only the task-owned local edit.
+- Moving the saved fixture to a backup produced the deleted-file dialog with
+  Keep Editing/Recreate/Save As. Recreate restored byte-identical content (`cmp`
+  passed) without losing the in-memory version.
+- Switching away, changing the fixture and refocusing retained the correct
+  external text with no stale modal. This validates refocus behavior but does
+  not independently prove the fallback in the absence of all watcher events.
+- Cmd+, opened the separate Settings page. Turning off Reload external changes
+  persisted `auto_reload: false`; the next outside edit prompted despite a clean
+  buffer and did not replace its content until explicit Reload.
+
+The implementation's final suite/lint evidence is recorded below (2,600 tests
+and two doctests passed). This pass added live macOS evidence without changing
+application code; no new Linux/Windows, crash-safety or performance claims.
+The initial accepted protective slice is complete. Its historical proposal is
+now archived with compare/merge and other deferred ideas clearly identified.
+Session restore remains the next requested feature. HANDOFF stays because its
+unrelated unresolved native checks remain; its obsolete temporary-build-cache
+instruction was corrected to the user's normal-target requirement.
+
 ## External-file watching and conflict actions — 2026-09-08
 
 The ordered file worker now owns open-document directory subscriptions, separate

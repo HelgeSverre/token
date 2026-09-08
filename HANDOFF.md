@@ -86,9 +86,9 @@ Preserve the separate opaque Settings page, category navigation and form
 controls. Settings scrolls continuously in physical pixels with clipped partial
 rows; editor scrolling stays row-based. Shared geometry remains authoritative.
 
-Reuse `CARGO_TARGET_DIR=/tmp/token-managed-server-check.5prvI4` for local checks
-if that cache still exists; it contains verified debug and optimized builds.
-The default `target/` previously disappeared outside this task.
+Use the repository's normal `target/` directory for all local builds and
+verification artifacts. The user explicitly retired the earlier temporary
+build-cache approach so `cargo clean` can remove build output in one place.
 The stopped, task-owned Docker container `token-handoff-linux-20260908` retains
 the Linux `/build` cache and toolchain. Its repository mount is read-only;
 raw logs and isolated configuration are in `/tmp/token-linux-native.31IToo`.

@@ -2,7 +2,7 @@
 
 Detect and respond to external file modifications
 
-> **Status:** In progress — watching, protected reload and conflict actions implemented; native end-to-end verification remains (2026-09-08)
+> **Status:** Implemented initial protective slice; archived with superseded design sketches (2026-09-08)
 > **Priority:** P2
 > **Effort:** M
 > **Created:** 2025-12-19
@@ -39,10 +39,17 @@ Image/binary placeholder tabs are not routed into text reload.
 Native macOS directory notifications are tested with atomic file and containing-
 directory replacements; model tests cover shared panes, stale replies, dirty and
 deleted buffers, CSV edits, explicit overwrite preconditions, and alias retargeting.
-Still required before closing this slice: live application interaction checks
-through the watcher → model → UI path, including Save As and refocus behavior.
-The compare/merge UI remains outside the initial protective slice recommended
-in the plan reconciliation. Do not archive the plan at this checkpoint.
+Live application checks now also pass watcher-to-UI clean reload, dirty conflicts,
+Keep Editing, native-keyboard Reload/Overwrite/Recreate, native Save As with both
+versions retained, refocus, and disabling auto reload through Settings. See the
+[native verification record](../dev/refactoring-audit-2026-09-06.md#external-file-protection-native-macos-verification--2026-09-08).
+
+This closes the initial protective slice accepted in the plan reconciliation.
+The remainder of this file is the historical proposal, not a description of
+the implemented API or a claim that every proposed checkbox shipped. Compare/
+merge UI, image reload, richer watcher configuration and network-filesystem
+polling remain deferred ideas outside that slice. Linux/Windows native behavior
+has not been newly verified. Session restore is tracked separately.
 
 ## Table of Contents
 

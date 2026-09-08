@@ -50,6 +50,8 @@ All notable changes to rust-editor are documented in this file.
 
 ### Documentation
 
+- Archived the implemented external-file protection proposal after live macOS
+  verification; deferred compare/merge ideas remain explicitly marked.
 - Reconciled the active plan index with implementation and verification records;
   documented completed selection-scoped replacement and corrected stale session
   and indent-guide assumptions. Completed plans were already archived; unfinished

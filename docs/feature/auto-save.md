@@ -666,4 +666,4 @@ fn test_excluded_files_not_saved() {
 - VS Code auto-save: https://code.visualstudio.com/docs/editor/codebasics#_save-auto-save
 - JetBrains auto-save: https://www.jetbrains.com/help/idea/saving-and-reverting-changes.html
 - Existing save implementation: `src/update/app.rs` (SaveFile handling)
-- File watcher integration: `docs/feature/file-change-detection.md` (F-110)
+- File watcher integration: `docs/archived/file-change-detection.md` (F-110)
