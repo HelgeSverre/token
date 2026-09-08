@@ -55,6 +55,7 @@ pub enum UiKey {
     OverlayDocsText,
     /// The docs card's leading code block (a signature fence), above its prose.
     OverlayDocsCode,
+    OverlayDocsFooter,
 
     // --- Window shell ---
     Sidebar,

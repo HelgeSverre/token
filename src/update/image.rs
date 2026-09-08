@@ -187,7 +187,7 @@ mod tests {
         image_width: u32,
         image_height: u32,
     ) -> AppModel {
-        let mut model = AppModel::new(content_width, content_height, 1.0, vec![]);
+        let mut model = AppModel::new(content_width, content_height, 1.0);
         let tab_bar_height = model.metrics.tab_bar_height as f32;
         let group_id = model.editor_area.focused_group_id;
         model.editor_area.groups.get_mut(&group_id).unwrap().rect = Rect::new(

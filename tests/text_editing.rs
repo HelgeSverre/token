@@ -773,7 +773,25 @@ fn test_undo_back_to_saved_state_clears_dirty_flag() {
     let mut model = test_model("hello", 0, 5);
 
     // Simulate a successful save at the current (unmodified) state.
-    update(&mut model, Msg::App(AppMsg::SaveCompleted(Ok(()))));
+    model.document_mut().file_path = Some("/tmp/saved-state.txt".into());
+    let token::Cmd::SaveFile {
+        target,
+        path,
+        content,
+    } = update(&mut model, Msg::App(AppMsg::SaveFile)).unwrap()
+    else {
+        panic!("save request")
+    };
+    update(
+        &mut model,
+        Msg::App(AppMsg::SaveCompleted {
+            identity: None,
+            target,
+            path,
+            content,
+            result: Ok(()),
+        }),
+    );
     assert!(!model.document().is_modified);
 
     update(&mut model, Msg::Document(DocumentMsg::InsertChar('!')));

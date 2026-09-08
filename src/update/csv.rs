@@ -696,7 +696,7 @@ mod tests {
             model.resync_viewports();
         }
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.document_mut().buffer = ropey::Rope::from("a,b\n1,2\n3,4\n");
         relayout(&mut model);
         toggle_csv_mode(&mut model);
@@ -747,7 +747,7 @@ mod tests {
     /// itself rather than relying on the generic editor-mutation path.
     #[test]
     fn confirm_edit_schedules_syntax_parse_and_lsp_did_change() {
-        let mut model = AppModel::new(80, 60, 1.0, vec![]);
+        let mut model = AppModel::new(80, 60, 1.0);
         model.document_mut().buffer = ropey::Rope::from_str("a,b\n1,2\n");
 
         update_csv(&mut model, CsvMsg::Toggle).expect("csv toggle should produce a redraw cmd");
@@ -772,7 +772,7 @@ mod tests {
     }
 
     fn csv_model() -> AppModel {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.char_width = 8.0;
         model.document_mut().buffer = ropey::Rope::from_str("hello world,b\nfoo,bar\n");
         update_csv(&mut model, CsvMsg::Toggle).expect("csv toggle");

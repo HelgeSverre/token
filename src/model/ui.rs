@@ -7,6 +7,10 @@ use crate::panel::DockPosition;
 use crate::theme::{list_available_themes, ThemeInfo};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use std::{
+    cell::RefCell,
+    sync::{Arc, OnceLock},
+};
 
 // ============================================================================
 // Focus Management
@@ -73,6 +77,7 @@ pub enum HoverRegion {
 /// Identifies which modal is currently active
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModalId {
+    Settings,
     /// Command palette (Shift+Cmd+A)
     CommandPalette,
     /// Go to line dialog (Cmd+L)
@@ -81,8 +86,6 @@ pub enum ModalId {
     FindReplace,
     /// Theme picker
     ThemePicker,
-    /// Searchable preset settings.
-    Settings,
     /// File finder (Shift+Cmd+O) - fuzzy search files in workspace
     FileFinder,
     /// Recent files list (Cmd+E)
@@ -115,7 +118,7 @@ pub struct CommandMatch {
 /// Which tab of Search Everywhere (overlay-surface.md Phase 4) is active.
 /// The palette modal absorbs the file finder: `Files` and `Symbols` are
 /// `Unavailable` (dimmed, ⇥-skipped, unclickable) whenever no workspace is
-/// open / no LSP workspace-symbols provider exists (always, today).
+/// open / no LSP workspace-symbols provider exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchTab {
     All,
@@ -176,6 +179,7 @@ pub struct CommandPaletteState {
     pub files: Option<FileFinderState>,
     /// Whether a workspace is open (Files/Symbols availability).
     pub files_available: bool,
+    pub symbols: WorkspaceSymbolsState,
     /// The All tab's flat selection (its own tab, not scrollable — capped
     /// per-group summary).
     pub all_selected: usize,
@@ -187,7 +191,6 @@ impl Default for CommandPaletteState {
             editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
             selected_index: 0,
             matches: crate::commands::all_commands()
-                .into_iter()
                 .map(|def| CommandMatch {
                     def,
                     indices: Vec::new(),
@@ -202,6 +205,7 @@ impl Default for CommandPaletteState {
             active_tab: SearchTab::Commands,
             files: None,
             files_available: false,
+            symbols: WorkspaceSymbolsState::default(),
             all_selected: 0,
         }
     }
@@ -218,14 +222,42 @@ impl CommandPaletteState {
         self.editable.set_content(text);
     }
 
-    /// Whether tab `t` is selectable right now (Files/Symbols require a
-    /// workspace — Symbols always `Unavailable` until an LSP
-    /// workspace-symbols provider exists).
+    /// Whether a tab has its required workspace/provider context.
     pub fn tab_available(&self, t: SearchTab) -> bool {
         match t {
             SearchTab::All | SearchTab::Commands => true,
             SearchTab::Files => self.files_available,
-            SearchTab::Symbols => false,
+            SearchTab::Symbols => self.symbols.available,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct WorkspaceSymbolsState {
+    pub available: bool,
+    pub searching: bool,
+    pub query_too_long: bool,
+    pub results: crate::lsp::workspace_symbols::SymbolResults,
+    pub selected_index: usize,
+    pub scroll_offset: usize,
+}
+
+impl WorkspaceSymbolsState {
+    pub fn status(&self) -> Option<&'static str> {
+        if !self.available {
+            Some("No running language server supports workspace symbols")
+        } else if self.query_too_long {
+            Some("Symbol queries are limited to 256 characters")
+        } else if self.searching {
+            Some("Searching symbols…")
+        } else if self.results.failures > 0 {
+            Some("Some symbols unavailable — change query to retry")
+        } else if self.results.truncated {
+            Some("Showing the first 2,000 symbols — refine your query")
+        } else if self.results.items.is_empty() {
+            Some("No symbols match your query")
+        } else {
+            None
         }
     }
 }
@@ -321,8 +353,147 @@ pub struct FindReplaceState {
     /// Restrict matches to `scope` (find-enhancements.md Phase 7)
     pub selection_only: bool,
     /// Char-offset range captured from the primary selection when
-    /// `selection_only` was switched on; `None` searches the whole document.
+    /// `selection_only` was switched on, then mapped through edits while the
+    /// modal is active. `None` searches the whole document; an empty range stays scoped.
     pub scope: Option<(usize, usize)>,
+    // Memoized derived data only; edits and option changes are checked on every read.
+    search_cache: RefCell<Option<Arc<FindResults>>>,
+    pending_search: Option<Arc<FindSearchRequest>>,
+    search_failure: Option<(Arc<FindSearchRequest>, String)>,
+}
+
+/// Immutable background-search input. Its identity also guards reply ownership.
+pub struct FindSearchRequest {
+    document_id: Option<crate::model::editor_area::DocumentId>,
+    revision: u64,
+    buffer: ropey::Rope,
+    pattern: String,
+    options: (bool, bool, bool),
+    scope: Option<(usize, usize)>,
+}
+
+impl std::fmt::Debug for FindSearchRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Update tracing formats messages even without a subscriber. Never copy
+        // the document/query text into logs or walk a large result vector there.
+        f.debug_struct("FindSearchRequest")
+            .field("document_id", &self.document_id)
+            .field("revision", &self.revision)
+            .field(
+                "buffer_size",
+                &crate::util::ByteSize::bytes(self.buffer.len_bytes() as u64),
+            )
+            .field(
+                "pattern_size",
+                &crate::util::ByteSize::bytes(self.pattern.len() as u64),
+            )
+            .field("options", &self.options)
+            .field("scope", &self.scope)
+            .finish()
+    }
+}
+
+impl FindSearchRequest {
+    fn new(state: &FindReplaceState, document: &crate::model::Document) -> Arc<Self> {
+        Arc::new(Self {
+            document_id: document.id,
+            revision: document.revision,
+            buffer: document.buffer.clone(),
+            pattern: state.query().to_owned(),
+            options: (state.case_sensitive, state.whole_word, state.use_regex),
+            scope: state.selection_only.then_some(state.scope).flatten(),
+        })
+    }
+
+    fn matches(&self, state: &FindReplaceState, document: &crate::model::Document) -> bool {
+        self.document_id == document.id
+            && self.revision == document.revision
+            && self.buffer.is_instance(&document.buffer)
+            && self.pattern == state.query()
+            && self.options == (state.case_sensitive, state.whole_word, state.use_regex)
+            && self.scope == state.selection_only.then_some(state.scope).flatten()
+    }
+
+    /// Pure computation against this snapshot; the runtime may run it off-thread.
+    pub fn compute(self: &Arc<Self>) -> Arc<FindResults> {
+        let results = self.match_results();
+        // Background display work includes the logical overview projection.
+        // Explicit navigation's synchronous fallback keeps that projection lazy.
+        results.lines();
+        results
+    }
+
+    fn match_results(self: &Arc<Self>) -> Arc<FindResults> {
+        let query = crate::search::SearchQuery::new(
+            &self.pattern,
+            self.options.0,
+            self.options.1,
+            self.options.2,
+        );
+        let mut matches = if query.is_valid() {
+            query.find_all(&self.buffer.to_string())
+        } else {
+            Vec::new()
+        };
+        if let Some((start, end)) = self.scope {
+            matches.retain(|m| m.start >= start && m.end <= end);
+        }
+        Arc::new(FindResults {
+            matches: matches.into(),
+            source: Arc::clone(self),
+            lines: OnceLock::new(),
+            error: query.error,
+        })
+    }
+}
+
+/// Shared search output, including the document-wide scrollbar projection.
+pub struct FindResults {
+    pub(crate) matches: Arc<[crate::search::Match]>,
+    source: Arc<FindSearchRequest>,
+    lines: OnceLock<Vec<usize>>,
+    error: Option<String>,
+}
+
+impl std::fmt::Debug for FindResults {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FindResults")
+            .field("source", &self.source)
+            .field("match_count", &self.matches.len())
+            .field("overview_ready", &self.lines.get().is_some())
+            .field("has_error", &self.error.is_some())
+            .finish()
+    }
+}
+
+impl FindResults {
+    /// Compute overview lines only when a scrollbar needs them. Walk adjacent
+    /// lines directly, but seek across gaps so sparse searches stay inexpensive.
+    pub(crate) fn lines(&self) -> &[usize] {
+        self.lines.get_or_init(|| {
+            let buffer = &self.source.buffer;
+            let mut result = Vec::new();
+            let mut lines = buffer.lines();
+            let mut line = 0;
+            let mut end = lines.next().map_or(0, |text| text.len_chars());
+            for m in self.matches.iter() {
+                if m.start >= end && line + 1 < buffer.len_lines() {
+                    line += 1;
+                    end += lines.next().map_or(0, |text| text.len_chars());
+                    if m.start >= end && line + 1 < buffer.len_lines() {
+                        line = buffer.char_to_line(m.start);
+                        lines = buffer.lines_at(line);
+                        end = buffer.line_to_char(line)
+                            + lines.next().map_or(0, |text| text.len_chars());
+                    }
+                }
+                if result.last() != Some(&line) {
+                    result.push(line);
+                }
+            }
+            result
+        })
+    }
 }
 
 /// What the find modal reports next to the query: the match count with
@@ -331,6 +502,8 @@ pub struct FindReplaceState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FindStatus {
     Error(String),
+    Searching,
+    Unavailable(String),
     Count {
         total: usize,
         current: Option<usize>,
@@ -340,6 +513,8 @@ pub enum FindStatus {
 impl FindStatus {
     pub fn label(&self) -> String {
         match self {
+            Self::Searching => "Searching…".to_owned(),
+            Self::Unavailable(error) => format!("Search unavailable: {error}"),
             // `regex::Error` renders as a multi-line diagnostic whose last
             // line is the reason ("error: unclosed group"); that is the
             // part that fits on a label row.
@@ -363,7 +538,7 @@ impl FindStatus {
     }
 
     pub fn is_error(&self) -> bool {
-        matches!(self, Self::Error(_))
+        matches!(self, Self::Error(_) | Self::Unavailable(_))
     }
 }
 
@@ -382,6 +557,9 @@ impl Default for FindReplaceState {
             use_regex: false,
             selection_only: false,
             scope: None,
+            search_cache: RefCell::default(),
+            pending_search: None,
+            search_failure: None,
         }
     }
 }
@@ -389,15 +567,96 @@ impl Default for FindReplaceState {
 impl FindReplaceState {
     /// Every match the current query and scope produce — the one list
     /// navigation, replace, highlighting, and the status label all share.
-    pub fn matches(&self, document: &crate::model::Document) -> Vec<crate::search::Match> {
-        if self.query().is_empty() {
-            return Vec::new();
+    pub fn matches(&self, document: &crate::model::Document) -> Arc<[crate::search::Match]> {
+        Arc::clone(&self.results(document).matches)
+    }
+
+    pub(crate) fn results(&self, document: &crate::model::Document) -> Arc<FindResults> {
+        if let Some(results) = self.cached_results(document) {
+            return results;
         }
-        let mut matches = document.search_matches(&self.build_query());
-        if let (true, Some((start, end))) = (self.selection_only, self.scope) {
-            matches.retain(|m| m.start >= start && m.end <= end);
+        let results = FindSearchRequest::new(self, document).match_results();
+        *self.search_cache.borrow_mut() = Some(Arc::clone(&results));
+        results
+    }
+
+    fn cached_results(&self, document: &crate::model::Document) -> Option<Arc<FindResults>> {
+        self.search_cache
+            .borrow()
+            .as_ref()
+            .filter(|results| results.source.matches(self, document))
+            .cloned()
+    }
+
+    fn needs_background(&self, document: &crate::model::Document) -> bool {
+        !self.query().is_empty()
+            && document.buffer.len_bytes() >= crate::util::ByteSize::kibibytes(256).as_usize()
+    }
+
+    /// Rendering must never trigger a large cold scan or use stale match offsets.
+    pub(crate) fn display_results(
+        &self,
+        document: &crate::model::Document,
+    ) -> Option<Arc<FindResults>> {
+        self.cached_results(document)
+            .or_else(|| (!self.needs_background(document)).then(|| self.results(document)))
+    }
+
+    pub(crate) fn prepare_search(
+        &mut self,
+        document: &crate::model::Document,
+    ) -> Option<Arc<FindSearchRequest>> {
+        if !self.needs_background(document) || self.cached_results(document).is_some() {
+            self.pending_search = None;
+            self.search_failure = None;
+            return None;
         }
-        matches
+        if self
+            .pending_search
+            .as_ref()
+            .is_some_and(|request| request.matches(self, document))
+            || self
+                .search_failure
+                .as_ref()
+                .is_some_and(|(request, _)| request.matches(self, document))
+        {
+            return None;
+        }
+        let request = FindSearchRequest::new(self, document);
+        self.pending_search = Some(Arc::clone(&request));
+        self.search_failure = None;
+        Some(request)
+    }
+
+    pub(crate) fn finish_search(
+        &mut self,
+        document: &crate::model::Document,
+        request: Arc<FindSearchRequest>,
+        result: Result<Arc<FindResults>, String>,
+    ) -> bool {
+        if !self
+            .pending_search
+            .as_ref()
+            .is_some_and(|pending| Arc::ptr_eq(pending, &request))
+            || !request.matches(self, document)
+        {
+            return false;
+        }
+        match result {
+            Ok(results) if Arc::ptr_eq(&results.source, &request) => {
+                *self.search_cache.borrow_mut() = Some(results);
+                self.search_failure = None;
+            }
+            Ok(_) => return false,
+            Err(error) => self.search_failure = Some((request, error)),
+        }
+        self.pending_search = None;
+        true
+    }
+
+    pub(crate) fn reset_search_session(&mut self) {
+        self.pending_search = None;
+        self.search_failure = None;
     }
 
     /// The status label input: `None` while the query is empty.
@@ -409,11 +668,18 @@ impl FindReplaceState {
         if self.query().is_empty() {
             return None;
         }
-        let query = self.build_query();
-        if let Some(error) = &query.error {
+        if let Some((request, error)) = &self.search_failure {
+            if request.matches(self, document) {
+                return Some(FindStatus::Unavailable(error.clone()));
+            }
+        }
+        let Some(results) = self.display_results(document) else {
+            return Some(FindStatus::Searching);
+        };
+        if let Some(error) = &results.error {
             return Some(FindStatus::Error(error.clone()));
         }
-        let matches = self.matches(document);
+        let matches = &results.matches;
         let current = (!selection.is_empty()).then(|| {
             let (start, end) = (selection.start(), selection.end());
             (
@@ -425,8 +691,8 @@ impl FindReplaceState {
             total: matches.len(),
             current: current.and_then(|(start, end)| {
                 matches
-                    .iter()
-                    .position(|m| (m.start, m.end) == (start, end))
+                    .binary_search_by_key(&(start, end), |m| (m.start, m.end))
+                    .ok()
             }),
         })
     }
@@ -762,57 +1028,10 @@ impl RecentFilesState {
     }
 }
 
-/// Search input and navigation only; setting values live in EditorConfig.
-#[derive(Debug, Clone)]
-pub struct SettingsState {
-    pub category: usize,
-    pub editable: EditableState<StringBuffer>,
-    pub selected_index: usize,
-    pub scroll_offset: usize,
-    pub rows: Vec<crate::settings::SettingsRow>,
-}
-
-impl Default for SettingsState {
-    fn default() -> Self {
-        Self {
-            editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
-            selected_index: 0,
-            scroll_offset: 0,
-            rows: crate::settings::resolve_settings_rows(""),
-            category: 0,
-        }
-    }
-}
-
-impl SettingsState {
-    pub fn refilter(&mut self) {
-        self.rows = crate::settings::resolve_settings_rows(&self.editable.text());
-        if let Some(Some(category)) = crate::settings::categories().get(self.category) {
-            self.rows.retain(|row| row.section() == *category);
-        }
-        self.selected_index = 0;
-        self.scroll_offset = 0;
-    }
-
-    pub fn sections(&self) -> Vec<(&'static str, std::ops::Range<usize>)> {
-        let mut sections: Vec<(&str, std::ops::Range<usize>)> = Vec::new();
-        for (index, row) in self.rows.iter().enumerate() {
-            if let Some((title, range)) = sections.last_mut() {
-                if *title == row.section() {
-                    range.end = index + 1;
-                    continue;
-                }
-            }
-            sections.push((row.section(), index..index + 1));
-        }
-        sections
-    }
-}
-
 /// Union of all modal states
 #[derive(Debug, Clone)]
 pub enum ModalState {
-    Settings(SettingsState),
+    Settings(crate::settings::SettingsState),
     CommandPalette(CommandPaletteState),
     GotoLine(GotoLineState),
     FindReplace(FindReplaceState),
@@ -893,6 +1112,9 @@ pub struct CursorOverlayState {
     pub scroll: usize,
     /// Pointer hover is independent of keyboard selection and shares this popup's lifetime.
     pub hover_row: Option<usize>,
+    /// Independent wrapped-row viewport for the selected completion's docs.
+    pub docs_scroll: usize,
+    pub docs_expanded: bool,
 }
 
 impl CursorOverlayState {
@@ -902,7 +1124,14 @@ impl CursorOverlayState {
             selected: 0,
             scroll: 0,
             hover_row: None,
+            docs_scroll: 0,
+            docs_expanded: false,
         }
+    }
+
+    pub fn reset_documentation(&mut self) {
+        self.docs_scroll = 0;
+        self.docs_expanded = false;
     }
 }
 
@@ -1211,6 +1440,10 @@ impl Default for ProblemsPanelState {
 /// UI state - status messages and cursor animation
 #[derive(Debug, Clone)]
 pub struct UiState {
+    pub workspace_symbol_request: Option<crate::lsp::workspace_symbols::SymbolSearchRequest>,
+    pub(crate) next_workspace_symbol_request: u64,
+    /// The active bindings and pending chord state, shared by dispatch and hints.
+    pub keymap: crate::keymap::Keymap,
     /// Structured status bar with segments
     pub status_bar: StatusBar,
     /// Transient message with auto-expiry
@@ -1261,18 +1494,22 @@ pub struct UiState {
     /// Cursor-anchored popup (completion/hover/debug demo), if one is open.
     /// Distinct from `active_modal` — see `CursorOverlayState`.
     pub cursor_overlay: Option<CursorOverlayState>,
-    /// Menu-completion popup state (autocomplete.md Phase 1), set alongside
-    /// `cursor_overlay` being `Some(CursorOverlayKind::Completion)`. `None`
-    /// whenever the completion popup is closed.
+    /// Completion session, including invisible sessions waiting for LSP/syntax.
+    /// Only nonempty results own a `Completion` cursor overlay.
     pub completion_menu: Option<crate::completion::CompletionMenuState>,
+    pub(crate) completion_commit: Option<crate::completion::menu::PendingCommit>,
+    pub(crate) completion_path: Option<std::sync::Arc<crate::completion::path::PathRequest>>,
     /// Ghost text at the cursor (autocomplete.md Phase 2); paint and
     /// accept check `applies_to` before trusting it.
     pub inline_suggestion: Option<crate::completion::inline::InlineSuggestionState>,
+    pub inline_session: Option<crate::completion::provider::InlineSession>,
     /// A worker request is out for the focused document.
     pub inline_in_flight: bool,
     /// Consecutive backend failures; auto-trigger pauses at the cap.
     pub inline_failures: u32,
     pub inline_next_request_id: u64,
+    /// Avoid repeating a persistence failure on every suggestion.
+    pub inline_statistics_failed: bool,
     /// Hover-card content (lsp-integration.md Phase 4), set alongside
     /// `cursor_overlay` being `Some(CursorOverlayKind::Hover)`. `None`
     /// whenever the hover card is closed.
@@ -1306,10 +1543,24 @@ pub struct UiState {
 }
 
 impl UiState {
+    /// Pending completion requests have state but do not own keys or suppress
+    /// inline suggestions until there are rows to display.
+    pub fn has_visible_completion(&self) -> bool {
+        self.completion_menu
+            .as_ref()
+            .is_some_and(|menu| !menu.filtered.is_empty())
+            && self
+                .cursor_overlay
+                .is_some_and(|overlay| overlay.kind == CursorOverlayKind::Completion)
+    }
+
     /// Create a new UI state with default settings
     pub fn new() -> Self {
         Self {
             status_bar: StatusBar::new(),
+            workspace_symbol_request: None,
+            next_workspace_symbol_request: 0,
+            keymap: crate::keymap::Keymap::with_bindings(crate::keymap::default_bindings()),
             transient_message: None,
             cursor_visible: true,
             last_cursor_blink: Instant::now(),
@@ -1331,10 +1582,14 @@ impl UiState {
             modal_hover_row: None,
             cursor_overlay: None,
             completion_menu: None,
+            completion_commit: None,
+            completion_path: None,
             inline_suggestion: None,
+            inline_session: None,
             inline_in_flight: false,
             inline_failures: 0,
             inline_next_request_id: 0,
+            inline_statistics_failed: false,
             hover_card: None,
             reference_list: None,
             code_action_list: None,
@@ -1418,6 +1673,9 @@ impl UiState {
     /// Update cursor blink state based on elapsed time
     /// Returns true if the state changed (needs redraw)
     pub fn update_cursor_blink(&mut self, blink_interval: Duration) -> bool {
+        if blink_interval.is_zero() {
+            return !std::mem::replace(&mut self.cursor_visible, true);
+        }
         if self.last_cursor_blink.elapsed() >= blink_interval {
             self.cursor_visible = !self.cursor_visible;
             self.last_cursor_blink = Instant::now();
@@ -1478,6 +1736,57 @@ impl Default for UiState {
 mod tests {
     use super::*;
     use crate::recent_files::{RecentEntry, RecentFiles};
+
+    #[test]
+    fn find_async_debug_omits_snapshot_text_and_match_payloads() {
+        let document = crate::model::Document::with_text(&"private-needle\n".repeat(30_000));
+        let mut state = FindReplaceState::default();
+        state.set_query("private-needle");
+        let request = state.prepare_search(&document).unwrap();
+        let message = crate::messages::UiMsg::FindSearchCompleted {
+            result: Ok(request.compute()),
+            request,
+        };
+        let debug = format!("{message:?}");
+        assert!(!debug.contains("private-needle"));
+        assert!(debug.len() < crate::util::ByteSize::kibibytes(1).as_usize());
+    }
+
+    #[test]
+    fn find_async_snapshot_rejects_a_different_document_with_shared_rope_and_revision() {
+        let mut document = crate::model::Document::with_text(&"foo\n".repeat(70_000));
+        document.id = Some(crate::model::editor_area::DocumentId(1));
+        let mut state = FindReplaceState::default();
+        state.set_query("foo");
+        let request = state.prepare_search(&document).unwrap();
+        assert!(state.display_results(&document).is_none());
+        let mut other = document.clone();
+        other.id = Some(crate::model::editor_area::DocumentId(2));
+        assert!(other.buffer.is_instance(&document.buffer));
+        assert!(!state.finish_search(&other, Arc::clone(&request), Ok(request.compute())));
+        assert!(state.display_results(&other).is_none());
+        assert!(state.finish_search(&document, Arc::clone(&request), Ok(request.compute())));
+        assert_eq!(
+            state.display_results(&document).unwrap().matches.len(),
+            70_000
+        );
+        assert!(state.display_results(&other).is_none());
+    }
+
+    #[test]
+    fn find_async_worker_results_have_overview_ready_but_explicit_matches_keep_it_lazy() {
+        let document = crate::model::Document::with_text(&"foo\n".repeat(70_000));
+        let mut state = FindReplaceState::default();
+        state.set_query("foo");
+        let request = state.prepare_search(&document).unwrap();
+        let results = request.compute();
+        assert_eq!(results.lines.get().unwrap().len(), 70_000);
+        assert!(state.finish_search(&document, request, Ok(results)));
+        let mut explicit = FindReplaceState::default();
+        explicit.set_query("foo");
+        assert_eq!(explicit.matches(&document).len(), 70_000);
+        assert!(explicit.results(&document).lines.get().is_none());
+    }
 
     fn make_entry(path: &str, workspace: Option<&str>) -> RecentEntry {
         RecentEntry {
@@ -1674,6 +1983,58 @@ mod tests {
         ui.set_status("still here");
         assert!(!ui.expire_status_message());
         assert!(ui.transient_message.is_some());
+    }
+
+    #[test]
+    fn find_overview_lines_are_lazy_and_use_the_result_snapshot() {
+        let mut document = crate::model::Document::new();
+        document.buffer = ropey::Rope::from_str("cat\ncat\n");
+        let mut state = FindReplaceState::default();
+        state.set_query("cat");
+        let results = state.results(&document);
+        assert_eq!(state.matches(&document).len(), 2);
+        assert!(results.lines.get().is_none());
+        document.buffer = ropey::Rope::from_str("cat cat");
+        assert_eq!(results.lines(), &[0, 1]);
+        assert_eq!(state.results(&document).lines(), &[0]);
+    }
+
+    #[test]
+    fn find_overview_lines_match_rope_coordinates_for_dense_sparse_and_eof_matches() {
+        for text in [
+            "",
+            "猫猫\r\n猫\r猫\n",
+            "a\u{0085}猫\u{2028}b\u{2029}猫\n",
+            "猫\n",
+            "猫",
+        ] {
+            let mut document = crate::model::Document::new();
+            document.buffer = ropey::Rope::from_str(text);
+            for pattern in ["猫", ".", "(?m)^", "$", "(?s).*"] {
+                let mut state = FindReplaceState {
+                    use_regex: true,
+                    ..Default::default()
+                };
+                state.set_query(pattern);
+                let results = state.results(&document);
+                let mut expected: Vec<_> = results
+                    .matches
+                    .iter()
+                    .map(|m| document.buffer.char_to_line(m.start))
+                    .collect();
+                expected.dedup();
+                assert_eq!(
+                    results.lines(),
+                    expected,
+                    "text={text:?}, pattern={pattern}"
+                );
+            }
+        }
+        let mut document = crate::model::Document::new();
+        document.buffer = ropey::Rope::from_str(&format!("cat\n{}cat\n", "plain\n".repeat(10_000)));
+        let mut state = FindReplaceState::default();
+        state.set_query("cat");
+        assert_eq!(state.results(&document).lines(), &[0, 10_001]);
     }
 
     #[test]

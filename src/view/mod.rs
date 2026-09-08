@@ -331,13 +331,17 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
 fn active_find_matches(
     model: &AppModel,
     document: &crate::model::Document,
-) -> Vec<crate::search::Match> {
+) -> std::sync::Arc<[crate::search::Match]> {
     let Some(crate::model::ModalState::FindReplace(state)) = &model.ui.active_modal else {
-        return Vec::new();
+        return Default::default();
     };
     // `matches` is empty on a regex error too (`find_all` yields nothing
     // when compilation failed), so no separate error check is needed.
-    state.matches(document)
+    state
+        .display_results(document)
+        .map_or_else(Default::default, |results| {
+            std::sync::Arc::clone(&results.matches)
+        })
 }
 
 /// `BackgroundTint` decorations for every find match except the one
@@ -351,12 +355,8 @@ fn active_find_matches(
 /// grow this Vec (and its `offset_to_cursor` calls) with total match count
 /// instead of viewport size.
 ///
-/// ponytail: `active_find_matches` underneath still does one whole-buffer
-/// `to_string()` + regex scan per call (`Document::search_matches`) — this
-/// only bounds what's built from that result, not the scan itself. Add a
-/// viewport-scoped/incremental search if profiling ever shows the full-
-/// document copy costing real frame time (find-enhancements.md dropped the
-/// cached `SearchResults` type on purpose for v1).
+/// Search results are shared with navigation/status. Slice by offsets before
+/// converting positions, so scrolling only projects matches near the viewport.
 fn find_match_decorations(
     model: &AppModel,
     document: &crate::model::Document,
@@ -378,33 +378,23 @@ fn find_match_decorations(
     });
 
     let color = model.theme.editor.bracket_match_background.to_argb_u32();
-    matches
-        .into_iter()
+    let start = document
+        .buffer
+        .line_to_char(visible_lines.start.min(document.line_count()));
+    let end = document
+        .buffer
+        .line_to_char(visible_lines.end.min(document.line_count()));
+    let first = matches.partition_point(|m| m.end < start);
+    matches[first..]
+        .iter()
+        .take_while(|m| m.start <= end)
         .filter(|m| current_range != Some((m.start, m.end)))
         .map(|m| editor_text::RangeDecoration {
             start: document.offset_to_cursor(m.start),
             end: document.offset_to_cursor(m.end),
             kind: editor_text::DecorationKind::BackgroundTint(color),
         })
-        .filter(|d| visible_lines.contains(&d.start.0) || visible_lines.contains(&d.end.0))
-        .collect()
-}
-
-/// One scrollbar overview tick per find match, keyed by the line it starts
-/// on — collisions onto the same track row are resolved by
-/// `editor_scrollbars::render_overview_marks`.
-fn find_match_ticks(
-    model: &AppModel,
-    document: &crate::model::Document,
-) -> Vec<(usize, crate::model::Mark)> {
-    active_find_matches(model, document)
-        .into_iter()
-        .map(|m| {
-            (
-                document.offset_to_cursor(m.start).0,
-                crate::model::Mark::Match,
-            )
-        })
+        .filter(|d| d.start.0 < visible_lines.end && d.end.0 >= visible_lines.start)
         .collect()
 }
 
@@ -588,8 +578,7 @@ impl<'a> EditorGroupScene<'a> {
     ) {
         match &self.content {
             EditorContentKind::Text { document } => {
-                let viewport = &self.editor.viewport;
-                let visible_lines = viewport.top_line..viewport.top_line + viewport.visible_lines;
+                let visible_lines = self.editor.viewport_map(document).visible_doc_lines();
                 // Match highlighting only applies to the focused pane — find
                 // navigation only ever operates on it (see
                 // find-enhancements.md). Diagnostics are document state,
@@ -670,19 +659,13 @@ impl<'a> EditorGroupScene<'a> {
             _ => return,
         };
 
-        let mut ticks = if self.is_focused {
-            find_match_ticks(model, document)
-        } else {
-            Vec::new()
-        };
-        ticks.extend(diagnostic_ticks(document));
-        Renderer::render_editor_scrollbars(
+        editor_scrollbars::render_editor_scrollbars(
             frame,
             model,
             self.editor,
             document,
             &self.layout,
-            &ticks,
+            self.is_focused,
         );
     }
 
@@ -1347,24 +1330,6 @@ impl Renderer {
         scene.render(frame, painter, model, perf);
     }
 
-    fn render_editor_scrollbars(
-        frame: &mut Frame,
-        model: &AppModel,
-        editor_state: &crate::model::editor::EditorState,
-        document: &crate::model::document::Document,
-        layout: &geometry::GroupLayout,
-        ticks: &[(usize, crate::model::Mark)],
-    ) {
-        editor_scrollbars::render_editor_scrollbars(
-            frame,
-            model,
-            editor_state,
-            document,
-            layout,
-            ticks,
-        );
-    }
-
     /// Redraw the focused group's scrollbars on top of whatever was just
     /// drawn. Used after the cursor-lines-only fast path, which fills dirty
     /// lines across the full group width and would otherwise erase the
@@ -1391,9 +1356,7 @@ impl Renderer {
         }
 
         let layout = geometry::GroupLayout::new(group, model, char_width);
-        let mut ticks = find_match_ticks(model, document);
-        ticks.extend(diagnostic_ticks(document));
-        Self::render_editor_scrollbars(frame, model, editor, document, &layout, &ticks);
+        editor_scrollbars::render_editor_scrollbars(frame, model, editor, document, &layout, true);
     }
 
     fn render_image_tab(
@@ -2246,12 +2209,19 @@ impl Renderer {
                                         let layout =
                                             geometry::GroupLayout::new(group, model, char_width);
 
-                                        for &doc_line in lines {
-                                            if let Some(y) = layout.line_to_screen_y(
-                                                doc_line,
-                                                editor.viewport.top_line,
-                                                line_height,
-                                            ) {
+                                        let Some(document) = editor
+                                            .document_id
+                                            .and_then(|id| model.editor_area.documents.get(&id))
+                                        else {
+                                            continue;
+                                        };
+                                        let viewport = editor.viewport_map(document);
+                                        for row in 0..editor.viewport.visible_lines {
+                                            if viewport
+                                                .doc_line_for_visible_row(row)
+                                                .is_some_and(|line| lines.contains(&line))
+                                            {
+                                                let y = layout.content_y() + row * line_height;
                                                 // Fill with semi-transparent green
                                                 frame.blend_rect_px(
                                                     layout.rect_x(),
@@ -2553,7 +2523,7 @@ mod cursor_fast_path_scrollbar_tests {
         let width = 220usize;
         let height = 160usize;
 
-        let mut model = AppModel::new(width as u32, height as u32, 1.0, vec![]);
+        let mut model = AppModel::new(width as u32, height as u32, 1.0);
         model.config.show_scrollbar = true;
         // Keep the sampled layers observably distinct regardless of the user's
         // configured theme (some themes intentionally use the same color for
@@ -2642,10 +2612,10 @@ mod cursor_fast_path_scrollbar_tests {
 #[cfg(test)]
 mod find_match_decoration_tests {
     use super::*;
-    use crate::model::{FindReplaceState, Mark, ModalState, Position, Selection};
+    use crate::model::{FindReplaceState, ModalState, Position, Selection};
 
     fn model_with_text(text: &str) -> AppModel {
-        let mut model = AppModel::new(400, 300, 1.0, vec![]);
+        let mut model = AppModel::new(400, 300, 1.0);
         model.document_mut().buffer = ropey::Rope::from(text);
         model
     }
@@ -2670,7 +2640,7 @@ mod find_match_decoration_tests {
         open_find(&mut model, "foo", false, false);
         let matches = active_find_matches(&model, model.document());
         assert_eq!(
-            matches,
+            matches.as_ref(),
             vec![
                 crate::search::Match { start: 0, end: 3 },
                 crate::search::Match { start: 8, end: 11 },
@@ -2696,7 +2666,7 @@ mod find_match_decoration_tests {
         // Only the two standalone "foo"s match; "foobar"'s "foo" prefix
         // doesn't, since it isn't at a word boundary on both sides.
         assert_eq!(
-            matches,
+            matches.as_ref(),
             vec![
                 crate::search::Match { start: 0, end: 3 },
                 crate::search::Match { start: 11, end: 14 },
@@ -2716,7 +2686,10 @@ mod find_match_decoration_tests {
 
         let matches = active_find_matches(&model, model.document());
 
-        assert_eq!(matches, vec![crate::search::Match { start: 4, end: 7 }]);
+        assert_eq!(
+            matches.as_ref(),
+            &[crate::search::Match { start: 4, end: 7 }]
+        );
     }
 
     #[test]
@@ -2795,8 +2768,21 @@ mod find_match_decoration_tests {
     fn find_match_ticks_map_matches_to_their_starting_line() {
         let mut model = model_with_text("foo\nbar\nfoo\n");
         open_find(&mut model, "foo", false, false);
-        let ticks = find_match_ticks(&model, model.document());
-        assert_eq!(ticks, vec![(0, Mark::Match), (2, Mark::Match)]);
+        let Some(crate::model::ModalState::FindReplace(state)) = &model.ui.active_modal else {
+            panic!("Find must be open");
+        };
+        assert_eq!(state.results(model.document()).lines(), &[0, 2]);
+    }
+
+    #[test]
+    fn find_match_spanning_the_viewport_is_not_discarded() {
+        let mut model = model_with_text("start\na\nb\nc\nend");
+        open_find(&mut model, "(?s)start.*end", false, true);
+        let decorations =
+            find_match_decorations(&model, model.document(), &Selection::default(), 1..3);
+        assert_eq!(decorations.len(), 1);
+        assert_eq!(decorations[0].start, (0, 0));
+        assert_eq!(decorations[0].end, (4, 3));
     }
 
     // ---- LSP diagnostics decorations/ticks (lsp-integration.md Phase 2) ----

@@ -27,6 +27,8 @@ pub enum SegmentId {
     /// Language server for the focused document's language (e.g.
     /// "rust-analyzer: ready"), hidden when the language has no server.
     LspServer,
+    /// Inline provider request progress, hidden when no request is running.
+    InlineSuggestion,
 }
 
 /// Position of a segment in the status bar
@@ -100,6 +102,7 @@ impl StatusSegment {
             | SegmentId::LineCount
             | SegmentId::CaretCount
             | SegmentId::Diagnostics
+            | SegmentId::InlineSuggestion
             | SegmentId::LspServer => SegmentPosition::Right,
         };
 
@@ -154,6 +157,8 @@ impl StatusBar {
                 // Right segments
                 StatusSegment::new(SegmentId::Diagnostics, SegmentContent::Empty).with_priority(70),
                 StatusSegment::new(SegmentId::LspServer, SegmentContent::Empty).with_priority(65),
+                StatusSegment::new(SegmentId::InlineSuggestion, SegmentContent::Empty)
+                    .with_priority(66),
                 StatusSegment::new(SegmentId::CaretCount, SegmentContent::Empty).with_priority(45),
                 StatusSegment::new(SegmentId::Selection, SegmentContent::Empty).with_priority(40),
                 StatusSegment::new(
@@ -369,6 +374,27 @@ use super::AppModel;
 
 /// Synchronize status bar segments with current document/editor state
 pub fn sync_status_bar(model: &mut AppModel) {
+    let inline_content = if model.ui.inline_in_flight
+        && model
+            .editor_area
+            .focused_editor()
+            .is_some_and(|editor| editor.is_plain_text_mode())
+    {
+        SegmentContent::Text(
+            if model.ui.cursor_visible {
+                "◌ Inline"
+            } else {
+                "◍ Inline"
+            }
+            .to_owned(),
+        )
+    } else {
+        SegmentContent::Empty
+    };
+    model
+        .ui
+        .status_bar
+        .update_segment(SegmentId::InlineSuggestion, inline_content);
     // Image mode: show image-specific info in status bar
     if let Some(image_state) = model
         .editor_area
@@ -646,7 +672,7 @@ mod diagnostics_tests {
     #[test]
     fn lsp_server_segment_reflects_server_state_config_and_language() {
         use crate::lsp::{LspServerId, ServerState};
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let text = |model: &mut AppModel| {
             sync_status_bar(model);
             model

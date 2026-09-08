@@ -38,6 +38,7 @@ pub mod tracing;
 pub mod update;
 pub mod util;
 pub mod view;
+pub mod wrap;
 
 pub mod rendering {
     //! Rendering utilities exposed for benchmarks

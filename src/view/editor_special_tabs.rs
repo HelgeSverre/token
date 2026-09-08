@@ -104,7 +104,7 @@ mod tests {
     use crate::view::geometry::GroupLayout;
 
     fn make_image_model(content_width: u32, content_height: u32) -> AppModel {
-        let mut model = AppModel::new(content_width, content_height, 1.0, vec![]);
+        let mut model = AppModel::new(content_width, content_height, 1.0);
         let tab_bar_height = model.metrics.tab_bar_height as f32;
         let group_id = model.editor_area.focused_group_id;
         model.editor_area.groups.get_mut(&group_id).unwrap().rect = Rect::new(
@@ -247,7 +247,7 @@ mod tests {
         let char_width = metrics.advance_width;
         let line_height = line_metrics.new_line_size.ceil() as usize;
 
-        let mut model = AppModel::new(200, 120, 1.0, vec![]);
+        let mut model = AppModel::new(200, 120, 1.0);
         let group_id = model.editor_area.focused_group_id;
         let tab_bar_height = model.metrics.tab_bar_height as f32;
         model.editor_area.groups.get_mut(&group_id).unwrap().rect =

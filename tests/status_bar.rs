@@ -186,8 +186,10 @@ fn test_all_segments_iteration() {
     let bar = StatusBar::new();
     let all: Vec<_> = bar.all_segments().collect();
 
-    // Should have 9 segments total (including CaretCount, Diagnostics, LspServer)
-    assert_eq!(all.len(), 9);
+    assert_eq!(all.len(), 10);
+    assert!(all
+        .iter()
+        .any(|segment| segment.id == SegmentId::InlineSuggestion));
 }
 
 // =============================================================================

@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn rendering_preserves_the_callers_enclosing_clip() {
-        let mut model = AppModel::new(100, 100, 1.0, vec![]);
+        let mut model = AppModel::new(100, 100, 1.0);
         let (pty, _pty_rx) = PtyHandle::new_for_test();
         let (msg_tx, _msg_rx) = mpsc::channel();
         model

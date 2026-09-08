@@ -180,6 +180,8 @@ pub struct EditorArea {
     /// Counter for generating unique untitled document names
     next_untitled_number: u32,
 
+    pub(crate) file_opens: super::FileOpenState,
+
     /// Last layout rect used for compute_layout (for splitter drag calculations)
     pub last_layout_rect: Option<Rect>,
 }
@@ -251,6 +253,7 @@ impl EditorArea {
             next_tab_id: 2,
             next_preview_id: 1,
             next_untitled_number: 1,
+            file_opens: Default::default(),
             last_layout_rect: None,
         }
     }
@@ -313,22 +316,33 @@ impl EditorArea {
         self.documents.get(&doc_id)
     }
 
+    /// Borrow the focused document and its editor together without cloning history.
+    pub fn focused_document_and_editor_mut(&mut self) -> Option<(&Document, &mut EditorState)> {
+        let editor_id = self.focused_editor_id()?;
+        let document_id = self.editors.get(&editor_id)?.document_id?;
+        Some((
+            self.documents.get(&document_id)?,
+            self.editors.get_mut(&editor_id)?,
+        ))
+    }
+
     /// Ensure the focused editor's cursor is visible.
     /// This method works around borrow checker issues by getting both doc and editor
     /// within the same scope.
     pub fn ensure_focused_cursor_visible(&mut self, mode: ScrollRevealMode) {
-        let doc_id = match self.focused_document_id() {
-            Some(id) => id,
-            None => return,
-        };
-        let editor_id = match self.focused_editor_id() {
-            Some(id) => id,
-            None => return,
-        };
+        if let Some((doc, editor)) = self.focused_document_and_editor_mut() {
+            editor.ensure_cursor_visible_with_mode(doc, mode);
+        }
+    }
 
-        let doc = self.documents.get(&doc_id).unwrap();
-        let editor = self.editors.get_mut(&editor_id).unwrap();
-        editor.ensure_cursor_visible_with_mode(doc, mode);
+    /// Refresh all pane layouts after updates, including unfocused views of an
+    /// edited document. Revision/width checks make unchanged panes a no-op.
+    pub fn refresh_wrap_caches(&mut self) {
+        for editor in self.editors.values_mut() {
+            if let Some(document) = editor.document_id.and_then(|id| self.documents.get(&id)) {
+                editor.ensure_wrap_cache(document);
+            }
+        }
     }
 
     /// Ensure the focused editor's cursor is visible without applying scroll padding.
@@ -403,31 +417,22 @@ impl EditorArea {
             .collect()
     }
 
-    /// Find if a file is already open by its path
-    /// Returns the document ID and group/tab info if found
+    /// Query an already-known original/canonical spelling without filesystem I/O.
+    /// Unknown aliases need worker resolution. Prefer the focused group when the
+    /// document is shared across panes; return its document and group/tab IDs.
     pub fn find_open_file(&self, path: &std::path::Path) -> Option<(DocumentId, GroupId, usize)> {
-        // Canonicalize the input path for comparison
-        let canonical_path = path.canonicalize().ok()?;
-
-        for (doc_id, doc) in &self.documents {
-            if let Some(ref doc_path) = doc.file_path {
-                if let Ok(doc_canonical) = doc_path.canonicalize() {
-                    if doc_canonical == canonical_path {
-                        // Find which group/tab has this document
-                        for (group_id, group) in &self.groups {
-                            for (tab_idx, tab) in group.tabs.iter().enumerate() {
-                                if let Some(editor) = self.editors.get(&tab.editor_id) {
-                                    if editor.document_id == Some(*doc_id) {
-                                        return Some((*doc_id, *group_id, tab_idx));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        None
+        let doc_id = self.find_document_by_path(path)?;
+        self.groups
+            .iter()
+            .filter_map(|(group_id, group)| {
+                let index = group.tabs.iter().position(|tab| {
+                    self.editors
+                        .get(&tab.editor_id)
+                        .is_some_and(|editor| editor.document_id == Some(doc_id))
+                })?;
+                Some((doc_id, *group_id, index))
+            })
+            .min_by_key(|(_, group, index)| (*group != self.focused_group_id, group.0, *index))
     }
 
     /// Pure lookup by original/canonical spelling. Unknown aliases are resolved
@@ -654,69 +659,6 @@ impl EditorArea {
         self.layout = remove_preview_node(layout, preview_id, fallback_group);
     }
 
-    /// Adjust cursors in all editors (except the specified one) viewing the same document
-    /// after an edit operation.
-    ///
-    /// - `exclude_editor`: The editor that performed the edit (already has correct cursors)
-    /// - `doc_id`: The document that was edited
-    /// - `edit_line`: The line where the edit occurred
-    /// - `edit_column`: The column where the edit occurred
-    /// - `lines_delta`: Change in line count (positive = lines added, negative = lines removed)
-    /// - `column_delta`: Change in column on the edit line (for same-line edits)
-    pub fn adjust_other_editors_cursors(
-        &mut self,
-        exclude_editor: EditorId,
-        doc_id: DocumentId,
-        edit_line: usize,
-        edit_column: usize,
-        lines_delta: isize,
-        column_delta: isize,
-    ) {
-        let editor_ids = self.editors_for_document(doc_id);
-
-        for editor_id in editor_ids {
-            if editor_id == exclude_editor {
-                continue;
-            }
-
-            if let Some(editor) = self.editors.get_mut(&editor_id) {
-                for (cursor, selection) in
-                    editor.cursors.iter_mut().zip(editor.selections.iter_mut())
-                {
-                    // Adjust cursor
-                    adjust_position_for_edit(
-                        &mut cursor.line,
-                        &mut cursor.column,
-                        edit_line,
-                        edit_column,
-                        lines_delta,
-                        column_delta,
-                    );
-
-                    // Adjust selection anchor
-                    adjust_position_for_edit(
-                        &mut selection.anchor.line,
-                        &mut selection.anchor.column,
-                        edit_line,
-                        edit_column,
-                        lines_delta,
-                        column_delta,
-                    );
-
-                    // Adjust selection head
-                    adjust_position_for_edit(
-                        &mut selection.head.line,
-                        &mut selection.head.column,
-                        edit_line,
-                        edit_column,
-                        lines_delta,
-                        column_delta,
-                    );
-                }
-            }
-        }
-    }
-
     /// Sync all editor viewports based on their group's rect.
     /// Should be called after compute_layout() or after split/close operations.
     ///
@@ -767,12 +709,17 @@ impl EditorArea {
                         char_width, metrics, line_count, has_marks,
                     )
                     .round();
-                    let visible_columns = if char_width > 0.0 {
-                        ((width as f32 - text_x) / char_width).floor().max(1.0) as usize
-                    } else {
-                        0
-                    };
+                    let visible_columns = crate::model::text_viewport_columns(
+                        width as f32,
+                        text_x,
+                        char_width,
+                        editor.soft_wrap,
+                        metrics.scrollbar_width,
+                    );
                     editor.resize_viewport(visible_lines, visible_columns);
+                    if let Some(doc) = doc {
+                        editor.ensure_wrap_cache(doc);
+                    }
 
                     if let Some(image) = editor.view_mode.as_image_mut() {
                         if !image.user_zoomed {
@@ -1074,57 +1021,6 @@ impl EditorArea {
 
 /// Width of splitter bars in pixels
 pub const SPLITTER_WIDTH: f32 = 6.0;
-
-/// Adjust a cursor/selection position based on an edit that occurred.
-///
-/// This is used to synchronize cursors across multiple views of the same document.
-/// When an edit happens at (edit_line, edit_column):
-/// - If the cursor is before the edit point: no change
-/// - If the cursor is on the same line, at or after the edit column: adjust column
-/// - If the cursor is on a later line: adjust line number
-fn adjust_position_for_edit(
-    pos_line: &mut usize,
-    pos_column: &mut usize,
-    edit_line: usize,
-    edit_column: usize,
-    lines_delta: isize,
-    column_delta: isize,
-) {
-    if *pos_line < edit_line {
-        // Position is before the edit line - no adjustment needed
-        return;
-    }
-
-    if *pos_line == edit_line {
-        // Same line as edit
-        if *pos_column >= edit_column {
-            // At or after edit column - adjust column
-            if column_delta >= 0 {
-                *pos_column = pos_column.saturating_add(column_delta as usize);
-            } else {
-                *pos_column = pos_column.saturating_sub((-column_delta) as usize);
-            }
-
-            // If lines were added/removed, we might need to adjust both
-            if lines_delta > 0 {
-                // Newline was inserted - cursor moves to new line
-                // Column becomes: pos_column - edit_column (position on new line)
-                *pos_line = pos_line.saturating_add(lines_delta as usize);
-                *pos_column = pos_column.saturating_sub(edit_column);
-            } else if lines_delta < 0 {
-                // Lines were joined - no line adjustment for same-line positions
-            }
-        }
-        // Before edit column on same line - no adjustment
-    } else {
-        // Position is on a line after the edit line
-        if lines_delta >= 0 {
-            *pos_line = pos_line.saturating_add(lines_delta as usize);
-        } else {
-            *pos_line = pos_line.saturating_sub((-lines_delta) as usize);
-        }
-    }
-}
 
 /// Represents a draggable splitter bar between editor groups
 #[derive(Debug, Clone, Copy)]

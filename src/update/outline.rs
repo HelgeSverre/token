@@ -349,7 +349,7 @@ mod refresh_tests {
     use crate::panel::PanelId;
 
     fn model_with_open_outline_panel() -> AppModel {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.document_mut().language = crate::syntax::LanguageId::Markdown;
         model.dock_layout.right.activate(PanelId::OUTLINE);
         model

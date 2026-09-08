@@ -4,8 +4,19 @@
 
 pub mod decorations;
 pub mod document;
+mod file_io;
+pub(crate) use file_io::{FileIoState, FileRequestKind};
+pub use file_io::{
+    FileOpenPolicy, FileOpenRequest, FileOpenSource, FileRequest, KnownFile, PreparedFile,
+};
+pub(crate) use file_io::{FileOpenState, OpenOrigin, OpenPosition, PendingFileOpen};
+pub(crate) use file_io::{PendingWorkspaceEdit, WorkspaceEditAction};
 pub mod editor;
 pub mod editor_area;
+mod ghost_text;
+pub use ghost_text::GhostText;
+pub(crate) use ghost_text::{GhostProjection, GhostRow};
+mod overview;
 pub mod status_bar;
 pub mod styled_text;
 pub mod ui;
@@ -23,6 +34,8 @@ pub use editor_area::{
     DocumentId, EditorArea, EditorGroup, EditorId, GroupId, LayoutNode, Rect, SplitContainer,
     SplitDirection, SplitterBar, Tab, TabId, SPLITTER_WIDTH,
 };
+pub use overview::OverviewCache;
+pub(crate) use overview::OverviewProjection;
 pub use status_bar::{
     sync_status_bar, RenderedSegment, SegmentContent, SegmentId, SegmentPosition, StatusBar,
     StatusBarLayout, StatusSegment, TransientMessage,
@@ -39,19 +52,39 @@ pub use ui::{
 pub use workspace::{FileExtension, FileNode, FileTree, Workspace};
 
 use crate::config::EditorConfig;
-use crate::config_paths;
 #[cfg(debug_assertions)]
 use crate::debug_overlay::DebugOverlay;
 use crate::lsp::{LspServerId, ServerState};
 use crate::recent_files::RecentFiles;
-use crate::theme::{load_theme, Theme};
-use crate::util::{is_likely_binary, validate_file_for_opening, FileOpenError};
+use crate::theme::Theme;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 // ============================================================================
 // Viewport Geometry - pure calculations for dimensions
 // ============================================================================
+
+/// Text capacity after reserving the scrollbar and an end-of-line caret in
+/// wrapped panes. Shared by pane resize and rendering geometry.
+pub fn text_viewport_columns(
+    width: f32,
+    text_start: f32,
+    char_width: f32,
+    soft_wrap: bool,
+    scrollbar_width: usize,
+) -> usize {
+    if char_width <= 0.0 {
+        return 0;
+    }
+    let reserve = if soft_wrap {
+        scrollbar_width as f32 + char_width
+    } else {
+        0.0
+    };
+    ((width - text_start - reserve) / char_width)
+        .floor()
+        .max(1.0) as usize
+}
 
 /// Viewport geometry calculations (pure, no I/O)
 ///
@@ -123,141 +156,6 @@ impl ViewportGeometry {
         let text_x =
             text_start_x_scaled(char_width, &ScaledMetrics::default(), line_count, false).round();
         ((window_width as f32 - text_x) / char_width).floor() as usize
-    }
-}
-
-// ============================================================================
-// Session Initialization - file loading and editor setup
-// ============================================================================
-
-/// Result of initial session creation
-pub struct InitialSession {
-    pub editor_area: EditorArea,
-    pub status_message: String,
-}
-
-/// Load configuration and theme from disk
-fn load_config_and_theme() -> (EditorConfig, Theme) {
-    config_paths::ensure_all_config_dirs();
-    let config = EditorConfig::load();
-    let theme = load_theme(&config.theme).unwrap_or_else(|e| {
-        tracing::warn!(
-            "Failed to load theme '{}': {}, using default",
-            config.theme,
-            e
-        );
-        Theme::default()
-    });
-    (config, theme)
-}
-
-/// Create initial session with documents and editor area
-fn create_initial_session(file_paths: Vec<PathBuf>, geom: &ViewportGeometry) -> InitialSession {
-    // Load first file or create empty document
-    let (first_document, status_message) = if let Some(first_path) = file_paths.first() {
-        // Validate and load the first file
-        match validate_file_for_opening(first_path) {
-            Ok(()) => {
-                // File exists and is valid - check for binary
-                if is_likely_binary(first_path) {
-                    let msg = format!("Cannot open binary file: {}", first_path.display());
-                    (Document::new(), msg)
-                } else {
-                    match Document::from_file(first_path.clone()) {
-                        Ok(doc) => {
-                            let msg = if file_paths.len() > 1 {
-                                format!("Opened {} files", file_paths.len())
-                            } else {
-                                format!("Loaded: {}", first_path.display())
-                            };
-                            (doc, msg)
-                        }
-                        Err(e) => {
-                            let msg = format!("Error loading {}: {}", first_path.display(), e);
-                            (Document::new(), msg)
-                        }
-                    }
-                }
-            }
-            Err(FileOpenError::NotFound) => {
-                // File doesn't exist - create new document with this path
-                // Saving will create the file (common pattern: `editor newfile.txt`)
-                let msg = format!("New file: {}", first_path.display());
-                (Document::new_with_path(first_path.clone()), msg)
-            }
-            Err(e) => {
-                // Other errors (permission denied, is directory, etc.)
-                let msg = e.user_message(&first_path.display().to_string());
-                (Document::new(), msg)
-            }
-        }
-    } else {
-        (Document::new(), "New file".to_string())
-    };
-
-    // Create editor state with viewport
-    let editor = EditorState::with_viewport(geom.visible_lines, geom.visible_columns);
-
-    // Create editor area with first document
-    let mut editor_area = EditorArea::single_document(first_document, editor);
-
-    // Open additional files as tabs
-    for path in file_paths.into_iter().skip(1) {
-        // Validate before attempting to open
-        let doc = match validate_file_for_opening(&path) {
-            Ok(()) => {
-                // File exists - check for binary
-                if is_likely_binary(&path) {
-                    tracing::warn!("Skipping binary file: {}", path.display());
-                    continue;
-                }
-                match Document::from_file(path.clone()) {
-                    Ok(doc) => doc,
-                    Err(e) => {
-                        tracing::warn!("Failed to open {}: {}", path.display(), e);
-                        continue;
-                    }
-                }
-            }
-            Err(FileOpenError::NotFound) => {
-                // File doesn't exist - create new document with this path
-                Document::new_with_path(path.clone())
-            }
-            Err(e) => {
-                tracing::warn!("Skipping {}: {}", path.display(), e);
-                continue;
-            }
-        };
-
-        let doc_id = editor_area.next_document_id();
-        let mut doc = doc;
-        doc.id = Some(doc_id);
-        editor_area.documents.insert(doc_id, doc);
-
-        // Create editor for this document
-        let editor_id = editor_area.next_editor_id();
-        let mut editor = EditorState::with_viewport(geom.visible_lines, geom.visible_columns);
-        editor.id = Some(editor_id);
-        editor.document_id = Some(doc_id);
-        editor_area.editors.insert(editor_id, editor);
-
-        // Create tab in focused group
-        let tab_id = editor_area.next_tab_id();
-        let tab = Tab {
-            id: tab_id,
-            editor_id,
-            is_pinned: false,
-            is_preview: false,
-        };
-
-        if let Some(group) = editor_area.groups.get_mut(&editor_area.focused_group_id) {
-            group.tabs.push(tab);
-        }
-    }
-
-    InitialSession {
-        editor_area,
-        status_message,
     }
 }
 
@@ -438,6 +336,7 @@ pub fn gutter_border_x_scaled(
 /// `LspMsg::ServerStateChanged`.
 #[derive(Debug, Clone, Default)]
 pub struct LspUiState {
+    pub workspace_symbol_providers: Vec<crate::lsp::workspace_symbols::SymbolProvider>,
     pub servers: HashMap<LspServerId, ServerState>,
     /// One-shot routing hint consumed by `update::open_lsp_document`
     /// immediately after a cross-file go-to-definition jump opens a new
@@ -553,12 +452,19 @@ impl AppModel {
             .sync_all_viewports(line_height, char_width, &self.metrics);
     }
 
-    /// Create a new application model with the given window size and scale factor
-    pub fn new(
+    /// Create an empty model with deterministic defaults, without filesystem I/O.
+    /// The runtime installs user configuration and prepares startup files.
+    pub fn new(window_width: u32, window_height: u32, scale_factor: f64) -> Self {
+        Self::with_document(window_width, window_height, scale_factor, Document::new())
+    }
+
+    /// Construct a model from an already prepared text document, without reading
+    /// its path or resolving its identity. The caller owns any preparation I/O.
+    pub fn with_document(
         window_width: u32,
         window_height: u32,
         scale_factor: f64,
-        file_paths: Vec<PathBuf>,
+        document: Document,
     ) -> Self {
         // Calculate viewport geometry
         let geom = ViewportGeometry::new(window_width, window_height);
@@ -566,26 +472,14 @@ impl AppModel {
         // Create scaled metrics for HiDPI support
         let metrics = ScaledMetrics::new(scale_factor);
 
-        // Load config and theme
-        let (config, theme) = load_config_and_theme();
-
-        // Load recent files from disk
-        let recent_files = RecentFiles::load();
-
-        // Load command palette usage/pin history from disk
-        let command_history = crate::command_history::CommandHistory::load();
-
-        // Create initial session with documents
-        let InitialSession {
-            editor_area,
-            status_message,
-        } = create_initial_session(file_paths, &geom);
+        let editor = EditorState::with_viewport(geom.visible_lines, geom.visible_columns);
+        let editor_area = EditorArea::single_document(document, editor);
 
         Self {
             editor_area,
-            ui: UiState::with_status(status_message),
-            theme,
-            config,
+            ui: UiState::with_status("New file"),
+            theme: Theme::default(),
+            config: EditorConfig::default(),
             window_size: (window_width, window_height),
             line_height: geom.line_height,
             status_bar_height: geom.line_height,
@@ -597,8 +491,8 @@ impl AppModel {
             outline_panel: crate::model::ui::OutlinePanelState::default(),
             problems_panel: crate::model::ui::ProblemsPanelState::default(),
             usages_panel: usages::UsagesPanelState::default(),
-            recent_files,
-            command_history,
+            recent_files: RecentFiles::default(),
+            command_history: crate::command_history::CommandHistory::default(),
             #[cfg(debug_assertions)]
             debug_overlay: Some(DebugOverlay::new()),
             lsp: LspUiState::default(),
@@ -625,8 +519,18 @@ impl AppModel {
         }
     }
 
-    /// Record that a file was opened (adds to recent files list)
-    pub fn record_file_opened(&mut self, path: PathBuf) {
+    /// Record an opened document using its captured identity, without disk lookup.
+    pub(crate) fn record_file_opened(&mut self, document_id: DocumentId) {
+        let Some(document) = self.editor_area.documents.get(&document_id) else {
+            return;
+        };
+        let Some(path) = document
+            .file_identity()
+            .map(|identity| identity.path().to_path_buf())
+            .or_else(|| document.file_path.clone())
+        else {
+            return;
+        };
         let workspace = self.workspace.as_ref().map(|ws| ws.root.clone());
         self.recent_files.add(path, workspace);
     }
@@ -764,31 +668,9 @@ impl AppModel {
         let editor_area_rect = crate::layout::chrome::shell(self)
             .rect(crate::layout::UiKey::EditorArea)
             .expect("window shell always declares the editor area");
-        let effective_width = editor_area_rect.width;
-
-        // The shell already excludes the status bar and docks; only the
-        // editor group's own tab strip remains to be subtracted here.
-        let tab_bar_height = self.metrics.tab_bar_height;
-        let available_height =
-            (editor_area_rect.height.max(0.0) as usize).saturating_sub(tab_bar_height);
-        let visible_lines = available_height.checked_div(self.line_height).unwrap_or(0);
-
-        // Update ALL editors, not just the focused one. Gutter width (and thus
-        // visible_columns) depends on each editor's own document line count.
-        let char_width = self.char_width;
-        let metrics = self.metrics;
-        let EditorArea {
-            editors, documents, ..
-        } = &mut self.editor_area;
-        for editor in editors.values_mut() {
-            let doc = editor.document_id.and_then(|id| documents.get(&id));
-            let line_count = doc.map(|d| d.line_count()).unwrap_or(1);
-            let has_marks = doc.is_some_and(|d| !d.diagnostics.is_empty());
-            let text_x = text_start_x_scaled(char_width, &metrics, line_count, has_marks).round();
-            let visible_columns =
-                ((effective_width - text_x) / char_width).floor().max(1.0) as usize;
-            editor.resize_viewport(visible_lines, visible_columns);
-        }
+        self.editor_area
+            .compute_layout_scaled(editor_area_rect, self.metrics.splitter_width);
+        self.resync_viewports();
     }
 
     /// Recalculate viewport dimensions based on current dock layout
@@ -805,21 +687,7 @@ impl AppModel {
     pub fn set_char_width(&mut self, char_width: f32) {
         self.char_width = char_width;
 
-        // Recalculate visible columns with new char width using scaled metrics.
-        // Gutter width depends on each editor's own document line count.
-        let window_width = self.window_size.0;
-        let metrics = self.metrics;
-        let EditorArea {
-            editors, documents, ..
-        } = &mut self.editor_area;
-        for editor in editors.values_mut() {
-            let doc = editor.document_id.and_then(|id| documents.get(&id));
-            let line_count = doc.map(|d| d.line_count()).unwrap_or(1);
-            let has_marks = doc.is_some_and(|d| !d.diagnostics.is_empty());
-            let text_x = text_start_x_scaled(char_width, &metrics, line_count, has_marks).round();
-            let visible_columns = ((window_width as f32 - text_x) / char_width).floor() as usize;
-            editor.viewport.visible_columns = visible_columns;
-        }
+        self.recalculate_viewports();
     }
 
     // Convenience methods that delegate to sub-models
@@ -987,7 +855,11 @@ impl AppModel {
         let Some(doc_id) = self.editor_area.focused_document_id() else {
             return;
         };
-        let top_line = self.editor().viewport.top_line;
+        let top_line = self
+            .editor()
+            .viewport_map(self.document())
+            .doc_line_for_visible_row(0)
+            .unwrap_or(0);
 
         if let Some(preview_id) = self.editor_area.find_preview_for_document(doc_id) {
             if let Some(preview) = self.editor_area.preview_mut(preview_id) {
@@ -1044,6 +916,37 @@ impl AppModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_construction_preserves_prepared_text_and_identity_without_reopening() {
+        let path = PathBuf::from("/fixture/unavailable-link.rs");
+        let identity = crate::util::FileIdentity::from_resolved(
+            path.clone(),
+            std::path::Path::new("/fixture/unavailable-real.rs"),
+        );
+        let mut document = Document::from_loaded_text("unsaved café\n", identity.clone());
+        document.is_modified = true;
+        let mut model = AppModel::with_document(800, 600, 2.0, document);
+        assert_eq!(model.document().buffer.to_string(), "unsaved café\n");
+        assert!(model.document().is_modified);
+        assert_eq!(model.document().file_path.as_ref(), Some(&path));
+        assert_eq!(
+            model.document().file_identity().unwrap().uri(),
+            identity.uri()
+        );
+        assert_eq!(model.document().id, model.editor().document_id);
+        assert!(model.recent_files.entries.is_empty());
+        assert!(model.command_history.commands.is_empty());
+        assert_eq!(model.config.theme, EditorConfig::default().theme);
+        model.record_file_opened(model.document().id.unwrap());
+        assert_eq!(model.recent_files.entries[0].path, identity.path());
+        model.record_file_opened(model.document().id.unwrap());
+        assert_eq!(model.recent_files.entries.len(), 1);
+        assert_eq!(model.recent_files.entries[0].open_count, 2);
+        let empty = AppModel::new(800, 600, 1.0);
+        assert!(empty.document().file_path.is_none());
+        assert_eq!(empty.editor_area.documents.len(), 1);
+    }
     use ropey::Rope;
 
     #[test]
@@ -1151,12 +1054,12 @@ mod tests {
     fn resize_narrows_visible_columns_for_large_line_counts() {
         // Gutter width is per-editor, driven by that editor's own document
         // line count; a wider gutter should leave fewer visible text columns.
-        let mut small = AppModel::new(400, 200, 1.0, vec![]);
+        let mut small = AppModel::new(400, 200, 1.0);
         small.set_char_width(10.0);
         small.resize(400, 200);
         let small_columns = small.editor().viewport.visible_columns;
 
-        let mut large = AppModel::new(400, 200, 1.0, vec![]);
+        let mut large = AppModel::new(400, 200, 1.0);
         large.document_mut().buffer = Rope::from("\n".repeat(100_000));
         large.set_char_width(10.0);
         large.resize(400, 200);
@@ -1169,7 +1072,7 @@ mod tests {
     fn resize_uses_the_solved_editor_area_after_docks_open() {
         use crate::panel::PanelId;
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.set_char_width(10.0);
         model.resize(800, 600);
         let full_width_columns = model.editor().viewport.visible_columns;
@@ -1198,7 +1101,7 @@ mod tests {
         // This is the actual per-frame path (see view::build_render_plan),
         // distinct from AppModel::resize; a width change must be picked up
         // here too or horizontal scroll goes stale as the gutter grows.
-        let mut model = AppModel::new(400, 200, 1.0, vec![]);
+        let mut model = AppModel::new(400, 200, 1.0);
         model.set_char_width(10.0);
         model
             .editor_area
@@ -1219,7 +1122,7 @@ mod tests {
 
     #[test]
     fn set_editor_vertical_scroll_syncs_linked_preview_for_focused_editor() {
-        let mut model = AppModel::new(120, 80, 1.0, vec![]);
+        let mut model = AppModel::new(120, 80, 1.0);
         model.document_mut().buffer = Rope::from("a\nb\nc\nd\ne\nf\n");
         model.editor_mut().resize_viewport(2, 20);
 

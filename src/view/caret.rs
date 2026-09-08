@@ -1,11 +1,10 @@
 //! Active text-input caret geometry for platform text services.
 
 use crate::csv::render::CsvRenderLayout;
-use crate::model::editor::TextViewportMap;
 use crate::model::ui::{FindReplaceField, GotoLineState, ModalState, RenameSymbolState};
 use crate::model::{AppModel, FocusTarget};
 
-use super::geometry::{char_col_to_visual_col, column_to_pixel_x, GroupLayout, WidgetRect};
+use super::geometry::{column_to_pixel_x, GroupLayout, WidgetRect};
 use super::{TextFieldOptions, TextFieldRenderer};
 
 const CARET_WIDTH: usize = 2;
@@ -62,12 +61,13 @@ pub fn editor_text_rect_at(
     let document = editor
         .document_id
         .and_then(|id| model.editor_area.documents.get(&id))?;
-    let viewport = TextViewportMap::new(&editor.viewport, document.line_count());
-    let screen_row = viewport.visible_row_for_doc_line(line);
+    let viewport = editor.viewport_map(document);
+    let (visual_row, visual_col) = viewport.display_position(document, line, column);
+    let screen_row = viewport.visible_row_for_position(line, column);
     let y = screen_row
         .map(|row| layout.content_y() + row * line_height)
         .unwrap_or_else(|| {
-            if line < viewport.top_line() {
+            if visual_row < viewport.top_line() {
                 layout.content_y()
             } else {
                 layout
@@ -76,8 +76,6 @@ pub fn editor_text_rect_at(
             }
         });
 
-    let text_line = document.get_line_cow(line).unwrap_or_default();
-    let visual_col = char_col_to_visual_col(&text_line, column);
     let x = column_to_pixel_x(
         visual_col,
         viewport.left_column(),
@@ -113,6 +111,13 @@ fn modal_caret_rect(
     // Header inputs get the exact painted text box (no further inset);
     // field inputs keep the modal field padding.
     let (content, options): (&dyn super::TextFieldContent, TextFieldOptions) = match modal {
+        ModalState::Settings(state) => {
+            let rect = header(model)?;
+            (
+                &state.editable,
+                TextFieldOptions::for_text_box(&state.editable, &rect, line_height, char_width),
+            )
+        }
         ModalState::CommandPalette(state) => {
             let rect = header(model)?;
             (
@@ -128,13 +133,6 @@ fn modal_caret_rect(
             )
         }
         ModalState::RecentFiles(state) => {
-            let rect = header(model)?;
-            (
-                &state.editable,
-                TextFieldOptions::for_text_box(&state.editable, &rect, line_height, char_width),
-            )
-        }
-        ModalState::Settings(state) => {
             let rect = header(model)?;
             (
                 &state.editable,
@@ -214,7 +212,7 @@ mod tests {
 
     #[test]
     fn editor_caret_accounts_for_tabs_scroll_and_group_offset() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.document_mut().buffer = Rope::from("a\tb\n");
         model.editor_mut().cursors = vec![Cursor::at(0, 2)];
         model.editor_mut().selections = vec![Selection::new(Position::new(0, 2))];
@@ -236,7 +234,7 @@ mod tests {
 
     #[test]
     fn modal_caret_uses_modal_input_and_scroll_geometry() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let mut state = GotoLineState::default();
         state.editable.set_content(&"1".repeat(100));
         model.ui.active_modal = Some(ModalState::GotoLine(state));
@@ -260,7 +258,7 @@ mod tests {
         use crate::model::ui::CommandPaletteState;
         use crate::view::overlay_surface::header_pad_x;
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model
             .ui
             .open_modal(ModalState::CommandPalette(CommandPaletteState::default()));
@@ -276,7 +274,7 @@ mod tests {
 
     #[test]
     fn csv_editing_caret_uses_cell_editor_geometry() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let mut csv = CsvState::new(
             CsvData::from_rows(vec![vec!["first".into(), "second".into()]]),
             Delimiter::Comma,
@@ -301,7 +299,7 @@ mod tests {
 
     #[test]
     fn non_text_modal_has_no_caret_rect() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.active_modal = Some(ModalState::ThemePicker(
             crate::model::ui::ThemePickerState::new(model.config.theme.clone()),
         ));

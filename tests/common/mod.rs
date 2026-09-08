@@ -40,6 +40,10 @@ pub fn test_model(text: &str, line: usize, column: usize) -> AppModel {
         view_mode: ViewMode::default(),
         tab_content: TabContent::default(),
         matched_brackets: None,
+        soft_wrap: false,
+        wrap_cache: token::wrap::WrapCache::new(),
+        ghost_text: Default::default(),
+        overview_cache: Default::default(),
     };
 
     let editor_area = EditorArea::single_document(document, editor);
@@ -114,6 +118,10 @@ pub fn test_model_with_selection(
         view_mode: ViewMode::default(),
         tab_content: TabContent::default(),
         matched_brackets: None,
+        soft_wrap: false,
+        wrap_cache: token::wrap::WrapCache::new(),
+        ghost_text: Default::default(),
+        overview_cache: Default::default(),
     };
 
     let editor_area = EditorArea::single_document(document, editor);
@@ -185,6 +193,10 @@ pub fn test_model_multi_cursor(text: &str, positions: &[(usize, usize)]) -> AppM
         view_mode: ViewMode::default(),
         tab_content: TabContent::default(),
         matched_brackets: None,
+        soft_wrap: false,
+        wrap_cache: token::wrap::WrapCache::new(),
+        ghost_text: Default::default(),
+        overview_cache: Default::default(),
     };
 
     let editor_area = EditorArea::single_document(document, editor);

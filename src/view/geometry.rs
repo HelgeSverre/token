@@ -8,7 +8,7 @@
 //! tested independently of the rendering infrastructure.
 
 use crate::model::editor_area::{EditorGroup, Rect};
-use crate::model::{AppModel, Document, EditorState, TextViewportMap};
+use crate::model::{AppModel, Document, EditorState};
 
 // ============================================================================
 // Layout Constants
@@ -244,7 +244,7 @@ pub fn pixel_to_line_and_visual_column_in_group(
     editor: &EditorState,
     document: &Document,
 ) -> (usize, usize) {
-    let viewport = TextViewportMap::new(&editor.viewport, document.line_count());
+    let viewport = editor.viewport_map(document);
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
 
@@ -258,7 +258,15 @@ pub fn pixel_to_line_and_visual_column_in_group(
 
     let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (local_y - text_start_y).max(0.0);
-    let line = viewport.doc_line_for_pixel_y(adjusted_y, line_height);
+    let visible_row = if line_height > 0.0 {
+        (adjusted_y / line_height).floor() as usize
+    } else {
+        0
+    };
+    let line = viewport
+        .top_line()
+        .saturating_add(visible_row)
+        .min(viewport.last_line());
 
     let x_offset = local_x - text_x;
     let visual_column = viewport.visual_column_for_x_offset(x_offset, char_width);
@@ -282,7 +290,7 @@ pub fn pixel_to_cursor_in_group(
     editor: &EditorState,
     document: &Document,
 ) -> (usize, usize) {
-    let viewport = TextViewportMap::new(&editor.viewport, document.line_count());
+    let viewport = editor.viewport_map(document);
     let local_x = x - group_rect.x as f64;
     let local_y = y - group_rect.y as f64;
 
@@ -295,19 +303,10 @@ pub fn pixel_to_cursor_in_group(
     .round() as f64;
     let text_start_y = model.metrics.tab_bar_height as f64;
     let adjusted_y = (local_y - text_start_y).max(0.0);
-    let line = viewport.doc_line_for_pixel_y(adjusted_y, line_height);
-
     let x_offset = local_x - text_x;
-    let visual_column = viewport.visual_column_for_x_offset(x_offset, char_width);
-
-    let line_text = document.get_line(line).unwrap_or_default();
-    let line_text_trimmed = super::helpers::trim_line_ending(&line_text);
-    let column = visual_col_to_char_col(line_text_trimmed, visual_column);
-
-    let line_len = document.line_length(line);
-    let column = column.min(line_len);
-
-    (line, column)
+    let position =
+        viewport.position_for_pixel(document, x_offset, adjusted_y, char_width, line_height);
+    (position.line, position.column)
 }
 
 // ============================================================================
@@ -536,31 +535,6 @@ impl GroupLayout {
     // =========================================================================
     // Line positioning helpers
     // =========================================================================
-
-    /// Convert a document line number to screen Y coordinate.
-    ///
-    /// Returns `Some(y)` if the line is visible in the viewport,
-    /// or `None` if the line is outside the visible area.
-    #[inline]
-    pub fn line_to_screen_y(
-        &self,
-        doc_line: usize,
-        viewport_top: usize,
-        line_height: usize,
-    ) -> Option<usize> {
-        if doc_line < viewport_top {
-            return None;
-        }
-        let screen_line = doc_line - viewport_top;
-        let y = self.content_y() + screen_line * line_height;
-
-        // Check if line is within visible content area
-        if y + line_height <= self.content_y() + self.content_h() {
-            Some(y)
-        } else {
-            None
-        }
-    }
 
     /// Calculate visible line count for this group
     #[inline]

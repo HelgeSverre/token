@@ -174,9 +174,8 @@ fn reveal_problems_selection(model: &mut AppModel) {
     }
 }
 
-/// Jump to a diagnostic's location: char coords via `lsp_to_position` when
-/// the file is open (converts LSP UTF-16 correctly), raw LSP values
-/// otherwise — `jump_to_location`/`place_cursor_char` clamp either way.
+/// Retain raw LSP coordinates until the actual destination is installed, then
+/// convert and clamp against that document.
 fn open_diagnostic(model: &mut AppModel, path: &std::path::Path, index: usize) -> Option<Cmd> {
     let diagnostic = model.lsp.diagnostics.get(path)?.get(index)?.clone();
     let start = diagnostic.range.start;
@@ -282,11 +281,16 @@ pub(super) fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn open_fixture_layout(model: &mut AppModel, msg: crate::messages::LayoutMsg) -> Option<Cmd> {
+        let cmd = crate::update::layout::update_layout(model, msg);
+        crate::update::finish_test_file_opens(model, cmd)
+    }
     use crate::panel::PanelId;
     use std::path::PathBuf;
 
     fn model_with_open_problems_panel() -> AppModel {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.dock_layout.bottom.activate(PanelId::PROBLEMS);
         model
     }
@@ -404,7 +408,7 @@ mod tests {
         let other = dir.join("other.rs");
         std::fs::write(&focused, "x\n").unwrap();
         std::fs::write(&other, "line0\nline1\nline2\n").unwrap();
-        crate::update::layout::update_layout(
+        open_fixture_layout(
             &mut model,
             crate::messages::LayoutMsg::OpenFileInNewTab(focused.clone()),
         );
@@ -416,7 +420,8 @@ mod tests {
 
         update_problems(&mut model, ProblemsMsg::ToggleScope);
         model.problems_panel.selected_index = Some(1); // other.rs's diagnostic row
-        update_problems(&mut model, ProblemsMsg::OpenSelected);
+        let cmd = update_problems(&mut model, ProblemsMsg::OpenSelected);
+        crate::update::finish_test_file_opens(&mut model, cmd);
 
         assert_eq!(model.document().file_path.as_deref(), Some(other.as_path()));
         assert_eq!(model.editor().active_cursor().line, 2);
@@ -507,7 +512,7 @@ mod tests {
         std::fs::write(&file_path, "line0\nline1\nline2\n").unwrap();
         // Current-file filter: the file must be the focused document for
         // its diagnostics to be listed at all.
-        crate::update::layout::update_layout(
+        open_fixture_layout(
             &mut model,
             crate::messages::LayoutMsg::OpenFileInNewTab(file_path.clone()),
         );

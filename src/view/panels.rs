@@ -606,7 +606,7 @@ mod usages_tests {
 
     #[test]
     fn usages_panel_renders_selected_partial_row_within_shared_clip() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.usages_panel.items = (0..30)
             .map(|line| crate::update::navigation::LocationItem {
                 path: "/source.rs".into(),

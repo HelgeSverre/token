@@ -3,8 +3,8 @@
 use ropey::Rope;
 use std::path::PathBuf;
 
-use super::editor::Cursor;
-use super::editor_area::DocumentId;
+use super::editor::{Cursor, EditorState, Selection};
+use super::editor_area::{DocumentId, EditorId};
 use crate::syntax::{LanguageId, SyntaxHighlights, SyntaxTreeSnapshot};
 
 /// Represents an edit operation for undo/redo functionality
@@ -34,11 +34,40 @@ pub enum EditOperation {
     Batch {
         /// Individual operations (applied in order for redo, reverse order for undo)
         operations: Vec<EditOperation>,
-        /// All cursor positions before the batch
-        cursors_before: Vec<Cursor>,
-        /// All cursor positions after the batch
-        cursors_after: Vec<Cursor>,
+        /// Lossless selection state of every existing pane before the batch.
+        editors_before: Vec<EditorEditState>,
+        /// Corresponding state after caret placement and deduplication.
+        editors_after: Vec<EditorEditState>,
     },
+}
+
+/// Opaque undo snapshot tied to one editor, independent of current focus.
+/// Only selection state is retained, not layout, caches or the document buffer.
+#[derive(Debug, Clone)]
+pub struct EditorEditState {
+    pub(crate) editor_id: EditorId,
+    cursors: Vec<Cursor>,
+    selections: Vec<Selection>,
+    active_cursor_index: usize,
+}
+
+impl EditorEditState {
+    pub(crate) fn capture(editor_id: EditorId, editor: &EditorState) -> Self {
+        Self {
+            editor_id,
+            cursors: editor.cursors.clone(),
+            selections: editor.selections.clone(),
+            active_cursor_index: editor.active_cursor_index,
+        }
+    }
+
+    pub(crate) fn restore(&self, editor: &mut EditorState) {
+        editor.cursors.clone_from(&self.cursors);
+        editor.selections.clone_from(&self.selections);
+        editor.active_cursor_index = self.active_cursor_index;
+        editor.occurrence_state = None;
+        editor.clear_selection_history();
+    }
 }
 
 /// Document state - the text buffer and associated file metadata
@@ -60,11 +89,10 @@ pub struct Document {
     pub undo_stack: Vec<EditOperation>,
     /// Redo stack
     pub redo_stack: Vec<EditOperation>,
-    /// `undo_stack.len()` at the moment of the last successful save, if that
-    /// exact state is still reachable via undo/redo. `None` means the
-    /// document has never been saved (or the file doesn't exist yet), so
-    /// undo/redo can never clear the dirty flag on its own.
-    pub saved_revision: Option<usize>,
+    /// Cheap immutable snapshot of the bytes last successfully written. History
+    /// depth alone is not an identity: undo followed by a new branch can reuse it.
+    saved_buffer: Option<Rope>,
+    pub(crate) file_io: super::FileIoState,
 
     // === Syntax Highlighting ===
     /// Detected language for syntax highlighting
@@ -106,7 +134,8 @@ impl Document {
             is_modified: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
-            saved_revision: Some(0),
+            saved_buffer: Some(Rope::new()),
+            file_io: Default::default(),
             language: LanguageId::PlainText,
             language_pinned: false,
             syntax_highlights: None,
@@ -119,8 +148,10 @@ impl Document {
 
     /// Create a document with initial text
     pub fn with_text(text: &str) -> Self {
+        let buffer = Rope::from(text);
         Self {
-            buffer: Rope::from(text),
+            saved_buffer: Some(buffer.clone()),
+            buffer,
             ..Self::new()
         }
     }
@@ -176,9 +207,33 @@ impl Document {
             language,
             // No saved state exists yet (file doesn't exist on disk), so
             // Undo/Redo can't clear the dirty flag until an actual save happens.
-            saved_revision: None,
+            saved_buffer: None,
             ..Self::new()
         }
+    }
+
+    pub(crate) fn begin_file_request(
+        &mut self,
+        kind: super::FileRequestKind,
+    ) -> Option<super::FileRequest> {
+        Some(super::FileRequest {
+            document_id: self.id?,
+            revision: self.revision,
+            source_path: self.file_path.clone(),
+            sequence: self.file_io.begin(kind),
+        })
+    }
+
+    pub(crate) fn record_saved_buffer(&mut self, buffer: Rope) {
+        self.saved_buffer = Some(buffer);
+        self.refresh_modified();
+    }
+
+    pub(crate) fn refresh_modified(&mut self) {
+        self.is_modified = !self
+            .saved_buffer
+            .as_ref()
+            .is_some_and(|saved| saved.is_instance(&self.buffer) || saved == &self.buffer);
     }
 
     /// Get the display name for this document.
@@ -328,7 +383,7 @@ impl Document {
         let line = self.buffer.line(line_idx);
         let line_str: String = line.chars().collect();
         let trimmed = line_str.trim_end_matches(|c: char| c.is_whitespace());
-        trimmed.len()
+        trimmed.chars().count()
     }
 
     /// Push an edit operation onto the undo stack and clear redo stack

@@ -348,11 +348,11 @@ mod tests {
     use crate::panels::terminal::grid_size_for_rect;
 
     fn test_model() -> AppModel {
-        AppModel::new(800, 600, 1.0, vec![])
+        AppModel::new(800, 600, 1.0)
     }
 
     fn hidpi_test_model() -> AppModel {
-        AppModel::new(1600, 1200, 2.0, vec![])
+        AppModel::new(1600, 1200, 2.0)
     }
 
     fn expected_terminal_grid_size(model: &AppModel) -> crate::panels::terminal::TerminalGridSize {

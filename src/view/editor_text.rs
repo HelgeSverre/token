@@ -91,8 +91,8 @@ impl EditorPalette {
 }
 
 /// Shared layout-derived values for editor text rendering.
-struct EditorRenderContext {
-    viewport: TextViewportMap,
+struct EditorRenderContext<'a> {
+    viewport: TextViewportMap<'a>,
     char_width: f32,
     line_height: usize,
     rect_x: usize,
@@ -107,17 +107,21 @@ struct EditorRenderContext {
     visible_columns: usize,
 }
 
-impl EditorRenderContext {
+impl<'a> EditorRenderContext<'a> {
     fn new(
         layout: &geometry::GroupLayout,
-        editor: &EditorState,
+        editor: &'a EditorState,
         document: &Document,
         char_width: f32,
         line_height: usize,
     ) -> Self {
-        let viewport = TextViewportMap::new(&editor.viewport, document.line_count());
+        let viewport = editor.viewport_map(document);
         let visible_lines = layout.visible_lines(line_height);
-        let visible_columns = layout.visible_columns(char_width);
+        let visible_columns = if editor.soft_wrap {
+            editor.viewport.visible_columns.saturating_add(1)
+        } else {
+            layout.visible_columns(char_width)
+        };
 
         Self {
             viewport,
@@ -134,13 +138,6 @@ impl EditorRenderContext {
             visible_lines,
             visible_columns,
         }
-    }
-
-    #[inline]
-    fn line_y(&self, doc_line: usize) -> Option<usize> {
-        self.viewport
-            .visible_row_for_doc_line(doc_line)
-            .map(|visible_row| self.content_y + visible_row * self.line_height)
     }
 
     #[inline]
@@ -202,11 +199,56 @@ impl EditorTextBuffers {
 ///
 /// Future editor decorations should plug into the stages that consume this
 /// type rather than add more feature-local line iteration.
-struct VisibleTextLine {
+#[derive(Clone)]
+struct VisibleTextLine<'a> {
     doc_line: usize,
+    visual_line: usize,
+    segment_start: usize,
+    segment_end: usize,
+    is_continuation: bool,
     y: usize,
     height: usize,
     is_active_line: bool,
+    projected: Option<&'a crate::model::GhostRow>,
+}
+
+impl VisibleTextLine<'_> {
+    /// Materialize only this visual row, never its whole logical line.
+    fn text<'a>(&'a self, document: &'a Document) -> std::borrow::Cow<'a, str> {
+        if let Some(row) = self.projected {
+            return std::borrow::Cow::Borrowed(&row.text);
+        }
+        document
+            .get_line_slice(self.doc_line)
+            .map(|slice| slice.slice(self.segment_start..self.segment_end).into())
+            .unwrap_or_default()
+    }
+
+    fn visual_column(&self, text: &str, column: usize) -> usize {
+        if let Some(row) = self.projected {
+            if let Some(source) = row.sources.iter().flatten().find(|s| {
+                s.columns.start <= self.segment_start && s.columns.end >= self.segment_end
+            }) {
+                return source.visual_column(text, column);
+            }
+        }
+        char_col_to_visual_col(text, column.saturating_sub(self.segment_start))
+    }
+
+    /// Source-only fragments share row text and geometry. Splitting here keeps
+    /// selection, syntax, brackets and diagnostic overlays off inserted ghosts.
+    fn source_fragments(&self) -> impl Iterator<Item = Self> + '_ {
+        let ranges = if let Some(row) = self.projected {
+            row.sources.clone().map(|s| s.map(|s| s.columns))
+        } else {
+            [Some(self.segment_start..self.segment_end), None]
+        };
+        ranges.into_iter().flatten().map(|range| Self {
+            segment_start: range.start,
+            segment_end: range.end,
+            ..self.clone()
+        })
+    }
 }
 
 /// Stateful text editor renderer.
@@ -218,7 +260,7 @@ struct TextEditorRenderer<'a> {
     model: &'a AppModel,
     editor: &'a EditorState,
     document: &'a Document,
-    ctx: EditorRenderContext,
+    ctx: EditorRenderContext<'a>,
     palette: EditorPalette,
     text_buffers: EditorTextBuffers,
 }
@@ -251,17 +293,12 @@ impl<'a> TextEditorRenderer<'a> {
         self.ctx.viewport.left_column()
     }
 
-    #[inline]
-    fn line_screen_y(&self, doc_line: usize) -> Option<usize> {
-        self.ctx.line_y(doc_line)
-    }
-
     fn selection_span_for_line(
         document: &Document,
         ctx: &EditorRenderContext,
         viewport_left: usize,
         selection: &Selection,
-        doc_line: usize,
+        line: &VisibleTextLine,
         line_text: &str,
     ) -> Option<(usize, usize)> {
         if selection.is_empty() {
@@ -270,6 +307,7 @@ impl<'a> TextEditorRenderer<'a> {
 
         let sel_start = selection.start();
         let sel_end = selection.end();
+        let doc_line = line.doc_line;
         if doc_line < sel_start.line || doc_line > sel_end.line {
             return None;
         }
@@ -286,8 +324,13 @@ impl<'a> TextEditorRenderer<'a> {
             line_len
         };
 
-        let visual_start_col = char_col_to_visual_col(line_text, start_col);
-        let visual_end_col = char_col_to_visual_col(line_text, end_col);
+        let start_col = start_col.max(line.segment_start).min(line.segment_end);
+        let end_col = end_col.max(line.segment_start).min(line.segment_end);
+        if end_col <= start_col {
+            return None;
+        }
+        let visual_start_col = line.visual_column(line_text, start_col);
+        let visual_end_col = line.visual_column(line_text, end_col);
         Some(ctx.clipped_span_x(visual_start_col, visual_end_col, viewport_left))
     }
 
@@ -332,9 +375,10 @@ impl<'a> TextEditorRenderer<'a> {
         ctx: &EditorRenderContext,
         viewport_left: usize,
         decoration: &RangeDecoration,
-        doc_line: usize,
+        line: &VisibleTextLine,
         line_text: &str,
     ) -> Option<(usize, usize)> {
+        let doc_line = line.doc_line;
         let (start_line, start_col) = decoration.start;
         let (end_line, end_col) = decoration.end;
         if start_line > end_line || doc_line < start_line || doc_line > end_line {
@@ -352,12 +396,14 @@ impl<'a> TextEditorRenderer<'a> {
         } else {
             line_len
         };
+        let col_start = col_start.max(line.segment_start).min(line.segment_end);
+        let col_end = col_end.max(line.segment_start).min(line.segment_end);
         if col_end <= col_start {
             return None;
         }
 
-        let visual_start = char_col_to_visual_col(line_text, col_start);
-        let visual_end = char_col_to_visual_col(line_text, col_end);
+        let visual_start = line.visual_column(line_text, col_start);
+        let visual_end = line.visual_column(line_text, col_end);
         Some(ctx.clipped_span_x(visual_start, visual_end, viewport_left))
     }
 
@@ -386,16 +432,27 @@ impl<'a> TextEditorRenderer<'a> {
         frame.fill_rect_px(text_area_x, y, text_area_w, height, bg);
     }
 
-    fn prepare_visible_line(&self, doc_line: usize, y: usize) -> VisibleTextLine {
+    fn prepare_visible_line(&self, screen_line: usize, y: usize) -> Option<VisibleTextLine<'a>> {
+        let doc_line = self.ctx.viewport.doc_line_for_visible_row(screen_line)?;
+        let segment = self
+            .ctx
+            .viewport
+            .segment_for_visible_row(self.document, screen_line)?;
+        let segment_end = segment.end_col().min(self.document.line_length(doc_line));
         let bottom_y = self.ctx.content_y + self.ctx.content_h;
         let height = (y + self.ctx.line_height).min(bottom_y) - y;
 
-        VisibleTextLine {
+        Some(VisibleTextLine {
             doc_line,
+            visual_line: segment.visual_line,
+            segment_start: segment.start_col,
+            segment_end,
+            is_continuation: segment.is_continuation,
             y,
             height,
             is_active_line: doc_line == self.editor.active_cursor().line,
-        }
+            projected: self.ctx.viewport.ghost_row_for_visible_row(screen_line),
+        })
     }
 
     fn render_line_background_stage(&self, frame: &mut Frame, line: &VisibleTextLine) {
@@ -403,25 +460,21 @@ impl<'a> TextEditorRenderer<'a> {
     }
 
     fn render_current_line_background_stage(&self, frame: &mut Frame) {
-        let Some(screen_line) = self
-            .ctx
-            .viewport
-            .visible_row_for_doc_line(self.editor.active_cursor().line)
-        else {
-            return;
-        };
-        let highlight_y = self.ctx.content_y + screen_line * self.ctx.line_height;
-        let highlight_h = self
-            .ctx
-            .line_height
-            .min(self.ctx.content_y + self.ctx.content_h - highlight_y);
-        frame.fill_rect_px(
-            self.ctx.rect_x,
-            highlight_y,
-            self.ctx.rect_w,
-            highlight_h,
-            self.palette.current_line,
-        );
+        for row in 0..self.ctx.visible_lines {
+            let y = self.ctx.content_y + row * self.ctx.line_height;
+            let Some(line) = self.prepare_visible_line(row, y) else {
+                break;
+            };
+            if line.is_active_line {
+                frame.fill_rect_px(
+                    self.ctx.rect_x,
+                    line.y,
+                    self.ctx.rect_w,
+                    line.height,
+                    self.palette.current_line,
+                );
+            }
+        }
     }
 
     fn collect_line_decorations(&mut self, line: &VisibleTextLine) {
@@ -434,19 +487,18 @@ impl<'a> TextEditorRenderer<'a> {
         selection_spans.clear();
         let mut bracket_visual_cols = [None, None];
 
-        let Some(line_text) = document.get_line_cow(line.doc_line) else {
-            self.text_buffers.selection_spans = selection_spans;
-            self.text_buffers.bracket_visual_cols = bracket_visual_cols;
-            return;
-        };
+        let line_text = line.text(document);
 
-        for selection in &self.editor.selections {
+        for (selection, fragment) in self.editor.selections.iter().flat_map(|selection| {
+            line.source_fragments()
+                .map(move |fragment| (selection, fragment))
+        }) {
             let Some((x_start, x_end)) = Self::selection_span_for_line(
                 document,
                 ctx,
                 viewport_left,
                 selection,
-                line.doc_line,
+                &fragment,
                 &line_text,
             ) else {
                 continue;
@@ -457,12 +509,13 @@ impl<'a> TextEditorRenderer<'a> {
             }
         }
 
+        let segment_text = &line_text;
         if let Some((x_start, x_end)) = Self::rectangle_selection_span_for_line(
             ctx,
             viewport_left,
             rectangle_selection,
-            line.doc_line,
-            &line_text,
+            line.visual_line,
+            segment_text,
         ) {
             if x_end > x_start {
                 selection_spans.push((x_start, x_end));
@@ -475,9 +528,14 @@ impl<'a> TextEditorRenderer<'a> {
                     continue;
                 }
 
-                let visual_col = char_col_to_visual_col(&line_text, pos.column);
-                if ctx.contains_visual_col(visual_col, viewport_left) {
-                    bracket_visual_cols[slot] = Some(visual_col);
+                for fragment in line.source_fragments() {
+                    if pos.column < fragment.segment_start || pos.column >= fragment.segment_end {
+                        continue;
+                    }
+                    let visual_col = fragment.visual_column(&line_text, pos.column);
+                    if ctx.contains_visual_col(visual_col, viewport_left) {
+                        bracket_visual_cols[slot] = Some(visual_col);
+                    }
                 }
             }
         }
@@ -522,23 +580,56 @@ impl<'a> TextEditorRenderer<'a> {
         let model = self.model;
         let text_buffers = &mut self.text_buffers;
 
-        let Some(line_text) = document.get_line_cow(line.doc_line) else {
-            return;
-        };
+        let line_text = line.text(document);
 
         let max_chars = ctx.visible_columns;
-        let expanded_text = expand_tabs_for_display(&line_text);
+        let segment_text = &line_text;
+        let expanded_text = expand_tabs_for_display(segment_text);
+        let ghost_columns = line.projected.map(|row| {
+            char_col_to_visual_col(&row.text, row.ghost.start)
+                ..char_col_to_visual_col(&row.text, row.ghost.end)
+        });
 
         text_buffers.display_text.clear();
-        for ch in expanded_text.chars().skip(viewport_left).take(max_chars) {
-            text_buffers.display_text.push(ch);
+        for (column, ch) in expanded_text
+            .chars()
+            .enumerate()
+            .skip(viewport_left)
+            .take(max_chars)
+        {
+            // Ghost glyphs are drawn once in their own color below. Overdrawing
+            // bright source glyphs would leave bright antialiased fringes.
+            text_buffers.display_text.push(
+                if ghost_columns
+                    .as_ref()
+                    .is_some_and(|range| range.contains(&column))
+                {
+                    ' '
+                } else {
+                    ch
+                },
+            );
         }
 
         let line_tokens = document.get_line_highlights(line.doc_line);
         text_buffers.adjusted_tokens.clear();
-        for t in line_tokens.iter() {
-            let visual_start = char_col_to_visual_col(&line_text, t.start_col);
-            let visual_end = char_col_to_visual_col(&line_text, t.end_col);
+        for (t, fragment) in line_tokens
+            .iter()
+            .flat_map(|t| line.source_fragments().map(move |f| (t, f)))
+        {
+            let token_start = t
+                .start_col
+                .max(fragment.segment_start)
+                .min(fragment.segment_end);
+            let token_end = t
+                .end_col
+                .max(fragment.segment_start)
+                .min(fragment.segment_end);
+            if token_end <= token_start {
+                continue;
+            }
+            let visual_start = fragment.visual_column(&line_text, token_start);
+            let visual_end = fragment.visual_column(&line_text, token_end);
             let start = visual_start.saturating_sub(viewport_left);
             let end = visual_end.saturating_sub(viewport_left);
 
@@ -580,8 +671,13 @@ impl<'a> TextEditorRenderer<'a> {
         painter: &mut TextPainter,
         line: &VisibleTextLine,
     ) {
-        let line_num_str = format!("{}", line.doc_line + 1);
-        let text_width_px = (line_num_str.len() as f32 * self.ctx.char_width).round() as usize;
+        let line_num_str = if line.is_continuation {
+            "↪".to_owned()
+        } else {
+            format!("{}", line.doc_line + 1)
+        };
+        let text_width_px =
+            (line_num_str.chars().count() as f32 * self.ctx.char_width).round() as usize;
         let text_x = self
             .ctx
             .gutter_right_x
@@ -599,6 +695,9 @@ impl<'a> TextEditorRenderer<'a> {
     /// Phase 2) is the first producer — `GutterLayout` activates `marks_w`
     /// per-document once it has diagnostics (see `GroupLayout::new`).
     fn render_gutter_mark(&self, frame: &mut Frame, line: &VisibleTextLine) {
+        if line.is_continuation {
+            return;
+        }
         let marks_w = self.ctx.gutter.marks_w as usize;
         if marks_w == 0 {
             return;
@@ -640,48 +739,46 @@ impl<'a> TextEditorRenderer<'a> {
             return;
         }
 
-        for decoration in decorations.iter().filter(|d| d.kind.is_tint()) {
-            self.render_one_decoration(frame, decoration);
-        }
-        for decoration in decorations.iter().filter(|d| !d.kind.is_tint()) {
-            self.render_one_decoration(frame, decoration);
-        }
-    }
-
-    fn render_one_decoration(&self, frame: &mut Frame, decoration: &RangeDecoration) {
-        let (start_line, _) = decoration.start;
-        let (end_line, _) = decoration.end;
-        if start_line > end_line {
-            return;
-        }
-
-        let viewport = &self.ctx.viewport;
-        let first_line = start_line.max(viewport.top_line());
-        let last_line = end_line.min(viewport.bottom_line());
-        if first_line > last_line {
-            return;
-        }
-
+        // Geometry is shared across all decorations in this pass. Logical lines
+        // are monotonic but may repeat for wrapped rows. Text is materialized at
+        // most once per intersecting row, never for rows no decoration touches.
+        let rows: Vec<_> = (0..self.ctx.visible_lines)
+            .filter_map(|row| {
+                let y = self.ctx.content_y + row * self.ctx.line_height;
+                self.prepare_visible_line(row, y)
+                    .map(|line| (line, std::cell::OnceCell::new()))
+            })
+            .collect();
         let viewport_left = self.viewport_left();
-        for doc_line in first_line..=last_line {
-            let Some(y) = self.ctx.line_y(doc_line) else {
+        for decoration in decorations
+            .iter()
+            .filter(|d| d.kind.is_tint())
+            .chain(decorations.iter().filter(|d| !d.kind.is_tint()))
+        {
+            let (start_line, _) = decoration.start;
+            let (end_line, _) = decoration.end;
+            if start_line > end_line {
                 continue;
-            };
-            let Some(line_text) = self.document.get_line_cow(doc_line) else {
-                continue;
-            };
-            let Some((x_start, x_end)) = Self::decoration_span_for_line(
-                self.document,
-                &self.ctx,
-                viewport_left,
-                decoration,
-                doc_line,
-                &line_text,
-            ) else {
-                continue;
-            };
+            }
+            let first = rows.partition_point(|(line, _)| line.doc_line < start_line);
+            let end = rows.partition_point(|(line, _)| line.doc_line <= end_line);
+            for (line, text) in &rows[first..end] {
+                let line_text = text.get_or_init(|| line.text(self.document));
+                for fragment in line.source_fragments() {
+                    let Some((x_start, x_end)) = Self::decoration_span_for_line(
+                        self.document,
+                        &self.ctx,
+                        viewport_left,
+                        decoration,
+                        &fragment,
+                        line_text,
+                    ) else {
+                        continue;
+                    };
 
-            self.paint_decoration(frame, x_start, x_end, y, decoration.kind);
+                    self.paint_decoration(frame, x_start, x_end, line.y, decoration.kind);
+                }
+            }
         }
     }
 
@@ -725,13 +822,22 @@ impl<'a> TextEditorRenderer<'a> {
     fn render_cursor_at(
         &self,
         frame: &mut Frame,
-        line: usize,
+        line: &VisibleTextLine,
         column: usize,
-        y: usize,
         color: u32,
     ) {
-        let line_text = self.document.get_line_cow(line).unwrap_or_default();
-        let visual_cursor_col = char_col_to_visual_col(&line_text, column);
+        if self
+            .ctx
+            .viewport
+            .visual_line_for_position(line.doc_line, column)
+            != line.visual_line
+        {
+            return;
+        }
+        let (_, visual_cursor_col) =
+            self.ctx
+                .viewport
+                .display_position(self.document, line.doc_line, column);
 
         if !self
             .ctx
@@ -743,20 +849,20 @@ impl<'a> TextEditorRenderer<'a> {
         let cursor_x = self.ctx.pixel_x(visual_cursor_col, self.viewport_left());
         frame.fill_rect_px(
             cursor_x,
-            y + CURSOR_INSET,
+            line.y + CURSOR_INSET,
             CURSOR_WIDTH,
             self.ctx.line_height.saturating_sub(CURSOR_INSET * 2),
             color,
         );
     }
 
-    fn render_dirty_line_cursors(&self, frame: &mut Frame, doc_line: usize, y: usize) {
+    fn render_dirty_line_cursors(&self, frame: &mut Frame, line: &VisibleTextLine) {
         if !self.model.ui.cursor_visible {
             return;
         }
 
         for (idx, cursor) in self.editor.cursors.iter().enumerate() {
-            if cursor.line != doc_line {
+            if cursor.line != line.doc_line {
                 continue;
             }
 
@@ -765,7 +871,7 @@ impl<'a> TextEditorRenderer<'a> {
             } else {
                 self.palette.secondary_cursor
             };
-            self.render_cursor_at(frame, cursor.line, cursor.column, y, cursor_color);
+            self.render_cursor_at(frame, line, cursor.column, cursor_color);
         }
     }
 
@@ -775,16 +881,23 @@ impl<'a> TextEditorRenderer<'a> {
         }
 
         for (idx, cursor) in self.editor.cursors.iter().enumerate() {
-            let Some(screen_line) = self.ctx.viewport.visible_row_for_doc_line(cursor.line) else {
+            let Some(screen_line) = self
+                .ctx
+                .viewport
+                .visible_row_for_position(cursor.line, cursor.column)
+            else {
                 continue;
             };
             let y = self.ctx.content_y + screen_line * self.ctx.line_height;
+            let Some(line) = self.prepare_visible_line(screen_line, y) else {
+                continue;
+            };
             let cursor_color = if idx == 0 {
                 self.palette.primary_cursor
             } else {
                 self.palette.secondary_cursor
             };
-            self.render_cursor_at(frame, cursor.line, cursor.column, y, cursor_color);
+            self.render_cursor_at(frame, &line, cursor.column, cursor_color);
         }
     }
 
@@ -794,16 +907,21 @@ impl<'a> TextEditorRenderer<'a> {
         }
 
         for preview_pos in &self.editor.rectangle_selection.preview_cursors {
-            let Some(screen_line) = self.ctx.viewport.visible_row_for_doc_line(preview_pos.line)
+            let Some(screen_line) = self
+                .ctx
+                .viewport
+                .visible_row_for_position(preview_pos.line, preview_pos.column)
             else {
                 continue;
             };
             let y = self.ctx.content_y + screen_line * self.ctx.line_height;
+            let Some(line) = self.prepare_visible_line(screen_line, y) else {
+                continue;
+            };
             self.render_cursor_at(
                 frame,
-                preview_pos.line,
+                &line,
                 preview_pos.column,
-                y,
                 self.palette.secondary_cursor,
             );
         }
@@ -821,58 +939,67 @@ impl<'a> TextEditorRenderer<'a> {
         self.render_ghost_text_stage(frame, painter, line);
     }
 
-    /// Inline suggestion (autocomplete.md Phase 2): the remaining ghost
-    /// text after the cursor on its line, dimmed, plus a `⏎ +N lines`
-    /// badge when the suggestion continues below. Paint only — it never
-    /// moves text, joins the viewport map, or answers hit-tests, and it
-    /// only shows on the focused pane's cursor line when the trigger
-    /// gate's "nothing meaningful right of the cursor" still holds.
+    /// Ghost glyphs occupy the shared projected rows. The suffix is already
+    /// shifted by that projection, including tabs and wrapped continuations.
     fn render_ghost_text_stage(
         &mut self,
         frame: &mut Frame,
         painter: &mut TextPainter,
         line: &VisibleTextLine,
     ) {
-        if !line.is_active_line {
-            return;
-        }
-        let Some(state) = crate::update::inline::visible(self.model) else {
-            return;
-        };
-        let cursor = self.editor.cursors[0];
-        if cursor.line != line.doc_line || self.editor.id != self.model.editor().id {
-            return;
-        }
-        let (first, more_lines) = state.first_line_and_rest();
-        if first.is_empty() && more_lines == 0 {
-            return;
-        }
-        let Some(line_text) = self.document.get_line_cow(line.doc_line) else {
+        let Some(row) = line.projected else {
             return;
         };
         let viewport_left = self.viewport_left();
-        let visual_col = char_col_to_visual_col(&line_text, cursor.column);
-        if !self.ctx.contains_visual_col(visual_col, viewport_left) {
-            return;
+        let start = char_col_to_visual_col(&row.text, row.ghost.start).max(viewport_left);
+        let end = char_col_to_visual_col(&row.text, row.ghost.end)
+            .min(viewport_left.saturating_add(self.ctx.visible_columns));
+        if start < end {
+            let expanded = expand_tabs_for_display(&row.text);
+            let text: String = expanded.chars().skip(start).take(end - start).collect();
+            painter.draw(
+                frame,
+                self.ctx.pixel_x(start, viewport_left),
+                line.y,
+                &text,
+                self.palette.ghost_text,
+            );
         }
-        let mut text = expand_tabs_for_display(first).into_owned();
-        if more_lines > 0 {
-            text.push_str(&format!(
-                " \u{23ce} +{more_lines} line{}",
-                if more_lines == 1 { "" } else { "s" }
-            ));
-        }
-        let room = self
+        // Choice count is UI metadata, not inserted source. Put it after the
+        // complete anchor row, never on top of either the ghost or its suffix.
+        let cursor = self.editor.active_cursor();
+        if self
             .ctx
-            .visible_columns
-            .saturating_sub(visual_col.saturating_sub(viewport_left));
-        let text: String = text.chars().take(room).collect();
-        let x = self.ctx.pixel_x(visual_col, viewport_left);
-        painter.draw(frame, x, line.y, &text, self.palette.ghost_text);
+            .viewport
+            .visual_line_for_position(cursor.line, cursor.column)
+            == line.visual_line
+        {
+            if let Some(state) = crate::update::inline::visible(self.model) {
+                let (position, count) = state.choice_position();
+                let column = char_col_to_visual_col(&row.text, row.text.chars().count());
+                if count > 1 && self.ctx.contains_visual_col(column, viewport_left) {
+                    let room = self
+                        .ctx
+                        .visible_columns
+                        .saturating_sub(column - viewport_left);
+                    let label: String = format!(" [{position}/{count}]")
+                        .chars()
+                        .take(room)
+                        .collect();
+                    painter.draw(
+                        frame,
+                        self.ctx.pixel_x(column, viewport_left),
+                        line.y,
+                        &label,
+                        self.palette.ghost_text,
+                    );
+                }
+            }
+        }
     }
 
     fn render_dirty_line_cursor_stage(&self, frame: &mut Frame, line: &VisibleTextLine) {
-        self.render_dirty_line_cursors(frame, line.doc_line, line.y);
+        self.render_dirty_line_cursors(frame, line);
     }
 
     fn render_cursor_lines_only(
@@ -882,16 +1009,15 @@ impl<'a> TextEditorRenderer<'a> {
         dirty_lines: &[usize],
         decorations: &[RangeDecoration],
     ) {
-        for &doc_line in dirty_lines {
-            if !self.ctx.viewport.contains_doc_line(doc_line) {
+        for screen_line in 0..self.ctx.visible_lines {
+            let y = self.ctx.content_y + screen_line * self.ctx.line_height;
+            let Some(line) = self.prepare_visible_line(screen_line, y) else {
+                break;
+            };
+            if !dirty_lines.contains(&line.doc_line) {
                 continue;
             }
 
-            let Some(y) = self.line_screen_y(doc_line) else {
-                continue;
-            };
-
-            let line = self.prepare_visible_line(doc_line, y);
             self.render_line_background_stage(frame, &line);
             self.render_gutter_line_number(frame, painter, &line);
             // Regression guard: this fast path repaints lines the full pass
@@ -935,15 +1061,14 @@ impl<'a> TextEditorRenderer<'a> {
         self.render_current_line_background_stage(frame);
 
         for screen_line in 0..self.ctx.visible_lines {
-            let Some(doc_line) = self.ctx.viewport.doc_line_for_visible_row(screen_line) else {
-                break;
-            };
             let y = self.ctx.content_y + screen_line * self.ctx.line_height;
             if y >= self.ctx.content_y + self.ctx.content_h {
                 break;
             }
 
-            let line = self.prepare_visible_line(doc_line, y);
+            let Some(line) = self.prepare_visible_line(screen_line, y) else {
+                break;
+            };
             #[cfg(debug_assertions)]
             {
                 let start = Instant::now();
@@ -953,12 +1078,20 @@ impl<'a> TextEditorRenderer<'a> {
 
                 let start = Instant::now();
                 self.render_line_text_stage(frame, painter, &line);
+                self.render_ghost_text_stage(frame, painter, &line);
                 glyph_time += start.elapsed();
             }
             #[cfg(not(debug_assertions))]
             self.render_line_content_stages(frame, painter, &line);
         }
 
+        #[cfg(debug_assertions)]
+        {
+            let start = Instant::now();
+            self.render_range_decorations_stage(frame, decorations);
+            decoration_time += start.elapsed();
+        }
+        #[cfg(not(debug_assertions))]
         self.render_range_decorations_stage(frame, decorations);
 
         if is_focused {
@@ -995,15 +1128,14 @@ impl<'a> TextEditorRenderer<'a> {
         );
 
         for screen_line in 0..self.ctx.visible_lines {
-            let Some(doc_line) = self.ctx.viewport.doc_line_for_visible_row(screen_line) else {
-                break;
-            };
             let y = self.ctx.content_y + screen_line * self.ctx.line_height;
             if y >= self.ctx.content_y + self.ctx.content_h {
                 break;
             }
 
-            let line = self.prepare_visible_line(doc_line, y);
+            let Some(line) = self.prepare_visible_line(screen_line, y) else {
+                break;
+            };
             self.render_gutter_mark(frame, &line);
             self.render_gutter_line_number(frame, painter, &line);
         }
@@ -1136,6 +1268,7 @@ mod tests {
     use super::render_cursor_lines_only;
     use super::{
         render_text_area, DecorationKind, EditorRenderContext, RangeDecoration, TextEditorRenderer,
+        VisibleTextLine,
     };
     use crate::model::editor::RectangleSelectionState;
     use crate::model::{AppModel, Cursor, Position, Rect, Selection};
@@ -1166,7 +1299,7 @@ mod tests {
     }
 
     fn make_text_model() -> AppModel {
-        let mut model = AppModel::new(220, 140, 1.0, vec![]);
+        let mut model = AppModel::new(220, 140, 1.0);
         let group_id = model.editor_area.focused_group_id;
         let tab_bar_height = model.metrics.tab_bar_height as f32;
         model.editor_area.groups.get_mut(&group_id).unwrap().rect = Rect::new(
@@ -1186,6 +1319,137 @@ mod tests {
         editor.matched_brackets = Some((Position::new(1, 5), Position::new(1, 6)));
 
         model
+    }
+
+    /// Frozen pre-optimization traversal. Keep the span/paint primitives shared:
+    /// this oracle checks traversal, ordering and clipping, not their geometry.
+    fn render_decorations_reference(
+        renderer: &TextEditorRenderer<'_>,
+        frame: &mut Frame,
+        decorations: &[RangeDecoration],
+    ) {
+        for decoration in decorations
+            .iter()
+            .filter(|d| d.kind.is_tint())
+            .chain(decorations.iter().filter(|d| !d.kind.is_tint()))
+        {
+            if decoration.start.0 > decoration.end.0 {
+                continue;
+            }
+            for row in 0..renderer.ctx.visible_lines {
+                let y = renderer.ctx.content_y + row * renderer.ctx.line_height;
+                let Some(line) = renderer.prepare_visible_line(row, y) else {
+                    continue;
+                };
+                if line.doc_line < decoration.start.0 || line.doc_line > decoration.end.0 {
+                    continue;
+                }
+                let text = line.text(renderer.document);
+                if let Some((start, end)) = TextEditorRenderer::decoration_span_for_line(
+                    renderer.document,
+                    &renderer.ctx,
+                    renderer.viewport_left(),
+                    decoration,
+                    &line,
+                    &text,
+                ) {
+                    renderer.paint_decoration(frame, start, end, line.y, decoration.kind);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn decoration_traversal_pixels_match_reference_with_wrap_scroll_and_overlaps() {
+        let texts = [
+            "alpha\r\n\t🙂beta()\r\nomega\n\nend".to_owned(),
+            format!("{}\nlast", "a\t🙂bc ".repeat(800)),
+            "".to_owned(),
+            "plain\n\ttext🙂\n".repeat(30),
+        ];
+        let endpoints = [
+            (0, 0),
+            (0, 2),
+            (0, usize::MAX),
+            (1, 0),
+            (1, 5),
+            (2, 4),
+            (4, 30),
+            (60, 999),
+        ];
+        let kinds = [
+            DecorationKind::Underline(0xFF00FF00),
+            DecorationKind::BackgroundTint(0x661234FF),
+            DecorationKind::Wavy(0xFFFF0000),
+            DecorationKind::Faded,
+            DecorationKind::Strikethrough(0xFFFFFFFF),
+            DecorationKind::BackgroundTint(0x88FF1234),
+        ];
+        let decorations: Vec<_> = endpoints
+            .iter()
+            .flat_map(|&start| endpoints.iter().map(move |&end| (start, end)))
+            .enumerate()
+            .map(|(index, (start, end))| RangeDecoration {
+                start,
+                end,
+                kind: kinds[index % kinds.len()],
+            })
+            .collect();
+        let mut painted = false;
+        for text in &texts {
+            for wrap in [false, true] {
+                for top in [0, 1, 3] {
+                    for left in [0, 5] {
+                        let mut model = make_text_model();
+                        model.document_mut().buffer = Rope::from_str(text);
+                        model.char_width = 8.0;
+                        model.line_height = 20;
+                        model.editor_mut().soft_wrap = wrap;
+                        model.resync_viewports();
+                        model.editor_area.refresh_wrap_caches();
+                        let editor_id = model.editor_area.focused_editor_id().unwrap();
+                        model.set_editor_vertical_scroll(editor_id, top);
+                        model.editor_mut().viewport.left_column = left;
+                        let group = &model.editor_area.groups[&model.editor_area.focused_group_id];
+                        let layout = GroupLayout::new(group, &model, 8.0);
+                        let renderer = TextEditorRenderer::new(
+                            &model,
+                            model.editor(),
+                            model.document(),
+                            &layout,
+                            8.0,
+                            20,
+                        );
+                        let width = model.window_size.0 as usize;
+                        let height = model.window_size.1 as usize;
+                        let background = 0xFF314159;
+                        let mut expected = vec![background; width * height];
+                        let mut actual = expected.clone();
+                        let clip = Rect::new(
+                            renderer.ctx.text_start_x as f32,
+                            renderer.ctx.content_y as f32,
+                            (renderer.ctx.rect_x + renderer.ctx.rect_w)
+                                .saturating_sub(renderer.ctx.text_start_x)
+                                as f32,
+                            renderer.ctx.content_h as f32,
+                        );
+                        let mut frame = Frame::new(&mut expected, width, height);
+                        frame.set_clip(clip);
+                        render_decorations_reference(&renderer, &mut frame, &decorations);
+                        let mut frame = Frame::new(&mut actual, width, height);
+                        frame.set_clip(clip);
+                        renderer.render_range_decorations_stage(&mut frame, &decorations);
+                        assert!(
+                            actual == expected,
+                            "wrap={wrap}, top={top}, left={left}, chars={}",
+                            text.chars().count()
+                        );
+                        painted |= actual.iter().any(|&pixel| pixel != background);
+                    }
+                }
+            }
+        }
+        assert!(painted, "comparison must exercise painted pixels");
     }
 
     #[test]
@@ -1249,7 +1513,7 @@ mod tests {
         );
     }
 
-    fn make_render_context(model: &AppModel, char_width: f32) -> EditorRenderContext {
+    fn make_render_context(model: &AppModel, char_width: f32) -> EditorRenderContext<'_> {
         let group = model
             .editor_area
             .groups
@@ -1257,6 +1521,20 @@ mod tests {
             .unwrap();
         let layout = GroupLayout::new(group, model, char_width);
         EditorRenderContext::new(&layout, model.editor(), model.document(), char_width, 16)
+    }
+
+    fn unwrapped_line(doc_line: usize) -> VisibleTextLine<'static> {
+        VisibleTextLine {
+            doc_line,
+            visual_line: doc_line,
+            segment_start: 0,
+            segment_end: usize::MAX,
+            is_continuation: false,
+            y: 0,
+            height: 16,
+            is_active_line: false,
+            projected: None,
+        }
     }
 
     #[test]
@@ -1279,7 +1557,7 @@ mod tests {
             &ctx,
             0,
             &decoration,
-            0,
+            &unwrapped_line(0),
             &line_text,
         );
         assert!(span.is_some());
@@ -1318,7 +1596,7 @@ mod tests {
                                     &ctx,
                                     0,
                                     &decoration,
-                                    doc_line,
+                                    &unwrapped_line(doc_line),
                                     &line_text,
                                 )
                             {
@@ -1446,6 +1724,92 @@ mod tests {
         render_cursor_lines_only(&mut frame, &mut painter, model, dirty_lines);
     }
 
+    #[test]
+    fn ghost_projection_blink_pixels_match_full_render_and_decorations_skip_ghosts() {
+        for wrapped in [false, true] {
+            let mut model = make_text_model();
+            model.document_mut().buffer = Rope::from_str("ab\tcd\nnext\nlast");
+            model.document_mut().diagnostics = vec![lsp_types::Diagnostic {
+                range: lsp_types::Range::new(
+                    lsp_types::Position::new(0, 0),
+                    lsp_types::Position::new(0, 5),
+                ),
+                severity: Some(lsp_types::DiagnosticSeverity::WARNING),
+                message: "source only".into(),
+                ..Default::default()
+            }];
+            model.editor_mut().cursors = vec![Cursor::at(0, 1)];
+            model.editor_mut().selections = vec![Selection::new(Position::new(0, 1))];
+            model.editor_mut().soft_wrap = wrapped;
+            model.editor_area.refresh_wrap_caches();
+            let width = wrapped.then_some(model.editor().viewport.visible_columns);
+            let projection = crate::model::GhostProjection::new(
+                model.document(),
+                Position::new(0, 1),
+                "XY\n\tZ",
+                width,
+            )
+            .unwrap();
+            model.editor_mut().ghost_text.0 = Some(std::sync::Arc::new(projection));
+            let before = render_full_editor_group(&model);
+            let mut repainted = before.clone();
+            rerender_cursor_lines(&model, &mut repainted, &[0]);
+            assert_eq!(
+                repainted, before,
+                "blink must not duplicate or erase ghost rows, wrapped={wrapped}"
+            );
+
+            let ctx = make_render_context(&model, 8.0);
+            let group = model.editor_area.focused_group().unwrap();
+            let layout = GroupLayout::new(group, &model, 8.0);
+            let renderer =
+                TextEditorRenderer::new(&model, model.editor(), model.document(), &layout, 8.0, 16);
+            let decoration = RangeDecoration {
+                start: (0, 0),
+                end: (0, 5),
+                kind: DecorationKind::Underline(0xFFFFFFFF),
+            };
+            let line = renderer.prepare_visible_line(0, ctx.content_y).unwrap();
+            let text = line.text(model.document());
+            let spans: Vec<_> = line
+                .source_fragments()
+                .filter_map(|fragment| {
+                    TextEditorRenderer::decoration_span_for_line(
+                        model.document(),
+                        &ctx,
+                        0,
+                        &decoration,
+                        &fragment,
+                        &text,
+                    )
+                })
+                .collect();
+            assert_eq!(spans, vec![(ctx.text_start_x, ctx.text_start_x + 8)]);
+            let line = renderer
+                .prepare_visible_line(1, ctx.content_y + 16)
+                .unwrap();
+            let text = line.text(model.document());
+            let spans: Vec<_> = line
+                .source_fragments()
+                .filter_map(|fragment| {
+                    TextEditorRenderer::decoration_span_for_line(
+                        model.document(),
+                        &ctx,
+                        0,
+                        &decoration,
+                        &fragment,
+                        &text,
+                    )
+                })
+                .collect();
+            assert_eq!(
+                spans[0].0,
+                ctx.text_start_x + 5 * 8,
+                "suffix decoration starts after tab-expanded ghost"
+            );
+        }
+    }
+
     fn extract_active_line_band(model: &AppModel, buffer: &[u32]) -> Vec<u32> {
         let width = model.window_size.0 as usize;
         let (_, _, _, char_width, line_height) = load_test_font();
@@ -1523,6 +1887,48 @@ mod tests {
                 diffs.first()
             );
         }
+    }
+
+    #[test]
+    fn soft_wrap_cursor_blink_repaints_all_segments_identically() {
+        let mut model = make_text_model();
+        let (_, _, _, char_width, line_height) = load_test_font();
+        model.char_width = char_width;
+        model.line_height = line_height;
+        model.document_mut().buffer =
+            Rope::from("one two three four five six seven eight nine ten eleven twelve\nnext");
+        model.editor_mut().cursors = vec![Cursor::at(0, 24)];
+        model.editor_mut().selections = vec![Selection::from_positions(
+            Position::new(0, 3),
+            Position::new(0, 24),
+        )];
+        model.editor_mut().matched_brackets = Some((Position::new(0, 4), Position::new(0, 23)));
+        model.editor_mut().soft_wrap = true;
+        model.resync_viewports();
+        model.editor_mut().viewport.top_line = 1;
+        model.ui.cursor_visible = true;
+        let mut incremental = render_full_editor_group(&model);
+        model.ui.cursor_visible = false;
+        rerender_cursor_lines(&model, &mut incremental, &[0]);
+        let full = render_full_editor_group(&model);
+        let differences: Vec<_> = incremental
+            .iter()
+            .zip(&full)
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, _)| {
+                (
+                    i % model.window_size.0 as usize,
+                    i / model.window_size.0 as usize,
+                )
+            })
+            .collect();
+        assert!(
+            differences.is_empty(),
+            "{} pixels differ, first {:?}",
+            differences.len(),
+            differences.first()
+        );
     }
 
     #[test]

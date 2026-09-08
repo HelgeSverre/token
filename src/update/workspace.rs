@@ -468,7 +468,7 @@ mod tests {
         use crate::model::FocusTarget;
         use crate::panel::DockPosition;
 
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let mut ws = test_workspace();
         ws.sidebar_visible = false; // hidden sidebar must be shown by reveal
         model.workspace = Some(ws);
@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn reveal_active_file_outside_workspace_keeps_status_behavior() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.workspace = Some(test_workspace());
         model.document_mut().file_path = Some(PathBuf::from("/elsewhere/file.rs"));
 
@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn test_toggle_sidebar() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.workspace = Some(test_workspace());
 
         assert!(model.workspace.as_ref().unwrap().sidebar_visible);
@@ -527,7 +527,7 @@ mod tests {
         // untouched (it may even be parked unclamped by keyboard nav).
         // Toggling it back on must clamp against the fresh viewport so a
         // stale offset can never reach a visible frame.
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let mut ws = test_workspace();
         for i in 0..40 {
             ws.file_tree
@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     fn hiding_the_sidebar_preserves_the_scroll_offset() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.workspace = Some(test_workspace());
         model.workspace.as_mut().unwrap().scroll_offset = 3;
 
@@ -568,7 +568,7 @@ mod tests {
 
     #[test]
     fn test_toggle_folder() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.workspace = Some(test_workspace());
 
         let folder = PathBuf::from("/test/src");

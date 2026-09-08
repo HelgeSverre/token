@@ -105,3 +105,50 @@ pub fn char_col_to_visual_col(text: &str, char_col: usize) -> usize {
 
     visual_col
 }
+
+/// Convert an absolute character column to a visual column relative to a
+/// segment that begins at `start_col`. Tab expansion restarts at the segment,
+/// matching how wrapped segments are painted.
+pub fn char_col_to_visual_col_from(text: &str, start_col: usize, char_col: usize) -> usize {
+    let mut visual_col = 0;
+    for ch in text
+        .chars()
+        .skip(start_col)
+        .take(char_col.saturating_sub(start_col))
+    {
+        if ch == '\t' {
+            visual_col += TABULATOR_WIDTH - (visual_col % TABULATOR_WIDTH);
+        } else {
+            visual_col += 1;
+        }
+    }
+    visual_col
+}
+
+/// Convert a segment-local visual column back to an absolute character column.
+pub fn visual_col_to_char_col_from(
+    text: &str,
+    start_col: usize,
+    end_col: usize,
+    visual_col: usize,
+) -> usize {
+    let mut current_visual = 0;
+    let mut char_col = start_col;
+
+    for ch in text
+        .chars()
+        .skip(start_col)
+        .take(end_col.saturating_sub(start_col))
+    {
+        if current_visual >= visual_col {
+            break;
+        }
+        if ch == '\t' {
+            current_visual += TABULATOR_WIDTH - (current_visual % TABULATOR_WIDTH);
+        } else {
+            current_visual += 1;
+        }
+        char_col += 1;
+    }
+    char_col
+}

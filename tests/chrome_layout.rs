@@ -21,7 +21,7 @@ fn assert_rect(
 }
 
 fn model_with_problems(dock: DockPosition) -> AppModel {
-    let mut model = AppModel::new(1000, 700, 1.0, vec![]);
+    let mut model = AppModel::new(1000, 700, 1.0);
     model.document_mut().file_path = Some(std::path::PathBuf::from("/proj/a.rs"));
     // Move Problems into the requested dock and activate it.
     if dock != DockPosition::Bottom {
@@ -116,7 +116,7 @@ fn problems_in_right_dock_gets_right_dock_geometry() {
 
 #[test]
 fn window_shell_accounts_for_status_bar_and_both_docks() {
-    let mut model = AppModel::new(1000, 700, 1.0, vec![]);
+    let mut model = AppModel::new(1000, 700, 1.0);
     model.status_bar_height = 20;
     model.dock_layout.right.is_open = true;
     model.dock_layout.right.size_logical = 180.0;
@@ -142,7 +142,7 @@ fn window_shell_accounts_for_status_bar_and_both_docks() {
 #[test]
 fn sidebar_spans_the_content_height_and_bottom_dock_starts_after_it() {
     let dir = tempfile::tempdir().expect("temporary workspace should be created");
-    let mut model = AppModel::new(1000, 700, 1.0, vec![]);
+    let mut model = AppModel::new(1000, 700, 1.0);
     model.status_bar_height = 20;
     let mut workspace =
         Workspace::new(dir.path().to_path_buf(), &model.metrics).expect("workspace should load");
@@ -167,7 +167,7 @@ fn sidebar_spans_the_content_height_and_bottom_dock_starts_after_it() {
 #[test]
 fn shell_only_solve_matches_full_chrome_outer_rects() {
     let dir = tempfile::tempdir().expect("temporary workspace should be created");
-    let mut model = AppModel::new(1000, 700, 1.0, vec![]);
+    let mut model = AppModel::new(1000, 700, 1.0);
     model.workspace = Some(
         Workspace::new(dir.path().to_path_buf(), &model.metrics).expect("workspace should load"),
     );
@@ -204,7 +204,7 @@ fn sidebar_rows_share_one_viewport_for_render_hit_and_scroll() {
         std::fs::write(dir.path().join(format!("file-{index}.rs")), "")
             .expect("test file should be created");
     }
-    let mut model = AppModel::new(800, 180, 1.0, vec![]);
+    let mut model = AppModel::new(800, 180, 1.0);
     model.workspace = Some(
         Workspace::new(dir.path().to_path_buf(), &model.metrics).expect("workspace should load"),
     );

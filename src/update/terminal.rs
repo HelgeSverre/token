@@ -161,7 +161,7 @@ mod tests {
     use alacritty_terminal::index::{Column, Line};
 
     fn test_model() -> AppModel {
-        AppModel::new(800, 600, 1.0, vec![])
+        AppModel::new(800, 600, 1.0)
     }
 
     fn push_test_session(model: &mut AppModel, rows: usize, cols: usize) {

@@ -3,19 +3,15 @@
 //! then place the cursor" mechanism shared by `Command::GotoDefinition`,
 //! `Command::NavigateBack`, and (for the clamp helper) outline jumps.
 //!
-//! Same-file and cross-file navigation collapse to one code path here:
-//! `LayoutMsg::OpenFileInNewTab` already reuses an already-open tab for a
-//! given path (`EditorArea::find_open_file`), so there is no separate
-//! "fast path" for staying in the current file — it is just the case
-//! where the reused tab happens to already be the focused one.
+//! Opening captures a target group and typed cursor continuation. Cursor
+//! conversion/placement runs only after that destination has been installed.
 
 use std::path::{Path, PathBuf};
 
 use crate::commands::Cmd;
+#[cfg(test)]
 use crate::messages::LayoutMsg;
 use crate::model::{AppModel, JumpEntry, TabContent};
-
-use super::layout::update_layout;
 
 /// Soft cap on the back-stack size. Flat cap + a `Vec::remove(0)` shift
 /// when it overflows — fine at this size; swap to a `VecDeque` if a
@@ -102,65 +98,58 @@ pub(crate) fn push_history(model: &mut AppModel) {
     }
 }
 
-/// Opens (or focuses an already-open tab for) `path` in the focused
-/// group.
-pub fn open_or_focus(model: &mut AppModel, path: PathBuf) -> Option<Cmd> {
-    update_layout(model, LayoutMsg::OpenFileInNewTab(path))
+/// CLI/automation coordinates are one-indexed; defer conversion/placement until
+/// the actual destination has loaded, just like LSP and history navigation.
+pub fn open_path_at(
+    model: &mut AppModel,
+    path: PathBuf,
+    line: Option<usize>,
+    column: Option<usize>,
+) -> Option<Cmd> {
+    let position = line.map(|line| crate::model::OpenPosition::Char {
+        line: line.saturating_sub(1),
+        column: column.unwrap_or(1).saturating_sub(1),
+    });
+    super::layout::open_file_in_group(model, path, model.editor_area.focused_group_id, position)
 }
 
-/// Whether the now-focused tab is plain text — i.e. not an image or
-/// binary placeholder, the design doc's "skip cursor placement" guard.
-pub(crate) fn focused_tab_is_text(model: &AppModel) -> bool {
-    model
-        .try_editor()
-        .is_some_and(|e| matches!(e.tab_content, TabContent::Text) && !e.view_mode.is_image())
-}
-
-/// Whether the now-focused tab is actually showing `path` — the guard
-/// that keeps a failed or redirected open (permission denied, invalid
-/// UTF-8, or a reused-in-another-group tab) from letting a caller mistake
-/// the *origin* document for the target and move its cursor instead
-/// (design doc: "no stale result ever moves a cursor"; `open_or_focus`
-/// falling through without changing focus is exactly the case this
-/// catches). Paths are canonicalized before comparing — one may come
-/// from a decoded LSP URI, the other from `Document.file_path` — falling
-/// back to the raw path when canonicalization fails (nonexistent file).
-pub fn focused_tab_shows(model: &AppModel, path: &std::path::Path) -> bool {
-    let Some(focused) = model.try_document().and_then(|d| d.file_path.as_deref()) else {
-        return false;
+/// Complete a navigation against its actual destination, after loading and
+/// viewport synchronization. Never borrows the subsequently focused document.
+pub(super) fn place_open_cursor(
+    model: &mut AppModel,
+    editor_id: crate::model::EditorId,
+    position: crate::model::OpenPosition,
+) {
+    let Some(editor) = model.editor_area.editors.get_mut(&editor_id) else {
+        return;
     };
-    let canonical_focused = focused
-        .canonicalize()
-        .unwrap_or_else(|_| focused.to_path_buf());
-    let canonical_target = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    canonical_focused == canonical_target
-}
-
-/// Clamp + set cursor + center + focus on the currently focused
-/// document/editor, in char coordinates — the `JumpToSymbol` body,
-/// generalized so LSP jumps and jump-history navigation can reuse it
-/// after opening/focusing the target tab. `None` (no-op) for a
-/// non-text tab (image/binary placeholder).
-pub fn place_cursor_char(model: &mut AppModel, line: usize, col: usize) -> Option<Cmd> {
-    if !focused_tab_is_text(model) {
-        return None;
+    if !matches!(editor.tab_content, TabContent::Text) || editor.view_mode.is_image() {
+        return;
     }
-    let (line, col) = clamp_to_document(model, line, col);
-    let editor = model.editor_mut();
+    let Some(document) = editor
+        .document_id
+        .and_then(|id| model.editor_area.documents.get(&id))
+    else {
+        return;
+    };
+    let (line, column) = match position {
+        crate::model::OpenPosition::Char { line, column } => (line, column),
+        crate::model::OpenPosition::Lsp(position) => {
+            let position = crate::lsp::lsp_to_position(document, position);
+            (position.line, position.column)
+        }
+    };
+    let line = line.min(document.line_count().saturating_sub(1));
     editor.cursors[0].line = line;
-    editor.cursors[0].column = col;
+    editor.cursors[0].column = column.min(document.line_length(line));
     editor.cursors[0].desired_column = None;
     editor.clear_selection();
-    model.ensure_cursor_visible_centered();
-    model.ui.focus_editor();
-    Some(Cmd::redraw_editor())
+    editor.ensure_cursor_visible_with_mode(document, crate::model::ScrollRevealMode::Centered);
 }
 
 /// One row of any confirmable location list (usages popup, problems
-/// panel, future pickers). line/col are CHAR coordinates (already
-/// converted from LSP UTF-16 where a document was available; raw LSP
-/// values otherwise — `place_cursor_char` clamps after open, same
-/// defense outline jumps rely on).
+/// panel, future pickers). Positions remain in LSP UTF-16 coordinates until
+/// the destination is available; display conversion is best-effort only.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocationItem {
     pub path: PathBuf,
@@ -213,10 +202,8 @@ pub(crate) fn activate_location(model: &mut AppModel, item: &LocationItem) -> Op
     jump_to_location(model, None, &item.path, item.position)
 }
 
-/// The shared activate handler: push jump history, open-or-focus the
-/// tab, place the cursor iff the focused tab really shows `path` (the
-/// "no stale result ever moves a cursor" guard, verbatim from
-/// `DefinitionResolved`). `origin`: pre-captured entry for async flows
+/// The shared activate handler: push jump history and capture a typed post-open
+/// cursor action in the origin group. `origin`: pre-captured entry for async flows
 /// (definition/references resolve), or capture-now for sync ones.
 /// `target` is a raw LSP position (UTF-16 column), converted against the
 /// target document *after* it opens — the only moment conversion is
@@ -228,17 +215,20 @@ pub(crate) fn jump_to_location(
     path: &Path,
     target: lsp_types::Position,
 ) -> Option<Cmd> {
-    if let Some(entry) = origin.or_else(|| current_jump_entry(model)) {
+    let origin = origin.or_else(|| current_jump_entry(model));
+    let group_id = origin
+        .as_ref()
+        .map(|entry| entry.group_id)
+        .unwrap_or(model.editor_area.focused_group_id);
+    if let Some(entry) = origin {
         push_history_entry(model, entry);
     }
-    let open_cmd = open_or_focus(model, path.to_path_buf());
-    let cursor_cmd = if focused_tab_is_text(model) && focused_tab_shows(model, path) {
-        let position = crate::lsp::lsp_to_position(model.document(), target);
-        place_cursor_char(model, position.line, position.column)
-    } else {
-        None
-    };
-    Some(combine(open_cmd, cursor_cmd).unwrap_or(Cmd::Redraw))
+    super::layout::open_file_in_group(
+        model,
+        path.to_path_buf(),
+        group_id,
+        Some(crate::model::OpenPosition::Lsp(target)),
+    )
 }
 
 /// `Command::NavigateBack` / `LspMsg::NavigateBack`: pops the *focused
@@ -283,18 +273,35 @@ fn navigate_to_entry(model: &mut AppModel, entry: JumpEntry) -> Option<Cmd> {
         .get(&entry.document_id)
         .and_then(|doc| doc.file_path.clone())
         .unwrap_or(entry.path);
-    let open_cmd = open_or_focus(model, path.clone());
-    let cursor_cmd = if focused_tab_shows(model, &path) {
-        place_cursor_char(model, entry.line, entry.col)
-    } else {
-        None
-    };
-    Some(combine(open_cmd, cursor_cmd).unwrap_or(Cmd::Redraw))
+    super::layout::open_file_in_group(
+        model,
+        path,
+        entry.group_id,
+        Some(crate::model::OpenPosition::Char {
+            line: entry.line,
+            column: entry.col,
+        }),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn open_fixture_layout(model: &mut AppModel, msg: crate::messages::LayoutMsg) -> Option<Cmd> {
+        let cmd = crate::update::layout::update_layout(model, msg);
+        crate::update::finish_test_file_opens(model, cmd)
+    }
+
+    fn jump_fixture(
+        model: &mut AppModel,
+        origin: Option<JumpEntry>,
+        path: &Path,
+        position: lsp_types::Position,
+    ) {
+        let cmd = jump_to_location(model, origin, path, position);
+        crate::update::finish_test_file_opens(model, cmd);
+    }
     use crate::model::editor_area::GroupId;
 
     fn model_with_two_files(dir: &std::path::Path) -> AppModel {
@@ -302,14 +309,15 @@ mod tests {
         let b = dir.join("b.txt");
         std::fs::write(&a, "aaa\nbbb\n").unwrap();
         std::fs::write(&b, "ccc\nddd\n").unwrap();
-        let mut model = AppModel::new(800, 600, 1.0, vec![a]);
-        update_layout(&mut model, LayoutMsg::OpenFileInNewTab(b));
+        let mut model =
+            AppModel::with_document(800, 600, 1.0, crate::model::Document::from_file(a).unwrap());
+        open_fixture_layout(&mut model, LayoutMsg::OpenFileInNewTab(b));
         model
     }
 
     #[test]
     fn push_history_skips_untitled_documents() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         assert!(model.try_document().unwrap().file_path.is_none());
         push_history(&mut model);
         assert!(model.jump_history.is_empty());
@@ -347,7 +355,7 @@ mod tests {
         let b_path = model.document().file_path.clone().unwrap();
 
         let a_path = dir.path().join("a.txt");
-        jump_to_location(
+        jump_fixture(
             &mut model,
             None,
             &a_path,
@@ -387,7 +395,7 @@ mod tests {
 
         // Jump away to a.txt.
         let a_path = dir.path().join("a.txt");
-        update_layout(&mut model, LayoutMsg::OpenFileInNewTab(a_path));
+        open_fixture_layout(&mut model, LayoutMsg::OpenFileInNewTab(a_path));
         assert_ne!(
             model.document().file_path.as_deref(),
             Some(b_path.as_path())
@@ -404,13 +412,13 @@ mod tests {
 
     #[test]
     fn navigate_back_is_a_no_op_when_history_is_empty() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         assert!(navigate_back(&mut model).is_none());
     }
 
     #[test]
     fn navigate_back_only_pops_the_focused_groups_entries() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.jump_history.push(JumpEntry {
             group_id: GroupId(999), // some other, non-focused group
             document_id: model.document().id.unwrap(),
@@ -439,7 +447,7 @@ mod tests {
             "target must not be open before the jump"
         );
 
-        jump_to_location(
+        jump_fixture(
             &mut model,
             None,
             &target,
@@ -469,7 +477,7 @@ mod tests {
         // Jump: push origin, open a.txt.
         push_history(&mut model);
         let a_path = dir.path().join("a.txt");
-        update_layout(&mut model, LayoutMsg::OpenFileInNewTab(a_path.clone()));
+        open_fixture_layout(&mut model, LayoutMsg::OpenFileInNewTab(a_path.clone()));
 
         // Back returns to the origin and arms forward.
         navigate_back(&mut model);

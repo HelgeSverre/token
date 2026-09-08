@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn tab_bar_hits_tabs_and_empty_space() {
-        let mut model = AppModel::new(400, 300, 1.0, vec![]);
+        let mut model = AppModel::new(400, 300, 1.0);
         let group_id = model.editor_area.focused_group_id;
         {
             let group = model.editor_area.groups.get_mut(&group_id).unwrap();
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn tab_bar_clips_at_group_edge_without_changing_logical_span() {
-        let mut model = AppModel::new(400, 300, 1.0, vec![]);
+        let mut model = AppModel::new(400, 300, 1.0);
         let group_id = model.editor_area.focused_group_id;
         {
             let group = model.editor_area.groups.get_mut(&group_id).unwrap();
@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn tab_bar_scroll_moves_visible_rects_but_preserves_logical_spans() {
-        let mut model = AppModel::new(400, 300, 1.0, vec![]);
+        let mut model = AppModel::new(400, 300, 1.0);
         let group_id = model.editor_area.focused_group_id;
         {
             let group = model.editor_area.groups.get_mut(&group_id).unwrap();

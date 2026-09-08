@@ -4,6 +4,7 @@ use super::document::Document;
 use super::editor_area::{DocumentId, EditorId};
 use crate::csv::CsvState;
 use crate::util::text::{char_type, CharType};
+use crate::wrap::{WrapCache, WrapSegment};
 
 /// Strategy for revealing the cursor when it's outside the viewport
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -46,7 +47,7 @@ pub struct SelectionSnapshot {
 /// Viewport state - what portion of the document is visible
 #[derive(Debug, Clone)]
 pub struct Viewport {
-    /// First visible line (0-indexed)
+    /// First visible visual row (logical line when wrapping is disabled)
     pub top_line: usize,
     /// First visible column (for horizontal scrolling)
     pub left_column: usize,
@@ -74,22 +75,21 @@ impl Default for Viewport {
     }
 }
 
-/// No-wrap mapping between viewport rows/columns and logical document positions.
-///
-/// This is the current shared seam for both rendering and editor-state logic
-/// that needs to answer "which logical line/column does this visible row or
-/// pixel map to?". Soft wrap and folding can later replace or extend this
-/// mapping without forcing each caller to open-code `top_line + visual_row`.
+/// Shared mapping between visual viewport rows and logical document positions.
+/// Scroll offsets and reveal targets are visual rows; document-facing queries
+/// explicitly convert through the pane's wrap cache.
 #[derive(Debug, Clone, Copy)]
-pub struct TextViewportMap {
+pub struct TextViewportMap<'a> {
     top_line: usize,
     left_column: usize,
     visible_lines: usize,
     visible_columns: usize,
     line_count: usize,
+    wrap_cache: Option<&'a WrapCache>,
+    ghost: Option<&'a super::GhostProjection>,
 }
 
-impl TextViewportMap {
+impl<'a> TextViewportMap<'a> {
     pub fn new(viewport: &Viewport, line_count: usize) -> Self {
         Self {
             top_line: viewport.top_line,
@@ -97,6 +97,20 @@ impl TextViewportMap {
             visible_lines: viewport.visible_lines,
             visible_columns: viewport.visible_columns,
             line_count,
+            wrap_cache: None,
+            ghost: None,
+        }
+    }
+
+    pub fn wrapped(viewport: &Viewport, line_count: usize, wrap_cache: &'a WrapCache) -> Self {
+        Self {
+            top_line: viewport.top_line,
+            left_column: 0,
+            visible_lines: viewport.visible_lines,
+            visible_columns: viewport.visible_columns,
+            line_count,
+            wrap_cache: Some(wrap_cache),
+            ghost: None,
         }
     }
 
@@ -117,12 +131,71 @@ impl TextViewportMap {
 
     #[inline]
     pub fn last_line(&self) -> usize {
-        self.line_count.saturating_sub(1)
+        self.row_count().saturating_sub(1)
+    }
+
+    #[inline]
+    pub fn row_count(&self) -> usize {
+        let base = self
+            .wrap_cache
+            .map_or(self.line_count, WrapCache::total_visual_lines);
+        self.ghost.map_or(base, |ghost| {
+            base - self.base_line_rows(ghost.anchor.line) + ghost.rows.len()
+        })
+    }
+
+    fn base_line_row(&self, line: usize) -> usize {
+        self.wrap_cache
+            .map_or(line, |cache| cache.logical_line_to_visual(line))
+    }
+
+    fn base_line_rows(&self, line: usize) -> usize {
+        self.wrap_cache
+            .map_or(1, |cache| cache.visual_line_count(line))
+    }
+
+    /// Remove the insertion's row displacement to address the ordinary cache.
+    fn base_row(&self, row: usize) -> usize {
+        let Some(ghost) = self.ghost else {
+            return row;
+        };
+        let start = self.base_line_row(ghost.anchor.line);
+        if row < start {
+            row
+        } else if row < start + ghost.rows.len() {
+            start
+        } else {
+            row - ghost.rows.len() + self.base_line_rows(ghost.anchor.line)
+        }
+    }
+
+    fn projected_row(&self, base: usize) -> usize {
+        let Some(ghost) = self.ghost else {
+            return base;
+        };
+        let end = self.base_line_row(ghost.anchor.line) + self.base_line_rows(ghost.anchor.line);
+        if base < end {
+            base
+        } else {
+            base - self.base_line_rows(ghost.anchor.line) + ghost.rows.len()
+        }
+    }
+
+    pub(crate) fn ghost_row_for_visible_row(
+        &self,
+        visible_row: usize,
+    ) -> Option<&'a super::GhostRow> {
+        let ghost = self.ghost?;
+        let index = self
+            .top_line
+            .saturating_add(visible_row)
+            .checked_sub(self.base_line_row(ghost.anchor.line))?;
+        ghost.rows.get(index)
     }
 
     #[inline]
     pub fn max_top_line(&self) -> usize {
-        self.line_count.saturating_sub(self.visible_lines)
+        self.row_count().saturating_sub(self.visible_lines)
     }
 
     #[inline]
@@ -138,7 +211,7 @@ impl TextViewportMap {
     pub fn end_line(&self) -> usize {
         self.top_line
             .saturating_add(self.visible_lines)
-            .min(self.line_count)
+            .min(self.row_count())
     }
 
     #[inline]
@@ -150,18 +223,193 @@ impl TextViewportMap {
 
     #[inline]
     pub fn doc_line_for_visible_row(&self, visible_row: usize) -> Option<usize> {
-        let doc_line = self.top_line.saturating_add(visible_row);
-        (doc_line < self.line_count).then_some(doc_line)
+        let visual_line = self.top_line.saturating_add(visible_row);
+        if visual_line >= self.row_count() {
+            return None;
+        }
+        let base = self.base_row(visual_line);
+        Some(
+            self.wrap_cache
+                .map_or(base, |cache| cache.visual_line_to_logical(base)),
+        )
     }
 
     #[inline]
     pub fn visible_row_for_doc_line(&self, doc_line: usize) -> Option<usize> {
-        if doc_line < self.top_line || doc_line >= self.line_count {
+        if doc_line >= self.line_count {
             return None;
         }
-
-        let visible_row = doc_line - self.top_line;
+        let visual_line = self.visual_line_for_position(doc_line, 0);
+        let rows = self
+            .ghost
+            .filter(|g| g.anchor.line == doc_line)
+            .map_or_else(|| self.base_line_rows(doc_line), |g| g.rows.len());
+        let last_visual_line = visual_line + rows.saturating_sub(1);
+        if last_visual_line < self.top_line {
+            return None;
+        }
+        let visible_row = visual_line.saturating_sub(self.top_line);
         (visible_row < self.visible_lines).then_some(visible_row)
+    }
+
+    /// Logical lines intersecting the visible rows, including partial lines.
+    pub fn visible_doc_lines(&self) -> std::ops::Range<usize> {
+        let Some(first) = self.doc_line_for_visible_row(0) else {
+            return self.line_count..self.line_count;
+        };
+        if self.visible_lines == 0 {
+            return first..first;
+        }
+        let last = self
+            .doc_line_for_visible_row(self.visible_lines - 1)
+            .unwrap_or(self.line_count.saturating_sub(1));
+        first..last.saturating_add(1)
+    }
+
+    /// Row and tab-expanded column for a logical position.
+    pub fn display_position(
+        &self,
+        document: &Document,
+        line: usize,
+        column: usize,
+    ) -> (usize, usize) {
+        if let Some(ghost) = self.ghost.filter(|g| g.anchor.line == line) {
+            let (row, column) = ghost.display_position(column);
+            return (self.base_line_row(line) + row, column);
+        }
+        let row = self.visual_line_for_position(line, column);
+        let start = self
+            .wrap_cache
+            .and_then(|cache| cache.segment_for_visual_line(self.base_row(row)))
+            .map_or(0, |segment| segment.start_col);
+        let text = document.get_line_cow(line).unwrap_or_default();
+        (
+            row,
+            crate::util::text::char_col_to_visual_col_from(&text, start, column),
+        )
+    }
+
+    /// Logical position on a global visual row at the supplied display column.
+    /// Internal wrap boundaries belong to the following row, so clicks and
+    /// vertical movement on a row's right margin stop before that boundary.
+    pub fn position_at_display_column(
+        &self,
+        document: &Document,
+        row: usize,
+        column: usize,
+    ) -> Position {
+        let row = row.min(self.last_line());
+        if let Some(ghost) = self.ghost {
+            let start = self.base_line_row(ghost.anchor.line);
+            if (start..start + ghost.rows.len()).contains(&row) {
+                return Position::new(ghost.anchor.line, ghost.source_column(row - start, column));
+            }
+        }
+        let row = self.base_row(row);
+        let (line, start, end) = if let Some(cache) = self.wrap_cache {
+            let line = cache.visual_line_to_logical(row);
+            let segment = cache.segment_for_visual_line(row);
+            let start = segment.map_or(0, |s| s.start_col);
+            let mut end = segment.map_or(0, |s| s.end_col());
+            if end < document.line_length(line) {
+                end = end.saturating_sub(1).max(start);
+            }
+            (line, start, end)
+        } else {
+            (row, 0, document.line_length(row))
+        };
+        let text = document.get_line_cow(line).unwrap_or_default();
+        Position::new(
+            line,
+            crate::util::text::visual_col_to_char_col_from(&text, start, end, column),
+        )
+    }
+
+    pub fn position_for_pixel(
+        &self,
+        document: &Document,
+        x_offset: f64,
+        y_offset: f64,
+        char_width: f32,
+        line_height: f64,
+    ) -> Position {
+        let visible_row = if line_height > 0.0 {
+            (y_offset.max(0.0) / line_height).floor() as usize
+        } else {
+            0
+        };
+        self.position_at_display_column(
+            document,
+            self.top_line.saturating_add(visible_row),
+            self.visual_column_for_x_offset(x_offset, char_width),
+        )
+    }
+
+    pub fn visible_row_for_position(&self, line: usize, column: usize) -> Option<usize> {
+        if line >= self.line_count {
+            return None;
+        }
+        let visual_line = self.visual_line_for_position(line, column);
+        let visible_row = visual_line.checked_sub(self.top_line)?;
+        (visible_row < self.visible_lines).then_some(visible_row)
+    }
+
+    #[inline]
+    pub fn visual_line_for_position(&self, line: usize, column: usize) -> usize {
+        if let Some(ghost) = self.ghost.filter(|g| g.anchor.line == line) {
+            return self.base_line_row(line) + ghost.display_position(column).0;
+        }
+        self.projected_row(
+            self.wrap_cache
+                .map_or(line, |cache| cache.logical_to_visual(line, column).0),
+        )
+    }
+
+    pub fn segment_for_visible_row(
+        &self,
+        document: &Document,
+        visible_row: usize,
+    ) -> Option<WrapSegment> {
+        let visual_line = self.top_line.saturating_add(visible_row);
+        if visual_line >= self.row_count() {
+            return None;
+        }
+        if let Some(row) = self.ghost_row_for_visible_row(visible_row) {
+            let anchor = self.ghost?.anchor;
+            let start = row
+                .sources
+                .iter()
+                .flatten()
+                .next()
+                .map_or(anchor.column, |s| s.columns.start);
+            let end = row
+                .sources
+                .iter()
+                .flatten()
+                .last()
+                .map_or(start, |s| s.columns.end);
+            return Some(WrapSegment {
+                start_col: start,
+                len: end - start,
+                visual_line,
+                is_continuation: visual_line != self.base_line_row(anchor.line),
+            });
+        }
+        let base = self.base_row(visual_line);
+        self.wrap_cache
+            .and_then(|cache| cache.segment_for_visual_line(base).copied())
+            .map(|segment| WrapSegment {
+                visual_line,
+                ..segment
+            })
+            .or_else(|| {
+                Some(WrapSegment {
+                    start_col: 0,
+                    len: document.line_length(base),
+                    visual_line,
+                    is_continuation: false,
+                })
+            })
     }
 
     #[inline]
@@ -172,12 +420,14 @@ impl TextViewportMap {
     #[inline]
     pub fn doc_line_for_pixel_y(&self, adjusted_y: f64, line_height: f64) -> usize {
         if line_height <= 0.0 {
-            return self.top_line.min(self.last_line());
+            return self
+                .doc_line_for_visible_row(0)
+                .unwrap_or_else(|| self.line_count.saturating_sub(1));
         }
 
         let visible_row = (adjusted_y.max(0.0) / line_height).floor() as usize;
         self.doc_line_for_visible_row(visible_row)
-            .unwrap_or_else(|| self.last_line())
+            .unwrap_or_else(|| self.line_count.saturating_sub(1))
     }
 
     #[inline]
@@ -191,7 +441,7 @@ impl TextViewportMap {
 
     #[inline]
     fn has_vertical_scroll(&self) -> bool {
-        self.visible_lines > 0 && self.line_count > self.visible_lines
+        self.visible_lines > 0 && self.row_count() > self.visible_lines
     }
 
     pub fn reveal_line_no_padding(&self, line: usize) -> usize {
@@ -285,11 +535,11 @@ impl TextViewportMap {
 pub struct RectangleSelectionState {
     /// Whether a rectangle selection is currently active
     pub active: bool,
-    /// Starting line
+    /// Starting visual row (logical line when wrapping is disabled)
     pub start_line: usize,
     /// Starting visual column (screen position)
     pub start_visual_col: usize,
-    /// Current line (where mouse is now)
+    /// Current visual row (where mouse is now)
     pub current_line: usize,
     /// Current visual column (screen position)
     pub current_visual_col: usize,
@@ -406,6 +656,31 @@ impl ViewMode {
     }
 }
 
+/// Document movement targets; modal text fields retain their own editing engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CursorMovement {
+    Left,
+    Right,
+    Up,
+    Down,
+    LineStart,
+    LineEnd,
+    DocumentStart,
+    DocumentEnd,
+    WordLeft,
+    WordRight,
+    PageUp(usize),
+    PageDown(usize),
+    /// Unsupported vertical word movement is a legacy no-op.
+    Stay,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MovementSelection {
+    Move,
+    Extend,
+}
+
 /// Editor state - view-specific state for editing a document
 ///
 /// Supports multiple cursors and selections. The "active" cursor is the one
@@ -443,6 +718,14 @@ pub struct EditorState {
     pub tab_content: TabContent,
     /// Matching bracket pair positions (if cursor is adjacent to a bracket)
     pub matched_brackets: Option<(Position, Position)>,
+    /// Whether long logical lines wrap to the pane's visible width.
+    pub soft_wrap: bool,
+    /// Per-pane logical/visual row mapping, rebuilt by revision and width.
+    pub wrap_cache: WrapCache,
+    /// Derived inline insertion geometry for this pane only.
+    pub ghost_text: super::GhostText,
+    /// Shared Find/diagnostic scrollbar projection, memoized per pane.
+    pub overview_cache: super::OverviewCache,
 }
 
 impl EditorState {
@@ -464,6 +747,10 @@ impl EditorState {
             view_mode: ViewMode::default(),
             tab_content: TabContent::default(),
             matched_brackets: None,
+            soft_wrap: false,
+            wrap_cache: WrapCache::new(),
+            ghost_text: super::GhostText::default(),
+            overview_cache: super::OverviewCache::default(),
         }
     }
 
@@ -550,6 +837,96 @@ impl EditorState {
     /// redraws.
     pub fn is_plain_text_mode(&self) -> bool {
         matches!(self.tab_content, TabContent::Text) && matches!(self.view_mode, ViewMode::Text)
+    }
+
+    /// Toggle wrapping without changing the logical cursor position.
+    pub fn toggle_soft_wrap(&mut self, document: &Document) {
+        if !self.is_plain_text_mode() {
+            return;
+        }
+        if self.ghost_text.0.is_some() {
+            self.set_ghost_text(document, None);
+        }
+        let logical_top = if self.soft_wrap {
+            self.wrap_cache
+                .visual_line_to_logical(self.viewport.top_line)
+        } else {
+            self.viewport.top_line
+        };
+        self.soft_wrap = !self.soft_wrap;
+        if self.soft_wrap {
+            self.wrap_cache
+                .rebuild(document, self.viewport.visible_columns);
+            self.viewport.left_column = 0;
+            self.viewport.top_line = self.wrap_cache.logical_line_to_visual(logical_top);
+        } else {
+            self.viewport.top_line = logical_top;
+            self.wrap_cache.invalidate();
+        }
+        for cursor in &mut self.cursors {
+            cursor.clear_desired_column();
+        }
+        self.ensure_cursor_visible(document);
+    }
+
+    /// Rebuild the per-pane wrap cache after content or width changes.
+    pub fn ensure_wrap_cache(&mut self, document: &Document) {
+        let reflow = if self.ghost_text.0.as_ref().is_some_and(|g| {
+            !self.is_plain_text_mode()
+                || !g.source_is_current(
+                    document,
+                    self.soft_wrap.then_some(self.viewport.visible_columns),
+                )
+        }) {
+            let previous = self.ghost_text.0.clone();
+            self.set_ghost_text(document, None);
+            previous
+        } else {
+            None
+        };
+        if self.soft_wrap
+            && self.is_plain_text_mode()
+            && self
+                .wrap_cache
+                .needs_refresh(document, self.viewport.visible_columns)
+        {
+            let preserve_top_position = self.wrap_cache.is_valid();
+            let top_position = self.wrap_cache.visual_to_logical(self.viewport.top_line, 0);
+            self.wrap_cache
+                .refresh(document, self.viewport.visible_columns);
+            if preserve_top_position {
+                self.viewport.top_line = self
+                    .wrap_cache
+                    .logical_to_visual(
+                        top_position.0.min(document.line_count().saturating_sub(1)),
+                        top_position.1,
+                    )
+                    .0;
+            }
+            self.viewport.top_line = self
+                .viewport_map(document)
+                .clamp_top_line(self.viewport.top_line);
+            self.viewport.left_column = 0;
+        }
+        // Runtime metric/gutter changes also refresh viewports directly, outside
+        // update(). Retain a current suggestion across those width changes.
+        if self.is_plain_text_mode() {
+            if let Some(projection) = reflow.and_then(|g| {
+                g.reflow(
+                    document,
+                    self.soft_wrap.then_some(self.viewport.visible_columns),
+                )
+            }) {
+                self.set_ghost_text(document, Some(std::sync::Arc::new(projection)));
+            }
+        }
+    }
+
+    /// Global visual row containing the active cursor.
+    pub fn cursor_visual_line(&self, document: &Document) -> usize {
+        let cursor = self.active_cursor();
+        self.viewport_map(document)
+            .visual_line_for_position(cursor.line, cursor.column)
     }
 
     /// Get the number of cursors
@@ -806,13 +1183,44 @@ impl EditorState {
         self.viewport.visible_columns = visible_columns;
     }
 
-    /// Build the current no-wrap text viewport map for this editor/document pair.
-    pub fn viewport_map(&self, document: &Document) -> TextViewportMap {
-        TextViewportMap::new(&self.viewport, document.line_count())
+    /// Build the current text viewport map for this editor/document pair.
+    pub fn viewport_map<'a>(&'a self, document: &Document) -> TextViewportMap<'a> {
+        let mut map = if self.soft_wrap && self.is_plain_text_mode() && self.wrap_cache.is_valid() {
+            TextViewportMap::wrapped(&self.viewport, document.line_count(), &self.wrap_cache)
+        } else {
+            TextViewportMap::new(&self.viewport, document.line_count())
+        };
+        if self.is_plain_text_mode() {
+            map.ghost = self.ghost_text.0.as_deref();
+        }
+        map
+    }
+
+    pub(crate) fn set_ghost_text(
+        &mut self,
+        document: &Document,
+        ghost: Option<std::sync::Arc<super::GhostProjection>>,
+    ) {
+        if !self.is_plain_text_mode() {
+            self.ghost_text.0 = None;
+            self.overview_cache = super::OverviewCache::default();
+            return;
+        }
+        let top = self.viewport_map(document).position_at_display_column(
+            document,
+            self.viewport.top_line,
+            0,
+        );
+        self.ghost_text.0 = ghost;
+        let map = self.viewport_map(document);
+        self.viewport.top_line =
+            map.clamp_top_line(map.visual_line_for_position(top.line, top.column));
+        self.overview_cache = super::OverviewCache::default();
     }
 
     /// Clamp the viewport's top line against the current document.
     pub fn set_top_line_clamped(&mut self, document: &Document, top_line: usize) -> bool {
+        self.ensure_wrap_cache(document);
         let new_top_line = self.viewport_map(document).clamp_top_line(top_line);
         let changed = self.viewport.top_line != new_top_line;
         self.viewport.top_line = new_top_line;
@@ -821,6 +1229,7 @@ impl EditorState {
 
     /// Scroll the viewport vertically while respecting the current document bounds.
     pub fn scroll_vertical_by(&mut self, document: &Document, delta: isize) -> bool {
+        self.ensure_wrap_cache(document);
         let new_top_line = self.viewport_map(document).scroll_vertical_by(delta);
         let changed = self.viewport.top_line != new_top_line;
         self.viewport.top_line = new_top_line;
@@ -829,15 +1238,32 @@ impl EditorState {
 
     /// Return the longest logical line visible in the current viewport window.
     pub fn max_visible_line_length(&self, document: &Document) -> usize {
+        if self.soft_wrap {
+            return self.viewport.visible_columns;
+        }
         let viewport = self.viewport_map(document);
-        (viewport.top_line()..viewport.end_line())
-            .map(|line| document.line_length(line))
+        (0..viewport.end_line().saturating_sub(viewport.top_line()))
+            .filter_map(|row| {
+                if let Some(ghost) = viewport.ghost_row_for_visible_row(row) {
+                    Some(crate::util::text::char_col_to_visual_col(
+                        &ghost.text,
+                        ghost.text.chars().count(),
+                    ))
+                } else {
+                    viewport
+                        .doc_line_for_visible_row(row)
+                        .map(|line| document.line_length(line))
+                }
+            })
             .max()
             .unwrap_or(0)
     }
 
     /// Return the maximum horizontal scroll position for the visible viewport window.
     pub fn max_left_column_for_visible_window(&self, document: &Document) -> usize {
+        if self.soft_wrap {
+            return 0;
+        }
         self.max_visible_line_length(document)
             .saturating_sub(self.viewport.visible_columns)
     }
@@ -885,14 +1311,21 @@ impl EditorState {
     /// Use this for mouse clicks where the target position is already visible on screen.
     /// Only scrolls if the cursor is completely outside the viewport bounds.
     pub fn ensure_cursor_visible_no_padding(&mut self, document: &Document) {
-        let cursor = &self.cursors[self.active_cursor_index];
+        self.ensure_wrap_cache(document);
+        let cursor = self.cursors[self.active_cursor_index];
         let viewport = self.viewport_map(document);
-
-        self.viewport.top_line = viewport.reveal_line_no_padding(cursor.line);
+        let cursor_visual_line = viewport.visual_line_for_position(cursor.line, cursor.column);
+        let top_line = viewport.reveal_line_no_padding(cursor_visual_line);
 
         // Horizontal scrolling (same as normal - always check)
         const HORIZONTAL_MARGIN: usize = 4;
-        self.viewport.left_column = viewport.reveal_column(cursor.column, HORIZONTAL_MARGIN);
+        let left_column = if self.soft_wrap {
+            0
+        } else {
+            viewport.reveal_column(cursor.column, HORIZONTAL_MARGIN)
+        };
+        self.viewport.top_line = top_line;
+        self.viewport.left_column = left_column;
     }
 
     /// Ensure the active cursor is visible using the specified reveal strategy
@@ -902,15 +1335,22 @@ impl EditorState {
     /// - `BottomAligned`: place cursor at bottom of safe zone (good for downward movement)
     /// - `Centered`: place cursor in center of viewport (good for jumps/search)
     pub fn ensure_cursor_visible_with_mode(&mut self, document: &Document, mode: ScrollRevealMode) {
-        let cursor = &self.cursors[self.active_cursor_index];
+        self.ensure_wrap_cache(document);
+        let cursor = self.cursors[self.active_cursor_index];
         let padding = self.scroll_padding;
         let viewport = self.viewport_map(document);
-
-        self.viewport.top_line = viewport.reveal_line_with_mode(cursor.line, padding, mode);
+        let cursor_visual_line = viewport.visual_line_for_position(cursor.line, cursor.column);
+        let top_line = viewport.reveal_line_with_mode(cursor_visual_line, padding, mode);
 
         // Horizontal scrolling (always check, independent of vertical)
         const HORIZONTAL_MARGIN: usize = 4;
-        self.viewport.left_column = viewport.reveal_column(cursor.column, HORIZONTAL_MARGIN);
+        let left_column = if self.soft_wrap {
+            0
+        } else {
+            viewport.reveal_column(cursor.column, HORIZONTAL_MARGIN)
+        };
+        self.viewport.top_line = top_line;
+        self.viewport.left_column = left_column;
     }
 
     /// Set primary cursor position from buffer offset (clears selection)
@@ -1087,6 +1527,10 @@ impl EditorState {
 
     /// Move a single cursor up by one line
     pub fn move_cursor_up_at(&mut self, doc: &Document, idx: usize) {
+        if self.soft_wrap {
+            self.move_cursor_visual_by(doc, idx, -1);
+            return;
+        }
         let cursor = &mut self.cursors[idx];
         if cursor.line > 0 {
             cursor.line -= 1;
@@ -1099,6 +1543,10 @@ impl EditorState {
 
     /// Move a single cursor down by one line
     pub fn move_cursor_down_at(&mut self, doc: &Document, idx: usize) {
+        if self.soft_wrap {
+            self.move_cursor_visual_by(doc, idx, 1);
+            return;
+        }
         let cursor = &mut self.cursors[idx];
         if cursor.line < doc.line_count().saturating_sub(1) {
             cursor.line += 1;
@@ -1152,6 +1600,10 @@ impl EditorState {
 
     /// Move a single cursor up by `jump` lines (for page up)
     pub fn page_up_at(&mut self, doc: &Document, jump: usize, idx: usize) {
+        if self.soft_wrap {
+            self.move_cursor_visual_by(doc, idx, -(jump.min(isize::MAX as usize) as isize));
+            return;
+        }
         let cursor = &mut self.cursors[idx];
         cursor.line = cursor.line.saturating_sub(jump);
         let desired = cursor.desired_column.unwrap_or(cursor.column);
@@ -1162,12 +1614,33 @@ impl EditorState {
 
     /// Move a single cursor down by `jump` lines (for page down)
     pub fn page_down_at(&mut self, doc: &Document, jump: usize, idx: usize) {
+        if self.soft_wrap {
+            self.move_cursor_visual_by(doc, idx, jump.min(isize::MAX as usize) as isize);
+            return;
+        }
         let cursor = &mut self.cursors[idx];
         let max_line = doc.line_count().saturating_sub(1);
         cursor.line = (cursor.line + jump).min(max_line);
         let desired = cursor.desired_column.unwrap_or(cursor.column);
         let line_len = doc.line_length(cursor.line);
         cursor.column = desired.min(line_len);
+        cursor.desired_column = Some(desired);
+    }
+
+    fn move_cursor_visual_by(&mut self, document: &Document, idx: usize, delta: isize) {
+        self.ensure_wrap_cache(document);
+        let cursor = self.cursors[idx];
+        let map = self.viewport_map(document);
+        let (row, column) = map.display_position(document, cursor.line, cursor.column);
+        let desired = cursor.desired_column.unwrap_or(column);
+        let target = row.saturating_add_signed(delta).min(map.last_line());
+        if target == row {
+            return;
+        }
+        let position = map.position_at_display_column(document, target, desired);
+        let cursor = &mut self.cursors[idx];
+        cursor.line = position.line;
+        cursor.column = position.column;
         cursor.desired_column = Some(desired);
     }
 
@@ -1225,191 +1698,56 @@ impl EditorState {
         cursor.desired_column = None;
     }
 
-    // =========================================================================
-    // All-cursors movement wrappers
-    // =========================================================================
-
-    /// Apply a cursor movement operation to all cursors, then deduplicate.
-    ///
-    /// This is the base helper for multi-cursor operations. The closure receives
-    /// the cursor index and should perform the movement for that cursor.
-    fn for_each_cursor<F>(&mut self, mut f: F)
-    where
-        F: FnMut(&mut Self, usize),
-    {
-        for i in 0..self.cursors.len() {
-            f(self, i);
+    /// Move every cursor through one target/selection contract, then reconcile
+    /// duplicate cursors once. Horizontal arrows collapse existing selections.
+    pub(crate) fn move_cursors(
+        &mut self,
+        doc: &Document,
+        movement: CursorMovement,
+        selection: MovementSelection,
+    ) {
+        if movement == CursorMovement::Stay {
+            if selection == MovementSelection::Move {
+                self.collapse_selections_to_cursors();
+            }
+            return;
         }
-        self.deduplicate_cursors();
-    }
-
-    /// Apply a cursor movement operation to all cursors and extend selections.
-    ///
-    /// After moving each cursor, updates the selection head to the new position.
-    fn for_each_cursor_extend_selection<F>(&mut self, mut f: F)
-    where
-        F: FnMut(&mut Self, usize),
-    {
         for i in 0..self.cursors.len() {
-            f(self, i);
-            let pos = self.cursors[i].to_position();
-            self.selections[i].head = pos;
-        }
-        self.deduplicate_cursors();
-    }
-
-    /// Move all cursors left
-    /// If a cursor has a selection, collapse to selection start instead of moving by 1 char
-    pub fn move_all_cursors_left(&mut self, doc: &Document) {
-        let len = self.cursors.len();
-        for i in 0..len {
-            if self.selections[i].is_empty() {
-                self.move_cursor_left_at(doc, i);
-            } else {
-                let start = self.selections[i].start();
-                let cursor = &mut self.cursors[i];
-                cursor.line = start.line;
-                cursor.column = start.column;
-                cursor.desired_column = None;
-                self.selections[i].anchor = start;
-                self.selections[i].head = start;
+            if selection == MovementSelection::Move && !self.selections[i].is_empty() {
+                let collapse = match movement {
+                    CursorMovement::Left => Some(self.selections[i].start()),
+                    CursorMovement::Right => Some(self.selections[i].end()),
+                    _ => None,
+                };
+                if let Some(position) = collapse {
+                    self.cursors[i] = Cursor::at(position.line, position.column);
+                    self.selections[i] = Selection::new(position);
+                    continue;
+                }
+            }
+            match movement {
+                CursorMovement::Left => self.move_cursor_left_at(doc, i),
+                CursorMovement::Right => self.move_cursor_right_at(doc, i),
+                CursorMovement::Up => self.move_cursor_up_at(doc, i),
+                CursorMovement::Down => self.move_cursor_down_at(doc, i),
+                CursorMovement::LineStart => self.move_cursor_line_start_at(doc, i),
+                CursorMovement::LineEnd => self.move_cursor_line_end_at(doc, i),
+                CursorMovement::DocumentStart => self.move_cursor_document_start_at(i),
+                CursorMovement::DocumentEnd => self.move_cursor_document_end_at(doc, i),
+                CursorMovement::WordLeft => self.move_cursor_word_left_at(doc, i),
+                CursorMovement::WordRight => self.move_cursor_word_right_at(doc, i),
+                CursorMovement::PageUp(jump) => self.page_up_at(doc, jump, i),
+                CursorMovement::PageDown(jump) => self.page_down_at(doc, jump, i),
+                CursorMovement::Stay => {}
+            }
+            if selection == MovementSelection::Extend {
+                self.selections[i].head = self.cursors[i].to_position();
             }
         }
         self.deduplicate_cursors();
-    }
-
-    /// Move all cursors right
-    /// If a cursor has a selection, collapse to selection end instead of moving by 1 char
-    pub fn move_all_cursors_right(&mut self, doc: &Document) {
-        let len = self.cursors.len();
-        for i in 0..len {
-            if self.selections[i].is_empty() {
-                self.move_cursor_right_at(doc, i);
-            } else {
-                let end = self.selections[i].end();
-                let cursor = &mut self.cursors[i];
-                cursor.line = end.line;
-                cursor.column = end.column;
-                cursor.desired_column = None;
-                self.selections[i].anchor = end;
-                self.selections[i].head = end;
-            }
+        if selection == MovementSelection::Move {
+            self.collapse_selections_to_cursors();
         }
-        self.deduplicate_cursors();
-    }
-
-    /// Move all cursors up
-    pub fn move_all_cursors_up(&mut self, doc: &Document) {
-        self.for_each_cursor(|s, i| s.move_cursor_up_at(doc, i));
-    }
-
-    /// Move all cursors down
-    pub fn move_all_cursors_down(&mut self, doc: &Document) {
-        self.for_each_cursor(|s, i| s.move_cursor_down_at(doc, i));
-    }
-
-    /// Move all cursors to line start
-    pub fn move_all_cursors_line_start(&mut self, doc: &Document) {
-        self.for_each_cursor(|s, i| s.move_cursor_line_start_at(doc, i));
-    }
-
-    /// Move all cursors to line end
-    pub fn move_all_cursors_line_end(&mut self, doc: &Document) {
-        self.for_each_cursor(|s, i| s.move_cursor_line_end_at(doc, i));
-    }
-
-    /// Move all cursors to document start
-    pub fn move_all_cursors_document_start(&mut self) {
-        self.for_each_cursor(|s, i| s.move_cursor_document_start_at(i));
-    }
-
-    /// Move all cursors to document end
-    pub fn move_all_cursors_document_end(&mut self, doc: &Document) {
-        self.for_each_cursor(|s, i| s.move_cursor_document_end_at(doc, i));
-    }
-
-    /// Move all cursors word left
-    pub fn move_all_cursors_word_left(&mut self, doc: &Document) {
-        self.for_each_cursor(|s, i| s.move_cursor_word_left_at(doc, i));
-    }
-
-    /// Move all cursors word right
-    pub fn move_all_cursors_word_right(&mut self, doc: &Document) {
-        self.for_each_cursor(|s, i| s.move_cursor_word_right_at(doc, i));
-    }
-
-    /// Page up all cursors
-    pub fn page_up_all_cursors(&mut self, doc: &Document, jump: usize) {
-        self.for_each_cursor(|s, i| s.page_up_at(doc, jump, i));
-    }
-
-    /// Page down all cursors
-    pub fn page_down_all_cursors(&mut self, doc: &Document, jump: usize) {
-        self.for_each_cursor(|s, i| s.page_down_at(doc, jump, i));
-    }
-
-    // =========================================================================
-    // Selection movement helpers
-    // =========================================================================
-
-    /// Move all cursors left and extend selections
-    pub fn move_all_cursors_left_with_selection(&mut self, doc: &Document) {
-        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_left_at(doc, i));
-    }
-
-    /// Move all cursors right and extend selections
-    pub fn move_all_cursors_right_with_selection(&mut self, doc: &Document) {
-        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_right_at(doc, i));
-    }
-
-    /// Move all cursors up and extend selections
-    pub fn move_all_cursors_up_with_selection(&mut self, doc: &Document) {
-        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_up_at(doc, i));
-    }
-
-    /// Move all cursors down and extend selections
-    pub fn move_all_cursors_down_with_selection(&mut self, doc: &Document) {
-        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_down_at(doc, i));
-    }
-
-    /// Move all cursors to line start and extend selections
-    pub fn move_all_cursors_line_start_with_selection(&mut self, doc: &Document) {
-        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_line_start_at(doc, i));
-    }
-
-    /// Move all cursors to line end and extend selections
-    pub fn move_all_cursors_line_end_with_selection(&mut self, doc: &Document) {
-        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_line_end_at(doc, i));
-    }
-
-    /// Move all cursors to document start and extend selections
-    pub fn move_all_cursors_document_start_with_selection(&mut self) {
-        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_document_start_at(i));
-    }
-
-    /// Move all cursors to document end and extend selections
-    pub fn move_all_cursors_document_end_with_selection(&mut self, doc: &Document) {
-        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_document_end_at(doc, i));
-    }
-
-    /// Move all cursors word left and extend selections
-    pub fn move_all_cursors_word_left_with_selection(&mut self, doc: &Document) {
-        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_word_left_at(doc, i));
-    }
-
-    /// Move all cursors word right and extend selections
-    pub fn move_all_cursors_word_right_with_selection(&mut self, doc: &Document) {
-        self.for_each_cursor_extend_selection(|s, i| s.move_cursor_word_right_at(doc, i));
-    }
-
-    /// Page up all cursors and extend selections
-    pub fn page_up_all_cursors_with_selection(&mut self, doc: &Document, jump: usize) {
-        self.for_each_cursor_extend_selection(|s, i| s.page_up_at(doc, jump, i));
-    }
-
-    /// Page down all cursors and extend selections
-    pub fn page_down_all_cursors_with_selection(&mut self, doc: &Document, jump: usize) {
-        self.for_each_cursor_extend_selection(|s, i| s.page_down_at(doc, jump, i));
     }
 }
 

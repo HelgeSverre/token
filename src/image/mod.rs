@@ -9,8 +9,8 @@ pub mod render;
 /// State for the image viewer mode
 #[derive(Debug, Clone)]
 pub struct ImageState {
-    /// Decoded RGBA pixel data (4 bytes per pixel)
-    pub pixels: Vec<u8>,
+    /// Immutable decoded RGBA pixels shared by split views; pan/zoom stays local.
+    pub pixels: std::sync::Arc<[u8]>,
     /// Image width in pixels
     pub width: u32,
     /// Image height in pixels
@@ -62,7 +62,7 @@ impl ImageState {
     ) -> Self {
         let scale = Self::compute_fit_scale(width, height, viewport_width, viewport_height);
         Self {
-            pixels,
+            pixels: pixels.into(),
             width,
             height,
             file_size,
