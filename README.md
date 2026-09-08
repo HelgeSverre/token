@@ -126,10 +126,11 @@ For the complete keybinding reference, see [docs/KEYBINDINGS.md](docs/KEYBINDING
 
 Configuration files are stored in `~/.config/token-editor/`:
 
-| File                 | Purpose            |
-| -------------------- | ------------------ |
-| `keymap.yaml`        | Custom keybindings |
-| `themes/<name>.yaml` | Custom themes      |
+| File                 | Purpose                                    |
+| -------------------- | ------------------------------------------ |
+| `keymap.yaml`        | Custom keybindings                         |
+| `config.yaml`        | Editor and UI preferences, including fonts |
+| `themes/<name>.yaml` | Custom themes                              |
 
 See the documentation for details:
 
@@ -188,3 +189,4 @@ repository so the evidence does not depend on a third-party profile remaining pu
 This project is licensed under the [MIT License](LICENSE.md).
 
 The included font, [JetBrains Mono](assets/JetBrainsMono.ttf), is licensed under the [OFL-1.1](assets/OFL.txt).
+The UI font, [Inter 4.1](https://github.com/rsms/inter/releases/tag/v4.1), is bundled unmodified under its [OFL-1.1 license](assets/Inter-OFL.txt).

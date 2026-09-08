@@ -65,9 +65,8 @@ pub fn render_button(
     }
 
     // Center the label text
-    let char_width = painter.char_width();
     let line_height = painter.line_height();
-    let text_w = (label.len() as f32 * char_width).round() as usize;
+    let text_w = painter.measure_width(label).round() as usize;
     let text_x = x + w.saturating_sub(text_w) / 2;
     let text_y = y + h.saturating_sub(line_height) / 2;
     painter.draw(frame, text_x, text_y, label, fg);

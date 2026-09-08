@@ -159,9 +159,8 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             // A theme/config reload can change colors across the whole
             // window, not just the status bar, so it needs a full redraw to
             // actually appear before the next unrelated event triggers one.
-            // SyncStatusBarMetrics re-derives the bar height in case
-            // `status_bar_font_size` changed.
-            Some(Cmd::Batch(vec![Cmd::SyncStatusBarMetrics, Cmd::Redraw]))
+            // Fonts and their layout metrics are applied together by runtime.
+            Some(Cmd::Batch(vec![Cmd::SyncFontMetrics, Cmd::Redraw]))
         }
 
         AppMsg::RestartLanguageServer => {

@@ -26,6 +26,14 @@ pub struct EditorConfig {
     #[serde(default = "default_theme")]
     pub theme: String,
 
+    /// Monospaced family for code, terminal grids, explorer, tabs and all inputs.
+    #[serde(default = "default_editor_font")]
+    pub editor_font: String,
+
+    /// Family for application chrome and UI labels.
+    #[serde(default = "default_ui_font")]
+    pub ui_font: String,
+
     /// Cursor blink interval in milliseconds (default: 600)
     #[serde(default = "default_cursor_blink_ms")]
     pub cursor_blink_ms: u64,
@@ -408,6 +416,14 @@ fn default_status_bar_font_size() -> f32 {
     12.0
 }
 
+fn default_editor_font() -> String {
+    "JetBrains Mono".into()
+}
+
+fn default_ui_font() -> String {
+    "Inter".into()
+}
+
 fn default_hover_delay_ms() -> u64 {
     300
 }
@@ -416,6 +432,8 @@ impl Default for EditorConfig {
     fn default() -> Self {
         Self {
             theme: default_theme(),
+            editor_font: default_editor_font(),
+            ui_font: default_ui_font(),
             cursor_blink_ms: default_cursor_blink_ms(),
             auto_surround: true,
             bracket_matching: true,

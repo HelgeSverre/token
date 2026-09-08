@@ -7,6 +7,7 @@ pub mod caret;
 pub mod editor_scrollbars;
 pub mod editor_special_tabs;
 pub mod editor_text;
+mod fonts;
 pub mod frame;
 pub mod geometry;
 pub mod helpers;
@@ -23,7 +24,7 @@ pub use frame::{Frame, RoundedRectMaskCache, TextPainter};
 pub use text_field::{TextFieldContent, TextFieldOptions, TextFieldRenderer};
 
 use anyhow::Result;
-use fontdue::{Font, FontSettings, LineMetrics, Metrics};
+use fontdue::{Font, LineMetrics, Metrics};
 use softbuffer::Surface;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
@@ -52,31 +53,23 @@ pub type GlyphCache = HashMap<GlyphCacheKey, (Metrics, Vec<u8>)>;
 /// event-loop and window initialization.
 #[must_use = "renderer preparation should be passed to Renderer::new_prepared"]
 pub struct RendererPreparation {
-    font: std::thread::JoinHandle<fontdue::FontResult<Font>>,
+    font: std::thread::JoinHandle<Result<fonts::Fonts>>,
 }
 
 impl RendererPreparation {
-    /// Begins parsing the embedded editor font on a background thread.
+    /// Begins parsing the bundled code and UI fonts on a background thread.
     pub fn start() -> std::io::Result<Self> {
         std::thread::Builder::new()
             .name("token-font-loader".to_owned())
-            .spawn(load_editor_font)
+            .spawn(|| fonts::Fonts::load("JetBrains Mono", "Inter"))
             .map(|font| Self { font })
     }
 
-    fn finish(self) -> Result<Font> {
+    fn finish(self) -> Result<fonts::Fonts> {
         self.font
             .join()
             .map_err(|_| anyhow::anyhow!("Font preparation thread panicked"))?
-            .map_err(|error| anyhow::anyhow!("Failed to load font: {error}"))
     }
-}
-
-fn load_editor_font() -> fontdue::FontResult<Font> {
-    Font::from_bytes(
-        include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
-        FontSettings::default(),
-    )
 }
 
 /// Controls how preview panes render their content
@@ -138,6 +131,8 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
         window_height: usize,
         font: &'a Font,
         glyph_cache: &'a mut GlyphCache,
+        ui_font: &'a Font,
+        ui_glyph_cache: &'a mut GlyphCache,
         font_size: f32,
         ascent: f32,
         char_width: f32,
@@ -155,7 +150,8 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
                 ascent,
                 char_width,
                 line_height,
-            ),
+            )
+            .with_ui_font(ui_font, ui_glyph_cache),
             model,
             plan,
             overlay_mask_cache,
@@ -173,12 +169,14 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
     }
 
     fn render_sidebar_phase(&mut self) {
+        let ui = self.painter.use_ui_font(false);
         Renderer::render_sidebar(
             &mut self.frame,
             &mut self.painter,
             self.model,
             &self.plan.chrome,
         );
+        self.painter.use_ui_font(ui);
     }
 
     fn render_right_dock_phase(&mut self) {
@@ -260,7 +258,9 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
             return;
         }
 
+        let ui = self.painter.use_ui_font(false);
         Renderer::render_tab_drag_ghost(&mut self.frame, &mut self.painter, self.model);
+        self.painter.use_ui_font(ui);
     }
 
     #[cfg(debug_assertions)]
@@ -555,10 +555,12 @@ impl<'a> EditorGroupScene<'a> {
         model: &AppModel,
         perf: &mut crate::perf::PerfStats,
     ) {
+        let ui = painter.use_ui_font(false);
         perf.measure_stage(crate::perf::PerfStage::TabBar, || {
             Renderer::render_tab_bar(frame, painter, model, self.group, &self.tab_bar);
         });
         self.render_content(frame, painter, model, perf);
+        painter.use_ui_font(ui);
 
         if self.should_render_scrollbars(model) {
             perf.measure_stage(crate::perf::PerfStage::Scrollbars, || {
@@ -767,6 +769,9 @@ impl<'a> PreviewPaneScene<'a> {
 
 pub struct Renderer {
     font: Font,
+    ui_font: Font,
+    font_names: (String, String),
+    ui_glyph_cache: GlyphCache,
     surface: Surface<Rc<Window>, Rc<Window>>,
     /// Persistent back buffer for partial rendering.
     /// Softbuffer doesn't guarantee buffer contents are preserved between frames,
@@ -833,11 +838,11 @@ impl Renderer {
             )
             .map_err(|e| anyhow::anyhow!("Failed to resize surface: {}", e))?;
 
-        let font = match preparation {
+        let fonts = match preparation {
             Some(preparation) => preparation.finish()?,
-            None => load_editor_font()
-                .map_err(|error| anyhow::anyhow!("Failed to load font: {error}"))?,
+            None => fonts::Fonts::load("JetBrains Mono", "Inter")?,
         };
+        let font = fonts.editor;
 
         let font_size = 14.0 * scale_factor as f32;
 
@@ -854,6 +859,9 @@ impl Renderer {
 
         Ok(Self {
             font,
+            ui_font: fonts.ui,
+            font_names: ("JetBrains Mono".into(), "Inter".into()),
+            ui_glyph_cache: HashMap::new(),
             surface,
             back_buffer,
             width,
@@ -892,12 +900,13 @@ impl Renderer {
             self.char_width,
             self.line_metrics.new_line_size.ceil() as usize,
         )
+        .with_ui_font(&self.ui_font, &mut self.ui_glyph_cache)
     }
 
     /// Line height of status-bar text at the configured logical size.
     pub fn status_text_line_height(&self, logical_size: f32) -> usize {
         let size = (logical_size * self.scale_factor as f32).round();
-        self.font
+        self.ui_font
             .horizontal_line_metrics(size)
             .map(|m| m.new_line_size.ceil() as usize)
             .unwrap_or_else(|| self.line_height())
@@ -905,6 +914,26 @@ impl Renderer {
 
     pub fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
+    }
+
+    /// Resolve font families only at startup or explicit configuration changes,
+    /// never while painting. Unknown/non-monospace editor faces use defaults.
+    pub fn configure_fonts(&mut self, config: &crate::config::EditorConfig) -> Result<()> {
+        if self.font_names.0 == config.editor_font && self.font_names.1 == config.ui_font {
+            return Ok(());
+        }
+        let fonts = fonts::Fonts::load(&config.editor_font, &config.ui_font)?;
+        self.line_metrics = fonts
+            .editor
+            .horizontal_line_metrics(self.font_size)
+            .ok_or_else(|| anyhow::anyhow!("Editor font has no line metrics"))?;
+        self.char_width = fonts.editor.metrics('M', self.font_size).advance_width;
+        self.font = fonts.editor;
+        self.ui_font = fonts.ui;
+        self.font_names = (config.editor_font.clone(), config.ui_font.clone());
+        self.glyph_cache.clear();
+        self.ui_glyph_cache.clear();
+        Ok(())
     }
 
     // =========================================================================
@@ -1763,12 +1792,11 @@ impl Renderer {
         let status_bar_fg = model.theme.status_bar.foreground.to_argb_u32();
         let (status_x, status_y, status_width, status_bar_h) = crate::layout::snapshot::snap(rect);
 
-        // Status-bar text renders at its own (configurable) size; advances at
-        // small sizes are not linear in size, so measure the cell width.
+        // Status text uses the UI face at its own configurable size.
         let text_size = (model.config.status_bar_font_size_clamped()
             * model.metrics.scale_factor as f32)
             .round();
-        let cell_width = painter.measure_sized("M", text_size, 0.0).max(1.0);
+        let space_width = painter.measure_sized(" ", text_size, 0.0).max(1.0) as usize;
         let text_line_height = painter.line_height_for_size(text_size);
 
         // Background
@@ -1789,12 +1817,16 @@ impl Renderer {
         let text_y = status_y + status_bar_h.saturating_sub(text_line_height) / 2;
 
         // Layout calculation
-        let available_chars = (status_width as f32 / cell_width).floor() as usize;
-        let layout = model.ui.status_bar.layout(available_chars);
+        let layout = model
+            .ui
+            .status_bar
+            .layout_measured(status_width, space_width, |text| {
+                painter.measure_sized(text, text_size, 0.0).ceil() as usize
+            });
 
         // Left and right segments
         for seg in layout.left.iter().chain(&layout.right) {
-            let x_px = status_x + (seg.x as f32 * cell_width).round() as usize;
+            let x_px = status_x + seg.x;
             painter.draw_sized(
                 frame,
                 x_px,
@@ -1813,8 +1845,8 @@ impl Renderer {
             .foreground
             .with_alpha(26)
             .to_argb_u32();
-        for &sep_char_x in &layout.separator_positions {
-            let x_px = status_x + (sep_char_x as f32 * cell_width).round() as usize;
+        for &separator_x in &layout.separator_positions {
+            let x_px = status_x + separator_x;
             frame.blend_rect_px(
                 x_px,
                 status_y + border_width,
@@ -2024,6 +2056,8 @@ impl Renderer {
                 height_usize,
                 &self.font,
                 &mut self.glyph_cache,
+                &self.ui_font,
+                &mut self.ui_glyph_cache,
                 font_size,
                 ascent,
                 char_width,

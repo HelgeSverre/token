@@ -89,7 +89,7 @@ fn settings_filtered_choice_and_keyboard_commit_same_descriptor() {
         Some(ModalState::Settings(_))
     ));
     assert!(
-        matches!(cmd, Cmd::Batch(ref cmds) if cmds.iter().any(|cmd| matches!(cmd, Cmd::SyncStatusBarMetrics)))
+        matches!(cmd, Cmd::Batch(ref cmds) if cmds.iter().any(|cmd| matches!(cmd, Cmd::SyncFontMetrics)))
     );
     let cmd = modal(&mut model, ModalMsg::MoveCursorLeft).unwrap();
     assert_eq!(saved(&cmd).unwrap().status_bar_font_size, 12.0);

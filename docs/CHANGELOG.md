@@ -6,6 +6,17 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Fonts
+
+- Separate `editor_font` and `ui_font` preferences. Code and terminal grids
+  default to JetBrains Mono, as do file explorer text, tab titles and all text inputs; the
+  remaining application UI now defaults to bundled Inter.
+  Installed families can be selected in configuration and applied through
+  Reload Configuration. Invalid choices retain safe bundled fallbacks.
+- Code and UI share the text painter with independent glyph caches. UI labels
+  use measured glyph advances; inputs retain matching text, selection and caret
+  metrics in the editor font.
+
 ### Linux builds
 
 - Fixed missing Janet and AppleScript scanner symbols when linking with GNU ld.

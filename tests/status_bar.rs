@@ -562,6 +562,15 @@ fn test_layout_segment_width_matches_content() {
     let seg = filename_segment.unwrap();
     // "test.rs" is 7 chars
     assert_eq!(seg.width, 7);
+    // The native UI uses proportional glyph measurements, with the same
+    // placement algorithm and padding converted to pixels.
+    let layout = bar.layout_measured(800, 4, |text| {
+        text.chars().map(|ch| if ch == 'i' { 3 } else { 7 }).sum()
+    });
+    assert_eq!(layout.left[0].x, bar.padding * 4);
+    assert_eq!(layout.left[0].width, 49);
+    let last = layout.right.last().unwrap();
+    assert_eq!(last.x + last.width, 800 - bar.padding * 4);
 }
 
 #[test]

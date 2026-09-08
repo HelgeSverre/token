@@ -100,6 +100,31 @@ The active theme ID.
 
 See [config-theme.md](config-theme.md) for available themes and customization.
 
+### `editor_font` and `ui_font`
+
+Font families are configured independently in `config.yaml`:
+
+```yaml
+editor_font: "JetBrains Mono"
+ui_font: "Inter"
+```
+
+These defaults are bundled; no font installation or runtime download is needed.
+`editor_font` controls code, terminal grids, file explorer text, tab titles and
+all text inputs, including search boxes, Settings search, Find/Replace, symbol
+rename and CSV cells. `ui_font` controls non-editable UI text: Settings labels,
+menus, buttons and status text. Status-bar size remains
+independently configurable with `status_bar_font_size`.
+
+Either setting accepts an installed font-family name. The editor family must
+be monospaced. Missing, unreadable or proportional editor fonts fall back to
+JetBrains Mono; unavailable UI fonts fall back to Inter. A warning is logged,
+and the saved preference is retained. System fonts are discovered in standard
+platform font directories; neither setting installs fonts.
+
+Use **Reload Configuration** or restart after editing the file. Font family
+selection is currently file-configured, not a font picker in Settings.
+
 ### `cursor_blink_ms`
 
 Cursor blink interval in milliseconds. Set `0` for a steady, non-blinking caret.

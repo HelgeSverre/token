@@ -1321,7 +1321,7 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
         Cmd::Redraw,
     ];
     if descriptor.setting == crate::settings::Setting::StatusFont {
-        commands.push(Cmd::SyncStatusBarMetrics);
+        commands.push(Cmd::SyncFontMetrics);
     }
     Some(Cmd::Batch(commands))
 }

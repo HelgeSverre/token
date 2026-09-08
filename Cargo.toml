@@ -48,6 +48,7 @@ unicode-ident = "1"
 
 # For font rendering
 fontdue = "0.9.3"
+fontdb = { version = "0.23", default-features = false, features = ["std", "fs", "fontconfig"] }
 
 # For better error handling
 anyhow = "1.0"
@@ -239,7 +240,7 @@ libc = "0.2"
 name = "Token"
 identifier = "no.helgesverre.token"
 icon = ["assets/icon-packaging.png"]
-resources = ["Credits.rtf"]
+resources = ["Credits.rtf", "assets/Inter-OFL.txt"]
 category = "public.app-category.developer-tools"
 copyright = "Copyright (c) Helge Sverre 2026"
 publisher = "Helge Sverre"
@@ -260,7 +261,7 @@ osx_info_plist_exts = ["assets/macos-info.plist"]
 name = "Token"
 identifier = "no.helgesverre.token"
 icon = ["assets/icon-packaging.png"]
-resources = ["Credits.rtf"]
+resources = ["Credits.rtf", "assets/Inter-OFL.txt"]
 category = "public.app-category.developer-tools"
 copyright = "Copyright (c) Helge Sverre 2026"
 publisher = "Helge Sverre"

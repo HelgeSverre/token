@@ -172,6 +172,8 @@ impl TextFieldRenderer {
         content: &dyn TextFieldContent,
         opts: &TextFieldOptions,
     ) {
+        // All editable fields share the editor font and grid geometry.
+        let ui = painter.use_ui_font(false);
         let text = content.text();
 
         // 1. Render selection backgrounds
@@ -240,6 +242,7 @@ impl TextFieldRenderer {
                 }
             }
         }
+        painter.use_ui_font(ui);
     }
 
     #[allow(clippy::too_many_arguments)]

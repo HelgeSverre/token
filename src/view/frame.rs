@@ -837,6 +837,9 @@ pub struct TextPainter<'a> {
     ascent: f32,
     char_width: f32,
     line_height: usize,
+    alternate: Option<(&'a Font, &'a mut GlyphCache)>,
+    ui_font_active: bool,
+    fallback_font: Option<&'a Font>,
     #[cfg(debug_assertions)]
     cache_stats: CacheStats,
 }
@@ -858,9 +861,38 @@ impl<'a> TextPainter<'a> {
             ascent,
             char_width,
             line_height,
+            alternate: None,
+            ui_font_active: false,
+            fallback_font: None,
             #[cfg(debug_assertions)]
             cache_stats: CacheStats::default(),
         }
+    }
+
+    /// UI and code use the same painter implementation but separate caches.
+    /// Grid metrics always describe the editor; UI text uses measured advances.
+    pub fn with_ui_font(mut self, font: &'a Font, cache: &'a mut GlyphCache) -> Self {
+        self.fallback_font = Some(self.font);
+        self.alternate = Some((font, cache));
+        self.use_ui_font(true);
+        self
+    }
+
+    /// Returns the previous role so mixed surfaces can restore their caller.
+    pub fn use_ui_font(&mut self, ui: bool) -> bool {
+        let previous = self.ui_font_active;
+        if previous != ui {
+            if let Some((font, cache)) = &mut self.alternate {
+                std::mem::swap(&mut self.font, font);
+                std::mem::swap(&mut self.glyph_cache, cache);
+                self.ascent = self
+                    .font
+                    .horizontal_line_metrics(self.font_size)
+                    .map_or(self.ascent, |metrics| metrics.ascent);
+                self.ui_font_active = ui;
+            }
+        }
+        previous
     }
 
     /// Get the cache statistics (hits and misses)
@@ -909,7 +941,7 @@ impl<'a> TextPainter<'a> {
             let (metrics, bitmap) = self
                 .glyph_cache
                 .entry(key)
-                .or_insert_with(|| self.font.rasterize(ch, self.font_size));
+                .or_insert_with(|| rasterize(self.font, self.fallback_font, ch, self.font_size));
 
             let glyph_top = baseline - metrics.height as f32 - metrics.ymin as f32;
 
@@ -979,7 +1011,7 @@ impl<'a> TextPainter<'a> {
             let (metrics, bitmap) = self
                 .glyph_cache
                 .entry(key)
-                .or_insert_with(|| self.font.rasterize(ch, size));
+                .or_insert_with(|| rasterize(self.font, self.fallback_font, ch, size));
 
             let glyph_top = baseline - metrics.height as f32 - metrics.ymin as f32;
 
@@ -1026,7 +1058,7 @@ impl<'a> TextPainter<'a> {
             let (metrics, _) = self
                 .glyph_cache
                 .entry(key)
-                .or_insert_with(|| self.font.rasterize(ch, size));
+                .or_insert_with(|| rasterize(self.font, self.fallback_font, ch, size));
             // Same integer-advance rule as draw_sized.
             width += (metrics.advance_width + tracking).round();
         }
@@ -1050,10 +1082,38 @@ impl<'a> TextPainter<'a> {
             let (metrics, _) = self
                 .glyph_cache
                 .entry(key)
-                .or_insert_with(|| self.font.rasterize(ch, self.font_size));
+                .or_insert_with(|| rasterize(self.font, self.fallback_font, ch, self.font_size));
             width += metrics.advance_width;
         }
         width
+    }
+
+    /// Clip a UI label by glyph advances, not an editor-cell count.
+    pub fn truncate_to_width<'text>(
+        &mut self,
+        text: &'text str,
+        width: f32,
+    ) -> std::borrow::Cow<'text, str> {
+        use std::borrow::Cow;
+        let ellipsis = self.measure_width("…");
+        let mut used = 0.0;
+        let mut end = 0;
+        for (index, ch) in text.char_indices() {
+            let mut bytes = [0; 4];
+            let advance = self.measure_width(ch.encode_utf8(&mut bytes));
+            used += advance;
+            if used > width {
+                return if width < ellipsis {
+                    Cow::Borrowed("")
+                } else {
+                    Cow::Owned(format!("{}…", &text[..end]))
+                };
+            }
+            if used <= width - ellipsis {
+                end = index + ch.len_utf8();
+            }
+        }
+        Cow::Borrowed(text)
     }
 
     /// Draw text with syntax highlighting
@@ -1116,7 +1176,7 @@ impl<'a> TextPainter<'a> {
             let (metrics, bitmap) = self
                 .glyph_cache
                 .entry(key)
-                .or_insert_with(|| self.font.rasterize(ch, self.font_size));
+                .or_insert_with(|| rasterize(self.font, self.fallback_font, ch, self.font_size));
 
             let glyph_top = baseline - metrics.height as f32 - metrics.ymin as f32;
 
@@ -1147,6 +1207,22 @@ impl<'a> TextPainter<'a> {
             current_x += metrics.advance_width;
         }
     }
+}
+
+fn rasterize(
+    font: &Font,
+    fallback: Option<&Font>,
+    ch: char,
+    size: f32,
+) -> (fontdue::Metrics, Vec<u8>) {
+    // UI families often omit shortcut arrows or command symbols. Use the
+    // editor face for missing glyphs, identically for measuring and painting.
+    let font = if font.lookup_glyph_index(ch) == 0 {
+        fallback.unwrap_or(font)
+    } else {
+        font
+    };
+    font.rasterize(ch, size)
 }
 
 const KEYCAP_SIZE_LOGICAL: f32 = 11.0;

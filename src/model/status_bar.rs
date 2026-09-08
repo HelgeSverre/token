@@ -255,9 +255,9 @@ impl TransientMessage {
 pub struct RenderedSegment {
     /// Segment identifier
     pub id: SegmentId,
-    /// X position in character units
+    /// X position in the layout's measured units (characters or pixels).
     pub x: usize,
-    /// Width in character units
+    /// Width in the same measured units as `x`.
     pub width: usize,
     /// The text content to render
     pub text: String,
@@ -272,7 +272,7 @@ pub struct StatusBarLayout {
     pub center: Vec<RenderedSegment>,
     /// Right-aligned segments with positions
     pub right: Vec<RenderedSegment>,
-    /// X positions of separator lines (in character units)
+    /// X positions of separator lines in the layout's measured units.
     pub separator_positions: Vec<usize>,
 }
 
@@ -282,12 +282,25 @@ impl StatusBar {
     /// # Arguments
     /// * `available_width` - Total available width in character units
     pub fn layout(&self, available_width: usize) -> StatusBarLayout {
+        self.layout_measured(available_width, 1, |text| text.chars().count())
+    }
+
+    /// Shared placement in measured units (pixels for the native renderer).
+    /// `space_width` converts the configured padding/spacing character counts.
+    pub fn layout_measured(
+        &self,
+        available_width: usize,
+        space_width: usize,
+        mut measure: impl FnMut(&str) -> usize,
+    ) -> StatusBarLayout {
+        let padding = self.padding * space_width;
+        let spacing = self.separator_spacing * space_width;
         let mut left_segments = Vec::new();
         let mut right_segments = Vec::new();
         let mut separator_positions = Vec::new();
 
         // Layout left segments
-        let mut left_x = self.padding;
+        let mut left_x = padding;
         let mut prev_segment_end: Option<usize> = None;
 
         for seg in self
@@ -301,11 +314,11 @@ impl StatusBar {
 
             // Add separator spacing if not first segment
             if let Some(prev_end) = prev_segment_end {
-                left_x = prev_end + self.separator_spacing;
+                left_x = prev_end + spacing;
                 // No separators between left segments (per design doc)
             }
 
-            let width = seg.content.char_width();
+            let width = measure(seg.content.display_text());
             let text = seg.content.display_text().to_string();
 
             left_segments.push(RenderedSegment {
@@ -319,7 +332,7 @@ impl StatusBar {
         }
 
         // Layout right segments (from right edge, backwards)
-        let mut right_x = available_width.saturating_sub(self.padding);
+        let mut right_x = available_width.saturating_sub(padding);
         let mut prev_segment_start: Option<usize> = None;
 
         // Iterate in reverse order to position from right edge
@@ -330,15 +343,15 @@ impl StatusBar {
             .collect();
 
         for seg in right_segs.iter().rev() {
-            let width = seg.content.char_width();
+            let width = measure(seg.content.display_text());
             let text = seg.content.display_text().to_string();
 
             // Add separator if not first (rightmost) segment
             if let Some(prev_start) = prev_segment_start {
                 // Record separator position (center of spacing)
-                let sep_center = prev_start.saturating_sub(self.separator_spacing / 2);
+                let sep_center = prev_start.saturating_sub(spacing / 2);
                 separator_positions.push(sep_center);
-                right_x = prev_start.saturating_sub(self.separator_spacing);
+                right_x = prev_start.saturating_sub(spacing);
             }
 
             right_x = right_x.saturating_sub(width);

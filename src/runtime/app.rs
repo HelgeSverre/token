@@ -1227,10 +1227,12 @@ impl App {
     }
 
     fn init_renderer(&mut self, window: Rc<Window>, context: &Context<Rc<Window>>) -> Result<()> {
-        let renderer = match self.renderer_preparation.take() {
+        let mut renderer = match self.renderer_preparation.take() {
             Some(preparation) => Renderer::new_prepared(Rc::clone(&window), context, preparation)?,
             None => Renderer::new(Rc::clone(&window), context)?,
         };
+
+        renderer.configure_fonts(&self.model.config)?;
 
         self.model.set_char_width(renderer.char_width());
         self.model.set_scale_factor(renderer.scale_factor());
@@ -1258,7 +1260,8 @@ impl App {
             return Ok(());
         };
 
-        let renderer = Renderer::with_scale_factor(Rc::clone(window), context, scale_factor)?;
+        let mut renderer = Renderer::with_scale_factor(Rc::clone(window), context, scale_factor)?;
+        renderer.configure_fonts(&self.model.config)?;
 
         self.model.set_char_width(renderer.char_width());
         self.model.line_height = renderer.line_height();
@@ -2419,8 +2422,14 @@ impl App {
             Cmd::None => {}
             Cmd::Redraw => {}
             Cmd::RedrawAreas(_) => {} // Partial redraw - handled by damage tracking in render()
-            Cmd::SyncStatusBarMetrics => {
-                if let Some(renderer) = &self.renderer {
+            Cmd::SyncFontMetrics => {
+                if let Some(renderer) = &mut self.renderer {
+                    if let Err(error) = renderer.configure_fonts(&self.model.config) {
+                        tracing::warn!(%error, "Could not apply fonts");
+                    }
+                    self.model.set_char_width(renderer.char_width());
+                    self.model.line_height = renderer.line_height();
+                    self.model.recompute_tab_bar_height_from_line_height();
                     let status_text_lh = renderer
                         .status_text_line_height(self.model.config.status_bar_font_size_clamped());
                     self.model.recompute_status_bar_height(status_text_lh);

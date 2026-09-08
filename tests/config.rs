@@ -81,6 +81,11 @@ fn inline_statistics_config_defaults_and_explicit_opt_out_roundtrip() {
 fn test_default_config() {
     let config = EditorConfig::default();
     assert_eq!(config.theme, "default-dark");
+    assert_eq!(config.editor_font, "JetBrains Mono");
+    assert_eq!(config.ui_font, "Inter");
+    let legacy: EditorConfig = serde_yaml::from_str("theme: fleet-dark").unwrap();
+    assert_eq!(legacy.editor_font, config.editor_font);
+    assert_eq!(legacy.ui_font, config.ui_font);
 }
 
 #[test]
@@ -97,6 +102,8 @@ fn test_config_path_returns_some() {
 fn test_config_serialize_deserialize() {
     let config = EditorConfig {
         theme: "fleet-dark".to_string(),
+        editor_font: "Menlo".into(),
+        ui_font: "Inter".into(),
         cursor_blink_ms: 600,
         auto_surround: true,
         bracket_matching: true,
@@ -111,6 +118,8 @@ fn test_config_serialize_deserialize() {
     let yaml = serde_yaml::to_string(&config).unwrap();
     let parsed: EditorConfig = serde_yaml::from_str(&yaml).unwrap();
     assert_eq!(parsed.theme, "fleet-dark");
+    assert_eq!(parsed.editor_font, "Menlo");
+    assert_eq!(parsed.ui_font, "Inter");
 }
 
 #[test]

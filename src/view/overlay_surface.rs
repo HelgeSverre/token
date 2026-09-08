@@ -2034,6 +2034,9 @@ fn render_header(
     let size = size_px(SIZE_INPUT, scale_factor);
     let pad_x = scaled(dims::HEADER_PAD_X, scale_factor);
     let Some(r) = layout.header else { return };
+    // Editable headers (search, Settings, pickers) share the code font with
+    // every other text input. Non-editable headings retain UI typography.
+    let ui = painter.use_ui_font(header.caret.is_none());
 
     // Bottom hairline separating the header from the list.
     frame.fill_rect_px(r.x, r.y + r.h.saturating_sub(1), r.w, 1, colors.hairline);
@@ -2137,6 +2140,7 @@ fn render_header(
             colors.text_dim,
         );
     }
+    painter.use_ui_font(ui);
 }
 
 #[allow(clippy::too_many_arguments)]

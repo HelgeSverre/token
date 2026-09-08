@@ -124,11 +124,13 @@ impl DockPaneScene {
         chrome: &LayoutSnapshot,
     ) {
         self.render_chrome(frame);
+        let ui = painter.use_ui_font(false);
         self.render_header(frame, painter);
 
         if matches!(self.content, DockContentKind::Terminal) {
             crate::panels::terminal::render_tabs(frame, painter, model, chrome);
         }
+        painter.use_ui_font(ui);
 
         frame.push_clip(self.content_rect);
         match &self.content {
@@ -144,12 +146,14 @@ impl DockPaneScene {
                 );
             }
             DockContentKind::Terminal => {
+                let ui = painter.use_ui_font(false);
                 crate::panels::terminal::render_terminal_panel(
                     frame,
                     painter,
                     model,
                     self.content_rect,
                 );
+                painter.use_ui_font(ui);
             }
             DockContentKind::Problems => {
                 let rows = chrome.row_list(UiKey::PanelRows(crate::panel::PanelId::Problems));
@@ -238,9 +242,8 @@ impl DockPaneScene {
         painter: &mut TextPainter,
         message: &str,
     ) {
-        let char_width = painter.char_width();
         let line_height = painter.line_height();
-        let text_width = message.chars().count() as f32 * char_width;
+        let text_width = painter.measure_width(message);
         let content = self.content_rect;
         let text_x = content.x + (content.width - text_width) / 2.0;
         let text_y = content.y + (content.height - line_height as f32) / 2.0;
@@ -254,31 +257,11 @@ impl DockPaneScene {
     }
 }
 
-/// Truncate `name` to at most `max_chars` characters (including the trailing
-/// ellipsis), returning it unchanged if it already fits.
-///
-/// Operates on chars, not bytes, so multi-byte UTF-8 sequences are never cut
-/// mid-codepoint.
-fn truncate_with_ellipsis(name: &str, max_chars: usize) -> std::borrow::Cow<'_, str> {
-    let char_count = name.chars().count();
-    if char_count <= max_chars || max_chars == 0 {
-        return std::borrow::Cow::Borrowed(name);
-    }
-
-    let truncated: String = name
-        .chars()
-        .take(max_chars.saturating_sub(1))
-        .chain(std::iter::once('\u{2026}'))
-        .collect();
-    std::borrow::Cow::Owned(truncated)
-}
-
 /// Context for sidebar rendering, holding constant values throughout tree traversal.
 struct SidebarRenderContext {
     sidebar_x: usize,
     sidebar_width: usize,
     row_height: usize,
-    char_width: usize,
     tree: TreeRowLayout,
     // Colors
     text_color: u32,
@@ -344,7 +327,6 @@ pub fn render_sidebar(
         sidebar_x,
         sidebar_width,
         row_height: rows.row_height().round() as usize,
-        char_width: painter.char_width().ceil() as usize,
         tree: TreeRowLayout::from_metrics(metrics),
         text_color: theme.foreground.to_argb_u32(),
         selection_bg: theme.selection_background.to_argb_u32(),
@@ -404,11 +386,7 @@ pub fn render_sidebar(
 
             let sidebar_right = ctx.sidebar_x + ctx.sidebar_width;
             let available_width = ctx.tree.available_text_width(sidebar_right, text_x);
-            let max_chars = available_width
-                .checked_div(ctx.char_width)
-                .unwrap_or(available_width / 8);
-
-            let display_name = truncate_with_ellipsis(&node.name, max_chars);
+            let display_name = painter.truncate_to_width(&node.name, available_width as f32);
             painter.draw(frame, text_x, text_y, &display_name, fg);
         },
     );
@@ -459,8 +437,7 @@ pub fn render_outline_panel(
         _ => {
             // Show "No outline available" centered
             let msg = "No outline available";
-            let char_width = painter.char_width();
-            let text_width = msg.chars().count() as f32 * char_width;
+            let text_width = painter.measure_width(msg);
             let text_x = content_rect.x + (content_rect.width - text_width) / 2.0;
             let text_y = content_rect.y + (content_rect.height - line_height as f32) / 2.0;
             painter.draw(frame, text_x as usize, text_y as usize, msg, text_color);
@@ -537,13 +514,11 @@ pub fn render_outline_panel(
             };
             painter.draw(frame, text_x, text_y, label, label_color);
 
-            let char_w = painter.char_width().ceil() as usize;
-            let name_x = text_x + (label.len() + 1) * char_w;
+            let name_x = text_x
+                + (painter.measure_width(label) + painter.measure_width(" ")).ceil() as usize;
             let container_width = ctx.content_rect.x as usize + ctx.content_rect.width as usize;
             let available = ctx.tree.available_text_width(container_width, name_x);
-            let max_chars = available.checked_div(char_w).unwrap_or(80);
-
-            let display = truncate_with_ellipsis(&node.name, max_chars);
+            let display = painter.truncate_to_width(&node.name, available as f32);
             painter.draw(frame, name_x, text_y, &display, fg);
         },
     );
@@ -569,7 +544,6 @@ fn render_usages_panel(
     let rows = model.usages_panel.rows();
     let theme = &model.theme.sidebar;
     let tree = TreeRowLayout::outline_from_metrics(&model.metrics);
-    let char_width = painter.char_width().ceil() as usize;
     for index in view.drawn_range() {
         let (Some(&row), Some(rect)) = (rows.get(index), view.row_rect(index)) else {
             continue;
@@ -599,71 +573,8 @@ fn render_usages_panel(
         let x = rect.x as usize + pos.text_x;
         let available = tree.available_text_width((rect.x + rect.width) as usize, x);
         let text = crate::update::usages::row_label(model, row);
-        let text = truncate_with_ellipsis(&text, available.checked_div(char_width).unwrap_or(0));
+        let text = painter.truncate_to_width(&text, available as f32);
         painter.draw(frame, x, pos.text_y, &text, color);
-    }
-}
-
-#[cfg(test)]
-mod usages_tests {
-    use super::*;
-
-    #[test]
-    fn usages_panel_renders_selected_partial_row_within_shared_clip() {
-        let mut model = AppModel::new(800, 600, 1.0);
-        model.usages_panel.items = (0..30)
-            .map(|line| crate::update::navigation::LocationItem {
-                path: "/source.rs".into(),
-                position: lsp_types::Position::new(line, 3),
-                preview: "usage".into(),
-                route_hint: None,
-            })
-            .collect();
-        model.dock_layout.bottom.size_logical = 137.5;
-        model
-            .dock_layout
-            .bottom
-            .activate(crate::panel::PanelId::Usages);
-        model.resize(800, 600);
-        let view = crate::layout::chrome::chrome(&model)
-            .row_list(UiKey::PanelRows(crate::panel::PanelId::Usages))
-            .unwrap();
-        let last = view.drawn_range().last().unwrap();
-        model.usages_panel.selected_index = Some(last);
-        let rect = view.rect();
-        let row = view.row_rect(last).unwrap();
-        let font = fontdue::Font::from_bytes(
-            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
-            fontdue::FontSettings::default(),
-        )
-        .unwrap();
-        let mut cache = crate::view::GlyphCache::default();
-        let mut painter = TextPainter::new(&font, &mut cache, 14.0, 11.0, 8.0, 18);
-        let sentinel = 0xff010203;
-        let mut pixels = vec![sentinel; 800 * 600];
-        {
-            let mut frame = Frame::new(&mut pixels, 800, 600);
-            frame.push_clip(rect);
-            render_usages_panel(&mut frame, &mut painter, &model, view);
-            frame.pop_clip();
-        }
-        assert_ne!(
-            pixels[row.y as usize * 800 + (row.x + row.width - 2.0) as usize],
-            sentinel
-        );
-        for (index, pixel) in pixels.into_iter().enumerate() {
-            let (x, y) = (index % 800, index / 800);
-            if x < rect.x as usize
-                || x >= (rect.x + rect.width) as usize
-                || y < rect.y as usize
-                || y >= (rect.y + rect.height) as usize
-            {
-                assert_eq!(
-                    pixel, sentinel,
-                    "paint escaped the solved panel clip at {x},{y}"
-                );
-            }
-        }
     }
 }
 
@@ -697,8 +608,7 @@ pub fn render_problems_panel(
 
     if rows.is_empty() {
         let msg = crate::update::problems::problems_empty_text(model);
-        let char_width = painter.char_width();
-        let text_width = msg.chars().count() as f32 * char_width;
+        let text_width = painter.measure_width(msg);
         let text_x = content_rect.x + (content_rect.width - text_width) / 2.0;
         let text_y = content_rect.y + (content_rect.height - line_height as f32) / 2.0;
         painter.draw(frame, text_x as usize, text_y as usize, msg, text_color);
@@ -779,14 +689,12 @@ pub fn render_problems_panel(
                     None => format!("  {count}"),
                 };
                 let name_available = tree.available_text_width(container_width, name_x);
-                let name_max_chars = name_available.checked_div(char_w).unwrap_or(80);
-                let name_display = truncate_with_ellipsis(&name, name_max_chars);
+                let name_display = painter.truncate_to_width(&name, name_available as f32);
                 painter.draw(frame, name_x, pos.text_y, &name_display, fg);
 
-                let suffix_x = name_x + name_display.chars().count() * char_w;
+                let suffix_x = name_x + painter.measure_width(&name_display).ceil() as usize;
                 let suffix_available = tree.available_text_width(container_width, suffix_x);
-                let suffix_max_chars = suffix_available.checked_div(char_w).unwrap_or(0);
-                let suffix_display = truncate_with_ellipsis(&suffix, suffix_max_chars);
+                let suffix_display = painter.truncate_to_width(&suffix, suffix_available as f32);
                 let dim = if is_selected { selection_fg } else { dim_color };
                 painter.draw(frame, suffix_x, pos.text_y, &suffix_display, dim);
             }
@@ -824,7 +732,7 @@ pub fn render_problems_panel(
                 );
                 // Fractional measure + right inset (symmetric with
                 // available_text_width's implicit left_padding right inset).
-                let accessory_width = accessory.chars().count() as f32 * painter.char_width();
+                let accessory_width = painter.measure_width(&accessory);
                 let right_inset = tree.left_padding as f32;
                 let accessory_x =
                     (content_rect.x + content_rect.width - right_inset - accessory_width)
@@ -837,11 +745,10 @@ pub fn render_problems_panel(
                 painter.draw(frame, accessory_x, pos.text_y, &accessory, accessory_color);
 
                 let available = accessory_x.saturating_sub(text_x + tree.left_padding);
-                let max_chars = available.checked_div(char_w).unwrap_or(80);
                 // Multi-line LSP messages would smear their later lines
                 // into the same row ('\n' renders as an empty glyph).
                 let message = diagnostic.message.lines().next().unwrap_or("");
-                let display = truncate_with_ellipsis(message, max_chars);
+                let display = painter.truncate_to_width(message, available as f32);
                 painter.draw(frame, text_x, pos.text_y, &display, fg);
             }
         }
@@ -849,39 +756,64 @@ pub fn render_problems_panel(
 }
 
 #[cfg(test)]
-mod truncate_with_ellipsis_tests {
-    use super::truncate_with_ellipsis;
+mod usages_tests {
+    use super::*;
 
     #[test]
-    fn leaves_short_names_unchanged() {
-        let result = truncate_with_ellipsis("short.rs", 20);
-        assert_eq!(result, "short.rs");
-        assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
-    }
-
-    #[test]
-    fn truncates_long_names_with_ellipsis() {
-        // "a_very_long_filename.rs" is 24 chars; requesting 10 chars should
-        // keep 9 chars of the original plus a trailing ellipsis.
-        let result = truncate_with_ellipsis("a_very_long_filename.rs", 10);
-        assert_eq!(result, "a_very_lo\u{2026}");
-        assert_eq!(result.chars().count(), 10);
-    }
-
-    #[test]
-    fn truncates_multibyte_names_on_char_boundaries() {
-        // "café_very_long_name" contains a multi-byte 'é' (2 bytes in UTF-8).
-        // Truncation must count characters, not bytes, or this would panic
-        // or split the 'é' mid-codepoint.
-        let name = "café_very_long_name";
-        assert_eq!(name.chars().count(), 19);
-        let result = truncate_with_ellipsis(name, 6);
-        assert_eq!(result, "café_\u{2026}");
-        assert_eq!(result.chars().count(), 6);
-    }
-
-    #[test]
-    fn does_not_truncate_when_max_chars_is_zero() {
-        assert_eq!(truncate_with_ellipsis("anything", 0), "anything");
+    fn usages_panel_renders_selected_partial_row_within_shared_clip() {
+        let mut model = AppModel::new(800, 600, 1.0);
+        model.usages_panel.items = (0..30)
+            .map(|line| crate::update::navigation::LocationItem {
+                path: "/source.rs".into(),
+                position: lsp_types::Position::new(line, 3),
+                preview: "usage".into(),
+                route_hint: None,
+            })
+            .collect();
+        model.dock_layout.bottom.size_logical = 137.5;
+        model
+            .dock_layout
+            .bottom
+            .activate(crate::panel::PanelId::Usages);
+        model.resize(800, 600);
+        let view = crate::layout::chrome::chrome(&model)
+            .row_list(UiKey::PanelRows(crate::panel::PanelId::Usages))
+            .unwrap();
+        let last = view.drawn_range().last().unwrap();
+        model.usages_panel.selected_index = Some(last);
+        let rect = view.rect();
+        let row = view.row_rect(last).unwrap();
+        let font = fontdue::Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        let mut cache = crate::view::GlyphCache::default();
+        let mut painter = TextPainter::new(&font, &mut cache, 14.0, 11.0, 8.0, 18);
+        let sentinel = 0xff010203;
+        let mut pixels = vec![sentinel; 800 * 600];
+        {
+            let mut frame = Frame::new(&mut pixels, 800, 600);
+            frame.push_clip(rect);
+            render_usages_panel(&mut frame, &mut painter, &model, view);
+            frame.pop_clip();
+        }
+        assert_ne!(
+            pixels[row.y as usize * 800 + (row.x + row.width - 2.0) as usize],
+            sentinel
+        );
+        for (index, pixel) in pixels.into_iter().enumerate() {
+            let (x, y) = (index % 800, index / 800);
+            if x < rect.x as usize
+                || x >= (rect.x + rect.width) as usize
+                || y < rect.y as usize
+                || y >= (rect.y + rect.height) as usize
+            {
+                assert_eq!(
+                    pixel, sentinel,
+                    "paint escaped the solved panel clip at {x},{y}"
+                );
+            }
+        }
     }
 }
