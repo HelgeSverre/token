@@ -100,7 +100,7 @@ scope from deferred ideas and manual verification. Archival is not a release.
 | Code Folding | 4 - Hard Problems | [folding-basic.md](feature/folding-basic.md) |
 | Diff Gutter | 5 - Insight Tools | [diff-gutter.md](feature/diff-gutter.md) |
 | Snippets | 6 - Productivity | [snippets.md](feature/snippets.md) |
-| Settings Keymap Tab | 6 - Productivity | [settings-keymap.md](future/settings-keymap.md) |
+| Settings Keymap Tab (implemented; platform verification open) | 6 - Productivity | [settings-keymap.md](future/settings-keymap.md) |
 | Autocomplete (inline / FIM) | 6 - Productivity | [autocomplete.md](feature/autocomplete.md) |
 
 ---

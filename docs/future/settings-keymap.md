@@ -1,6 +1,6 @@
 # Settings Keymap Tab
 
-> **Status:** Implemented in the working tree; prerequisite/UI source grouping and cross-platform validation remain.
+> **Status:** Implementation committed 2026-09-08; cross-platform validation remains.
 > **Extracted:** 2026-09-06 from Phase 4 of the [archived Settings v1 plan](../archived/settings-page.md).
 > **Priority:** P3 · **Effort:** M · **Milestone:** 6 - Productivity
 
@@ -65,8 +65,10 @@ restart persistence and native-menu restoration. They found and fixed two gaps:
 AppKit menu accelerators bypassed winit capture, and modal pointer handlers
 discarded runtime commands. The latter now has a shared effect-preserving path.
 Windows/Linux native checks and their platform-specific merged/chip behavior are
-not established by this macOS run. Keep this plan active until those checks and
-the remaining dependency-ordered source groups are complete.
+not established by this macOS run. Keep this plan active until those platform
+checks are complete. The dependency-ordered source
+grouping was closed by `ab96495`–`2bdbcca` on 2026-09-08; UI/override code is
+in `c2a1ee5`, with shared runtime wiring in `ac362d4`.
 
 The related [keymap enhancements](keymap-enhancements.md) plan owns timeout,
 pending-chord feedback, hot reload and broader routing work. Coordinate those

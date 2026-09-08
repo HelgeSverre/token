@@ -1,5 +1,48 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Source consolidation and Settings scrolling — 2026-09-08
+
+The implementation backlog is committed as a coordinated series:
+
+| Commit    | Scope                                                            |
+| --------- | ---------------------------------------------------------------- |
+| `ab96495` | Document edits, pane state, soft wrap and rendering              |
+| `d4fd1a4` | Ordered file/configuration effects and startup preparation       |
+| `6531ecf` | Contextual dropdown and inline completion pipelines              |
+| `c2a1ee5` | Settings/keymap controls, override saves and live shortcut hints |
+| `ac362d4` | Shared runtime contracts, dispatch, Find and workspace symbols   |
+| `2bdbcca` | Benchmarks, fixtures, changelog and verification records         |
+
+Working-file hashes matched before/after staging. These source groups share
+contracts and are verified as a complete series, not as independently buildable
+intermediate snapshots. The combined source passed 2,568 tests and two doctests,
+run `98402f7e-0048-457c-888a-e28d3ae2d78d`.
+
+Settings' first draggable scrollbar still converted positions to selectable
+rows and skipped section headings. The correction uses physical-pixel offsets
+and extends the shared `RowListView` to expose clipped partial rows, hit
+coordinates and minimal pixel-based selection reveal. Editor/list row snapping
+is preserved. Trackpad subpixel remainders accumulate at pixel granularity.
+The corrected suite passed 2,571 tests and two doctests, run
+`8da31a5a-edc7-42a2-b5d6-893f377bbfac`.
+
+The handoff is now a short current checklist. Historical checkpoints below
+describe their dates, not present-day source-group status. Completed baseline
+plans are already archived; Settings keymap's cross-platform gate and the
+autocomplete follow-ups remain open. The archived Settings proposal is
+explicitly marked superseded where it conflicts with the user's separate-page
+design. No additional incomplete plan was archived to make the checklist empty.
+
+Settings CPU measurements and measurement limits are recorded separately in
+[the September 8 report](../benchmark/2026-09-08-settings-scroll.md).
+Pixel scrolling is committed in `67fa676`; the shared dimmer, benchmark harness
+and raw measurements are in `8516dc2`.
+The final scrolling/dimmer suite passed 2,572 tests and two doctests, run
+`f462df76-3cca-4c02-8ab7-29836f9ebab2`, plus strict lint, formatting and a debug
+build. Wide/compact scrolled screenshots were inspected for body clipping and
+fixed chrome. Diff-based self-review found no outstanding critical/high issues
+(Approve). Native presentation and the handoff's platform gates remain open.
+
 ## Keymap registries and contextual chord eligibility — 2026-09-07
 
 Commit `e017bd6` removes two competing registries ahead of the Settings keymap

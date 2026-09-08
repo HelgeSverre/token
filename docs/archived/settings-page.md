@@ -1,6 +1,14 @@
 # Settings Page
 
-A searchable, preset-driven settings modal on the existing `OverlaySurface` — no new rendering surface, no config file editor, no free-text inputs. One static descriptor table drives search, sectioning, and rendering; the YAML file stays the single source of truth and keeps accepting values the UI doesn't offer as presets.
+A separate, searchable Settings page with category navigation, spacious form
+rows and controls. It shares metadata, layout and rendering primitives with
+`OverlaySurface`; that reuse does not make its design a command palette.
+The YAML file accepts values beyond the UI's presets.
+
+> **Design correction, 2026-09-08:** The original palette-sized proposal below
+> is historical and superseded. Preserve `src/view/settings_page.rs`, its
+> category sidebar/compact navigation, switches and right-aligned controls.
+> Settings scrolling is pixel-based, with clipped partial rows.
 
 > **Status:** Settings v1 (Phases 1–3) implemented and archived 2026-09-06. Full tests, strict lint, headless rendering and isolated macOS native keyboard/persistence checks passed. Future Phase 4 is tracked in [Settings Keymap Tab](../future/settings-keymap.md); archival does not mark it complete or imply a release.
 > **Priority:** P3
@@ -47,7 +55,7 @@ A Settings context on `OverlaySurface` gives every discrete-choice setting a UI 
 
 ## Design / Architecture
 
-### Shape
+### Original proposed shape (superseded by the separate Settings page)
 
 Settings is a **context on the existing `OverlaySurface`**, the same way the palette, theme picker, and pickers are:
 
@@ -57,7 +65,8 @@ Settings is a **context on the existing `OverlaySurface`**, the same way the pal
 - **Row accessory:** a segmented-chip control — 2-5 preset choices rendered as adjacent chips in the row's `Accessory` slot, active choice highlighted (same visual family as `binding_chips`/keycaps: bordered, small-radius chips). Selecting a row and pressing Left/Right (or clicking a chip) cycles/sets the choice; the row commits immediately (see Persistence).
 - **Entry points:** `Cmd+,` keybinding (added to `keymap.yaml`, following the same binding-declaration path as every other command) and a palette command "Open Settings".
 
-Explicitly not built: a dedicated settings panel, sidebar, or full-page view. It is a modal like every other picker.
+The original exclusion of a dedicated page/sidebar is superseded by the user's
+explicit design requirement. It must not guide future refactoring.
 
 ### Declaration
 

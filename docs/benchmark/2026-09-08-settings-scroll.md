@@ -110,8 +110,10 @@ CARGO_BUILD_JOBS=1 just profile-workloads settings
 
 The measured working tree started at `2bdbcca` plus the pixel-scrolling and
 harness changes. Pixel scrolling is committed in `67fa676`; that commit retains
-the before-version dimmer. The new harness and after-version dimmer are committed
-with this report. Checking out `2bdbcca` alone does not reproduce these probes.
+the before-version dimmer. Commit `8516dc2` contains the measured harness and
+after-version dimmer. To reproduce the before variant, use that harness with
+`src/view/frame.rs` from `67fa676` in an isolated checkout. Checking out
+`2bdbcca` alone does not reproduce these probes.
 
 | Source                      | SHA-256                                                            |
 | --------------------------- | ------------------------------------------------------------------ |
