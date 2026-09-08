@@ -1,0 +1,17 @@
+CARGO_TARGET_DIR=/tmp/token-managed-server-check.5prvI4 CARGO_BUILD_JOBS=1 just profile-workloads find-cold
+warning: `token` (lib) generated 1 warning (run `cargo fix --lib -p token` to apply 1 suggestion)
+warning: `token` (lib) generated 1 warning (1 duplicate)
+    Finished `bench` profile [optimized] target(s) in 6m 18s
+     Running benches/editor_workloads.rs (/tmp/token-managed-server-check.5prvI4/release/deps/editor_workloads-400dbdb6ea278778)
+find_cold dense lines=10000: median=759.250us p95=822.625us n=100
+find_worker dense lines=10000: median=1117.958us p95=1171.750us n=100
+find_cold sparse lines=10000: median=205.833us p95=222.584us n=100
+find_worker sparse lines=10000: median=202.750us p95=226.084us n=100
+find_cold absent lines=10000: median=196.417us p95=218.500us n=100
+find_worker absent lines=10000: median=194.250us p95=214.583us n=100
+find_cold dense lines=100000: median=7263.583us p95=7625.375us n=100
+find_worker dense lines=100000: median=11641.666us p95=12182.000us n=100
+find_cold sparse lines=100000: median=944.166us p95=1121.416us n=100
+find_worker sparse lines=100000: median=932.542us p95=1053.708us n=100
+find_cold absent lines=100000: median=815.584us p95=918.333us n=100
+find_worker absent lines=100000: median=827.708us p95=997.959us n=100

@@ -1,6 +1,8 @@
 //! Production-path regression probes. Timings exclude setup and window presentation.
 //! Run `just profile-workloads`, `just profile-workloads find`, or attach a
 //! native sampler using the `sample` / `sample-find` modes (12 seconds).
+//! `find-cold` measures uncached matches and worker computation separately;
+//! `sample-find-cold` / `sample-find-worker` keep those stages busy for sampling.
 
 use std::hint::black_box;
 use std::time::{Duration, Instant};
@@ -43,6 +45,69 @@ fn report(name: &str, mut times: Vec<Duration>) {
         times[n / 2].as_secs_f64() * 1e6,
         times[n * 95 / 100].as_secs_f64() * 1e6
     );
+}
+
+fn cold_find(sample_stage: Option<&str>) {
+    use std::sync::Arc;
+    use token::messages::UiMsg;
+    use token::model::{FindReplaceState, ModalState};
+
+    fn search_request(cmd: token::Cmd) -> Option<Arc<token::model::ui::FindSearchRequest>> {
+        match cmd {
+            token::Cmd::RunFindSearch(request) => Some(request),
+            token::Cmd::Batch(cmds) => cmds.into_iter().find_map(search_request),
+            _ => None,
+        }
+    }
+
+    for lines in [10_000, 100_000] {
+        let text = format!(
+            "{}final_marker\n",
+            "ordinary text on a short line\n".repeat(lines)
+        );
+        let mut m = model(&text, false);
+        for (name, pattern, count) in [
+            ("dense", "ordinary", lines),
+            ("sparse", "final_marker", 1),
+            ("absent", "missing_marker", 0),
+        ] {
+            if sample_stage.is_some() && (lines != 100_000 || name != "dense") {
+                continue;
+            }
+            let mut state = FindReplaceState::default();
+            state.set_query(pattern);
+            assert_eq!(state.matches(m.document()).len(), count);
+            // Install a genuinely cold state so update emits the production request.
+            let mut state = FindReplaceState::default();
+            state.set_query(pattern);
+            m.ui.open_modal(ModalState::FindReplace(state));
+            let request =
+                search_request(token::update::update(&mut m, Msg::Ui(UiMsg::BlinkCursor)).unwrap())
+                    .expect("large cold document must schedule Find");
+            let scan = || {
+                let mut state = FindReplaceState::default();
+                state.set_query(pattern);
+                black_box(state.matches(m.document()));
+            };
+            let worker = || {
+                black_box(request.compute());
+            };
+            if let Some(stage) = sample_stage {
+                println!("sampling Find {stage}: pid={}", std::process::id());
+                let start = Instant::now();
+                while start.elapsed() < Duration::from_secs(12) {
+                    if stage == "cold" {
+                        scan();
+                    } else {
+                        worker();
+                    }
+                }
+            } else {
+                measure(&format!("find_cold {name} lines={lines}"), 100, scan);
+                measure(&format!("find_worker {name} lines={lines}"), 100, worker);
+            }
+        }
+    }
 }
 
 fn insertions() {
@@ -498,6 +563,15 @@ fn settings_scrolling() {
 }
 
 fn main() {
+    if let Some(mode) = std::env::args().find(|arg| {
+        matches!(
+            arg.as_str(),
+            "find-cold" | "sample-find-cold" | "sample-find-worker"
+        )
+    }) {
+        cold_find(mode.strip_prefix("sample-find-"));
+        return;
+    }
     if std::env::args().any(|arg| arg == "settings") {
         settings_scrolling();
         return;

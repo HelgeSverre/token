@@ -6,6 +6,12 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Performance investigation
+
+- Added focused cold Find and worker-computation profiling modes, with
+  [dense/sparse/absent results and CPU samples](benchmark/2026-09-08-cold-find.md).
+  This adds reproducible diagnostics without changing search behavior.
+
 ### Completion efficiency
 
 - LSP completion rows retain the original typed protocol item through filtering

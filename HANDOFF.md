@@ -34,6 +34,9 @@ The default `target/` previously disappeared outside this task.
 - Address measured performance targets as warranted: cold explicit Find scans,
   larger recency refreshes and forward multi-cursor edits. Existing measurements are in
   [the September report](docs/benchmark/2026-09-07-current.md).
+  [Cold Find sampling](docs/benchmark/2026-09-08-cold-find.md) now identifies dense
+  regex matching and overview-line traversal as the two next optimization targets;
+  no Find optimization has yet been made for these findings.
 
 ## Remaining verification
 

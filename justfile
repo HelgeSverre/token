@@ -186,7 +186,7 @@ bench-loop:
 bench-completion *args:
     cargo bench --bench completion -- {{args}}
 
-# Warm production-path timings; accepts find, sample, or sample-find.
+# Production-path timings; includes find-cold and sample-find-{cold,worker}.
 [group('profile')]
 profile-workloads *args:
     cargo bench --bench editor_workloads -- {{args}}

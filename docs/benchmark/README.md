@@ -4,6 +4,8 @@ This document describes how to run benchmarks and profile the Token editor.
 
 ## Reports
 
+- [2026-09-08: cold Find](2026-09-08-cold-find.md) — dense/sparse/absent scans,
+  worker computation, independent repeat and native CPU stack samples.
 - [2026-09-08: completion response ownership](2026-09-08-completion-responses.md) —
   deferred JSON serialization, before/after allocations and independent repeat.
 - [2026-09-08: workspace retrieval](2026-09-08-workspace-retrieval.md) — optimized
@@ -34,6 +36,10 @@ just bench-loop
 # Warm production-path probes (setup and window presentation excluded)
 just profile-workloads
 just profile-workloads find
+just profile-workloads find-cold
+# Twelve-second CPU sampling windows, with the child PID printed at startup
+just profile-workloads sample-find-cold
+just profile-workloads sample-find-worker
 just profile-workloads edit-history
 just profile-workloads insertions
 just profile-workloads replacements

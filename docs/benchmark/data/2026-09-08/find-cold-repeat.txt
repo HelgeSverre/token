@@ -1,0 +1,26 @@
+CARGO_TARGET_DIR=/tmp/token-managed-server-check.5prvI4 CARGO_BUILD_JOBS=1 just profile-workloads find-cold
+cargo bench --bench editor_workloads -- find-cold
+warning: unused variable: `revision`
+   --> src/update/syntax.rs:196:17
+    |
+196 |             let revision = doc.revision;
+    |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_revision`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `token` (lib) generated 1 warning (run `cargo fix --lib -p token` to apply 1 suggestion)
+warning: `token` (lib) generated 1 warning (1 duplicate)
+    Finished `bench` profile [optimized] target(s) in 0.28s
+     Running benches/editor_workloads.rs (/tmp/token-managed-server-check.5prvI4/release/deps/editor_workloads-400dbdb6ea278778)
+find_cold dense lines=10000: median=750.917us p95=809.791us n=100
+find_worker dense lines=10000: median=1120.209us p95=1206.209us n=100
+find_cold sparse lines=10000: median=203.291us p95=228.250us n=100
+find_worker sparse lines=10000: median=201.000us p95=213.416us n=100
+find_cold absent lines=10000: median=195.541us p95=234.416us n=100
+find_worker absent lines=10000: median=193.750us p95=213.584us n=100
+find_cold dense lines=100000: median=7060.125us p95=7477.750us n=100
+find_worker dense lines=100000: median=11065.750us p95=11480.542us n=100
+find_cold sparse lines=100000: median=841.666us p95=969.042us n=100
+find_worker sparse lines=100000: median=845.084us p95=980.667us n=100
+find_cold absent lines=100000: median=734.917us p95=807.667us n=100
+find_worker absent lines=100000: median=717.333us p95=793.042us n=100
