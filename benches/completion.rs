@@ -21,6 +21,17 @@ mod support;
 static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
 
 fn main() {
+    if std::env::args().any(|arg| arg == "sample-recency-refresh") {
+        let mut fixture = RecencyFixture::new(32, true, true);
+        println!("sampling recency refresh: pid={}", std::process::id());
+        let start = std::time::Instant::now();
+        while start.elapsed() < std::time::Duration::from_secs(12) {
+            fixture.queue_refresh();
+            fixture.ring.observe(&fixture.model, fixture.due);
+            divan::black_box(&fixture.ring);
+        }
+        return;
+    }
     divan::main();
 }
 
@@ -335,12 +346,33 @@ fn recency_observe_stable(bencher: divan::Bencher, chunks: usize) {
 }
 
 /// Approximately 94% shared tokens => Jaccard similarity just below 0.9.
-/// Setup asserts all snippets survive, so the full ring is compared each time.
+/// Setup asserts all snippets survive; unchanged payloads can reuse their indexes.
 #[divan::bench(args = [8, 32], sample_count = 100)]
 fn recency_idle_refresh_near_duplicates(bencher: divan::Bencher, chunks: usize) {
     bencher
         .with_inputs(|| {
             let mut fixture = RecencyFixture::new(chunks, true, true);
+            fixture.queue_refresh();
+            fixture
+        })
+        .bench_local_refs(|fixture| {
+            fixture.ring.observe(&fixture.model, fixture.due);
+        });
+}
+
+/// Same near-duplicate ring, but every captured payload genuinely changed.
+#[divan::bench(args = [8, 32], sample_count = 100)]
+fn recency_idle_refresh_edited(bencher: divan::Bencher, chunks: usize) {
+    bencher
+        .with_inputs(|| {
+            let mut fixture = RecencyFixture::new(chunks, true, true);
+            for document in fixture.model.editor_area.documents.values_mut() {
+                let last = document.buffer.len_chars() - 1;
+                assert_ne!(document.buffer.char(last), 'x');
+                document.buffer.remove(last..);
+                document.buffer.insert(last, "x");
+                document.revision += 1;
+            }
             fixture.queue_refresh();
             fixture
         })

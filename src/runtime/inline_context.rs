@@ -203,18 +203,35 @@ impl InlineContextRing {
                 // Revisiting an overlapping region replaces its snapshot even
                 // after a substantial rewrite (or deletion to empty text).
                 let lines = line_range(document, anchor.line, chunk_lines);
-                self.chunks.retain(|stored| {
-                    stored.document != anchor.document
-                        || stored.lines.start >= lines.end
-                        || lines.start >= stored.lines.end
-                });
-                let Some(chunk) = capture(model, document, anchor.line, chunk_lines) else {
+                let overlaps = |stored: &Stored| {
+                    stored.document == anchor.document
+                        && stored.lines.start < lines.end
+                        && lines.start < stored.lines.end
+                };
+                let captured = capture(model, document, anchor.line, chunk_lines);
+                let unchanged = captured
+                    .as_ref()
+                    .and_then(|payload| {
+                        self.chunks
+                            .iter()
+                            .position(|stored| overlaps(stored) && stored.chunk.payload == *payload)
+                    })
+                    .and_then(|index| self.chunks.remove(index));
+                self.chunks.retain(|stored| !overlaps(stored));
+                let Some(payload) = captured else {
                     continue;
                 };
-                // Strict >0.9 Jaccard similarity; no ranking and no hash-only
-                // equality. Index a captured snippet once, not once per pair.
-                let chunk = IndexedChunk::new(chunk);
-                self.chunks.retain(|stored| !stored.chunk.similar(&chunk));
+                let chunk = if let Some(stored) = unchanged {
+                    // Stored snapshots are pairwise dissimilar. Exact payload
+                    // equality preserves that invariant without re-indexing or
+                    // comparing again; the push below still refreshes recency.
+                    stored.chunk
+                } else {
+                    // Strict >0.9 Jaccard similarity; no hash-only equality.
+                    let chunk = IndexedChunk::new(payload);
+                    self.chunks.retain(|stored| !stored.chunk.similar(&chunk));
+                    chunk
+                };
                 while self.chunks.len() >= max_chunks {
                     self.chunks.pop_front();
                 }
@@ -496,7 +513,7 @@ mod tests {
         assert!(similar("0 1 2 3 4 5 6 7 8 9", "0 1 2 3 4 5 6 7 8 9 10"));
         assert!(similar("a b a", "b a"));
         assert!(!similar("!!!", "???"));
-        let model = model();
+        let mut model = model();
         let id = model.document().id.unwrap();
         let mut ring = InlineContextRing::default();
         for line in 0..100 {
@@ -507,6 +524,44 @@ mod tests {
         ring.enqueue(id, 92, 8);
         assert_eq!(ring.pending.len(), 8);
         assert_eq!(ring.pending.back().unwrap().line, 92);
+
+        let mut ring = InlineContextRing::default();
+        let start = Instant::now();
+        ring.observe(&model, start);
+        ring.observe(&model, start + IDLE);
+        token::update::update(
+            &mut model,
+            token::messages::Msg::Layout(token::messages::LayoutMsg::NewTab),
+        );
+        let second = model.document().id.unwrap();
+        model.document_mut().buffer = "unrelated helper source\n".into();
+        ring.observe(&model, start + IDLE * 2);
+        ring.observe(&model, start + IDLE * 3);
+        ring.saved(&model, id, start + IDLE * 4);
+        ring.observe(&model, start + IDLE * 5);
+        assert_eq!(
+            ring.chunks
+                .iter()
+                .map(|stored| stored.document)
+                .collect::<Vec<_>>(),
+            [second, id],
+            "an unchanged background save still refreshes recency"
+        );
+        assert_eq!(
+            ring.chunks.back().unwrap().chunk.payload.text,
+            "alpha beta gamma\n"
+        );
+        // Content equality, not document identity or revision alone, permits reuse.
+        model.editor_area.documents.get_mut(&id).unwrap().buffer =
+            "unrelated helper source\n".into();
+        ring.saved(&model, id, start + IDLE * 6);
+        ring.observe(&model, start + IDLE * 7);
+        assert_eq!(
+            ring.chunks.len(),
+            1,
+            "changed context is still deduplicated"
+        );
+        assert_eq!(ring.chunks[0].document, id);
     }
 
     #[test]
