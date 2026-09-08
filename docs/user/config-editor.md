@@ -16,6 +16,10 @@ General editor settings for Token.
 
 ## Settings
 
+The page uses the standard themed scrollbar: drag its thumb or click the track
+to jump. Scrolling leaves the selected setting unchanged. Wheel scrolling uses
+the incoming scroll amount rather than a fixed palette-style three-row step.
+
 ### Usages
 
 Run **Find Usages** at a symbol in a named text file to open a persistent Usages

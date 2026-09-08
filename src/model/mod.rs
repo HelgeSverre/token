@@ -365,8 +365,6 @@ impl ScaledMetrics {
     const BASE_SIDEBAR_MAX_WIDTH: f32 = 500.0;
     /// Base resize handle zone at scale factor 1.0
     const BASE_RESIZE_HANDLE_ZONE: f64 = 4.0;
-    /// Base scrollbar width at scale factor 1.0
-    const BASE_SCROLLBAR_WIDTH: f64 = 12.0;
 
     /// Create scaled metrics for the given display scale factor
     pub fn new(scale_factor: f64) -> Self {
@@ -389,7 +387,8 @@ impl ScaledMetrics {
             resize_handle_zone: (Self::BASE_RESIZE_HANDLE_ZONE * scale_factor)
                 .round()
                 .max(2.0) as usize,
-            scrollbar_width: (Self::BASE_SCROLLBAR_WIDTH * scale_factor).round() as usize,
+            scrollbar_width: (crate::view::scrollbar::SCROLLBAR_WIDTH_LOGICAL * scale_factor)
+                .round() as usize,
         }
     }
 }
@@ -759,6 +758,8 @@ impl AppModel {
     /// Updates ALL editors, not just the focused one (for split view support)
     pub fn resize(&mut self, width: u32, height: u32) {
         self.window_size = (width, height);
+        // Captured track geometry belongs to the previous window layout.
+        self.ui.scrollbar_drag = None;
 
         let editor_area_rect = crate::layout::chrome::shell(self)
             .rect(crate::layout::UiKey::EditorArea)

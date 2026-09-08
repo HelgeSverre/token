@@ -181,83 +181,52 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
         }
 
         // === Scrollbar interaction ===
-        UiMsg::ScrollbarTrackClickedVertical {
-            editor_id,
+        UiMsg::ScrollbarTrackClicked {
+            target,
+            axis,
             new_position,
-        } => model
-            .set_editor_vertical_scroll(editor_id, new_position)
-            .then_some(Cmd::redraw_editor()),
-
-        UiMsg::ScrollbarTrackClickedHorizontal {
-            editor_id,
-            new_position,
-        } => model
-            .set_editor_horizontal_scroll(editor_id, new_position)
-            .then_some(Cmd::redraw_editor()),
-
-        UiMsg::ScrollbarThumbPressedVertical {
-            editor_id,
-            grab_offset,
-            track_start,
-            track_size,
-            thumb_size,
-            max_scroll,
-        } => {
-            model.ui.scrollbar_drag = Some(crate::model::ui::ScrollbarDragState {
-                editor_id,
-                axis: crate::model::ui::ScrollbarDragAxis::Vertical,
-                grab_offset,
-                track_start,
-                track_size,
-                thumb_size,
-                max_scroll,
-            });
-            None
+        } => scroll_target(model, target, axis, new_position),
+        UiMsg::ScrollbarThumbPressed(drag) => {
+            model.ui.scrollbar_drag = Some(drag);
+            Some(Cmd::Redraw)
         }
-
-        UiMsg::ScrollbarThumbPressedHorizontal {
-            editor_id,
-            grab_offset,
-            track_start,
-            track_size,
-            thumb_size,
-            max_scroll,
-        } => {
-            model.ui.scrollbar_drag = Some(crate::model::ui::ScrollbarDragState {
-                editor_id,
-                axis: crate::model::ui::ScrollbarDragAxis::Horizontal,
-                grab_offset,
-                track_start,
-                track_size,
-                thumb_size,
-                max_scroll,
-            });
-            None
-        }
-
         UiMsg::ScrollbarDragUpdate { mouse_coord } => {
-            let Some(drag) = &model.ui.scrollbar_drag else {
-                return None;
-            };
-            let new_pos = drag.position_from_mouse(mouse_coord);
-            let editor_id = drag.editor_id;
-            let axis = drag.axis;
-            let changed = match axis {
-                crate::model::ui::ScrollbarDragAxis::Vertical => {
-                    model.set_editor_vertical_scroll(editor_id, new_pos.min(drag.max_scroll))
-                }
-                crate::model::ui::ScrollbarDragAxis::Horizontal => {
-                    model.set_editor_horizontal_scroll(editor_id, new_pos.min(drag.max_scroll))
-                }
-            };
-            if changed {
-                Some(Cmd::redraw_editor())
-            } else {
-                None
-            }
+            let drag = model.ui.scrollbar_drag.as_ref()?;
+            scroll_target(
+                model,
+                drag.target,
+                drag.axis,
+                drag.position_from_mouse(mouse_coord),
+            )
         }
+        UiMsg::ScrollbarDragEnd => model.ui.scrollbar_drag.take().map(|_| Cmd::Redraw),
+    }
+}
 
-        UiMsg::ScrollbarDragEnd => {
+fn scroll_target(
+    model: &mut AppModel,
+    target: crate::model::ui::ScrollbarTarget,
+    axis: crate::model::ui::ScrollbarDragAxis,
+    position: usize,
+) -> Option<Cmd> {
+    use crate::model::ui::{ScrollbarDragAxis, ScrollbarTarget};
+    match (target, axis) {
+        (ScrollbarTarget::Editor(editor), ScrollbarDragAxis::Vertical) => model
+            .set_editor_vertical_scroll(editor, position)
+            .then_some(Cmd::redraw_editor()),
+        (ScrollbarTarget::Editor(editor), ScrollbarDragAxis::Horizontal) => model
+            .set_editor_horizontal_scroll(editor, position)
+            .then_some(Cmd::redraw_editor()),
+        (ScrollbarTarget::Modal(id), ScrollbarDragAxis::Vertical)
+            if model
+                .ui
+                .active_modal
+                .as_ref()
+                .is_some_and(|modal| modal.id() == id) =>
+        {
+            modal_scroll_to(model, Some(position), 0)
+        }
+        (ScrollbarTarget::Modal(_), _) => {
             model.ui.scrollbar_drag = None;
             None
         }
@@ -317,6 +286,8 @@ fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
 
 /// Handle modal-specific messages
 fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
+    // Changing the modal's query/category/selection invalidates captured geometry.
+    model.ui.scrollbar_drag = None;
     match msg {
         ModalMsg::OpenCommandPalette => {
             let mut state = model.ui.last_command_palette.clone().unwrap_or_default();
@@ -1649,6 +1620,10 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
 /// `ModalMsg::Scroll`: move the visible window by `delta` rows without
 /// moving selection (mouse wheel over a list-body modal).
 fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
+    modal_scroll_to(model, None, delta)
+}
+
+fn modal_scroll_to(model: &mut AppModel, position: Option<usize>, delta: isize) -> Option<Cmd> {
     let capacity = if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) {
         settings_capacity(model)
     } else {
@@ -1697,8 +1672,12 @@ fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
     if total == 0 {
         return None;
     }
-    let max_scroll = resolve_scroll_for_selection(&shapes, total - 1, capacity, 0) as isize;
-    let new_scroll = (*scroll as isize + delta).clamp(0, max_scroll.max(0)) as usize;
+    let new_scroll = if let Some(position) = position {
+        crate::view::overlay_surface::resolve_scroll_for_display(&shapes, position, capacity)
+    } else {
+        let max_scroll = resolve_scroll_for_selection(&shapes, total - 1, capacity, 0);
+        scroll.saturating_add_signed(delta).min(max_scroll)
+    };
     if new_scroll == *scroll {
         return None;
     }

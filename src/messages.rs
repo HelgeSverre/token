@@ -296,35 +296,14 @@ pub enum UiMsg {
     FileHoverCancelled,
 
     // === Scrollbar Interaction ===
-    /// User clicked the vertical scrollbar track (not the thumb); jump to position
-    ScrollbarTrackClickedVertical {
-        editor_id: crate::model::editor_area::EditorId,
-        /// New absolute scroll position computed from click location
+    /// Jump along a scrollbar track using the shared geometry.
+    ScrollbarTrackClicked {
+        target: crate::model::ui::ScrollbarTarget,
+        axis: crate::model::ui::ScrollbarDragAxis,
         new_position: usize,
     },
-    /// User clicked the horizontal scrollbar track; jump to position
-    ScrollbarTrackClickedHorizontal {
-        editor_id: crate::model::editor_area::EditorId,
-        new_position: usize,
-    },
-    /// User pressed the mouse on a vertical scrollbar thumb; begin drag
-    ScrollbarThumbPressedVertical {
-        editor_id: crate::model::editor_area::EditorId,
-        grab_offset: f32,
-        track_start: f32,
-        track_size: f32,
-        thumb_size: f32,
-        max_scroll: usize,
-    },
-    /// User pressed the mouse on a horizontal scrollbar thumb; begin drag
-    ScrollbarThumbPressedHorizontal {
-        editor_id: crate::model::editor_area::EditorId,
-        grab_offset: f32,
-        track_start: f32,
-        track_size: f32,
-        thumb_size: f32,
-        max_scroll: usize,
-    },
+    /// Capture an editor or modal thumb until release.
+    ScrollbarThumbPressed(crate::model::ui::ScrollbarDragState),
     /// Mouse moved during scrollbar thumb drag; primary axis coordinate (y or x)
     ScrollbarDragUpdate { mouse_coord: f32 },
     /// Mouse released; end scrollbar drag

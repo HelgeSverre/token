@@ -26,7 +26,7 @@ const MIN_THUMB_PX: f32 = 20.0;
 // ============================================================================
 
 /// Describes the content/viewport relationship for one scroll axis
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScrollbarState {
     /// Total content size (lines, columns, or items)
     pub total: usize,
@@ -65,6 +65,8 @@ impl ScrollbarState {
 /// Computed geometry for a scrollbar: track rectangle and thumb rectangle
 #[derive(Debug, Clone, Copy)]
 pub struct ScrollbarGeometry {
+    pub state: ScrollbarState,
+    vertical: bool,
     /// Full scrollbar track area (the background strip)
     pub track_rect: Rect,
     /// Thumb position within the track
@@ -80,6 +82,8 @@ impl ScrollbarGeometry {
     pub fn vertical(track: Rect, state: &ScrollbarState) -> Self {
         if !state.needs_scroll() {
             return Self {
+                state: *state,
+                vertical: true,
                 track_rect: track,
                 thumb_rect: track,
                 needed: false,
@@ -91,6 +95,8 @@ impl ScrollbarGeometry {
         let thumb_y = thumb_offset(state.position, state.max_position(), track_h - thumb_h);
 
         Self {
+            state: *state,
+            vertical: true,
             track_rect: track,
             thumb_rect: Rect::new(track.x, track.y + thumb_y, track.width, thumb_h),
             needed: true,
@@ -103,6 +109,8 @@ impl ScrollbarGeometry {
     pub fn horizontal(track: Rect, state: &ScrollbarState) -> Self {
         if !state.needs_scroll() {
             return Self {
+                state: *state,
+                vertical: false,
                 track_rect: track,
                 thumb_rect: track,
                 needed: false,
@@ -114,6 +122,8 @@ impl ScrollbarGeometry {
         let thumb_x = thumb_offset(state.position, state.max_position(), track_w - thumb_w);
 
         Self {
+            state: *state,
+            vertical: false,
             track_rect: track,
             thumb_rect: Rect::new(track.x + thumb_x, track.y, thumb_w, track.height),
             needed: true,
@@ -132,13 +142,8 @@ impl ScrollbarGeometry {
         x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
     }
 
-    /// Compute new scroll position from a click on the track.
-    ///
-    /// `coord`: Y (vertical) or X (horizontal) coordinate of the click.
-    /// Centers the thumb around the click point.
-    pub fn position_from_track_click(&self, coord: f32, state: &ScrollbarState) -> usize {
-        let is_vertical = self.track_rect.height >= self.track_rect.width;
-        let (track_start, track_len, thumb_sz) = if is_vertical {
+    fn axis_metrics(&self) -> (f32, f32, f32) {
+        if self.vertical {
             (
                 self.track_rect.y,
                 self.track_rect.height,
@@ -150,44 +155,40 @@ impl ScrollbarGeometry {
                 self.track_rect.width,
                 self.thumb_rect.width,
             )
-        };
+        }
+    }
 
-        let thumb_travel = (track_len - thumb_sz).max(1.0);
-        // Center thumb around click, clamped to valid range
-        let thumb_pos = (coord - track_start - thumb_sz / 2.0).clamp(0.0, thumb_travel);
-        let ratio = thumb_pos / thumb_travel;
-        (ratio * state.max_position() as f32).round() as usize
+    /// Compute new scroll position from a click on the track.
+    ///
+    /// `coord`: Y (vertical) or X (horizontal) coordinate of the click.
+    /// Centers the thumb around the click point.
+    pub fn position_from_track_click(&self, coord: f32) -> usize {
+        let (track_start, track_len, thumb_sz) = self.axis_metrics();
+
+        position_from_track_click(
+            coord,
+            track_start,
+            track_len,
+            thumb_sz,
+            self.state.max_position(),
+        )
     }
 
     /// Compute new scroll position from thumb drag.
     ///
     /// `grab_offset`: where within the thumb the user originally clicked (pixels from thumb start).
     /// `mouse_coord`: current mouse Y (vertical) or X (horizontal) position.
-    pub fn position_from_drag(
-        &self,
-        grab_offset: f32,
-        mouse_coord: f32,
-        state: &ScrollbarState,
-    ) -> usize {
-        let is_vertical = self.track_rect.height >= self.track_rect.width;
-        let (track_start, track_len, thumb_sz) = if is_vertical {
-            (
-                self.track_rect.y,
-                self.track_rect.height,
-                self.thumb_rect.height,
-            )
-        } else {
-            (
-                self.track_rect.x,
-                self.track_rect.width,
-                self.thumb_rect.width,
-            )
-        };
+    pub fn position_from_drag(&self, grab_offset: f32, mouse_coord: f32) -> usize {
+        let (track_start, track_len, thumb_sz) = self.axis_metrics();
 
-        let thumb_travel = (track_len - thumb_sz).max(1.0);
-        let thumb_pos = (mouse_coord - grab_offset - track_start).clamp(0.0, thumb_travel);
-        let ratio = thumb_pos / thumb_travel;
-        (ratio * state.max_position() as f32).round() as usize
+        position_from_drag(
+            mouse_coord,
+            grab_offset,
+            track_start,
+            track_len,
+            thumb_sz,
+            self.state.max_position(),
+        )
     }
 }
 
@@ -202,10 +203,31 @@ pub fn position_from_track_click(
     thumb_size: f32,
     max_scroll: usize,
 ) -> usize {
-    let thumb_travel = (track_size - thumb_size).max(1.0);
-    let thumb_pos = (coord - track_start - thumb_size / 2.0).clamp(0.0, thumb_travel);
-    let ratio = thumb_pos / thumb_travel;
-    (ratio * max_scroll as f32).round() as usize
+    position_from_drag(
+        coord,
+        thumb_size / 2.0,
+        track_start,
+        track_size,
+        thumb_size,
+        max_scroll,
+    )
+}
+
+/// Shared axis-independent pointer mapping for editor and overlay scrollbars.
+pub fn position_from_drag(
+    coord: f32,
+    grab_offset: f32,
+    track_start: f32,
+    track_size: f32,
+    thumb_size: f32,
+    max_scroll: usize,
+) -> usize {
+    let travel = (track_size - thumb_size).max(0.0);
+    if travel == 0.0 || !coord.is_finite() || !grab_offset.is_finite() {
+        return 0;
+    }
+    let offset = (coord - grab_offset - track_start).clamp(0.0, travel);
+    ((offset / travel * max_scroll as f32).round() as usize).min(max_scroll)
 }
 
 // ============================================================================
@@ -221,6 +243,16 @@ pub struct ScrollbarColors {
     pub thumb: u32,
     /// Thumb color when hovered (ARGB u32)
     pub thumb_hover: u32,
+}
+
+impl From<&crate::theme::ScrollbarTheme> for ScrollbarColors {
+    fn from(theme: &crate::theme::ScrollbarTheme) -> Self {
+        Self {
+            track: theme.track.to_argb_u32(),
+            thumb: theme.thumb.to_argb_u32(),
+            thumb_hover: theme.thumb_hover.to_argb_u32(),
+        }
+    }
 }
 
 // ============================================================================
@@ -312,6 +344,33 @@ mod tests {
 
     fn make_rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
         Rect::new(x, y, w, h)
+    }
+
+    #[test]
+    fn scrollbar_pointer_mapping_shares_clamps_grab_offset_and_tiny_axis() {
+        let state = ScrollbarState::new(100, 20, 35);
+        for track in [
+            make_rect(10.0, 30.0, 12.0, 400.0),
+            make_rect(10.0, 30.0, 80.0, 40.0),
+        ] {
+            let geometry = ScrollbarGeometry::vertical(track, &state);
+            let grab = geometry.thumb_rect.height / 3.0;
+            assert_eq!(
+                geometry.position_from_drag(grab, geometry.thumb_rect.y + grab),
+                35
+            );
+            assert_eq!(geometry.position_from_drag(grab, -1000.0), 0);
+            assert_eq!(
+                geometry.position_from_drag(grab, 10000.0),
+                state.max_position()
+            );
+            assert_eq!(
+                geometry.position_from_track_click(track.y + track.height),
+                state.max_position()
+            );
+        }
+        assert_eq!(position_from_drag(999.0, 0.0, 0.0, 10.0, 10.0, 100), 0);
+        assert_eq!(position_from_drag(f32::NAN, 0.0, 0.0, 100.0, 20.0, 100), 0);
     }
 
     #[test]
@@ -407,7 +466,7 @@ mod tests {
         let state = ScrollbarState::new(100, 20, 0);
         let geo = ScrollbarGeometry::vertical(track, &state);
         // Drag grab offset 0, mouse at track start → position 0
-        let pos = geo.position_from_drag(0.0, 0.0, &state);
+        let pos = geo.position_from_drag(0.0, 0.0);
         assert_eq!(pos, 0);
     }
 
@@ -417,7 +476,7 @@ mod tests {
         let state = ScrollbarState::new(100, 20, 0);
         let geo = ScrollbarGeometry::vertical(track, &state);
         // Drag to bottom
-        let pos = geo.position_from_drag(0.0, 400.0, &state);
+        let pos = geo.position_from_drag(0.0, 400.0);
         assert_eq!(pos, state.max_position());
     }
 

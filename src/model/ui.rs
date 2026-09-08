@@ -1110,11 +1110,17 @@ pub struct TabDragState {
     pub active: bool,
 }
 
-/// State for scrollbar thumb dragging
+/// The surface whose viewport a scrollbar controls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollbarTarget {
+    Editor(crate::model::editor_area::EditorId),
+    Modal(ModalId),
+}
+
+/// Shared capture state for editor and modal scrollbar thumbs.
 #[derive(Debug, Clone)]
 pub struct ScrollbarDragState {
-    /// Which editor's scrollbar is being dragged
-    pub editor_id: crate::model::editor_area::EditorId,
+    pub target: ScrollbarTarget,
     /// Whether dragging the vertical or horizontal scrollbar
     pub axis: ScrollbarDragAxis,
     /// Where within the thumb the user clicked (pixels from thumb origin)
@@ -1132,11 +1138,14 @@ pub struct ScrollbarDragState {
 impl ScrollbarDragState {
     /// Compute the scroll position from the current mouse coordinate during drag.
     pub fn position_from_mouse(&self, mouse_coord: f32) -> usize {
-        let thumb_travel = (self.track_size - self.thumb_size).max(1.0);
-        let thumb_pos =
-            (mouse_coord - self.grab_offset - self.track_start).clamp(0.0, thumb_travel);
-        let ratio = thumb_pos / thumb_travel;
-        (ratio * self.max_scroll as f32).round() as usize
+        crate::view::scrollbar::position_from_drag(
+            mouse_coord,
+            self.grab_offset,
+            self.track_start,
+            self.track_size,
+            self.thumb_size,
+            self.max_scroll,
+        )
     }
 }
 
@@ -1353,6 +1362,7 @@ impl UiState {
 
     /// Open a modal (also sets focus to Modal)
     pub fn open_modal(&mut self, state: ModalState) {
+        self.scrollbar_drag = None;
         self.active_modal = Some(state);
         self.focus = FocusTarget::Modal;
         self.modal_hover_row = None;
@@ -1360,6 +1370,7 @@ impl UiState {
 
     /// Close the active modal (returns focus to Editor)
     pub fn close_modal(&mut self) {
+        self.scrollbar_drag = None;
         self.active_modal = None;
         self.focus = FocusTarget::Editor;
         self.modal_hover_row = None;

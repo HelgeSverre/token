@@ -16,6 +16,7 @@ use token::messages::{
     CompletionMsg, CsvMsg, EditorMsg, ImageMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg, PreviewMsg,
     TerminalMsg, UiMsg, WorkspaceMsg,
 };
+use token::model::ui::{ScrollbarDragAxis, ScrollbarDragState, ScrollbarTarget};
 use token::model::AppModel;
 use token::panel::DockPosition;
 use token::update::update;
@@ -107,6 +108,150 @@ impl Default for ClickTracker {
 
 #[cfg(test)]
 mod tests {
+    fn settings_scrollbar(model: &AppModel) -> token::view::scrollbar::ScrollbarGeometry {
+        let pt = token::view::hit_test::Point::new(
+            model.window_size.0 as f64 - 22.0,
+            model.window_size.1 as f64 / 2.0,
+        );
+        let Some(HitTarget::ModalScrollbar { geometry }) =
+            token::view::hit_test::hit_test_modal(model, pt)
+        else {
+            panic!("Settings must expose its painted track as a scrollbar target");
+        };
+        geometry
+    }
+
+    fn grab_settings_scrollbar(model: &mut AppModel) -> MouseEvent {
+        let bar = settings_scrollbar(model);
+        let event = MouseEvent::new(
+            (bar.thumb_rect.x + 6.0) as f64,
+            (bar.thumb_rect.y + bar.thumb_rect.height / 3.0) as f64,
+            MouseButton::Left,
+            ModifiersState::empty(),
+        );
+        assert!(matches!(
+            modal_scrollbar_press(model, &bar, &event),
+            EventResult::Consumed { focus: None, .. }
+        ));
+        assert!(model.ui.scrollbar_drag.is_some());
+        event
+    }
+
+    #[test]
+    fn settings_scrollbar_pointer_drag_and_track_click_reach_both_ends() {
+        use token::model::{ModalId, ModalState};
+        for width in [400, 800] {
+            let mut model = AppModel::new(width, 750, 1.0, vec![]);
+            model
+                .ui
+                .open_modal(ModalState::Settings(Default::default()));
+            let first = settings_scrollbar(&model);
+            let event = grab_settings_scrollbar(&mut model);
+            assert!(matches!(
+                model.ui.scrollbar_drag.as_ref().unwrap().target,
+                ScrollbarTarget::Modal(ModalId::Settings)
+            ));
+            update(
+                &mut model,
+                Msg::Ui(UiMsg::ScrollbarDragUpdate {
+                    mouse_coord: event.pos.y as f32,
+                }),
+            );
+            assert_eq!(
+                settings_scrollbar(&model).state.position,
+                0,
+                "grabbing must not jump"
+            );
+            update(
+                &mut model,
+                Msg::Ui(UiMsg::ScrollbarDragUpdate {
+                    mouse_coord: 5000.0,
+                }),
+            );
+            let bottom = settings_scrollbar(&model);
+            assert_eq!(bottom.state.position, bottom.state.max_position());
+            update(
+                &mut model,
+                Msg::Ui(UiMsg::ScrollbarDragUpdate {
+                    mouse_coord: -500.0,
+                }),
+            );
+            assert_eq!(settings_scrollbar(&model).state.position, 0);
+            update(&mut model, Msg::Ui(UiMsg::ScrollbarDragEnd));
+            assert!(model.ui.scrollbar_drag.is_none());
+            let event = MouseEvent::new(
+                (first.track_rect.x + 6.0) as f64,
+                (first.track_rect.y + first.track_rect.height - 1.0) as f64,
+                MouseButton::Left,
+                ModifiersState::empty(),
+            );
+            modal_scrollbar_press(&mut model, &first, &event);
+            let bottom = settings_scrollbar(&model);
+            assert_eq!(bottom.state.position, bottom.state.max_position());
+            let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+                panic!("page closed");
+            };
+            assert_eq!(
+                state.selected_index, 0,
+                "scrolling must not change selection"
+            );
+            assert_eq!(
+                model.editor().viewport.top_line,
+                0,
+                "scrolling Settings must not scroll the editor"
+            );
+        }
+    }
+
+    #[test]
+    fn settings_scrollbar_capture_is_cancelled_by_page_changes_and_resize() {
+        use token::model::ModalState;
+        for action in [
+            ModalMsg::SetInput("theme".into()),
+            ModalMsg::NextTab,
+            ModalMsg::Close,
+        ] {
+            let mut model = AppModel::new(800, 750, 1.0, vec![]);
+            model
+                .ui
+                .open_modal(ModalState::Settings(Default::default()));
+            grab_settings_scrollbar(&mut model);
+            update(&mut model, Msg::Ui(UiMsg::Modal(action)));
+            assert!(model.ui.scrollbar_drag.is_none());
+            assert!(update(
+                &mut model,
+                Msg::Ui(UiMsg::ScrollbarDragUpdate {
+                    mouse_coord: 5000.0
+                })
+            )
+            .is_none());
+        }
+        let mut model = AppModel::new(800, 750, 1.0, vec![]);
+        model
+            .ui
+            .open_modal(ModalState::Settings(Default::default()));
+        grab_settings_scrollbar(&mut model);
+        model.resize(400, 750);
+        assert!(model.ui.scrollbar_drag.is_none());
+    }
+
+    #[test]
+    fn settings_scrollbar_wheel_preserves_scroll_delta_magnitude() {
+        let mut model = AppModel::new(800, 750, 1.0, vec![]);
+        model
+            .ui
+            .open_modal(token::model::ModalState::Settings(Default::default()));
+        model.ui.hover = token::model::HoverRegion::Modal;
+        handle_mouse_wheel(&mut model, None, 0, 1);
+        let one = settings_scrollbar(&model).state.position;
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::SetInput(String::new()))),
+        );
+        handle_mouse_wheel(&mut model, None, 0, 5);
+        assert!(settings_scrollbar(&model).state.position > one);
+    }
+
     #[test]
     fn modal_pointer_row_preserves_palette_command_effect() {
         use token::model::ModalId;
@@ -1066,6 +1211,40 @@ fn modal_press(model: &mut AppModel, message: ModalMsg) -> EventResult {
     }
 }
 
+/// Capture a modal thumb or jump along its track without changing selection.
+fn modal_scrollbar_press(
+    model: &mut AppModel,
+    geometry: &token::view::scrollbar::ScrollbarGeometry,
+    event: &MouseEvent,
+) -> EventResult {
+    let Some(modal) = &model.ui.active_modal else {
+        return EventResult::consumed_no_redraw();
+    };
+    let target = ScrollbarTarget::Modal(modal.id());
+    let message = if geometry.hits_thumb(event.pos.x as f32, event.pos.y as f32) {
+        UiMsg::ScrollbarThumbPressed(ScrollbarDragState {
+            target,
+            axis: ScrollbarDragAxis::Vertical,
+            grab_offset: event.pos.y as f32 - geometry.thumb_rect.y,
+            track_start: geometry.track_rect.y,
+            track_size: geometry.track_rect.height,
+            thumb_size: geometry.thumb_rect.height,
+            max_scroll: geometry.state.max_position(),
+        })
+    } else {
+        UiMsg::ScrollbarTrackClicked {
+            target,
+            axis: ScrollbarDragAxis::Vertical,
+            new_position: geometry.position_from_track_click(event.pos.y as f32),
+        }
+    };
+    EventResult::Consumed {
+        redraw: true,
+        focus: None,
+        cmd: update(model, Msg::Ui(message)),
+    }
+}
+
 /// Handle left mouse button clicks
 fn handle_left_click(
     model: &mut AppModel,
@@ -1078,6 +1257,7 @@ fn handle_left_click(
 
     match target {
         // Modal handling
+        HitTarget::ModalScrollbar { geometry } => modal_scrollbar_press(model, geometry, event),
         HitTarget::Modal { inside } => {
             if *inside {
                 // Click inside modal (header/footer/padding) - consume but
@@ -1316,14 +1496,15 @@ fn handle_left_click(
         } => {
             update(
                 model,
-                Msg::Ui(UiMsg::ScrollbarThumbPressedVertical {
-                    editor_id: *editor_id,
+                Msg::Ui(UiMsg::ScrollbarThumbPressed(ScrollbarDragState {
+                    target: ScrollbarTarget::Editor(*editor_id),
+                    axis: ScrollbarDragAxis::Vertical,
                     grab_offset: *grab_offset,
                     track_start: *track_y,
                     track_size: *track_h,
                     thumb_size: *thumb_h,
                     max_scroll: *max_scroll,
-                }),
+                })),
             );
             EventResult::consumed_redraw()
         }
@@ -1339,14 +1520,15 @@ fn handle_left_click(
         } => {
             update(
                 model,
-                Msg::Ui(UiMsg::ScrollbarThumbPressedHorizontal {
-                    editor_id: *editor_id,
+                Msg::Ui(UiMsg::ScrollbarThumbPressed(ScrollbarDragState {
+                    target: ScrollbarTarget::Editor(*editor_id),
+                    axis: ScrollbarDragAxis::Horizontal,
                     grab_offset: *grab_offset,
                     track_start: *track_x,
                     track_size: *track_w,
                     thumb_size: *thumb_w,
                     max_scroll: *max_scroll,
-                }),
+                })),
             );
             EventResult::consumed_redraw()
         }
@@ -1370,8 +1552,9 @@ fn handle_left_click(
             );
             update(
                 model,
-                Msg::Ui(UiMsg::ScrollbarTrackClickedVertical {
-                    editor_id: *editor_id,
+                Msg::Ui(UiMsg::ScrollbarTrackClicked {
+                    target: ScrollbarTarget::Editor(*editor_id),
+                    axis: ScrollbarDragAxis::Vertical,
                     new_position,
                 }),
             );
@@ -1396,8 +1579,9 @@ fn handle_left_click(
             );
             update(
                 model,
-                Msg::Ui(UiMsg::ScrollbarTrackClickedHorizontal {
-                    editor_id: *editor_id,
+                Msg::Ui(UiMsg::ScrollbarTrackClicked {
+                    target: ScrollbarTarget::Editor(*editor_id),
+                    axis: ScrollbarDragAxis::Horizontal,
                     new_position,
                 }),
             );
@@ -1774,6 +1958,7 @@ fn handle_middle_click(
 
         // Modal - consume, no action
         HitTarget::Modal { .. }
+        | HitTarget::ModalScrollbar { .. }
         | HitTarget::ModalRow { .. }
         | HitTarget::ModalTab { .. }
         | HitTarget::ModalChoice { .. } => EventResult::consumed_no_redraw(),
@@ -2042,7 +2227,14 @@ pub fn handle_mouse_wheel(
             if v_delta == 0 {
                 return None;
             }
-            let rows = (v_delta.signum() * 3) as isize;
+            let rows = if matches!(
+                model.ui.active_modal,
+                Some(token::model::ModalState::Settings(_))
+            ) {
+                v_delta as isize
+            } else {
+                (v_delta.signum() * 3) as isize
+            };
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Scroll(rows))))
         }
 

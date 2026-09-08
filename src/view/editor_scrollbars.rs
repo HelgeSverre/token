@@ -68,11 +68,7 @@ pub fn render_editor_scrollbars(
     ticks: &[(usize, Mark)],
 ) {
     let sw = model.metrics.scrollbar_width;
-    let colors = ScrollbarColors {
-        track: model.theme.scrollbar.track.to_argb_u32(),
-        thumb: model.theme.scrollbar.thumb.to_argb_u32(),
-        thumb_hover: model.theme.scrollbar.thumb_hover.to_argb_u32(),
-    };
+    let colors = ScrollbarColors::from(&model.theme.scrollbar);
 
     let viewport = &editor.viewport;
     let line_count = document.line_count();

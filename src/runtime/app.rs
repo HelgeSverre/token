@@ -1443,8 +1443,16 @@ impl App {
                 // Up/Down/Enter/Tab pre-keymap, so leaving it open while
                 // another app has focus leaves dead keys behind; the user's
                 // next interaction with a refocused editor reopens it.
-                if !focused && self.model.ui.completion_menu.is_some() {
-                    update(&mut self.model, Msg::Completion(CompletionMsg::Dismiss))
+                if !focused {
+                    let mut commands = Vec::new();
+                    commands.extend(update(&mut self.model, Msg::Ui(UiMsg::ScrollbarDragEnd)));
+                    if self.model.ui.completion_menu.is_some() {
+                        commands.extend(update(
+                            &mut self.model,
+                            Msg::Completion(CompletionMsg::Dismiss),
+                        ));
+                    }
+                    (!commands.is_empty()).then_some(Cmd::Batch(commands))
                 } else {
                     None
                 }
@@ -1911,7 +1919,7 @@ impl App {
                 let (h_delta, v_delta) = self.scroll_accumulator.deltas(
                     *delta,
                     self.model.char_width as f64,
-                    self.model.line_height as f64,
+                    wheel_row_height(&self.model),
                 );
 
                 handle_mouse_wheel(&mut self.model, self.mouse_position, h_delta, v_delta)
@@ -5913,6 +5921,18 @@ fn handle_syntax_worker_request(
 /// common editor default (VS Code, etc.).
 const LINES_PER_WHEEL_NOTCH: f64 = 3.0;
 
+/// Convert trackpad pixels using the row height actually painted by the target.
+fn wheel_row_height(model: &AppModel) -> f64 {
+    if matches!(
+        model.ui.active_modal,
+        Some(token::model::ModalState::Settings(_))
+    ) {
+        token::view::overlay_surface::settings_row_height(model.metrics.scale_factor) as f64
+    } else {
+        model.line_height as f64
+    }
+}
+
 /// Carries fractional scroll remainders between wheel events so trackpad
 /// scrolling keeps a consistent, non-truncating sensitivity.
 ///
@@ -5924,6 +5944,7 @@ const LINES_PER_WHEEL_NOTCH: f64 = 3.0;
 struct ScrollAccumulator {
     h: f64,
     v: f64,
+    units: Option<(f64, f64)>,
 }
 
 impl ScrollAccumulator {
@@ -5945,6 +5966,12 @@ impl ScrollAccumulator {
         line_height: f64,
     ) -> (i32, i32) {
         use winit::event::MouseScrollDelta;
+        // Fractional rows from another surface or scale have different units.
+        if self.units != Some((char_width, line_height)) {
+            self.h = 0.0;
+            self.v = 0.0;
+            self.units = Some((char_width, line_height));
+        }
         match delta {
             // Discrete mouse-wheel notches are already whole steps; no
             // sub-unit remainder to accumulate.
@@ -5970,3 +5997,33 @@ impl ScrollAccumulator {
 #[cfg(test)]
 #[path = "app_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod scrollbar_wheel_tests {
+    use super::*;
+    use winit::{dpi::PhysicalPosition, event::MouseScrollDelta};
+
+    #[test]
+    fn settings_scrollbar_trackpad_uses_painted_rows_at_each_scale() {
+        for scale in [1.0, 1.5, 2.0] {
+            let mut model = AppModel::new(800, 600, scale, vec![]);
+            assert_eq!(wheel_row_height(&model), model.line_height as f64);
+            model.ui.active_modal = Some(token::model::ModalState::Settings(Default::default()));
+            let row = wheel_row_height(&model);
+            assert_eq!(row, (72.0_f64 * scale).round());
+            let mut accumulator = ScrollAccumulator::default();
+            let half_row = MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -row / 2.0));
+            assert_eq!(accumulator.deltas(half_row, 8.0, row), (0, 0));
+            assert_eq!(accumulator.deltas(half_row, 8.0, row), (0, 1));
+        }
+    }
+
+    #[test]
+    fn scrollbar_trackpad_remainders_reset_when_row_units_change() {
+        let mut accumulator = ScrollAccumulator::default();
+        let pixels = |y: f64| MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -y));
+        assert_eq!(accumulator.deltas(pixels(12.0), 8.0, 16.0), (0, 0));
+        assert_eq!(accumulator.deltas(pixels(18.0), 8.0, 72.0), (0, 0));
+        assert_eq!(accumulator.deltas(pixels(54.0), 8.0, 72.0), (0, 1));
+    }
+}

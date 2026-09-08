@@ -11,16 +11,21 @@
 
 #[path = "settings_page.rs"]
 mod settings_page;
+pub use settings_page::row_height as settings_row_height;
 pub use settings_page::visible_count as settings_visible_count;
 
 use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
+use super::scrollbar::{
+    render_scrollbar, ScrollbarColors, ScrollbarGeometry, ScrollbarState, SCROLLBAR_WIDTH_LOGICAL,
+};
 use crate::layout::{
     AttachPoint, Content, Dir, ElementDecl, FloatAnchor, FloatDecl, LayoutSnapshot, Padding,
     RowListDecl, Sizing, SizingAxes, UiKey, UiTree,
 };
 use crate::model::editor_area::Rect;
 use crate::model::{runs_in_spans, Span, SpanStyle, StyledText};
+#[cfg(test)]
 use crate::theme::OverlayTheme;
 
 /// Logical-px chrome constants for `Anchor::Centered`, per the Visual
@@ -42,9 +47,6 @@ mod dims {
     pub const ROW_ICON_W: f32 = 18.0;
     pub const ROW_TEXT_PAD_X: f32 = 8.0;
     pub const FOOTER_HEIGHT: f32 = 30.0;
-    pub const SCROLLBAR_WIDTH: f32 = 3.0;
-    pub const SCROLLBAR_INSET: f32 = 2.0;
-    pub const SCROLLBAR_MIN_LEN: f32 = 20.0;
     // The centered-Y, cursor-gap, and cursor-width-floor constants moved to
     // `layout::anchor::dims` with the placement functions.
     /// Completion kind badge (Visual Language > Rows: "kind badge (16×16, r4)").
@@ -578,17 +580,28 @@ fn resolve_visible_window(
     max_visible: usize,
 ) -> (usize, usize) {
     let visible = display_rows.len().min(max_visible);
-    // With one slot, show the setting itself instead of its section heading.
-    let scroll_display = if scroll == 0 && max_visible != 1 {
+    let scroll_display = display_rows
+        .iter()
+        .position(|dr| matches!(dr, DisplayRow::Row(_, FlatIndex(i)) if *i == scroll))
+        .unwrap_or(scroll);
+    let start = list_window_start(scroll_display, scroll, display_rows.len(), visible);
+    (start, visible)
+}
+
+/// At the top, include the first section heading when there is also room for a
+/// selectable row. A one-slot window must prioritize the selectable row.
+fn list_window_start(
+    row_display: usize,
+    scroll: usize,
+    display_len: usize,
+    visible: usize,
+) -> usize {
+    let desired = if scroll == 0 && row_display < visible {
         0
     } else {
-        display_rows
-            .iter()
-            .position(|dr| matches!(dr, DisplayRow::Row(_, FlatIndex(i)) if *i == scroll))
-            .unwrap_or(scroll)
+        row_display
     };
-    let start = scroll_display.min(display_rows.len().saturating_sub(visible));
-    (start, visible)
+    desired.min(display_len.saturating_sub(visible))
 }
 
 /// Row-count shape of one section, without the borrowed `Row` data —
@@ -599,6 +612,48 @@ fn resolve_visible_window(
 pub struct SectionShape {
     pub has_title: bool,
     pub len: usize,
+}
+
+fn section_positions(shapes: &[SectionShape]) -> (Vec<usize>, usize) {
+    let mut display_len = 0;
+    let mut positions = Vec::new();
+    for (index, shape) in shapes.iter().enumerate() {
+        if shape.has_title || index > 0 {
+            display_len += 1;
+        }
+        for _ in 0..shape.len {
+            positions.push(display_len);
+            display_len += 1;
+        }
+    }
+    (positions, display_len)
+}
+
+/// Convert a scrollbar's display-row position (including headings) to a list offset.
+pub fn resolve_scroll_for_display(
+    shapes: &[SectionShape],
+    position: usize,
+    capacity: usize,
+) -> usize {
+    let (positions, total) = section_positions(shapes);
+    scroll_for_display(&positions, total, total.min(capacity), position)
+}
+
+fn scroll_for_display(positions: &[usize], total: usize, visible: usize, position: usize) -> usize {
+    if positions.is_empty() {
+        return 0;
+    }
+    let target = position.min(total.saturating_sub(visible));
+    if target == 0 {
+        return 0;
+    }
+    let last = positions.len() - 1;
+    let candidate = positions.partition_point(|&row| row < target).min(last);
+    if list_window_start(positions[candidate], candidate, total, visible) < target {
+        (candidate + 1).min(last)
+    } else {
+        candidate
+    }
 }
 
 /// Header-aware equivalent of [`SelectableListViewport::compute_from`]:
@@ -615,17 +670,7 @@ pub fn resolve_scroll_for_selection(
     max_visible: usize,
     previous_scroll: usize,
 ) -> usize {
-    let mut display_len = 0usize;
-    let mut flat_to_display = Vec::new();
-    for shape in shapes {
-        if shape.has_title {
-            display_len += 1;
-        }
-        for _ in 0..shape.len {
-            flat_to_display.push(display_len);
-            display_len += 1;
-        }
-    }
+    let (flat_to_display, display_len) = section_positions(shapes);
     if flat_to_display.is_empty() {
         return 0;
     }
@@ -633,20 +678,13 @@ pub fn resolve_scroll_for_selection(
     let visible = display_len.min(max_visible);
 
     let selected = selected.min(last_flat);
-    let selected_display = flat_to_display[selected];
-
-    if max_visible == 1 {
-        return selected;
-    }
     if selected == 0 {
         return 0;
     }
-    let prev_display = if previous_scroll == 0 {
-        0
-    } else {
-        flat_to_display[previous_scroll.min(last_flat)]
-    };
-    let start = prev_display.min(display_len.saturating_sub(visible));
+    let selected_display = flat_to_display[selected];
+
+    let prev_display = flat_to_display[previous_scroll.min(last_flat)];
+    let start = list_window_start(prev_display, previous_scroll, display_len, visible);
 
     let target_display = if selected_display < start {
         selected_display
@@ -656,11 +694,7 @@ pub fn resolve_scroll_for_selection(
         start
     };
 
-    flat_to_display
-        .iter()
-        .enumerate()
-        .position(|(index, &d)| (if index == 0 { 0 } else { d }) >= target_display)
-        .unwrap_or(last_flat)
+    scroll_for_display(&flat_to_display, display_len, visible, target_display)
 }
 
 /// Coalesce ascending, deduplicated nucleo match char-indices into
@@ -797,7 +831,7 @@ pub struct OverlayLayout {
     pub docs_panel: Option<WidgetRect>,
     pub docs_text: Option<WidgetRect>,
     pub footer: Option<WidgetRect>,
-    pub scrollbar: Option<WidgetRect>,
+    pub scrollbar: Option<ScrollbarGeometry>,
     /// The measured zone plan (wrapped lines + heights) for a `Body::Zones`
     /// body, computed once in `layout_measured` and consumed by
     /// `render_zones` — the plan is never re-derived. `None` for other
@@ -1234,20 +1268,11 @@ pub fn layout_measured(
             return None;
         }
         let track = solved_rect(&snapshot, UiKey::OverlayRows)?;
-        let inset = scaled(dims::SCROLLBAR_INSET, scale_factor);
-        let width = scaled(dims::SCROLLBAR_WIDTH, scale_factor);
-        let min_len = scaled(dims::SCROLLBAR_MIN_LEN, scale_factor);
-        let thumb_h = ((visible as f32 / total as f32) * track.h as f32).round() as usize;
-        let thumb_h = thumb_h.max(min_len).min(track.h);
-        let max_thumb_y = track.h.saturating_sub(thumb_h);
-        let scroll_range = total.saturating_sub(visible).max(1);
-        let thumb_y = (start * max_thumb_y) / scroll_range;
-        Some(WidgetRect {
-            x: track.x + track.w.saturating_sub(width + inset),
-            y: track.y + thumb_y,
-            w: width,
-            h: thumb_h,
-        })
+        Some(list_scrollbar(
+            track,
+            ScrollbarState::new(total, visible, start),
+            scale_factor,
+        ))
     });
 
     let mut result = OverlayLayout {
@@ -1285,6 +1310,7 @@ pub fn layout_measured(
 /// actually painted).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayHit {
+    Scrollbar,
     Choice {
         row: FlatIndex,
         choice: usize,
@@ -1303,6 +1329,13 @@ pub enum OverlayHit {
 
 /// Hit-test a point (physical px) against a laid-out `OverlaySpec`.
 pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) -> OverlayHit {
+    if layout
+        .scrollbar
+        .as_ref()
+        .is_some_and(|bar| bar.needed && bar.hits_track(x as f32, y as f32))
+    {
+        return OverlayHit::Scrollbar;
+    }
     if matches!(spec.anchor, Anchor::Settings { .. }) {
         return settings_page::hit_test(spec, layout, x, y);
     }
@@ -1402,6 +1435,7 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
 
 /// Resolved colors pulled once from `OverlayTheme` per render call.
 struct Palette {
+    scrollbar: ScrollbarColors,
     panel_bg: u32,
     hairline: u32,
     text_primary: u32,
@@ -1427,8 +1461,11 @@ struct Palette {
 }
 
 impl Palette {
-    fn from_theme(theme: &OverlayTheme) -> Self {
+    fn from_theme(theme: &crate::theme::Theme) -> Self {
+        let scrollbar = ScrollbarColors::from(&theme.scrollbar);
+        let theme = &theme.overlay;
         Self {
+            scrollbar,
             panel_bg: theme.panel_background.to_argb_u32(),
             hairline: theme.hairline.to_argb_u32(),
             text_primary: theme.text_primary.to_argb_u32(),
@@ -1519,7 +1556,7 @@ pub fn render(
     frame: &mut Frame,
     painter: &mut TextPainter,
     mask_cache: &mut RoundedRectMaskCache,
-    theme: &OverlayTheme,
+    theme: &crate::theme::Theme,
     spec: &OverlaySpec,
     window_width: usize,
     window_height: usize,
@@ -2357,10 +2394,26 @@ fn render_list(
         }
     }
 
-    if let Some(sb) = layout.scrollbar {
-        let alpha = (colors.text_dim >> 24) & 0xFF;
-        let sb_color = (((alpha * 40 / 100) & 0xFF) << 24) | (colors.text_dim & 0x00FF_FFFF);
-        frame.blend_rect_px(sb.x, sb.y, sb.w, sb.h, sb_color);
+    render_list_scrollbar(frame, layout, colors);
+}
+
+/// List surfaces share the editor scrollbar's width, geometry and paint primitive.
+fn list_scrollbar(body: WidgetRect, state: ScrollbarState, scale: f64) -> ScrollbarGeometry {
+    let width = scaled(SCROLLBAR_WIDTH_LOGICAL as f32, scale).min(body.w);
+    ScrollbarGeometry::vertical(
+        Rect::new(
+            (body.x + body.w - width) as f32,
+            body.y as f32,
+            width as f32,
+            body.h as f32,
+        ),
+        &state,
+    )
+}
+
+fn render_list_scrollbar(frame: &mut Frame, layout: &OverlayLayout, colors: &Palette) {
+    if let Some(bar) = &layout.scrollbar {
+        render_scrollbar(frame, bar, false, &colors.scrollbar);
     }
 }
 
@@ -3207,7 +3260,7 @@ mod tests {
                     &mut frame,
                     &mut painter,
                     &mut RoundedRectMaskCache::new(),
-                    &OverlayTheme::default_dark(),
+                    &crate::theme::Theme::default(),
                     spec,
                     w as usize,
                     h as usize,
@@ -3287,7 +3340,10 @@ mod tests {
                 &mut frame,
                 &mut painter,
                 &mut mask_cache,
-                &theme,
+                &crate::theme::Theme {
+                    overlay: theme.clone(),
+                    ..Default::default()
+                },
                 &spec,
                 w,
                 h,
@@ -3365,7 +3421,10 @@ mod tests {
                 &mut frame,
                 &mut painter,
                 &mut mask_cache,
-                &theme,
+                &crate::theme::Theme {
+                    overlay: theme.clone(),
+                    ..Default::default()
+                },
                 &spec,
                 w,
                 h,
@@ -3438,7 +3497,10 @@ mod tests {
                 &mut frame,
                 &mut painter,
                 &mut mask_cache,
-                &theme,
+                &crate::theme::Theme {
+                    overlay: theme.clone(),
+                    ..Default::default()
+                },
                 &spec,
                 w,
                 h,
@@ -3602,7 +3664,10 @@ mod tests {
                 &mut frame,
                 &mut painter,
                 &mut mask_cache,
-                &theme,
+                &crate::theme::Theme {
+                    overlay: theme.clone(),
+                    ..Default::default()
+                },
                 &spec,
                 w,
                 h,
@@ -3875,7 +3940,7 @@ mod tests {
     #[test]
     fn banner_wash_is_a_tint_not_the_raw_severity_color() {
         let theme = crate::theme::Theme::default();
-        let palette = Palette::from_theme(&theme.overlay);
+        let palette = Palette::from_theme(&theme);
         for sev in [
             Severity::Error,
             Severity::Warning,
@@ -4554,7 +4619,10 @@ mod tests {
                 &mut frame,
                 &mut painter,
                 &mut mask_cache,
-                &theme,
+                &crate::theme::Theme {
+                    overlay: theme.clone(),
+                    ..Default::default()
+                },
                 &spec,
                 w,
                 h,

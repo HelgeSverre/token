@@ -6,6 +6,10 @@ const ROW: f32 = 72.0;
 const TOP: f32 = 108.0;
 const FOOT: f32 = 36.0;
 
+pub fn row_height(scale: f64) -> usize {
+    scaled(ROW, scale)
+}
+
 fn panel(width: usize, height: usize, sf: f64) -> WidgetRect {
     let margin = scaled(16.0, sf).min(width / 8).min(height / 8);
     let w = width.saturating_sub(margin * 2).min(scaled(1160.0, sf));
@@ -72,7 +76,7 @@ pub fn visible_count(width: usize, height: usize, sf: f64) -> usize {
     let p = panel(width, height, sf);
     let top = chrome(&p, sf).body_top - p.y;
     p.h.saturating_sub(top + scaled(FOOT, sf))
-        .checked_div(scaled(ROW, sf))
+        .checked_div(row_height(sf))
         .unwrap_or(0)
         .max(1)
 }
@@ -136,7 +140,7 @@ pub(super) fn layout(
         }
         _ => (0, 0, 0),
     };
-    out.row_height = scaled(ROW, sf);
+    out.row_height = row_height(sf);
     out.rows = (0..count)
         .map(|i| WidgetRect {
             x: p.x + sidebar + pad,
@@ -152,14 +156,17 @@ pub(super) fn layout(
         h: scaled(FOOT, sf),
     });
     out.scrollbar = if total > count {
-        let track = count * out.row_height;
-        let h = (track * count / total).max(scaled(20.0, sf)).min(track);
-        Some(WidgetRect {
-            x: p.x + p.w.saturating_sub(scaled(8.0, sf)),
-            y: top + start * track.saturating_sub(h) / total.saturating_sub(count).max(1),
-            w: scaled(3.0, sf),
-            h,
-        })
+        let body = WidgetRect {
+            x: p.x + sidebar,
+            y: top,
+            w: p.w.saturating_sub(sidebar),
+            h: p.h.saturating_sub(top - p.y + scaled(FOOT, sf)),
+        };
+        Some(list_scrollbar(
+            body,
+            ScrollbarState::new(total, count, start),
+            sf,
+        ))
     } else {
         None
     };
@@ -692,9 +699,7 @@ pub(super) fn render(
             );
         }
     }
-    if let Some(r) = &layout.scrollbar {
-        frame.fill_rect_px(r.x, r.y, r.w, r.h, colors.text_dim);
-    }
+    render_list_scrollbar(frame, layout, colors);
     if let (Some(footer), Some(rect)) = (&spec.footer, layout.footer) {
         render_footer(frame, painter, colors, footer, rect, sf, 0, masks);
     }
@@ -704,6 +709,85 @@ pub(super) fn render(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_scrollbar_paints_the_shared_theme_and_tracks_display_rows() {
+        let font = fontdue::Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        for (width, height, scale) in [(1100, 720, 1.0), (400, 750, 1.0), (1600, 1100, 2.0)] {
+            let model = crate::model::AppModel::new(width, height, scale, vec![]);
+            for offset in [0, usize::MAX] {
+                let state = crate::model::ui::SettingsState {
+                    scroll_offset: offset,
+                    ..Default::default()
+                };
+                crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                    let geometry =
+                        super::super::layout(spec, width as usize, height as usize, scale);
+                    let bar = geometry.scrollbar.unwrap();
+                    assert_eq!(
+                        bar.track_rect.width,
+                        (SCROLLBAR_WIDTH_LOGICAL * scale) as f32
+                    );
+                    assert_eq!(
+                        bar.state.position,
+                        if offset == 0 {
+                            0
+                        } else {
+                            bar.state.max_position()
+                        }
+                    );
+                    assert!(
+                        bar.state.total > state.rows.len(),
+                        "section headings occupy real viewport space"
+                    );
+                    assert_eq!(
+                        super::super::hit_test(
+                            spec,
+                            &geometry,
+                            (bar.thumb_rect.x + 3.0) as usize,
+                            (bar.thumb_rect.y + 3.0) as usize
+                        ),
+                        OverlayHit::Scrollbar
+                    );
+                    let mut actual = vec![0; width as usize * height as usize];
+                    let mut expected = actual.clone();
+                    let mut frame = Frame::new(&mut actual, width as usize, height as usize);
+                    let mut cache = crate::view::GlyphCache::default();
+                    let mut painter = TextPainter::new(&font, &mut cache, 14.0, 11.0, 8.0, 18);
+                    render(
+                        &mut frame,
+                        &mut painter,
+                        &mut RoundedRectMaskCache::new(),
+                        &Palette::from_theme(&model.theme),
+                        spec,
+                        &geometry,
+                        scale,
+                        true,
+                    );
+                    let mut reference = Frame::new(&mut expected, width as usize, height as usize);
+                    render_scrollbar(
+                        &mut reference,
+                        &bar,
+                        false,
+                        &ScrollbarColors::from(&model.theme.scrollbar),
+                    );
+                    for y in bar.track_rect.y as usize
+                        ..(bar.track_rect.y + bar.track_rect.height) as usize
+                    {
+                        for x in bar.track_rect.x as usize
+                            ..(bar.track_rect.x + bar.track_rect.width) as usize
+                        {
+                            assert_eq!(frame.get_pixel(x, y), reference.get_pixel(x, y));
+                        }
+                    }
+                });
+            }
+        }
+    }
 
     #[test]
     fn settings_page_keeps_spacious_categories_and_shared_control_hits() {
@@ -799,7 +883,7 @@ mod tests {
             let mut buffer = vec![0; 400 * 750];
             let mut frame = Frame::new(&mut buffer, 400, 750);
             frame.push_clip(Rect::new(0.0, 0.0, 400.0, 750.0));
-            let colors = Palette::from_theme(&OverlayTheme::default_dark());
+            let colors = Palette::from_theme(&model.theme);
             crate::view::modal::with_settings_spec(&model, &state, |spec| {
                 let Body::List { sections, .. } = &spec.body else {
                     panic!()

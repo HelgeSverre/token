@@ -91,6 +91,9 @@ impl MouseEvent {
 /// future use (e.g., context menus, detailed click handling).
 #[derive(Clone, Debug)]
 pub enum HitTarget {
+    ModalScrollbar {
+        geometry: super::scrollbar::ScrollbarGeometry,
+    },
     /// Modal overlay (command palette, goto line, find/replace, etc.), hit
     /// somewhere that isn't a selectable row (header, footer, panel
     /// padding). `inside` indicates whether the click was inside or outside
@@ -306,6 +309,7 @@ impl HitTarget {
 
         match self {
             HitTarget::Modal { .. }
+            | HitTarget::ModalScrollbar { .. }
             | HitTarget::ModalRow { .. }
             | HitTarget::ModalTab { .. }
             | HitTarget::ModalChoice { .. } => HoverRegion::Modal,
@@ -422,6 +426,11 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
     // test the point against it.
     super::modal::with_modal_overlay_layout(model, ww, wh, sf, |spec, layout| {
         match super::overlay_surface::hit_test(spec, layout, x, y) {
+            super::overlay_surface::OverlayHit::Scrollbar => layout
+                .scrollbar
+                .map_or(HitTarget::Modal { inside: true }, |geometry| {
+                    HitTarget::ModalScrollbar { geometry }
+                }),
             super::overlay_surface::OverlayHit::Choice { row, choice } => HitTarget::ModalChoice {
                 flat_index: row.0,
                 choice,
@@ -465,7 +474,8 @@ pub fn hit_test_cursor_overlay(
             }),
             super::overlay_surface::OverlayHit::Inside
             | super::overlay_surface::OverlayHit::Choice { .. }
-            | super::overlay_surface::OverlayHit::Tab(_) => {
+            | super::overlay_surface::OverlayHit::Tab(_)
+            | super::overlay_surface::OverlayHit::Scrollbar => {
                 Some(HitTarget::CursorOverlay { flat_index: None })
             }
         }
