@@ -31,7 +31,8 @@ The editor currently:
 - Has `EditorArea` with split views, tabs, and groups
 - Tracks cursor position per editor (`EditorState`)
 - Has workspace concept with sidebar state
-- Does NOT persist any state between sessions
+- Persists configuration, recent files and command history, but not open
+  tabs, split layout or per-editor cursor/viewport state (reconciled 2026-09-08)
 
 ### Goals
 
@@ -47,7 +48,7 @@ The editor currently:
 
 - Undo history persistence (complex, large, fragile)
 - Unsaved file content persistence ("hot exit" pattern - separate feature)
-- Recent files list across sessions (simpler feature, could be part of this)
+- Recent files list across sessions (already implemented separately)
 - Project-level settings (separate config feature)
 
 ---

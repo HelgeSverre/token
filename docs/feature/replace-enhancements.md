@@ -2,7 +2,7 @@
 
 Preserve case, selection scope, and regex capture group references.
 
-> **Status:** Planned
+> **Status:** Partially implemented — selection scope is implemented; preserve case, capture-group replacement, preview and confirmation remain planned (reconciled 2026-09-08).
 > **Priority:** P1
 > **Effort:** M
 > **Created:** 2025-12-19
@@ -34,10 +34,23 @@ Preserve case, selection scope, and regex capture group references.
 ### Remaining Goals
 
 1. **Preserve Case** - Match capitalization pattern of original text
-2. **Selection scope** - Replace only within selection
-3. **Regex capture groups** - Support `$1`, `$2`, etc. in replacement
-4. **Preview replacement** - Show what the replacement will look like
-5. **Replace confirmation** - Optional confirmation for large replacements
+2. **Regex capture groups** - Support `$1`, `$2`, etc. in replacement
+3. **Preview replacement** - Show what the replacement will look like
+4. **Replace confirmation** - Optional confirmation for large replacements
+
+### 2026-09-08 reconciliation
+
+Selection-scoped replacement is implemented in `src/update/ui.rs`, using
+`FindReplaceState` and the shared text-edit path. `tests/find_replacements.rs`
+covers scope growth/shrinkage, zero-width boundaries, deletion and Undo/Redo,
+alongside Unicode and split-editor position mapping. These tests were included
+in the latest macOS full-suite pass recorded in the
+[refactoring audit](../dev/refactoring-audit-2026-09-06.md#code-quality-and-abstraction-cleanup-sweep--2026-09-08).
+Regex **matching** is implemented, but replacement text is still literal;
+matching support does not complete capture-group expansion.
+
+The architecture and unchecked phases below are the original proposal, not a
+requirement to add `src/replace.rs` or duplicate the existing message/edit paths.
 
 ### Non-Goals
 
@@ -622,12 +635,13 @@ This should reuse the shared modal shell, input, and selectable-list primitives 
 
 ### Phase 7: Selection Scope
 
-**Files:** `src/replace.rs`, `src/update/modal.rs`
+Implemented through `src/update/ui.rs`, `FindReplaceState` and shared text edits;
+verified by `tests/find_replacements.rs` (2026-09-08 reconciliation).
 
-- [ ] Filter matches to selection range
-- [ ] Update selection after replacement
-- [ ] Handle selection boundary edge cases
-- [ ] Update match count for selection scope
+- [x] Filter matches to selection range
+- [x] Update selection after replacement
+- [x] Handle selection boundary edge cases
+- [x] Update match count for selection scope
 
 **Test:** Replace All only affects selection when selection mode active.
 

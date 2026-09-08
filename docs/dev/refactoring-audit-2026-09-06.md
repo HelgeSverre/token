@@ -1,5 +1,61 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Plan reconciliation — 2026-09-08
+
+Reviewed the scope/status of all 23 plans in `docs/feature/` and `docs/future/`
+against source, existing tests and the verification records below. None is
+newly eligible for archival: completed plans already live in `docs/archived/`;
+the remaining plans have implementation work or explicit verification gates.
+`docs/feature/adding-languages.md` is a maintained integration guide, not a plan.
+The active index now includes previously omitted plans, including EditorConfig,
+indent guides, gestures, advanced folding, macros, Sema and the web proposal.
+
+Important distinctions:
+
+- Settings keymap implementation is complete, but its cross-platform verification
+  gate remains open in `docs/future/settings-keymap.md`.
+- Autocomplete's completed menu/provider/projection work does not complete edit
+  prediction or remaining live-provider/native checks. Snippet menu expansion
+  also does not complete the separate interactive tabstop/mirror/user-snippet plan.
+- Selection-scoped replace already works through `src/update/ui.rs` and shared
+  text edits, with coverage in `tests/find_replacements.rs`. Its plan now records
+  that progress; preserve-case, capture-group expansion and preview/confirmation
+  remain. The old proposed module layout is not an instruction to duplicate
+  existing editing paths.
+- `FileSystemWatcher` feeds workspace tree updates through
+  `App::poll_fs_watcher`; that is not open-document conflict detection/reload.
+  File-change detection and auto-save therefore remain planned.
+- Recent-file/configuration/history persistence is not session restoration.
+  Whitespace markers and folding are not existing prerequisites for indent
+  guides; those stale statements are corrected.
+- Configurable gesture parsing, broader keymap follow-ups and file-finder
+  indexing remain separate from the existing hardcoded double-tap gesture,
+  chord routing and filename fuzzy matching.
+
+Recommended next work, based on the local implementation gaps rather than the
+old effort estimates:
+
+1. **External-file change detection:** reload clean buffers and prompt for dirty
+   buffers, including external deletion and save-time conflict protection. Keep
+   compare/merge UI separate from an initial protective slice. This provides the
+   conflict policy needed before auto-save.
+2. **Session restore:** start with saved-file tabs, split ratios and cursor/scroll
+   positions per workspace. Keep unsaved-buffer recovery and undo persistence
+   out of the first slice, as the current plan specifies.
+3. **Indent guides:** a smaller visible improvement if a UI feature is preferred.
+   Start with simple guides using existing tab/visual-row geometry; defer active
+   syntax scope and depth palettes, and coordinate with the whitespace plan.
+
+`HANDOFF.md` stays: the I-beam report, edit-prediction scope and outstanding
+verification are not closed by a documentation sweep. IME remains explicitly
+deferred, not a reason to resume that work. No feature implementation or new
+native verification is claimed here.
+
+Verification: all 23 active plans are linked from `docs/README.md`, and every
+local link target in that index exists. `git diff --check` and `just fmt-check`
+passed. No code changed, so the application suite was not rerun. Diff-based
+self-review using code-review found no blocking issues; verdict: **Approve**.
+
 ## Code-quality and abstraction cleanup sweep — 2026-09-08
 
 This follow-up inventories the source tree, searches for repeated implementations

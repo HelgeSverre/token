@@ -36,6 +36,8 @@ Architecture, contracts, and implementation guides.
 Recent analysis: [Refactoring and production-path profiling, 2026-09-05](dev/refactoring-profile-2026-09-05.md).
 Implementation and verification follow-ups, including completion profiling:
 [Refactoring audit, 2026-09-06](dev/refactoring-audit-2026-09-06.md).
+Language integration guide: [Adding Tree-sitter languages](feature/adding-languages.md)
+(maintained reference, not an unfinished feature plan).
 
 ### Behavior Contracts
 
@@ -59,6 +61,13 @@ These documents define invariants that implementations must preserve:
 Active specifications live in `docs/feature/` and `docs/future/`. Implemented or
 superseded plans live in `docs/archived/`, with status notes distinguishing shipped
 scope from deferred ideas and manual verification. Archival is not a release.
+
+Plan sweep, 2026-09-08: all 23 active feature/future plans still contain
+unimplemented scope or explicit verification gates; no additional plan was
+archived. Completed Settings v1, terminal, context-menu, Find, soft-wrap and LSP
+plans are already archived. See the
+[reconciliation record](dev/refactoring-audit-2026-09-06.md#plan-reconciliation--2026-09-08)
+for partial implementations and suggested next work.
 
 ### Completed Features
 
@@ -94,14 +103,23 @@ scope from deferred ideas and manual verification. Archival is not a release.
 | Replace Enhancements | 2 - Search & Editing | [replace-enhancements.md](feature/replace-enhancements.md) |
 | Line Operations Follow-ups (duplication implemented) | 2 - Search & Editing | [line-operations.md](future/line-operations.md) |
 | Whitespace Rendering | 2 - Search & Editing | [whitespace-rendering.md](future/whitespace-rendering.md) |
+| Whitespace Management (conversion and cleanup) | 2 - Search & Editing | [whitespace-management.md](future/whitespace-management.md) |
+| Indentation Guides | 2 - Refinement | [indent-guides.md](feature/indent-guides.md) |
 | Auto-Save | 3 - File Lifecycle | [auto-save.md](feature/auto-save.md) |
 | File Change Detection | 3 - File Lifecycle | [file-change-detection.md](feature/file-change-detection.md) |
 | Session Restore | 3 - File Lifecycle | [session-restore.md](feature/session-restore.md) |
+| EditorConfig Integration | 3 - Quality of Life | [editorconfig.md](feature/editorconfig.md) |
+| Configurable Double-Tap Gestures | 3 - Keybinding Enhancements | [gesture-bindings.md](feature/gesture-bindings.md) |
 | Code Folding | 4 - Hard Problems | [folding-basic.md](feature/folding-basic.md) |
 | Diff Gutter | 5 - Insight Tools | [diff-gutter.md](feature/diff-gutter.md) |
 | Snippets | 6 - Productivity | [snippets.md](feature/snippets.md) |
 | Settings Keymap Tab (implemented; platform verification open) | 6 - Productivity | [settings-keymap.md](future/settings-keymap.md) |
 | Autocomplete (inline / FIM) | 6 - Productivity | [autocomplete.md](feature/autocomplete.md) |
+| Syntax-Based Folding | 6 - Productivity | [folding-advanced.md](feature/folding-advanced.md) |
+| Macros | 7 - Productivity | [macros.md](feature/macros.md) |
+| Keymap Enhancements (chords partly implemented) | Future follow-ups | [keymap-enhancements.md](future/keymap-enhancements.md) |
+| Sema Scripting Integration | Future extensibility | [sema-scripting-integration.md](feature/sema-scripting-integration.md) |
+| WASM / Web Target | Feasibility proposal | [wasm-web-target.md](future/wasm-web-target.md) |
 
 ---
 

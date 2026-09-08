@@ -6,6 +6,13 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Documentation
+
+- Reconciled the active plan index with implementation and verification records;
+  documented completed selection-scoped replacement and corrected stale session
+  and indent-guide assumptions. Completed plans were already archived; unfinished
+  features and native verification gates remain active.
+
 ### Internal cleanup
 
 - Rendering and editing now share tab-column conversion, and split-pane layout,

@@ -27,10 +27,16 @@ Visual vertical lines showing indentation levels with depth-based coloring
 ### Current State
 
 The editor currently:
-- Shows whitespace rendering (spaces/tabs as dots/arrows)
+- Has tab-aware text layout, but no configurable space/tab markers
 - Has no visual indication of indentation hierarchy
 - Relies on syntax highlighting for scope detection
 - Difficult to track deep nesting, especially in Python/YAML
+
+Reconciled 2026-09-08: whitespace visualization and code folding remain planned.
+Coordinate the overlapping guide/marker scope with
+[Whitespace Rendering](../future/whitespace-rendering.md); reuse the shared
+visual-row traversal in `src/view/editor_text.rs`, including soft-wrap, rather
+than implementing a separate logical-line rendering loop.
 
 ### Goals
 
@@ -44,7 +50,7 @@ The editor currently:
 ### Non-Goals
 
 - Rainbow brackets (separate feature)
-- Scope folding from guides (use existing folding)
+- Scope folding from guides (separate [planned folding feature](folding-basic.md))
 - Custom user color configuration (first iteration)
 
 ---
