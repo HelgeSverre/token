@@ -4,6 +4,8 @@ This document describes how to run benchmarks and profile the Token editor.
 
 ## Reports
 
+- [2026-09-08: recency context refresh](2026-09-08-recency-refresh.md) — exact
+  unchanged-snapshot reuse, CPU sample, edited-path control and allocation tradeoff.
 - [2026-09-08: ASCII literal Find](2026-09-08-find-literals.md) — gated literal
   matching, before/after CPU timings and constructor allocation tradeoff.
 - [2026-09-08: Find overview projection](2026-09-08-find-overview.md) — incremental
@@ -55,6 +57,7 @@ just profile-workloads-debug settings
 # Completion suite; this recipe forwards filters/options to Divan
 just bench-completion
 just bench-completion recency
+just bench-completion sample-recency-refresh
 just bench-completion workspace_retrieval_rank
 just bench-completion ghost
 
@@ -87,8 +90,11 @@ attachment separately. Fixtures contain 8 or 32 open buffers with distinct,
 identifier-heavy 8 KiB snippets. Setup is outside timed regions; no user config,
 file reads, network, model inference or window presentation is measured.
 The near-duplicate refresh case shares about 94% of tokens (Jaccard similarity
-just below 90%), with shared tokens sorting first. It exercises long comparisons
-without collapsing the ring into one chunk; setup asserts the retained count.
+just below 90%), with shared tokens sorting first. Setup asserts the retained
+count. Unchanged refresh can reuse exact snapshots; `recency_idle_refresh_edited`
+changes every payload before queuing saves and still exercises long comparisons.
+`sample-recency-refresh` prints its PID and runs a 12-second unchanged-refresh
+loop for a native CPU sampler; that loop includes save queuing as well as draining.
 Each case uses 100 samples and the existing Rust allocation profiler. These are
 local release-stage timings, not end-to-end completion latency or frame rates.
 

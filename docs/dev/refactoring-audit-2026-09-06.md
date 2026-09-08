@@ -1,5 +1,17 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Recency refresh — 2026-09-08
+
+Commit `56a3be8` reuses exact unchanged snapshots while preserving current
+capture, strict similarity, ordering and region invalidation. The
+[report](../benchmark/2026-09-08-recency-refresh.md) records CPU attribution,
+before/after repeats, edited-path costs and the small tracked-peak tradeoff.
+All 2,581 tests/two doctests and strict lint passed; no new test functions were
+added. Scoped review: **Approve**, no outstanding findings. The recency
+investigation is addressed; edited idle costs remain documented, and forward
+multi-cursor attribution plus native/live verification gates remain open.
+No additional plan became archive-eligible.
+
 ## ASCII literal Find — 2026-09-08
 
 Commit `780b13e` uses the existing Aho-Corasick dependency directly for valid

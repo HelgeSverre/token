@@ -1,0 +1,169 @@
+CARGO_TARGET_DIR=/tmp/token-managed-server-check.5prvI4 CARGO_BUILD_JOBS=1 just bench-completion recency_
+Checking formatting...
+All matched files use Prettier code style!
+cargo bench --bench completion -- recency_
+warning: unused variable: `revision`
+   --> src/update/syntax.rs:196:17
+    |
+196 |             let revision = doc.revision;
+    |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_revision`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `token` (lib) generated 1 warning (run `cargo fix --lib -p token` to apply 1 suggestion)
+warning: `token` (lib) generated 1 warning (1 duplicate)
+   Compiling token v0.6.0 (/Users/helge/code/token-editor)
+    Finished `bench` profile [optimized] target(s) in 1m 07s
+     Running benches/completion.rs (/tmp/token-managed-server-check.5prvI4/release/deps/completion-6163ed5ae68d0491)
+Timer precision: 41 ns
+completion                               fastest       │ slowest       │ median        │ mean          │ samples │ iters
+├─ recency_attach_request                              │               │               │               │         │
+│  ├─ 8                                  1.945 µs      │ 6.403 µs      │ 2.257 µs      │ 2.66 µs       │ 100     │ 200
+│  │                                     max alloc:    │               │               │               │         │
+│  │                                       17          │ 17            │ 17            │ 17            │         │
+│  │                                       66 KB       │ 66 KB         │ 66 KB         │ 66 KB         │         │
+│  │                                     alloc:        │               │               │               │         │
+│  │                                       17          │ 17            │ 17            │ 17            │         │
+│  │                                       66 KB       │ 66 KB         │ 66 KB         │ 66 KB         │         │
+│  ╰─ 32                                 7.207 µs      │ 10.95 µs      │ 7.749 µs      │ 7.869 µs      │ 100     │ 100
+│                                        max alloc:    │               │               │               │         │
+│                                          65          │ 65            │ 65            │ 65            │         │
+│                                          264 KB      │ 264 KB        │ 264 KB        │ 264 KB        │         │
+│                                        alloc:        │               │               │               │         │
+│                                          65          │ 65            │ 65            │ 65            │         │
+│                                          264 KB      │ 264 KB        │ 264 KB        │ 264 KB        │         │
+├─ recency_idle_fill                                   │               │               │               │         │
+│  ├─ 8                                  841.5 µs      │ 971.1 µs      │ 886.2 µs      │ 879.8 µs      │ 100     │ 100
+│  │                                     max alloc:    │               │               │               │         │
+│  │                                       25          │ 25            │ 25            │ 25            │         │
+│  │                                       153.6 KB    │ 153.6 KB      │ 153.6 KB      │ 153.6 KB      │         │
+│  │                                     alloc:        │               │               │               │         │
+│  │                                       33          │ 33            │ 33            │ 33            │         │
+│  │                                       67.15 KB    │ 67.15 KB      │ 67.15 KB      │ 67.15 KB      │         │
+│  │                                     dealloc:      │               │               │               │         │
+│  │                                       8           │ 8             │ 8             │ 8             │         │
+│  │                                       512 B       │ 512 B         │ 512 B         │ 512 B         │         │
+│  │                                     grow:         │               │               │               │         │
+│  │                                       65          │ 65            │ 65            │ 65            │         │
+│  │                                       131 KB      │ 131 KB        │ 131 KB        │ 131 KB        │         │
+│  │                                     shrink:       │               │               │               │         │
+│  │                                       8           │ 8             │ 8             │ 8             │         │
+│  │                                       50.3 KB     │ 50.3 KB       │ 50.3 KB       │ 50.3 KB       │         │
+│  ╰─ 32                                 3.435 ms      │ 3.747 ms      │ 3.594 ms      │ 3.579 ms      │ 100     │ 100
+│                                        max alloc:    │               │               │               │         │
+│                                          97          │ 97            │ 97            │ 97            │         │
+│                                          595.6 KB    │ 595.6 KB      │ 595.6 KB      │ 595.6 KB      │         │
+│                                        alloc:        │               │               │               │         │
+│                                          129         │ 129           │ 129           │ 129           │         │
+│                                          267.2 KB    │ 267.2 KB      │ 267.2 KB      │ 267.2 KB      │         │
+│                                        dealloc:      │               │               │               │         │
+│                                          32          │ 32            │ 32            │ 32            │         │
+│                                          2.048 KB    │ 2.048 KB      │ 2.048 KB      │ 2.048 KB      │         │
+│                                        grow:         │               │               │               │         │
+│                                          259         │ 259           │ 259           │ 259           │         │
+│                                          525.3 KB    │ 525.3 KB      │ 525.3 KB      │ 525.3 KB      │         │
+│                                        shrink:       │               │               │               │         │
+│                                          32          │ 32            │ 32            │ 32            │         │
+│                                          201.2 KB    │ 201.2 KB      │ 201.2 KB      │ 201.2 KB      │         │
+├─ recency_idle_refresh                                │               │               │               │         │
+│  ├─ 8                                  432.7 µs      │ 483.2 µs      │ 452.7 µs      │ 450 µs        │ 100     │ 100
+│  │                                     max alloc:    │               │               │               │         │
+│  │                                       0           │ 0             │ 0             │ 0             │         │
+│  │                                       6.288 KB    │ 6.288 KB      │ 6.288 KB      │ 6.288 KB      │         │
+│  │                                     alloc:        │               │               │               │         │
+│  │                                       32          │ 32            │ 32            │ 32            │         │
+│  │                                       66.7 KB     │ 66.7 KB       │ 66.7 KB       │ 66.7 KB       │         │
+│  │                                     dealloc:      │               │               │               │         │
+│  │                                       32          │ 32            │ 32            │ 32            │         │
+│  │                                       146.9 KB    │ 146.9 KB      │ 146.9 KB      │ 146.9 KB      │         │
+│  │                                     grow:         │               │               │               │         │
+│  │                                       64          │ 64            │ 64            │ 64            │         │
+│  │                                       130.5 KB    │ 130.5 KB      │ 130.5 KB      │ 130.5 KB      │         │
+│  │                                     shrink:       │               │               │               │         │
+│  │                                       8           │ 8             │ 8             │ 8             │         │
+│  │                                       50.3 KB     │ 50.3 KB       │ 50.3 KB       │ 50.3 KB       │         │
+│  ╰─ 32                                 1.855 ms      │ 2.088 ms      │ 1.907 ms      │ 1.917 ms      │ 100     │ 100
+│                                        max alloc:    │               │               │               │         │
+│                                          0           │ 0             │ 0             │ 0             │         │
+│                                          6.288 KB    │ 6.288 KB      │ 6.288 KB      │ 6.288 KB      │         │
+│                                        alloc:        │               │               │               │         │
+│                                          128         │ 128           │ 128           │ 128           │         │
+│                                          266.8 KB    │ 266.8 KB      │ 266.8 KB      │ 266.8 KB      │         │
+│                                        dealloc:      │               │               │               │         │
+│                                          128         │ 128           │ 128           │ 128           │         │
+│                                          587.8 KB    │ 587.8 KB      │ 587.8 KB      │ 587.8 KB      │         │
+│                                        grow:         │               │               │               │         │
+│                                          256         │ 256           │ 256           │ 256           │         │
+│                                          522.2 KB    │ 522.2 KB      │ 522.2 KB      │ 522.2 KB      │         │
+│                                        shrink:       │               │               │               │         │
+│                                          32          │ 32            │ 32            │ 32            │         │
+│                                          201.2 KB    │ 201.2 KB      │ 201.2 KB      │ 201.2 KB      │         │
+├─ recency_idle_refresh_edited                         │               │               │               │         │
+│  ├─ 8                                  525.5 µs      │ 596.9 µs      │ 577.9 µs      │ 578.9 µs      │ 100     │ 100
+│  │                                     max alloc:    │               │               │               │         │
+│  │                                       0           │ 0             │ 0             │ 0             │         │
+│  │                                       6.288 KB    │ 6.288 KB      │ 6.288 KB      │ 6.288 KB      │         │
+│  │                                     alloc:        │               │               │               │         │
+│  │                                       32          │ 32            │ 32            │ 32            │         │
+│  │                                       66.7 KB     │ 66.7 KB       │ 66.7 KB       │ 66.7 KB       │         │
+│  │                                     dealloc:      │               │               │               │         │
+│  │                                       32          │ 32            │ 32            │ 32            │         │
+│  │                                       146.9 KB    │ 146.9 KB      │ 146.9 KB      │ 146.9 KB      │         │
+│  │                                     grow:         │               │               │               │         │
+│  │                                       64          │ 64            │ 64            │ 64            │         │
+│  │                                       130.5 KB    │ 130.5 KB      │ 130.5 KB      │ 130.5 KB      │         │
+│  │                                     shrink:       │               │               │               │         │
+│  │                                       8           │ 8             │ 8             │ 8             │         │
+│  │                                       50.3 KB     │ 50.3 KB       │ 50.3 KB       │ 50.3 KB       │         │
+│  ╰─ 32                                 4.449 ms      │ 4.852 ms      │ 4.539 ms      │ 4.55 ms       │ 100     │ 100
+│                                        max alloc:    │               │               │               │         │
+│                                          0           │ 0             │ 0             │ 0             │         │
+│                                          6.288 KB    │ 6.288 KB      │ 6.288 KB      │ 6.288 KB      │         │
+│                                        alloc:        │               │               │               │         │
+│                                          128         │ 128           │ 128           │ 128           │         │
+│                                          266.8 KB    │ 266.8 KB      │ 266.8 KB      │ 266.8 KB      │         │
+│                                        dealloc:      │               │               │               │         │
+│                                          128         │ 128           │ 128           │ 128           │         │
+│                                          587.8 KB    │ 587.8 KB      │ 587.8 KB      │ 587.8 KB      │         │
+│                                        grow:         │               │               │               │         │
+│                                          256         │ 256           │ 256           │ 256           │         │
+│                                          522.2 KB    │ 522.2 KB      │ 522.2 KB      │ 522.2 KB      │         │
+│                                        shrink:       │               │               │               │         │
+│                                          32          │ 32            │ 32            │ 32            │         │
+│                                          201.2 KB    │ 201.2 KB      │ 201.2 KB      │ 201.2 KB      │         │
+├─ recency_idle_refresh_near_duplicates                │               │               │               │         │
+│  ├─ 8                                  569 µs        │ 664.2 µs      │ 579.2 µs      │ 581.3 µs      │ 100     │ 100
+│  │                                     max alloc:    │               │               │               │         │
+│  │                                       0           │ 0             │ 0             │ 0             │         │
+│  │                                       6.288 KB    │ 6.288 KB      │ 6.288 KB      │ 6.288 KB      │         │
+│  │                                     alloc:        │               │               │               │         │
+│  │                                       32          │ 32            │ 32            │ 32            │         │
+│  │                                       66.7 KB     │ 66.7 KB       │ 66.7 KB       │ 66.7 KB       │         │
+│  │                                     dealloc:      │               │               │               │         │
+│  │                                       32          │ 32            │ 32            │ 32            │         │
+│  │                                       146.9 KB    │ 146.9 KB      │ 146.9 KB      │ 146.9 KB      │         │
+│  │                                     grow:         │               │               │               │         │
+│  │                                       64          │ 64            │ 64            │ 64            │         │
+│  │                                       130.5 KB    │ 130.5 KB      │ 130.5 KB      │ 130.5 KB      │         │
+│  │                                     shrink:       │               │               │               │         │
+│  │                                       8           │ 8             │ 8             │ 8             │         │
+│  │                                       50.3 KB     │ 50.3 KB       │ 50.3 KB       │ 50.3 KB       │         │
+│  ╰─ 32                                 4.459 ms      │ 4.744 ms      │ 4.541 ms      │ 4.553 ms      │ 100     │ 100
+│                                        max alloc:    │               │               │               │         │
+│                                          0           │ 0             │ 0             │ 0             │         │
+│                                          6.288 KB    │ 6.288 KB      │ 6.288 KB      │ 6.288 KB      │         │
+│                                        alloc:        │               │               │               │         │
+│                                          128         │ 128           │ 128           │ 128           │         │
+│                                          266.8 KB    │ 266.8 KB      │ 266.8 KB      │ 266.8 KB      │         │
+│                                        dealloc:      │               │               │               │         │
+│                                          128         │ 128           │ 128           │ 128           │         │
+│                                          587.8 KB    │ 587.8 KB      │ 587.8 KB      │ 587.8 KB      │         │
+│                                        grow:         │               │               │               │         │
+│                                          256         │ 256           │ 256           │ 256           │         │
+│                                          522.2 KB    │ 522.2 KB      │ 522.2 KB      │ 522.2 KB      │         │
+│                                        shrink:       │               │               │               │         │
+│                                          32          │ 32            │ 32            │ 32            │         │
+│                                          201.2 KB    │ 201.2 KB      │ 201.2 KB      │ 201.2 KB      │         │
+╰─ recency_observe_stable                              │               │               │               │         │
+   ├─ 8                                  227.5 ns      │ 237.9 ns      │ 232.7 ns      │ 233 ns        │ 100     │ 3200
+   ╰─ 32                                 1.009 µs      │ 1.124 µs      │ 1.03 µs       │ 1.038 µs      │ 100     │ 400

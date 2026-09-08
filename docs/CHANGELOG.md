@@ -11,6 +11,9 @@ All notable changes to rust-editor are documented in this file.
 - Recency context reuses an unchanged snippet's token index instead of repeating
   whole-ring similarity checks. It still captures current text, refreshes recency
   order and region metadata, and fully deduplicates changed snippets.
+  [Optimized profiling](benchmark/2026-09-08-recency-refresh.md) measured the
+  unchanged 32-snippet refresh at 0.66–0.67 ms, down from 4.54 ms; edited
+  refresh remains about 4.6 ms.
 - Plain Find queries can use a non-overlapping literal matcher when both query
   and document are ASCII. Unicode, regex and whole-word queries retain the
   existing engine and character-offset semantics.

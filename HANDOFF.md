@@ -11,7 +11,13 @@ Completed implementation history and detailed evidence are in the
 [benchmark reports](docs/benchmark/README.md), with earlier handoff entries
 preserved in Git history.
 
-Latest implementation: `780b13e` adds gated ASCII literal Find matching after
+Latest implementation: `56a3be8` reuses exact unchanged recency snapshots. The
+[recency report](docs/benchmark/2026-09-08-recency-refresh.md) records CPU sampling,
+before/after repeats, edited-path costs and allocation tradeoffs. Its full tests
+and lint passed. This addresses the recency profiling target without claiming
+that genuinely edited refreshes are faster.
+
+Earlier implementation: `780b13e` adds gated ASCII literal Find matching after
 the overview improvement (`6974ba1`). The
 [literal report](docs/benchmark/2026-09-08-find-literals.md) records before/after
 CPU and allocation measurements, full-suite/lint verification and preserved
@@ -34,8 +40,8 @@ The default `target/` previously disappeared outside this task.
   targets). The plan names candidate providers but no selected backend contract;
   a backend/model preference has been requested. See
   [autocomplete](docs/feature/autocomplete.md).
-- Address measured performance targets as warranted: larger recency refreshes
-  and forward multi-cursor edits. Existing measurements are in
+- Attribute forward multi-cursor edit costs and address them as warranted.
+  Existing measurements are in
   [the September report](docs/benchmark/2026-09-07-current.md).
 
 ## Remaining verification
