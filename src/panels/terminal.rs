@@ -281,6 +281,15 @@ impl TerminalViewport {
         (Point::new(Line(self.grid_line(row)), Column(col)), side)
     }
 
+    /// Unlike a captured selection, links must not hit padding outside cells.
+    pub fn point_inside(&self, x: f64, y: f64) -> Option<Point> {
+        let inside = x >= self.rect.x as f64
+            && y >= self.rect.y as f64
+            && x < (self.rect.x + self.cols as f32 * self.char_width) as f64
+            && y < (self.rect.y + (self.rows * self.line_height) as f32) as f64;
+        inside.then(|| self.point_at(x, y).0)
+    }
+
     fn grid_line(&self, row: usize) -> i32 {
         terminal_view_row_to_grid_line(row, self.scroll_offset)
     }
@@ -297,6 +306,7 @@ impl TerminalViewport {
 
 struct TerminalRenderContext<'a> {
     viewport: TerminalViewport,
+    link: Option<std::ops::RangeInclusive<Point>>,
     selection: Option<SelectionRange>,
     selection_bg: u32,
     selection_fg: u32,
@@ -387,6 +397,12 @@ pub fn render_terminal_panel(
 
     let ctx = TerminalRenderContext {
         viewport,
+        link: model
+            .terminal
+            .hovered_link
+            .as_ref()
+            .filter(|(id, _)| *id == session.id)
+            .map(|(_, link)| link.range.clone()),
         selection: term.selection.as_ref().and_then(|s| s.to_range(term)),
         selection_bg: model.theme.sidebar.selection_background.to_argb_u32(),
         selection_fg: model.theme.sidebar.selection_foreground.to_argb_u32(),
@@ -445,6 +461,22 @@ fn render_terminal_cell(
         fg = ctx.selection_fg;
     }
 
+    if !cell.flags.contains(Flags::HIDDEN)
+        && ctx
+            .link
+            .as_ref()
+            .is_some_and(|range| range.contains(&point))
+    {
+        render_cell_decorations(
+            frame,
+            &cell_rect,
+            fg,
+            TerminalCellDecorations {
+                underline: true,
+                ..Default::default()
+            },
+        );
+    }
     if skip_glyph || cell.c == ' ' {
         return;
     }

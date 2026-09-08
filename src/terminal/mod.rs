@@ -8,10 +8,12 @@
 //!
 //! See `docs/archived/embedded-terminal.md` for the original MVP design.
 
+mod links;
 mod pty;
 mod session;
 pub mod translate_keys;
 
+pub use links::TerminalLink;
 pub use pty::{spawn_pty, PtyHandle};
 pub use session::{TerminalEventProxy, TerminalSession};
 pub use translate_keys::{translate_key, TerminalKeyModifiers};
@@ -49,6 +51,7 @@ pub struct TerminalState {
     /// Horizontal tab-strip offset in physical pixels.
     pub tab_scroll: f32,
     pub hovered_tab: Option<TabAction>,
+    pub hovered_link: Option<(usize, TerminalLink)>,
     /// Session that owns the current pointer-selection gesture.
     pub selection_drag: Option<usize>,
     next_session_id: usize,

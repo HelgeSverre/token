@@ -27,3 +27,14 @@ mod path_completion;
 pub mod webview;
 
 pub use app::{App, AppPreparation};
+
+/// Shared external navigation boundary for preview and terminal links.
+fn open_web_url(url: String) {
+    if token::util::is_web_url(&url) {
+        std::thread::spawn(move || {
+            if let Err(error) = open::that(url) {
+                tracing::warn!("Failed to open browser: {error}");
+            }
+        });
+    }
+}

@@ -993,6 +993,8 @@ pub enum Cmd {
     },
     /// Copy a string to the system clipboard
     CopyToClipboard(String),
+    /// Open a validated web URL in the system browser.
+    OpenWebUrl(String),
     /// Request pasting text from the system clipboard
     RequestClipboardPaste,
     /// Read or conditionally replace the keymap on the ordered file worker.
@@ -1357,7 +1359,7 @@ impl Cmd {
             Cmd::CompletePaths(_)
             | Cmd::CancelPathCompletion
             | Cmd::PageCompletionDocumentation { .. } => Damage::Areas(vec![]),
-            Cmd::CopyToClipboard(_) => Damage::Areas(vec![]),
+            Cmd::CopyToClipboard(_) | Cmd::OpenWebUrl(_) => Damage::Areas(vec![]),
             Cmd::RequestClipboardPaste => Damage::Areas(vec![]),
             // Preparation completes synchronously in runtime command order and
             // can immediately open a tab or display an error.

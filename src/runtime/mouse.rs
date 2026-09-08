@@ -27,6 +27,55 @@ use token::model::editor_area::GroupId;
 use token::view::hit_test::{hit_test_ui, EventResult, HitTarget, MouseEvent};
 use token::view::Renderer;
 
+pub(super) fn terminal_link_modifier(modifiers: ModifiersState) -> bool {
+    if cfg!(target_os = "macos") {
+        modifiers.super_key() && !modifiers.control_key() && !modifiers.alt_key()
+    } else {
+        modifiers.control_key() && !modifiers.super_key() && !modifiers.alt_key()
+    }
+}
+
+fn terminal_link_at_pointer(
+    model: &AppModel,
+    target: Option<&HitTarget>,
+    x: f64,
+    y: f64,
+    modifiers: ModifiersState,
+) -> Option<(usize, token::terminal::TerminalLink)> {
+    if !terminal_link_modifier(modifiers)
+        || model.terminal.selection_drag.is_some()
+        || !matches!(
+            target,
+            Some(HitTarget::DockContent {
+                active_panel_id: token::panel::PanelId::Terminal,
+                ..
+            })
+        )
+    {
+        return None;
+    }
+    let viewport = token::panels::terminal::TerminalViewport::for_model(model)?;
+    let session = model.terminal.active_session()?;
+    session
+        .link_at(viewport.point_inside(x, y)?)
+        .map(|link| (session.id, link))
+}
+
+pub(super) fn update_terminal_link_hover(
+    model: &mut AppModel,
+    target: Option<&HitTarget>,
+    x: f64,
+    y: f64,
+    modifiers: ModifiersState,
+) -> bool {
+    let hovered = terminal_link_at_pointer(model, target, x, y, modifiers);
+    if model.terminal.hovered_link == hovered {
+        return false;
+    }
+    model.terminal.hovered_link = hovered;
+    true
+}
+
 /// Track pointer rows using the same flat indices as painting and activation.
 /// Returns whether row highlights changed, so idle popup hover requests repaint.
 pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarget>) -> bool {
@@ -643,6 +692,61 @@ mod tests {
         session.apply_bytes(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\nseven\r\n");
         model.terminal.sessions.push(session);
         model
+    }
+
+    #[test]
+    fn terminal_link_hover_requires_modifier_and_yields_to_selection() {
+        let mut model = terminal_model_with_history();
+        let session = model.terminal.active_session_mut().unwrap();
+        session.clear();
+        session.apply_bytes(b"\x1b[Hhttps://example.com");
+        let viewport = token::panels::terminal::TerminalViewport::for_model(&model).unwrap();
+        let (x, y) = (
+            (viewport.rect.x + 2.0) as f64,
+            (viewport.rect.y + 2.0) as f64,
+        );
+        let target = HitTarget::DockContent {
+            position: DockPosition::Bottom,
+            active_panel_id: PanelId::Terminal,
+        };
+        let modifier = if cfg!(target_os = "macos") {
+            ModifiersState::SUPER
+        } else {
+            ModifiersState::CONTROL
+        };
+        assert!(
+            terminal_link_at_pointer(&model, Some(&target), x, y, ModifiersState::empty())
+                .is_none()
+        );
+        assert!(update_terminal_link_hover(
+            &mut model,
+            Some(&target),
+            x,
+            y,
+            modifier
+        ));
+        assert_eq!(
+            model.terminal.hovered_link.as_ref().unwrap().1.uri,
+            "https://example.com"
+        );
+        assert!(update_terminal_link_hover(
+            &mut model,
+            Some(&target),
+            x,
+            y,
+            ModifiersState::empty()
+        ));
+        model.terminal.selection_drag = Some(7);
+        assert!(terminal_link_at_pointer(&model, Some(&target), x, y, modifier).is_none());
+        model.terminal.selection_drag = None;
+        assert!(terminal_link_at_pointer(
+            &model,
+            Some(&HitTarget::Modal { inside: true }),
+            x,
+            y,
+            modifier
+        )
+        .is_none());
     }
 
     // ========================================================================
@@ -1429,7 +1533,15 @@ pub fn handle_mouse_press(
 
     MousePressResult {
         cmd,
-        start_drag_tracking: is_selectable_content && is_left_click,
+        start_drag_tracking: is_selectable_content
+            && is_left_click
+            && (!matches!(
+                target,
+                HitTarget::DockContent {
+                    active_panel_id: token::panel::PanelId::Terminal,
+                    ..
+                }
+            ) || model.terminal.selection_drag.is_some()),
     }
 }
 
@@ -1993,6 +2105,19 @@ fn handle_left_click(
             );
 
             if *active_panel_id == token::panel::PanelId::Terminal {
+                // Resolve again at the click, never open a cached hover URL.
+                if let Some((_, link)) = terminal_link_at_pointer(
+                    model,
+                    Some(target),
+                    event.pos.x,
+                    event.pos.y,
+                    event.modifiers,
+                ) {
+                    return EventResult::consumed_with_cmd(
+                        Some(Cmd::OpenWebUrl(link.uri)),
+                        FocusTarget::Dock(*position),
+                    );
+                }
                 use alacritty_terminal::selection::SelectionType;
                 let Some(viewport) = token::panels::terminal::TerminalViewport::for_model(model)
                 else {

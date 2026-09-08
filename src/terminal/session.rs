@@ -194,6 +194,10 @@ impl TerminalSession {
         &self.term
     }
 
+    pub fn link_at(&self, point: Point) -> Option<super::TerminalLink> {
+        super::links::link_at(&self.term, point)
+    }
+
     pub fn start_selection(&mut self, point: Point, side: Side, kind: SelectionType) {
         self.term.selection = Some(Selection::new(kind, point, side));
     }

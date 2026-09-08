@@ -1332,12 +1332,21 @@ impl App {
             let mut measure = token::layout::PainterMeasure::new(&mut painter);
             hit_test_ui(&self.model, pt, char_width, &mut measure)
         };
-        window.set_cursor(
+        let link_changed = super::mouse::update_terminal_link_hover(
+            &mut self.model,
+            target.as_ref(),
+            x,
+            y,
+            self.modifiers,
+        );
+        window.set_cursor(if self.model.terminal.hovered_link.is_some() {
+            CursorIcon::Pointer
+        } else {
             target
                 .as_ref()
-                .map_or(CursorIcon::Default, |target| target.cursor_icon()),
-        );
-        update_hover_target(&mut self.model, target.as_ref())
+                .map_or(CursorIcon::Default, |target| target.cursor_icon())
+        });
+        update_hover_target(&mut self.model, target.as_ref()) || link_changed
     }
 
     /// Mouse-dwell hover bookkeeping for `CursorMoved` — call after
@@ -1455,6 +1464,8 @@ impl App {
                 if !focused {
                     self.drag.end();
                     self.model.terminal.selection_drag = None;
+                    self.model.terminal.hovered_link = None;
+                    self.modifiers = ModifiersState::empty();
                     let mut commands = Vec::new();
                     commands.extend(update(&mut self.model, Msg::Ui(UiMsg::ScrollbarDragEnd)));
                     commands.extend(update(
@@ -1472,7 +1483,9 @@ impl App {
             }
             WindowEvent::ModifiersChanged(mods) => {
                 self.modifiers = mods.state();
-                None
+                self.mouse_position
+                    .is_some_and(|(x, y)| self.update_cursor_icon(x, y))
+                    .then_some(Cmd::Redraw)
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 let is_option_key = matches!(
@@ -1616,6 +1629,15 @@ impl App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                // Output, scrolling and resize may change the URL under an
+                // unmoved pointer. Keep its cue tied to the current grid.
+                if super::mouse::terminal_link_modifier(self.modifiers)
+                    || self.model.terminal.hovered_link.is_some()
+                {
+                    if let Some((x, y)) = self.mouse_position {
+                        self.update_cursor_icon(x, y);
+                    }
+                }
                 if let Err(e) = self.render() {
                     eprintln!("Render error: {}", e);
                 }
@@ -1793,7 +1815,13 @@ impl App {
             }
             WindowEvent::CursorLeft { .. } => {
                 self.hover_dwell = None;
-                update_hover_target(&mut self.model, None).then_some(Cmd::Redraw)
+                let link_changed = self.model.terminal.hovered_link.take().is_some();
+                // Keep captured-drag coordinates, but don't restore a hover on
+                // redraw after the pointer has left the window.
+                if !self.drag.is_active() {
+                    self.mouse_position = None;
+                }
+                (update_hover_target(&mut self.model, None) || link_changed).then_some(Cmd::Redraw)
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
@@ -2498,6 +2526,7 @@ impl App {
                     }
                 });
             }
+            Cmd::OpenWebUrl(url) => super::open_web_url(url),
             Cmd::RequestClipboardPaste => {
                 let tx = self.msg_tx.clone();
                 std::thread::spawn(move || {

@@ -6,6 +6,15 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Terminal links
+
+- Hold Cmd on macOS (Ctrl elsewhere) to underline a terminal web link and show
+  a pointer cursor; modifier-click opens it in the default browser. Ordinary
+  clicks still select text. Both plain URLs and explicit OSC 8 links work,
+  including wrapped text and scrollback.
+- Preview and terminal navigation share a validated HTTP/HTTPS browser launcher;
+  terminal output cannot launch file, script or other custom URL schemes.
+
 ### Terminal selection
 
 - Drag to select terminal output; double-click selects a word and triple-click

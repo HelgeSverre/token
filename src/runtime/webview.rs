@@ -85,8 +85,8 @@ impl WebviewManager {
             .with_transparent(false)
             .with_navigation_handler(|url| {
                 // Open external links in the default browser
-                if url.starts_with("http://") || url.starts_with("https://") {
-                    let _ = open::that(&url);
+                if token::util::is_web_url(&url) {
+                    super::open_web_url(url);
                     false
                 } else {
                     // Allow internal navigation (token://, anchor links)
