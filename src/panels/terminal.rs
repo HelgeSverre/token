@@ -1,7 +1,8 @@
 //! Terminal dock panel rendering helpers.
 
 use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::index::{Column, Line};
+use alacritty_terminal::index::{Column, Line, Point, Side};
+use alacritty_terminal::selection::SelectionRange;
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor};
 
@@ -227,10 +228,78 @@ struct TerminalCellDecorations {
     strikeout: bool,
 }
 
-struct TerminalRenderContext<'a> {
-    rect: Rect,
+/// Shared terminal cell geometry for painting, hit testing and selection.
+pub struct TerminalViewport {
+    pub rect: Rect,
     char_width: f32,
     line_height: usize,
+    rows: usize,
+    cols: usize,
+    scroll_offset: usize,
+}
+
+impl TerminalViewport {
+    fn new(
+        session: &crate::terminal::TerminalSession,
+        rect: Rect,
+        char_width: f32,
+        line_height: usize,
+    ) -> Self {
+        let size = grid_size_for_rect(rect, char_width, line_height);
+        Self {
+            rect,
+            char_width: char_width.max(1.0),
+            line_height: line_height.max(1),
+            rows: usize::from(size.rows).min(session.term().grid().screen_lines()),
+            cols: usize::from(size.cols).min(session.term().grid().columns()),
+            scroll_offset: session.scroll_offset.min(session.max_scrollback_offset()),
+        }
+    }
+
+    pub fn for_model(model: &AppModel) -> Option<Self> {
+        let session = model.terminal.active_session()?;
+        let rect = crate::layout::chrome::chrome(model)
+            .rect(UiKey::PanelContent(crate::panel::PanelId::Terminal))?;
+        (rect.width > 0.0 && rect.height > 0.0)
+            .then(|| Self::new(session, rect, model.char_width, model.line_height))
+    }
+
+    /// Clamp a pointer to the visible cells, retaining the left/right half
+    /// of the cell so a plain click starts an empty character selection.
+    pub fn point_at(&self, x: f64, y: f64) -> (Point, Side) {
+        let column = (x as f32 - self.rect.x) / self.char_width;
+        let col = (column.floor().max(0.0) as usize).min(self.cols.saturating_sub(1));
+        let row = (((y as f32 - self.rect.y) / self.line_height as f32)
+            .floor()
+            .max(0.0) as usize)
+            .min(self.rows.saturating_sub(1));
+        let side = if column < col as f32 + 0.5 {
+            Side::Left
+        } else {
+            Side::Right
+        };
+        (Point::new(Line(self.grid_line(row)), Column(col)), side)
+    }
+
+    fn grid_line(&self, row: usize) -> i32 {
+        terminal_view_row_to_grid_line(row, self.scroll_offset)
+    }
+
+    fn cell_rect(&self, row: usize, col: usize) -> Rect {
+        Rect::new(
+            self.rect.x + col as f32 * self.char_width,
+            self.rect.y + (row * self.line_height) as f32,
+            self.char_width.ceil(),
+            self.line_height as f32,
+        )
+    }
+}
+
+struct TerminalRenderContext<'a> {
+    viewport: TerminalViewport,
+    selection: Option<SelectionRange>,
+    selection_bg: u32,
+    selection_fg: u32,
     palette: &'a TerminalPalette,
 }
 
@@ -307,19 +376,20 @@ pub fn render_terminal_panel(
     let grid = term.grid();
     let line_height = painter.line_height();
     let char_width = painter.char_width();
-    let visible_size = grid_size_for_rect(rect, char_width, line_height);
-    let rows = usize::from(visible_size.rows).min(grid.screen_lines());
-    let cols = usize::from(visible_size.cols).min(grid.columns());
+    let viewport = TerminalViewport::new(session, rect, char_width, line_height);
+    let rows = viewport.rows;
+    let cols = viewport.cols;
 
     // Clamp scrollback offset to the available history so it can never
     // scroll past the top of the buffer.
     let max_offset = grid.total_lines().saturating_sub(grid.screen_lines());
-    let scroll_offset = session.scroll_offset.min(max_offset);
+    let scroll_offset = viewport.scroll_offset;
 
     let ctx = TerminalRenderContext {
-        rect,
-        char_width,
-        line_height,
+        viewport,
+        selection: term.selection.as_ref().and_then(|s| s.to_range(term)),
+        selection_bg: model.theme.sidebar.selection_background.to_argb_u32(),
+        selection_fg: model.theme.sidebar.selection_foreground.to_argb_u32(),
         palette: &palette,
     };
 
@@ -328,7 +398,7 @@ pub fn render_terminal_panel(
     let topmost_line = grid.screen_lines() as i32 - grid.total_lines() as i32;
 
     for row in 0..rows {
-        let grid_line = terminal_view_row_to_grid_line(row, scroll_offset);
+        let grid_line = ctx.viewport.grid_line(row);
         if grid_line < topmost_line {
             continue;
         }
@@ -352,11 +422,27 @@ fn render_terminal_cell(
     col: usize,
     cell: &alacritty_terminal::term::cell::Cell,
 ) {
-    let skip_glyph = cell.flags.contains(Flags::WIDE_CHAR_SPACER | Flags::HIDDEN);
-    let (fg, bg) = cell_colors(cell, ctx.palette);
-    let cell_rect = terminal_cell_rect(ctx, row, col);
+    let skip_glyph = cell
+        .flags
+        .intersects(Flags::WIDE_CHAR_SPACER | Flags::HIDDEN);
+    let (mut fg, bg) = cell_colors(cell, ctx.palette);
+    let cell_rect = ctx.viewport.cell_rect(row, col);
     if bg != ctx.palette.default_bg {
         frame.fill_rect(cell_rect, bg);
+    }
+
+    let point = Point::new(Line(ctx.viewport.grid_line(row)), Column(col));
+    let selected = ctx.selection.is_some_and(|selection| {
+        selection.contains(point)
+            || (cell.flags.contains(Flags::WIDE_CHAR)
+                && selection.contains(Point::new(point.line, point.column + 1)))
+            || (cell.flags.contains(Flags::WIDE_CHAR_SPACER)
+                && col > 0
+                && selection.contains(Point::new(point.line, point.column - 1)))
+    });
+    if selected {
+        frame.fill_rect_blended(cell_rect, ctx.selection_bg);
+        fg = ctx.selection_fg;
     }
 
     if skip_glyph || cell.c == ' ' {
@@ -405,7 +491,7 @@ fn render_terminal_cursor(
         return;
     }
 
-    let cell_rect = terminal_cell_rect(ctx, row, col);
+    let cell_rect = ctx.viewport.cell_rect(row, col);
     frame.fill_rect(cell_rect, ctx.palette.cursor);
 
     let cell = &grid[Line(cursor_line)][Column(col)];
@@ -422,15 +508,6 @@ fn render_terminal_cursor(
         text,
         ctx.palette.default_bg,
     );
-}
-
-fn terminal_cell_rect(ctx: &TerminalRenderContext<'_>, row: usize, col: usize) -> Rect {
-    Rect::new(
-        ctx.rect.x + col as f32 * ctx.char_width,
-        ctx.rect.y + (row * ctx.line_height) as f32,
-        ctx.char_width.ceil().max(1.0),
-        ctx.line_height.max(1) as f32,
-    )
 }
 
 /// Map a viewport row (0 = top of the visible area) to an alacritty grid
@@ -540,15 +617,16 @@ fn render_scrollback_indicator(
         return;
     };
 
-    let padding = ctx.char_width.max(1.0).round();
-    let width = text.chars().count() as f32 * ctx.char_width + padding;
-    let x = (ctx.rect.x + ctx.rect.width - width).max(ctx.rect.x);
-    let rect = Rect::new(x, ctx.rect.y, width, ctx.line_height.max(1) as f32);
+    let viewport = &ctx.viewport;
+    let padding = viewport.char_width.round();
+    let width = text.chars().count() as f32 * viewport.char_width + padding;
+    let x = (viewport.rect.x + viewport.rect.width - width).max(viewport.rect.x);
+    let rect = Rect::new(x, viewport.rect.y, width, viewport.line_height as f32);
     frame.fill_rect(rect, ctx.palette.default_bg);
     painter.draw(
         frame,
         (x + padding / 2.0) as usize,
-        ctx.rect.y as usize,
+        viewport.rect.y as usize,
         &text,
         ctx.palette.default_fg,
     );
@@ -851,5 +929,37 @@ mod tests {
     fn scrollback_indicator_is_only_shown_when_scrolled_up() {
         assert_eq!(scrollback_indicator_text(0, 10), None);
         assert_eq!(scrollback_indicator_text(3, 10), Some("3/10".to_string()));
+    }
+    #[test]
+    fn terminal_pointer_uses_painted_cells_and_scrollback_at_both_scales() {
+        for scale in [1.0, 2.0] {
+            let (pty, _) = PtyHandle::new_for_test();
+            let (tx, _) = mpsc::channel();
+            let mut session = TerminalSession::new(0, 2, 4, pty, tx);
+            session.apply_bytes(b"one\r\ntwo\r\nthree\r\nfour");
+            session.scroll_offset = 1;
+            let viewport = TerminalViewport::new(
+                &session,
+                Rect::new(20.0 * scale, 40.0 * scale, 40.0 * scale, 40.0 * scale),
+                10.0 * scale,
+                (20.0 * scale) as usize,
+            );
+            assert_eq!(
+                viewport.point_at((31.0 * scale) as f64, (45.0 * scale) as f64),
+                (Point::new(Line(-1), Column(1)), Side::Left)
+            );
+            assert_eq!(
+                viewport.point_at((39.0 * scale) as f64, (65.0 * scale) as f64),
+                (Point::new(Line(0), Column(1)), Side::Right)
+            );
+            assert_eq!(
+                viewport.point_at(-100.0, -100.0),
+                (Point::new(Line(-1), Column(0)), Side::Left)
+            );
+            assert_eq!(
+                viewport.point_at(10000.0, 10000.0),
+                (Point::new(Line(0), Column(3)), Side::Right)
+            );
+        }
     }
 }

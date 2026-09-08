@@ -49,6 +49,8 @@ pub struct TerminalState {
     /// Horizontal tab-strip offset in physical pixels.
     pub tab_scroll: f32,
     pub hovered_tab: Option<TabAction>,
+    /// Session that owns the current pointer-selection gesture.
+    pub selection_drag: Option<usize>,
     next_session_id: usize,
     /// Session ids whose PTY spawn command has been issued but whose
     /// `TerminalSession` has not been installed yet.

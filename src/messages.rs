@@ -795,6 +795,17 @@ pub enum ContextMenuMsg {
 pub enum TerminalMsg {
     /// Create, select, cycle or close a terminal tab.
     Tab(crate::terminal::TabAction),
+    SelectionStart {
+        point: alacritty_terminal::index::Point,
+        side: alacritty_terminal::index::Side,
+        kind: alacritty_terminal::selection::SelectionType,
+    },
+    SelectionUpdate {
+        point: alacritty_terminal::index::Point,
+        side: alacritty_terminal::index::Side,
+    },
+    SelectionEnd,
+    CopySelection,
     /// Raw bytes received from the PTY (sent by the reader worker thread).
     PtyOutput {
         session_id: usize,

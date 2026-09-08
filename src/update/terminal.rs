@@ -14,7 +14,32 @@ const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_COLS: u16 = 80;
 
 pub(super) fn update_terminal(model: &mut AppModel, msg: TerminalMsg) -> Option<Cmd> {
+    if matches!(msg, TerminalMsg::Tab(_)) {
+        model.terminal.selection_drag = None;
+    }
     match msg {
+        TerminalMsg::SelectionStart { point, side, kind } => {
+            let session = model.terminal.active_session_mut()?;
+            session.start_selection(point, side, kind);
+            model.terminal.selection_drag = Some(session.id);
+            Some(Cmd::Redraw)
+        }
+        TerminalMsg::SelectionUpdate { point, side } => {
+            let id = model.terminal.selection_drag?;
+            let session = model.terminal.active_session_mut().filter(|s| s.id == id)?;
+            session.update_selection(point, side);
+            Some(Cmd::Redraw)
+        }
+        TerminalMsg::SelectionEnd => {
+            model.terminal.selection_drag = None;
+            None
+        }
+        TerminalMsg::CopySelection => model
+            .terminal
+            .active_session()
+            .and_then(|s| s.term().selection_to_string())
+            .filter(|text| !text.is_empty())
+            .map(Cmd::CopyToClipboard),
         TerminalMsg::Tab(TabAction::New) => {
             let session_id = model.terminal.begin_spawn()?;
             if let Some(position) = model
@@ -189,6 +214,72 @@ mod tests {
             .grid()
             .total_lines()
             .saturating_sub(session.term().grid().screen_lines())
+    }
+
+    #[test]
+    fn terminal_copy_preserves_wrapped_unicode_and_scrollback_without_editing_document() {
+        use alacritty_terminal::index::{Point, Side};
+        use alacritty_terminal::selection::SelectionType;
+        let mut model = test_model();
+        model
+            .dock_layout
+            .bottom
+            .activate(crate::panel::PanelId::Terminal);
+        model.ui.focus_dock(crate::panel::DockPosition::Bottom);
+        push_test_session(&mut model, 2, 8);
+        model
+            .terminal
+            .active_session_mut()
+            .unwrap()
+            .apply_bytes("ab界e\u{301}🙂Ztail\r\nmore\r\nlast".as_bytes());
+        let before = model.document().buffer.to_string();
+        update_terminal(
+            &mut model,
+            TerminalMsg::SelectionStart {
+                point: Point::new(Line(-2), Column(0)),
+                side: Side::Left,
+                kind: SelectionType::Simple,
+            },
+        );
+        update_terminal(
+            &mut model,
+            TerminalMsg::SelectionUpdate {
+                point: Point::new(Line(-1), Column(3)),
+                side: Side::Right,
+            },
+        );
+        update_terminal(&mut model, TerminalMsg::SelectionEnd);
+        let copied = crate::update::update(
+            &mut model,
+            crate::messages::Msg::Document(crate::messages::DocumentMsg::Copy),
+        );
+        assert!(
+            matches!(copied, Some(Cmd::CopyToClipboard(text)) if text == "ab界e\u{301}🙂Ztail")
+        );
+        assert_eq!(model.document().buffer.to_string(), before);
+        assert_eq!(model.terminal.selection_drag, None);
+
+        // A selection on the emoji's trailing cell still copies the whole glyph.
+        update_terminal(
+            &mut model,
+            TerminalMsg::SelectionStart {
+                point: Point::new(Line(-2), Column(6)),
+                side: Side::Left,
+                kind: SelectionType::Simple,
+            },
+        );
+        update_terminal(
+            &mut model,
+            TerminalMsg::SelectionUpdate {
+                point: Point::new(Line(-2), Column(6)),
+                side: Side::Right,
+            },
+        );
+        assert!(
+            matches!(update_terminal(&mut model, TerminalMsg::CopySelection), Some(Cmd::CopyToClipboard(text)) if text == "🙂")
+        );
+        update_terminal(&mut model, TerminalMsg::Clear);
+        assert!(update_terminal(&mut model, TerminalMsg::CopySelection).is_none());
     }
 
     #[test]

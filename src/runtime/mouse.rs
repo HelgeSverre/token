@@ -66,6 +66,10 @@ pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarge
 /// (e.g. a sidebar row then an editor line) never count as double-clicks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClickRegion {
+    Terminal {
+        session: usize,
+        point: alacritty_terminal::index::Point,
+    },
     Editor {
         group: token::model::editor_area::GroupId,
         line: usize,
@@ -1392,7 +1396,7 @@ pub fn handle_mouse_press(
     // Interactive gutter lanes (fold chevron, marks) consume the press
     // themselves (see `handle_left_click`) — a chevron click must not
     // arm text-selection drag tracking.
-    let is_editor_content = arms_content_drag(&target);
+    let is_selectable_content = arms_content_drag(&target);
     let is_left_click = matches!(event.button, MouseButton::Left);
 
     // Dispatch based on target and button
@@ -1425,7 +1429,7 @@ pub fn handle_mouse_press(
 
     MousePressResult {
         cmd,
-        start_drag_tracking: is_editor_content && is_left_click,
+        start_drag_tracking: is_selectable_content && is_left_click,
     }
 }
 
@@ -1437,7 +1441,12 @@ pub fn handle_mouse_press(
 fn arms_content_drag(target: &HitTarget) -> bool {
     matches!(
         target,
-        HitTarget::EditorContent { .. } | HitTarget::ImageContent { .. }
+        HitTarget::EditorContent { .. }
+            | HitTarget::ImageContent { .. }
+            | HitTarget::DockContent {
+                active_panel_id: token::panel::PanelId::Terminal,
+                ..
+            }
     ) || matches!(
         target,
         HitTarget::EditorGutter { lane, .. } if !lane.is_some_and(|lane| lane.is_interactive())
@@ -1983,6 +1992,35 @@ fn handle_left_click(
                 Msg::Dock(token::messages::DockMsg::FocusDock(*position)),
             );
 
+            if *active_panel_id == token::panel::PanelId::Terminal {
+                use alacritty_terminal::selection::SelectionType;
+                let Some(viewport) = token::panels::terminal::TerminalViewport::for_model(model)
+                else {
+                    return EventResult::consumed_with_focus(FocusTarget::Dock(*position));
+                };
+                let (point, side) = viewport.point_at(event.pos.x, event.pos.y);
+                let Some(session) = model.terminal.active_session() else {
+                    return EventResult::consumed_no_redraw();
+                };
+                let clicks = click_tracker.track_click(ClickRegion::Terminal {
+                    session: session.id,
+                    point,
+                });
+                let kind = match clicks {
+                    2 => SelectionType::Semantic,
+                    3 => SelectionType::Lines,
+                    _ => SelectionType::Simple,
+                };
+                return EventResult::Consumed {
+                    redraw: true,
+                    focus: Some(FocusTarget::Dock(*position)),
+                    cmd: update(
+                        model,
+                        Msg::Terminal(TerminalMsg::SelectionStart { point, side, kind }),
+                    ),
+                };
+            }
+
             // Handle outline panel clicks — row geometry from the same
             // solved chrome the renderer painted, wherever the panel is
             // docked.
@@ -2492,6 +2530,16 @@ pub fn handle_mouse_wheel(
     v_delta: i32,
     measure: Option<&mut dyn token::layout::TextMeasure>,
 ) -> Option<Cmd> {
+    if model.terminal.selection_drag.is_some() {
+        let scroll = if v_delta < 0 {
+            TerminalMsg::ScrollUp(v_delta.unsigned_abs() as usize)
+        } else {
+            TerminalMsg::ScrollDown(v_delta as usize)
+        };
+        let cmd = update(model, Msg::Terminal(scroll));
+        let selection = mouse_position.and_then(|(x, y)| update_terminal_selection(model, x, y));
+        return merge(cmd, selection);
+    }
     // Re-hit-test with current font/window geometry: a resize or a new reply
     // can move the card without moving the pointer. Never use stale row bounds.
     let mut hover_changed = false;
@@ -2516,6 +2564,20 @@ pub fn handle_mouse_wheel(
     }
     let cmd = scroll_hovered_region(model, mouse_position, h_delta, v_delta);
     merge(hover_changed.then_some(Cmd::Redraw), cmd)
+}
+
+/// Extend a captured terminal selection through the same viewport that paints it.
+pub(super) fn update_terminal_selection(model: &mut AppModel, x: f64, y: f64) -> Option<Cmd> {
+    model.terminal.selection_drag?;
+    let Some(viewport) = token::panels::terminal::TerminalViewport::for_model(model) else {
+        model.terminal.selection_drag = None;
+        return None;
+    };
+    let (point, side) = viewport.point_at(x, y);
+    update(
+        model,
+        Msg::Terminal(TerminalMsg::SelectionUpdate { point, side }),
+    )
 }
 
 fn merge(a: Option<Cmd>, b: Option<Cmd>) -> Option<Cmd> {

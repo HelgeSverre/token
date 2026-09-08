@@ -1207,6 +1207,14 @@ fn handle_terminal_dock_key(
     key: &Key,
     modifiers: KeyModifiers,
 ) -> Option<Cmd> {
+    let copy_modifier = if cfg!(target_os = "macos") {
+        modifiers.logo && !modifiers.ctrl && !modifiers.alt
+    } else {
+        modifiers.ctrl && modifiers.shift && !modifiers.alt
+    };
+    if copy_modifier && matches!(key, Key::Character(s) if s.eq_ignore_ascii_case("c")) {
+        return update(model, Msg::Terminal(TerminalMsg::CopySelection));
+    }
     if matches!(key, Key::Named(NamedKey::Escape)) {
         model.ui.focus_editor();
         return Some(Cmd::Redraw);
@@ -1673,6 +1681,33 @@ mod tests {
     #[test]
     fn terminal_ctrl_c_writes_control_byte_to_active_session() {
         let (mut model, pty_rx) = focused_terminal_model();
+        use alacritty_terminal::index::{Column, Line, Point, Side};
+        use alacritty_terminal::selection::SelectionType;
+        let session = model.terminal.active_session_mut().unwrap();
+        session.apply_bytes(b"selected");
+        session.start_selection(
+            Point::new(Line(0), Column(0)),
+            Side::Left,
+            SelectionType::Semantic,
+        );
+
+        let copy = handle_key(
+            &mut model,
+            Key::Character("c".into()),
+            PhysicalKey::Code(KeyCode::KeyC),
+            KeyModifiers {
+                logo: cfg!(target_os = "macos"),
+                ctrl: !cfg!(target_os = "macos"),
+                shift: !cfg!(target_os = "macos"),
+                ..KeyModifiers::default()
+            },
+            false,
+        );
+        assert!(matches!(copy, Some(Cmd::CopyToClipboard(text)) if text == "selected"));
+        assert!(
+            pty_rx.try_recv().is_err(),
+            "copy must not send text or control bytes to the shell"
+        );
 
         let cmd = handle_key(
             &mut model,

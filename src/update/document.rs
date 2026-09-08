@@ -87,6 +87,12 @@ pub(crate) fn word_end_after(buffer: &ropey::Rope, offset: usize) -> usize {
 
 /// Handle document messages (text editing, undo/redo)
 pub(super) fn update_document(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
+    if matches!(msg, DocumentMsg::Copy) && super::app::is_terminal_dock_focused(model) {
+        return super::terminal::update_terminal(
+            model,
+            crate::messages::TerminalMsg::CopySelection,
+        );
+    }
     let result = update_document_inner(model, msg);
     if model.editor().is_plain_text_mode() {
         super::editor::compute_matched_brackets(model);

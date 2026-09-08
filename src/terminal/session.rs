@@ -7,6 +7,8 @@ use std::sync::mpsc::Sender;
 
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::index::{Point, Side};
+use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::{Config, Term};
 use alacritty_terminal::vte::ansi::Processor;
 
@@ -170,6 +172,7 @@ impl TerminalSession {
 
     /// Clear visible terminal contents and scrollback history.
     pub fn clear(&mut self) {
+        self.term.selection = None;
         self.term.grid_mut().reset();
         self.parser = Processor::new();
         self.scroll_offset = 0;
@@ -189,6 +192,16 @@ impl TerminalSession {
     /// cursor position, colors) in a later phase.
     pub fn term(&self) -> &Term<TerminalEventProxy> {
         &self.term
+    }
+
+    pub fn start_selection(&mut self, point: Point, side: Side, kind: SelectionType) {
+        self.term.selection = Some(Selection::new(kind, point, side));
+    }
+
+    pub fn update_selection(&mut self, point: Point, side: Side) {
+        if let Some(selection) = &mut self.term.selection {
+            selection.update(point, side);
+        }
     }
 }
 

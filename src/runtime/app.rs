@@ -1453,6 +1453,8 @@ impl App {
                 // another app has focus leaves dead keys behind; the user's
                 // next interaction with a refocused editor reopens it.
                 if !focused {
+                    self.drag.end();
+                    self.model.terminal.selection_drag = None;
                     let mut commands = Vec::new();
                     commands.extend(update(&mut self.model, Msg::Ui(UiMsg::ScrollbarDragEnd)));
                     commands.extend(update(
@@ -1687,6 +1689,35 @@ impl App {
                     return update_tab_drag(&mut self.model, position.x, position.y);
                 }
 
+                // Terminal selection uses the same drag threshold/scroll throttle
+                // as the editor, but keeps its own grid coordinates and owner.
+                if self.model.terminal.selection_drag.is_some() {
+                    self.drag.check_threshold(position.x, position.y);
+                    if self.drag.is_active() {
+                        if let Some(viewport) =
+                            token::panels::terminal::TerminalViewport::for_model(&self.model)
+                        {
+                            if let Some(direction) = self.drag.try_auto_scroll(
+                                position.y - viewport.rect.y as f64,
+                                viewport.rect.height as f64,
+                            ) {
+                                let msg = if direction < 0 {
+                                    token::messages::TerminalMsg::ScrollUp(1)
+                                } else {
+                                    token::messages::TerminalMsg::ScrollDown(1)
+                                };
+                                update(&mut self.model, Msg::Terminal(msg));
+                            }
+                        }
+                        return super::mouse::update_terminal_selection(
+                            &mut self.model,
+                            position.x,
+                            position.y,
+                        );
+                    }
+                    return hover_changed.then_some(Cmd::Redraw);
+                }
+
                 // Handle image panning and mouse tracking
                 if let Some(editor) = self.model.editor_area.focused_editor() {
                     if editor.view_mode.is_image() {
@@ -1816,6 +1847,10 @@ impl App {
                 ..
             } => {
                 self.drag.end();
+                update(
+                    &mut self.model,
+                    Msg::Terminal(token::messages::TerminalMsg::SelectionEnd),
+                );
 
                 // Finish tab drag if one is armed/active
                 if self.model.ui.tab_drag.is_some() {

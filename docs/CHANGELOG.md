@@ -6,6 +6,16 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Terminal selection
+
+- Drag to select terminal output; double-click selects a word and triple-click
+  selects a line. Copy with Cmd+C on macOS or Ctrl+Shift+C elsewhere, without
+  changing the editor document or sending input to the shell. Plain Ctrl+C
+  still interrupts the shell.
+- Selection stays with its terminal tab. Clipboard extraction uses the terminal
+  engine's wrapped-line, scrollback and Unicode handling; painting and pointer
+  selection share cell geometry. Hidden terminal glyphs are no longer painted.
+
 ### Terminal tabs
 
 - Create, switch and close terminal tabs using the session strip or the

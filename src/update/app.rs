@@ -301,7 +301,7 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
     }
 }
 
-fn is_terminal_dock_focused(model: &AppModel) -> bool {
+pub(super) fn is_terminal_dock_focused(model: &AppModel) -> bool {
     model
         .dock_layout
         .active_panel_position(PanelId::TERMINAL)

@@ -295,6 +295,10 @@ impl HitTarget {
 
         match self {
             HitTarget::EditorContent { .. } | HitTarget::CsvCell { .. } => CursorIcon::Text,
+            HitTarget::DockContent {
+                active_panel_id: crate::panel::PanelId::Terminal,
+                ..
+            } => CursorIcon::Text,
             HitTarget::BinaryPlaceholderButton { .. } => CursorIcon::Pointer,
             HitTarget::CursorOverlayDocumentation { toggle: true, .. } => CursorIcon::Pointer,
             HitTarget::SidebarResize => CursorIcon::ColResize,
