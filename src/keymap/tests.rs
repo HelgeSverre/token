@@ -36,7 +36,7 @@ fn test_keymap_with_defaults() {
     assert!(!keymap.bindings().is_empty());
 
     // Should find save command
-    let save_binding = keymap.binding_for(Command::SaveFile);
+    let save_binding = keymap.binding_for(Command::SaveFile, &KeyContext::editor_default());
     assert!(save_binding.is_some());
 }
 
@@ -119,7 +119,7 @@ fn test_keymap_lookup_word_navigation() {
 fn test_keymap_display_for_save() {
     let keymap = Keymap::with_bindings(default_bindings());
 
-    let display = keymap.display_for(Command::SaveFile);
+    let display = keymap.display_for(Command::SaveFile, &KeyContext::editor_default());
     assert!(display.is_some());
 
     let s = display.unwrap();
@@ -134,6 +134,23 @@ fn test_command_to_msgs() {
     let msgs = Command::Undo.to_msgs();
     assert_eq!(msgs.len(), 1);
     assert!(matches!(msgs[0], Msg::Document(DocumentMsg::Undo)));
+}
+
+#[test]
+fn statistics_action_dismisses_before_opening_the_resource_and_is_registered() {
+    use crate::commands::{CommandId, ConfigResource};
+    use crate::messages::{AppMsg, CompletionMsg, Msg};
+    assert_eq!(
+        CommandId::OpenInlineStatistics.to_keymap_command(),
+        Some(Command::OpenInlineStatistics)
+    );
+    assert!(matches!(
+        Command::OpenInlineStatistics.to_msgs().as_slice(),
+        [
+            Msg::Completion(CompletionMsg::DismissInline),
+            Msg::App(AppMsg::OpenConfigResource(ConfigResource::InlineStatistics))
+        ]
+    ));
 }
 
 #[test]
@@ -344,4 +361,74 @@ fn test_dock_keybindings_exist() {
         "Cmd+4 should map to ToggleProblems, got {:?}",
         result
     );
+}
+#[test]
+fn inline_acceptance_bindings_are_conditional_in_embedded_defaults() {
+    use super::{default_bindings, get_default_keymap_yaml, parse_keymap_yaml, KeyContext};
+    for bindings in [
+        default_bindings(),
+        parse_keymap_yaml(get_default_keymap_yaml()).unwrap(),
+    ] {
+        let mut keymap = Keymap::with_bindings(bindings);
+        let mut context = KeyContext {
+            inline_suggestion_visible: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            keymap.handle_keystroke_with_context(
+                [Keystroke::new(KeyCode::Right, Modifiers::cmd())],
+                Some(&context)
+            ),
+            KeyAction::Execute(Command::AcceptInlineWord)
+        );
+        assert_eq!(
+            keymap.handle_keystroke_with_context(
+                [Keystroke::new(KeyCode::Tab, Modifiers::NONE)],
+                Some(&context)
+            ),
+            KeyAction::Execute(Command::AcceptInlineSuggestion)
+        );
+        context.inline_suggestion_visible = false;
+        assert_ne!(
+            keymap.handle_keystroke_with_context(
+                [Keystroke::new(KeyCode::Right, Modifiers::cmd())],
+                Some(&context)
+            ),
+            KeyAction::Execute(Command::AcceptInlineWord)
+        );
+        assert_eq!(
+            keymap.handle_keystroke_with_context(
+                [Keystroke::new(KeyCode::Tab, Modifiers::NONE)],
+                Some(&context)
+            ),
+            KeyAction::Execute(Command::InsertTab)
+        );
+    }
+}
+
+#[test]
+fn inline_cycle_bindings_are_conditional_and_named_actions_dispatch() {
+    use super::{default_bindings, KeyContext};
+    let mut keymap = Keymap::with_bindings(default_bindings());
+    for (key, command, forward) in [
+        (']', Command::NextInlineSuggestion, true),
+        ('[', Command::PrevInlineSuggestion, false),
+    ] {
+        let stroke = Keystroke::new(KeyCode::Char(key), Modifiers::ALT);
+        let context = KeyContext {
+            inline_suggestion_visible: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            keymap.handle_keystroke_with_context([stroke], Some(&context)),
+            KeyAction::Execute(command)
+        );
+        assert_ne!(
+            keymap.handle_keystroke_with_context([stroke], Some(&KeyContext::default())),
+            KeyAction::Execute(command)
+        );
+        assert!(
+            matches!(command.to_msgs().as_slice(), [crate::messages::Msg::Completion(crate::messages::CompletionMsg::CycleInline { forward: actual })] if *actual == forward)
+        );
+    }
 }

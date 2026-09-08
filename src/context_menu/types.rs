@@ -75,15 +75,12 @@ pub struct MenuItem {
 
 impl MenuItem {
     /// A row that runs `id` through the palette's `execute_command`,
-    /// enabled per `enabled`, hint taken from the command registry.
+    /// enabled per `enabled`. The builder resolves hints from the active keymap.
     pub fn from_command(id: CommandId, label: &str, enabled: bool) -> Self {
-        let shortcut_hint = crate::commands::command_def(id)
-            .and_then(|def| def.keybinding)
-            .map(str::to_owned);
         Self {
             label: label.to_owned(),
             enabled,
-            shortcut_hint,
+            shortcut_hint: None,
             action: MenuAction::Command(id),
             is_separator: false,
         }

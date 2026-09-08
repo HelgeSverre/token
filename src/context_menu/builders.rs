@@ -15,7 +15,7 @@ use super::types::{ContextMenuTarget, MenuItem};
 /// Build the menu for `target` — dispatches to the matching per-region
 /// builder (context-menu.md "V1 Scope").
 pub fn build_menu(model: &AppModel, target: &ContextMenuTarget) -> Vec<MenuItem> {
-    match target {
+    let mut items = match target {
         ContextMenuTarget::Editor { group_id, .. } => build_editor_menu(model, target, *group_id),
         ContextMenuTarget::Tab {
             group_id,
@@ -25,7 +25,38 @@ pub fn build_menu(model: &AppModel, target: &ContextMenuTarget) -> Vec<MenuItem>
         ContextMenuTarget::FileTreeItem { path, is_dir } => {
             build_file_tree_menu(model, path, *is_dir)
         }
+    };
+    let mut context = crate::keymap::KeyContext::for_command_hints(model);
+    match target {
+        ContextMenuTarget::Editor {
+            group_id,
+            has_selection,
+            ..
+        } => {
+            context.editor_focused = true;
+            context.sidebar_focused = false;
+            context.has_selection = *has_selection;
+            context.has_multiple_cursors = model
+                .editor_area
+                .groups
+                .get(group_id)
+                .and_then(|group| group.active_editor_id())
+                .and_then(|id| model.editor_area.editors.get(&id))
+                .is_some_and(|editor| editor.has_multiple_cursors());
+        }
+        ContextMenuTarget::FileTreeItem { .. } => {
+            context.editor_focused = false;
+            context.sidebar_focused = true;
+        }
+        ContextMenuTarget::Tab { .. } => {}
     }
+    for item in &mut items {
+        if let super::types::MenuAction::Command(id) = item.action {
+            item.shortcut_hint =
+                crate::commands::keybinding_for_command(id, &model.ui.keymap, &context);
+        }
+    }
+    items
 }
 
 /// The document backing `group_id`'s active tab, if any — editor-region
@@ -211,6 +242,43 @@ mod tests {
     use super::*;
     use crate::model::editor_area::TabId;
 
+    #[test]
+    fn shortcut_hints_use_live_bindings_and_the_target_selection_context() {
+        use crate::keymap::{
+            Command, Condition, KeyCode, Keybinding, Keymap, Keystroke, Modifiers,
+        };
+        let mut model = AppModel::new(800, 600, 1.0);
+        let stroke = Keystroke::new(KeyCode::Char('k'), Modifiers::CTRL);
+        model.ui.keymap = Keymap::with_bindings(vec![
+            Keybinding::new(stroke, Command::Copy).when_single(Condition::HasSelection)
+        ]);
+        for has_selection in [false, true] {
+            let target = ContextMenuTarget::Editor {
+                group_id: model.editor_area.focused_group_id,
+                has_selection,
+                clipboard_has_content: false,
+            };
+            let items = build_menu(&model, &target);
+            assert_eq!(
+                items
+                    .iter()
+                    .find(|item| item.label == "Copy")
+                    .unwrap()
+                    .shortcut_hint,
+                has_selection.then(|| stroke.display_string())
+            );
+        }
+        model.ui.keymap = Keymap::new();
+        let target = ContextMenuTarget::Editor {
+            group_id: model.editor_area.focused_group_id,
+            has_selection: true,
+            clipboard_has_content: false,
+        };
+        assert!(build_menu(&model, &target)
+            .iter()
+            .all(|item| item.shortcut_hint.is_none()));
+    }
+
     fn label(items: &[MenuItem]) -> Vec<&str> {
         items
             .iter()
@@ -226,7 +294,7 @@ mod tests {
 
     #[test]
     fn editor_menu_disables_cut_copy_without_selection_and_paste_without_clipboard() {
-        let model = AppModel::new(800, 600, 1.0, vec![]);
+        let model = AppModel::new(800, 600, 1.0);
         let group_id = model.editor_area.focused_group_id;
         let target = ContextMenuTarget::Editor {
             group_id,
@@ -256,7 +324,7 @@ mod tests {
 
     #[test]
     fn editor_menu_enables_cut_copy_paste_when_available() {
-        let model = AppModel::new(800, 600, 1.0, vec![]);
+        let model = AppModel::new(800, 600, 1.0);
         let group_id = model.editor_area.focused_group_id;
         let target = ContextMenuTarget::Editor {
             group_id,
@@ -271,7 +339,7 @@ mod tests {
 
     #[test]
     fn tab_menu_disables_close_others_with_a_single_tab() {
-        let model = AppModel::new(800, 600, 1.0, vec![]);
+        let model = AppModel::new(800, 600, 1.0);
         let group_id = model.editor_area.focused_group_id;
         let tab_id = model
             .editor_area
@@ -303,7 +371,7 @@ mod tests {
 
     #[test]
     fn tab_menu_targets_the_clicked_tab_not_the_focused_one() {
-        let model = AppModel::new(800, 600, 1.0, vec![]);
+        let model = AppModel::new(800, 600, 1.0);
         let group_id = model.editor_area.focused_group_id;
         let clicked_tab = TabId(999);
         let items = build_tab_menu(&model, group_id, clicked_tab, None);
@@ -321,7 +389,7 @@ mod tests {
 
     #[test]
     fn file_tree_menu_opens_a_directory_via_toggle_folder() {
-        let model = AppModel::new(800, 600, 1.0, vec![]);
+        let model = AppModel::new(800, 600, 1.0);
         let path = PathBuf::from("/tmp/some/dir");
         let items = build_file_tree_menu(&model, &path, true);
         let open = items.iter().find(|i| i.label == "Open").unwrap();
@@ -338,7 +406,7 @@ mod tests {
 
     #[test]
     fn file_tree_menu_enables_all_path_rows_for_a_saved_file() {
-        let model = AppModel::new(800, 600, 1.0, vec![]);
+        let model = AppModel::new(800, 600, 1.0);
         let path = PathBuf::from("/tmp/some/file.rs");
         let items = build_file_tree_menu(&model, &path, false);
         for label in ["Reveal in Finder", "Copy Absolute Path", "Refresh Tree"] {
@@ -351,7 +419,7 @@ mod tests {
         // context-menu.md's File Tree table doesn't list this row (it's
         // the Tab menu's item) — a right-click in the tree that is already
         // showing this file shouldn't offer to reveal it again.
-        let model = AppModel::new(800, 600, 1.0, vec![]);
+        let model = AppModel::new(800, 600, 1.0);
         let path = PathBuf::from("/tmp/some/file.rs");
         let items = build_file_tree_menu(&model, &path, false);
         assert!(!items.iter().any(|i| i.label == "Reveal in File Explorer"));
@@ -361,7 +429,7 @@ mod tests {
     fn file_tree_menu_copy_relative_path_needs_a_real_workspace() {
         let path = PathBuf::from("/tmp/some/file.rs");
 
-        let no_workspace = AppModel::new(800, 600, 1.0, vec![]);
+        let no_workspace = AppModel::new(800, 600, 1.0);
         let items = build_file_tree_menu(&no_workspace, &path, false);
         assert!(
             !items
@@ -373,7 +441,7 @@ mod tests {
         );
 
         let ws_dir = tempfile::tempdir().unwrap();
-        let mut with_workspace = AppModel::new(800, 600, 1.0, vec![]);
+        let mut with_workspace = AppModel::new(800, 600, 1.0);
         with_workspace.workspace = crate::model::workspace::Workspace::new(
             ws_dir.path().to_path_buf(),
             &with_workspace.metrics,

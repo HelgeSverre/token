@@ -1,6 +1,39 @@
 //! Settings-form presentation for OverlaySurface. Painting and input consume
 //! the same resolved rectangles; metadata and scrolling remain shared.
 use super::*;
+fn choice_rects_with_budget(
+    row: &WidgetRect,
+    labels: &[&str],
+    scale_factor: f64,
+    margin: usize,
+    budget: usize,
+) -> Vec<WidgetRect> {
+    if labels.is_empty() {
+        return Vec::new();
+    }
+    let gap = scaled(dims::CHIP_GAP, scale_factor);
+    let max_width = budget.saturating_sub(gap * labels.len().saturating_sub(1)) / labels.len();
+    let widths: Vec<_> = labels
+        .iter()
+        .map(|label| scaled(label.chars().count() as f32 * 7.0 + 16.0, scale_factor).min(max_width))
+        .collect();
+    let total = widths.iter().sum::<usize>() + gap * labels.len().saturating_sub(1);
+    let mut x = row.x + row.w.saturating_sub(margin + total);
+    let h = scaled(22.0, scale_factor).min(row.h);
+    widths
+        .into_iter()
+        .map(|w| {
+            let rect = WidgetRect {
+                x,
+                y: row.y + row.h.saturating_sub(h) / 2,
+                w,
+                h,
+            };
+            x += w + gap;
+            rect
+        })
+        .collect()
+}
 
 const ROW: f32 = 72.0;
 const TOP: f32 = 108.0;
@@ -718,9 +751,9 @@ mod tests {
         )
         .unwrap();
         for (width, height, scale) in [(1100, 720, 1.0), (400, 750, 1.0), (1600, 1100, 2.0)] {
-            let model = crate::model::AppModel::new(width, height, scale, vec![]);
+            let model = crate::model::AppModel::new(width, height, scale);
             for offset in [0, usize::MAX] {
-                let state = crate::model::ui::SettingsState {
+                let state = crate::settings::SettingsState {
                     scroll_offset: offset,
                     ..Default::default()
                 };
@@ -797,8 +830,8 @@ mod tests {
             (800, 300, 1.0),
             (1600, 1100, 2.0),
         ] {
-            let model = crate::model::AppModel::new(width, height, scale, vec![]);
-            let state = crate::model::ui::SettingsState::default();
+            let model = crate::model::AppModel::new(width, height, scale);
+            let state = crate::settings::SettingsState::default();
             crate::view::modal::with_settings_spec(&model, &state, |spec| {
                 assert!(matches!(spec.anchor, Anchor::Settings { .. }));
                 let geometry = super::super::layout(spec, width as usize, height as usize, scale);
@@ -819,9 +852,9 @@ mod tests {
                 }
             });
             for query in ["Theme", "scrollbar"] {
-                let mut state = crate::model::ui::SettingsState::default();
+                let mut state = crate::settings::SettingsState::default();
                 state.editable.set_content(query);
-                state.refilter();
+                state.resolve_rows();
                 crate::view::modal::with_settings_spec(&model, &state, |spec| {
                     let geometry =
                         super::super::layout(spec, width as usize, height as usize, scale);
@@ -866,7 +899,7 @@ mod tests {
             ("Theme", "custom-theme"),
             ("rust-analyzer command", "custom-analyzer"),
         ] {
-            let mut model = crate::model::AppModel::new(400, 750, 1.0, vec![]);
+            let mut model = crate::model::AppModel::new(400, 750, 1.0);
             model.config.theme = "custom-theme".into();
             model
                 .config
@@ -875,9 +908,9 @@ mod tests {
                 .entry("rust-analyzer".into())
                 .or_default()
                 .command = Some("custom-analyzer".into());
-            let mut state = crate::model::ui::SettingsState::default();
+            let mut state = crate::settings::SettingsState::default();
             state.editable.set_content(query);
-            state.refilter();
+            state.resolve_rows();
             let mut glyph_cache = crate::view::GlyphCache::default();
             let mut painter = TextPainter::new(&font, &mut glyph_cache, 14.0, 11.0, 8.0, 18);
             let mut buffer = vec![0; 400 * 750];

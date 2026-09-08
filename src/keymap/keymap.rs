@@ -88,22 +88,37 @@ impl Keymap {
     /// This handles both single-keystroke bindings and chord sequences.
     /// Without a context, only unconditional bindings are eligible.
     pub fn handle_keystroke(&mut self, keystroke: Keystroke) -> KeyAction {
-        self.handle_keystroke_with_context(keystroke, None)
+        self.handle_keystroke_with_context([keystroke], None)
     }
 
-    /// Handle a keystroke with context for conditional bindings
+    /// Handle ordered interpretations of one key event with conditional bindings.
+    /// The first matching interpretation wins; chord state advances only once.
     ///
     /// Bindings are checked in order; first matching binding wins.
     /// Bindings with conditions are checked before unconditional ones.
     pub fn handle_keystroke_with_context(
         &mut self,
-        keystroke: Keystroke,
+        candidates: impl IntoIterator<Item = Keystroke>,
         context: Option<&KeyContext>,
     ) -> KeyAction {
-        // If we have a pending chord, try to complete it
+        for keystroke in candidates {
+            let action = self.action_for(keystroke, context);
+            match action {
+                KeyAction::NoMatch => continue,
+                KeyAction::AwaitMore => self.pending_chord.push(keystroke),
+                KeyAction::Execute(_) => self.reset(),
+            }
+            return action;
+        }
+        self.reset();
+        KeyAction::NoMatch
+    }
+
+    fn action_for(&self, keystroke: Keystroke, context: Option<&KeyContext>) -> KeyAction {
         if !self.pending_chord.is_empty() {
-            self.pending_chord.push(keystroke);
-            return self.try_complete_chord(context);
+            let mut pending = self.pending_chord.clone();
+            pending.push(keystroke);
+            return self.chord_action(&pending, context);
         }
 
         // Try single-keystroke binding
@@ -119,7 +134,6 @@ impl Keymap {
                 .iter()
                 .any(|&idx| self.bindings[idx].is_active(context))
         }) {
-            self.pending_chord.push(keystroke);
             return KeyAction::AwaitMore;
         }
 
@@ -151,38 +165,36 @@ impl Keymap {
         None
     }
 
-    /// Try to complete a pending chord sequence
-    fn try_complete_chord(&mut self, context: Option<&KeyContext>) -> KeyAction {
-        let first = self.pending_chord[0];
-
-        // Get all bindings that start with the first keystroke
-        let Some(indices) = self.chord_prefixes.get(&first) else {
-            self.reset();
+    /// Resolve without mutating chord state, shared by dispatch and hints.
+    fn chord_action(&self, pending: &[Keystroke], context: Option<&KeyContext>) -> KeyAction {
+        let Some(&first) = pending.first() else {
             return KeyAction::NoMatch;
         };
 
-        // Check for exact match (conditional bindings first)
+        // Get all bindings that start with the first keystroke
+        let Some(indices) = self.chord_prefixes.get(&first) else {
+            return KeyAction::NoMatch;
+        };
+
+        // Preserve dispatch's existing chord precedence: first eligible exact match.
         for &idx in indices {
             let binding = &self.bindings[idx];
-            if binding.keystrokes == self.pending_chord && binding.is_active(context) {
-                let command = binding.command;
-                self.reset();
-                return KeyAction::Execute(command);
+            if binding.keystrokes == pending && binding.is_active(context) {
+                return KeyAction::Execute(binding.command);
             }
         }
 
         // Check if any binding could still match (prefix match)
         let could_match = indices.iter().any(|&idx| {
             let binding = &self.bindings[idx];
-            binding.keystrokes.len() > self.pending_chord.len()
-                && binding.keystrokes[..self.pending_chord.len()] == self.pending_chord
+            binding.keystrokes.len() > pending.len()
+                && &binding.keystrokes[..pending.len()] == pending
                 && binding.is_active(context)
         });
 
         if could_match {
             KeyAction::AwaitMore
         } else {
-            self.reset();
             KeyAction::NoMatch
         }
     }
@@ -210,14 +222,34 @@ impl Keymap {
         &self.bindings
     }
 
-    /// Get the keybinding for a command (first match)
-    pub fn binding_for(&self, command: Command) -> Option<&Keybinding> {
-        self.bindings.iter().find(|b| b.command == command)
+    /// First binding whose entire sequence actually dispatches this command.
+    /// This rejects false conditions, shadowed bindings and unreachable chords.
+    pub fn binding_for(&self, command: Command, context: &KeyContext) -> Option<&Keybinding> {
+        self.bindings.iter().find(|binding| {
+            if binding.command != command {
+                return false;
+            }
+            let first = binding.keystrokes[0];
+            if let Some(winner) = self.lookup_with_context(&first, Some(context)) {
+                return binding.keystrokes.len() == 1 && winner == command;
+            }
+            for length in 2..=binding.keystrokes.len() {
+                let action = self.chord_action(&binding.keystrokes[..length], Some(context));
+                if length == binding.keystrokes.len() {
+                    return action == KeyAction::Execute(command);
+                }
+                if action != KeyAction::AwaitMore {
+                    return false;
+                }
+            }
+            false
+        })
     }
 
     /// Get display string for a command's keybinding
-    pub fn display_for(&self, command: Command) -> Option<String> {
-        self.binding_for(command).map(|b| b.display_string())
+    pub fn display_for(&self, command: Command, context: &KeyContext) -> Option<String> {
+        self.binding_for(command, context)
+            .map(|b| b.display_string())
     }
 
     /// Check if any chord is in progress
@@ -258,7 +290,7 @@ mod tests {
         stroke: Keystroke,
         context: &KeyContext,
     ) -> KeyAction {
-        keymap.handle_keystroke_with_context(stroke, Some(context))
+        keymap.handle_keystroke_with_context([stroke], Some(context))
     }
 
     #[test]
@@ -336,6 +368,69 @@ mod tests {
         assert!(!keymap.has_pending_chord());
     }
 
+    #[test]
+    fn key_interpretations_prefer_logical_bindings_and_preserve_unbound_input() {
+        let logical = Keystroke::new(KeyCode::Char(']'), Modifiers::ALT);
+        let base = Keystroke::new(KeyCode::Char('9'), Modifiers::ALT);
+        let mut keymap = Keymap::with_bindings(vec![
+            Keybinding::new(logical, Command::NextInlineSuggestion)
+                .when_single(Condition::InlineSuggestionVisible),
+            Keybinding::new(base, Command::Copy),
+        ]);
+        let mut context = KeyContext {
+            inline_suggestion_visible: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            keymap.handle_keystroke_with_context([logical, base], Some(&context)),
+            KeyAction::Execute(Command::NextInlineSuggestion)
+        );
+        context.inline_suggestion_visible = false;
+        assert_eq!(
+            keymap.handle_keystroke_with_context([logical, base], Some(&context)),
+            KeyAction::Execute(Command::Copy)
+        );
+        let composed = Keystroke::new(KeyCode::Char('’'), Modifiers::ALT);
+        assert_eq!(
+            keymap.handle_keystroke_with_context([composed, logical], Some(&context)),
+            KeyAction::NoMatch
+        );
+        context.inline_suggestion_visible = true;
+        assert_eq!(
+            keymap.handle_keystroke_with_context([composed, logical], Some(&context)),
+            KeyAction::Execute(Command::NextInlineSuggestion)
+        );
+        assert!(!keymap.has_pending_chord());
+    }
+
+    #[test]
+    fn key_interpretations_resolve_against_the_same_pending_chord() {
+        let mut keymap = Keymap::with_bindings(vec![
+            Keybinding::chord(vec![ctrl_k(), ctrl_c(), ctrl_s()], Command::SaveFile),
+            Keybinding::new(ctrl_s(), Command::Copy),
+        ]);
+        assert_eq!(
+            keymap.handle_keystroke_with_context([ctrl_k(), ctrl_s()], None),
+            KeyAction::AwaitMore
+        );
+        assert_eq!(
+            keymap.handle_keystroke_with_context([ctrl_s(), ctrl_c()], None),
+            KeyAction::AwaitMore
+        );
+        assert_eq!(keymap.pending_chord, vec![ctrl_k(), ctrl_c()]);
+        assert_eq!(
+            keymap.handle_keystroke_with_context([ctrl_c(), ctrl_s()], None),
+            KeyAction::Execute(Command::SaveFile)
+        );
+        assert!(!keymap.has_pending_chord());
+        assert_eq!(keymap.handle_keystroke(ctrl_k()), KeyAction::AwaitMore);
+        assert_eq!(
+            keymap.handle_keystroke_with_context([ctrl_s(), ctrl_s()], None),
+            KeyAction::NoMatch
+        );
+        assert!(!keymap.has_pending_chord());
+    }
+
     fn ctrl_s() -> Keystroke {
         Keystroke::new(KeyCode::Char('s'), Modifiers::CTRL)
     }
@@ -406,7 +501,7 @@ mod tests {
             Keybinding::new(ctrl_c(), Command::Copy),
         ]);
 
-        let binding = keymap.binding_for(Command::SaveFile);
+        let binding = keymap.binding_for(Command::SaveFile, &KeyContext::editor_default());
         assert!(binding.is_some());
         assert_eq!(binding.unwrap().command, Command::SaveFile);
     }
@@ -415,11 +510,85 @@ mod tests {
     fn test_display_for_command() {
         let keymap = Keymap::with_bindings(vec![Keybinding::new(ctrl_s(), Command::SaveFile)]);
 
-        let display = keymap.display_for(Command::SaveFile);
+        let display = keymap.display_for(Command::SaveFile, &KeyContext::editor_default());
         assert!(display.is_some());
         // Display format depends on platform
         let s = display.unwrap();
         assert!(s.contains('S') || s.contains('s'));
+    }
+
+    #[test]
+    fn shortcut_hints_follow_conditions_shadowing_and_unbinding() {
+        let bindings = vec![
+            Keybinding::new(ctrl_s(), Command::SaveFile),
+            Keybinding::new(ctrl_s(), Command::Copy).when_single(Condition::HasSelection),
+        ];
+        let keymap = Keymap::with_bindings(bindings.clone());
+        let mut context = KeyContext::editor_default();
+        assert_eq!(
+            keymap.display_for(Command::SaveFile, &context),
+            Some(ctrl_s().display_string())
+        );
+        assert_eq!(keymap.display_for(Command::Copy, &context), None);
+        context.has_selection = true;
+        assert_eq!(keymap.display_for(Command::SaveFile, &context), None);
+        assert_eq!(
+            keymap.display_for(Command::Copy, &context),
+            Some(ctrl_s().display_string())
+        );
+        let unbound = super::super::merge_bindings(
+            bindings,
+            vec![Keybinding::new(ctrl_s(), Command::Unbound)],
+        );
+        let keymap = Keymap::with_bindings(unbound);
+        assert_eq!(keymap.display_for(Command::SaveFile, &context), None);
+        assert_eq!(keymap.display_for(Command::Copy, &context), None);
+    }
+
+    #[test]
+    fn shortcut_hints_resolve_chords_without_mutating_pending_input() {
+        let mut keymap = Keymap::with_bindings(vec![
+            Keybinding::chord(vec![ctrl_k(), ctrl_c()], Command::Copy)
+                .when_single(Condition::HasSelection),
+            Keybinding::chord(vec![ctrl_k(), ctrl_s()], Command::SaveFile),
+        ]);
+        let mut context = KeyContext::editor_default();
+        assert_eq!(keymap.display_for(Command::Copy, &context), None);
+        context.has_selection = true;
+        assert_eq!(
+            keymap.handle_keystroke_with_context([ctrl_k()], Some(&context)),
+            KeyAction::AwaitMore
+        );
+        let pending = keymap.pending_chord_display();
+        assert_eq!(
+            keymap.display_for(Command::Copy, &context),
+            Some(format!(
+                "{} {}",
+                ctrl_k().display_string(),
+                ctrl_c().display_string()
+            ))
+        );
+        assert_eq!(keymap.pending_chord_display(), pending);
+        assert_eq!(
+            keymap.handle_keystroke_with_context([ctrl_c()], Some(&context)),
+            KeyAction::Execute(Command::Copy)
+        );
+        keymap.add_binding(Keybinding::new(ctrl_k(), Command::OpenFile));
+        assert_eq!(keymap.display_for(Command::Copy, &context), None);
+        assert_eq!(keymap.display_for(Command::SaveFile, &context), None);
+    }
+
+    #[test]
+    fn shortcut_hints_reject_shadowed_and_shorter_chord_prefixes() {
+        let context = KeyContext::editor_default();
+        let keymap = Keymap::with_bindings(vec![
+            Keybinding::chord(vec![ctrl_k(), ctrl_c()], Command::Copy),
+            Keybinding::chord(vec![ctrl_k(), ctrl_c()], Command::SaveFile),
+            Keybinding::chord(vec![ctrl_k(), ctrl_c(), ctrl_s()], Command::OpenFile),
+        ]);
+        assert!(keymap.display_for(Command::Copy, &context).is_some());
+        assert!(keymap.display_for(Command::SaveFile, &context).is_none());
+        assert!(keymap.display_for(Command::OpenFile, &context).is_none());
     }
 
     #[test]

@@ -28,6 +28,36 @@ pub struct KeyContext {
 }
 
 impl KeyContext {
+    /// The same model facts drive dispatch and displayed shortcut eligibility.
+    pub fn from_model(model: &crate::model::AppModel) -> Self {
+        let editor = model.editor_area.focused_editor();
+        Self {
+            has_selection: editor.is_some_and(|editor| !editor.active_selection().is_empty()),
+            has_multiple_cursors: editor.is_some_and(|editor| editor.has_multiple_cursors()),
+            modal_active: model.ui.has_modal(),
+            editor_focused: model.ui.focus == crate::model::FocusTarget::Editor,
+            sidebar_focused: model.ui.focus
+                == crate::model::FocusTarget::Dock(crate::panel::DockPosition::Left),
+            overlay_routes_keys: model.ui.cursor_overlay.is_some(),
+            inline_suggestion_visible: crate::update::inline::visible(model).is_some(),
+        }
+    }
+
+    /// Palette hints describe the editor after the palette closes. Context menus
+    /// describe their underlying target, not their temporary key-capturing popup.
+    pub(crate) fn for_command_hints(model: &crate::model::AppModel) -> Self {
+        let mut context = Self::from_model(model);
+        if context.modal_active {
+            context.modal_active = false;
+            context.editor_focused = true;
+            context.sidebar_focused = false;
+        }
+        context.overlay_routes_keys = false;
+        // Opening either command surface dismisses inline suggestions.
+        context.inline_suggestion_visible = false;
+        context
+    }
+
     /// Create context indicating editor is focused with no special state
     pub fn editor_default() -> Self {
         Self {

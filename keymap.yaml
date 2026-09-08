@@ -18,6 +18,8 @@
 # Format:
 #   - key: "modifier+key" or just "key"
 #     command: CommandName
+#   - key: "ctrl+k ctrl+c"  # space-separated chord sequence
+#     command: Copy
 #
 # Use "cmd" for the platform command key (Cmd on macOS, Ctrl elsewhere)
 
@@ -102,6 +104,9 @@ bindings:
 
   - key: "cmd+f"
     command: ToggleFindReplace
+
+  - key: "alt+z"
+    command: ToggleSoftWrap
 
   # ===========================================================================
   # Panels/Docks (IntelliJ-style Cmd+1/2/7)
@@ -288,6 +293,20 @@ bindings:
     command: DeleteLine
 
   # Tab handling - context-aware
+  # Partial acceptance takes priority over movement only while ghost text shows.
+  - key: "cmd+right"
+    command: AcceptInlineWord
+    when: ["inline_suggestion_visible"]
+
+  # Browse alternatives only while ghost text is visible.
+  - key: "alt+]"
+    command: NextInlineSuggestion
+    when: ["inline_suggestion_visible"]
+
+  - key: "alt+["
+    command: PrevInlineSuggestion
+    when: ["inline_suggestion_visible"]
+
   # Tab with ghost text showing → accept the inline suggestion
   - key: "tab"
     command: AcceptInlineSuggestion

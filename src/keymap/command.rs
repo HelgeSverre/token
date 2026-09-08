@@ -214,6 +214,8 @@ pub enum Command {
     ToggleGotoLine,
     /// Toggle find/replace dialog
     ToggleFindReplace,
+    /// Toggle soft wrapping in the focused editor pane
+    ToggleSoftWrap,
     /// Open recent files modal
     OpenRecentFiles,
 
@@ -318,7 +320,12 @@ pub enum Command {
     /// Inline ghost-text suggestions (autocomplete.md Phase 2)
     TriggerInlineSuggestion,
     AcceptInlineSuggestion,
+    AcceptInlineWord,
+    AcceptInlineLine,
+    NextInlineSuggestion,
+    PrevInlineSuggestion,
     DismissInlineSuggestion,
+    OpenInlineStatistics,
 
     // ========================================================================
     // Language servers (lsp-integration.md Phase 1)
@@ -505,6 +512,7 @@ impl Command {
             }
             ToggleGotoLine => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::GotoLine))],
             ToggleFindReplace => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::FindReplace))],
+            ToggleSoftWrap => vec![Msg::Editor(EditorMsg::ToggleSoftWrap)],
             OpenRecentFiles => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::RecentFiles))],
 
             // Layout
@@ -553,13 +561,9 @@ impl Command {
                 vec![]
             }
             Unbound => vec![], // Explicitly does nothing
-            OpenLogFile => {
-                if let Some(log_path) = crate::config_paths::log_file() {
-                    vec![Msg::Layout(LayoutMsg::OpenFileInNewTab(log_path))]
-                } else {
-                    vec![]
-                }
-            }
+            OpenLogFile => vec![Msg::App(AppMsg::OpenConfigResource(
+                crate::commands::ConfigResource::Log,
+            ))],
 
             // Markdown preview
             MarkdownTogglePreview => vec![Msg::Preview(PreviewMsg::Toggle)],
@@ -588,8 +592,28 @@ impl Command {
                     explicit: true,
                 })]
             }
-            AcceptInlineSuggestion => vec![Msg::Completion(CompletionMsg::AcceptInline)],
+            AcceptInlineSuggestion => vec![Msg::Completion(CompletionMsg::AcceptInline(
+                crate::completion::inline::AcceptGranularity::Full,
+            ))],
+            AcceptInlineWord => vec![Msg::Completion(CompletionMsg::AcceptInline(
+                crate::completion::inline::AcceptGranularity::Word,
+            ))],
+            AcceptInlineLine => vec![Msg::Completion(CompletionMsg::AcceptInline(
+                crate::completion::inline::AcceptGranularity::Line,
+            ))],
             DismissInlineSuggestion => vec![Msg::Completion(CompletionMsg::DismissInline)],
+            OpenInlineStatistics => vec![
+                Msg::Completion(CompletionMsg::DismissInline),
+                Msg::App(AppMsg::OpenConfigResource(
+                    crate::commands::ConfigResource::InlineStatistics,
+                )),
+            ],
+            NextInlineSuggestion => vec![Msg::Completion(CompletionMsg::CycleInline {
+                forward: true,
+            })],
+            PrevInlineSuggestion => vec![Msg::Completion(CompletionMsg::CycleInline {
+                forward: false,
+            })],
             RestartLanguageServer => vec![Msg::App(AppMsg::RestartLanguageServer)],
             GotoDefinition => vec![Msg::Lsp(LspMsg::GotoDefinition)],
             NextDiagnostic => vec![Msg::Lsp(LspMsg::JumpDiagnostic { forward: true })],
@@ -647,9 +671,9 @@ impl Command {
         matches!(
             self,
             Command::ToggleCommandPalette
-                | Command::OpenSettings
                 | Command::ToggleGotoLine
                 | Command::ToggleFindReplace
+                | Command::ToggleSoftWrap
                 | Command::OpenRecentFiles
                 | Command::FuzzyFileFinder
                 | Command::ToggleFileExplorer
@@ -671,6 +695,7 @@ impl Command {
 
         match self {
             MoveCursorUp => "Move Cursor Up",
+            OpenSettings => "Open Settings",
             MoveCursorDown => "Move Cursor Down",
             MoveCursorLeft => "Move Cursor Left",
             MoveCursorRight => "Move Cursor Right",
@@ -735,9 +760,9 @@ impl Command {
             Quit => "Quit",
 
             ToggleCommandPalette => "Command Palette",
-            OpenSettings => "Open Settings",
             ToggleGotoLine => "Go to Line",
             ToggleFindReplace => "Find and Replace",
+            ToggleSoftWrap => "View: Toggle Soft Wrap",
             OpenRecentFiles => "Open Recent Files",
 
             NewTab => "New Tab",
@@ -791,7 +816,12 @@ impl Command {
             TriggerCompletionMenu => "Trigger Completion",
             TriggerInlineSuggestion => "Trigger Inline Suggestion",
             AcceptInlineSuggestion => "Accept Inline Suggestion",
+            AcceptInlineWord => "Accept Inline Suggestion Word",
+            AcceptInlineLine => "Accept Inline Suggestion Line",
+            NextInlineSuggestion => "Next Inline Suggestion",
+            PrevInlineSuggestion => "Previous Inline Suggestion",
             DismissInlineSuggestion => "Dismiss Inline Suggestion",
+            OpenInlineStatistics => "Open Inline Completion Statistics",
             RestartLanguageServer => "Restart Language Server",
             GotoDefinition => "Go to Definition",
             NextDiagnostic => "Next Diagnostic",

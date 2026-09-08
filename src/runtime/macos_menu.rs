@@ -3,6 +3,113 @@ use objc2::runtime::Sel;
 use objc2::sel;
 use objc2_app_kit::{NSApplication, NSEventModifierFlags, NSMenu, NSMenuItem};
 use objc2_foundation::{ns_string, MainThreadMarker, NSProcessInfo, NSString};
+use std::cell::RefCell;
+
+struct SuspendedShortcut {
+    item: Retained<NSMenuItem>,
+    key: Retained<NSString>,
+    effective_key: Retained<NSString>,
+}
+
+struct SuspendedMenu {
+    shortcuts: Vec<SuspendedShortcut>,
+    uses_user_equivalents: bool,
+}
+
+thread_local! {
+    static SUSPENDED: RefCell<Option<SuspendedMenu>> = const { RefCell::new(None) };
+}
+
+/// AppKit consumes menu accelerators before winit receives KeyboardInput.
+/// Suspend only the accelerators while recording, restoring exact originals.
+pub(super) fn set_shortcut_capture(capturing: bool) {
+    let Some(main_thread) = MainThreadMarker::new() else {
+        return;
+    };
+    SUSPENDED.with_borrow_mut(|suspended| {
+        if capturing {
+            if suspended.is_some() {
+                return;
+            }
+            let Some(menu) = NSApplication::sharedApplication(main_thread).mainMenu() else {
+                return;
+            };
+            let uses_user_equivalents = NSMenuItem::usesUserKeyEquivalents(main_thread);
+            let mut shortcuts = Vec::new();
+            suspend_menu(&menu, &mut shortcuts, uses_user_equivalents);
+            NSMenuItem::setUsesUserKeyEquivalents(false, main_thread);
+            *suspended = Some(SuspendedMenu {
+                shortcuts,
+                uses_user_equivalents,
+            });
+        } else if let Some(previous) = suspended.take() {
+            for shortcut in previous.shortcuts {
+                shortcut.item.setKeyEquivalent(&shortcut.key);
+            }
+            NSMenuItem::setUsesUserKeyEquivalents(previous.uses_user_equivalents, main_thread);
+        }
+    });
+}
+
+/// These accelerators will be restored when capture ends, so recording them
+/// would create an unusable override. Native menu remapping is separate work.
+pub(super) fn reserved_capture_key(stroke: token::keymap::Keystroke) -> Option<String> {
+    use token::keymap::{KeyCode, Modifiers};
+    let KeyCode::Char(character) = stroke.key else {
+        return None;
+    };
+    SUSPENDED.with_borrow(|menu| {
+        menu.as_ref()?.shortcuts.iter().find_map(|shortcut| {
+            let key = shortcut.effective_key.to_string();
+            let flags = shortcut.item.keyEquivalentModifierMask();
+            let modifiers = Modifiers::new(
+                flags.contains(NSEventModifierFlags::Control),
+                flags.contains(NSEventModifierFlags::Shift),
+                flags.contains(NSEventModifierFlags::Option),
+                flags.contains(NSEventModifierFlags::Command),
+            );
+            (key.chars().count() == 1
+                && key
+                    .chars()
+                    .next()
+                    .is_some_and(|key| key.to_ascii_lowercase() == character)
+                && stroke.mods == modifiers)
+                .then(|| {
+                    format!(
+                        "Reserved by macOS menu: {}; choose another key",
+                        shortcut.item.title()
+                    )
+                })
+        })
+    })
+}
+
+fn suspend_menu(
+    menu: &NSMenu,
+    shortcuts: &mut Vec<SuspendedShortcut>,
+    uses_user_equivalents: bool,
+) {
+    for item in menu.itemArray() {
+        if let Some(submenu) = item.submenu() {
+            suspend_menu(&submenu, shortcuts, uses_user_equivalents);
+        }
+        let key = item.keyEquivalent();
+        let user_key = item.userKeyEquivalent();
+        let effective_key = if uses_user_equivalents && user_key.length() != 0 {
+            user_key
+        } else {
+            key.clone()
+        };
+        if key.length() != 0 || effective_key.length() != 0 {
+            item.setKeyEquivalent(ns_string!(""));
+            shortcuts.push(SuspendedShortcut {
+                item,
+                key,
+                effective_key,
+            });
+        }
+    }
+}
 
 struct KeyEquivalent<'a> {
     key: &'a NSString,
@@ -11,6 +118,7 @@ struct KeyEquivalent<'a> {
 
 /// Install the standard application menu after the first editor frame.
 pub fn install() {
+    set_shortcut_capture(false);
     let Some(main_thread) = MainThreadMarker::new() else {
         tracing::warn!("Cannot install the macOS application menu off the main thread");
         return;

@@ -81,9 +81,8 @@ impl CommandHistory {
 
     /// Load from an explicit path — factored out of `load()` so tests can
     /// exercise real file I/O against a scratch dir without mutating the
-    /// process-global `XDG_CONFIG_HOME` (which would race every other
-    /// test's `AppModel::new()` -> `CommandHistory::load()` call under
-    /// `cargo test`'s default parallel threads).
+    /// process-global `XDG_CONFIG_HOME` (which would race runtime startup
+    /// and other configuration tests under parallel execution).
     fn load_from(path: &Path) -> Self {
         match std::fs::read_to_string(path) {
             Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
@@ -160,7 +159,7 @@ mod tests {
         // properties of `Default` in isolation. Exercised via the explicit-
         // path helpers (not `load()`/`XDG_CONFIG_HOME`) so this test can run
         // concurrently with every other test in the binary without racing
-        // `AppModel::new()`'s own `CommandHistory::load()` calls.
+        // runtime startup's own `CommandHistory::load()` calls.
         let dir = tempfile::tempdir().unwrap();
         let history = CommandHistory::load_from(&dir.path().join("command-history.json"));
         assert!(history.commands.is_empty());

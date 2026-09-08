@@ -1,8 +1,7 @@
 //! `ContextMenuMsg` handlers (context-menu.md).
 //!
 //! Menus are built here (region builders in `context_menu::builders`), not
-//! in `App` — no `Keymap` needs threading through (item hints come from the
-//! `commands::COMMANDS` registry, per the doc's "Adjustment 2"). Anything
+//! in `App`. Item hints use the model's active keymap, shared with dispatch. Anything
 //! requiring I/O (clipboard content for `Editor` targets, the caret's pixel
 //! rect for Shift+F10) is already resolved by the caller
 //! (`runtime/mouse.rs::handle_right_click`, `App::open_context_menu_at_caret`)
@@ -148,7 +147,7 @@ mod tests {
     use crate::model::editor_area::TabId;
 
     fn model_with_menu(items: Vec<MenuItem>) -> AppModel {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let selected = context_menu::first_enabled_index(&items);
         let mut overlay = CursorOverlayState::new(CursorOverlayKind::ContextMenu);
         overlay.selected = selected;
@@ -221,7 +220,7 @@ mod tests {
         // overwrite `cursor_overlay` — otherwise `completion_menu` stays
         // populated but unrendered and `sync_after_document_edit` treats
         // completion as still open on the next edit.
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         let document_id = model.document().id.unwrap();
         model.ui.completion_menu = Some(crate::completion::menu::CompletionMenuState {
             document_id,
@@ -232,6 +231,8 @@ mod tests {
             filtered: vec![],
             is_incomplete: false,
             pending_resolve: None,
+            context: Default::default(),
+            selection_changed: false,
         });
         model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Completion));
 
@@ -253,7 +254,7 @@ mod tests {
 
     #[test]
     fn open_menu_is_a_no_op_while_a_modal_is_active() {
-        let mut model = AppModel::new(800, 600, 1.0, vec![]);
+        let mut model = AppModel::new(800, 600, 1.0);
         model.ui.active_modal = Some(crate::model::ModalState::GotoLine(Default::default()));
         let target = ContextMenuTarget::FileTreeItem {
             path: "/tmp/x".into(),
