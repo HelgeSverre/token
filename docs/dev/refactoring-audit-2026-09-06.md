@@ -1,5 +1,58 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## macOS launch-policy and exit-warning diagnosis — 2026-09-08
+
+No application source, test assertions, deadlines, runner version or host
+security settings changed. The existing cache and repository recipes ran:
+
+- `just test-one 'a_hover_request_past_its_deadline_is_abandoned_with_no_content --stress-count 20 --status-level leak'`:
+  all 20 passed in 0.374 s, without a leak warning; run
+  `90b4cf01-c7f2-402f-9621-e89da2b6630e`.
+- `just test-one 'managed_server_lifecycle_and_failures_use_the_owned_child --stress-count 5 --status-level pass'`:
+  all five passed in 8.167 s; run `3f86ada7-2c28-4586-8546-2771818f7795`.
+  These runs retained the one-second managed startup deadline and explicit
+  process-reaping assertions. They do not resolve earlier intermittent failures.
+
+The first run spent substantial time in binary discovery before its test body
+ran. A separate control copied the existing 1 MiB fake-server **test harness**
+to `/tmp/token-exit-diagnosis.LFEpy2/cold-discovery` and invoked `--list` directly,
+without nextest or an LSP handshake. It printed `0 tests, 0 benchmarks`, exiting
+successfully after 3.02 s wall time, with rounded user/system CPU both 0.00 s.
+The same command on the same file later completed in 0.01 s.
+
+Scoped macOS unified logs provide stronger evidence than a generic load guess:
+for that exact control path, `syspolicyd` recorded XProtect results at
+17:59:28.725, while the kernel's AppleSystemPolicy execution-allowed result
+arrived at 17:59:31.611 (2.886 s later). A second copied control finished in
+0.153 s; its policy evaluation completed promptly too. The attempted sampler
+was not needed because that second process exited before the observation limit.
+[Policy log](data/2026-09-08/cold-launch-policy.txt).
+
+This demonstrates a host execution-policy delay outside the test body and is
+consistent with [nextest's macOS guidance](https://nexte.st/docs/installation/macos/).
+It does **not** prove that XProtect caused every historical timeout: the narrow
+log query for the earlier sampled fake-server launch returned no retained
+matching records. No security exemption was applied, and the test suite was
+not warmed artificially as a replacement for its normal assertions.
+
+For the separate output-handle warning, the code-research skill's repository
+search tool was unavailable, so the version-pinned upstream source was cloned
+read-only for investigation. At nextest 0.9.118 commit
+`daa60d57f7525ffcc7495bd38cf8ca534cd6b7d3`,
+[`detect_fd_leaks`](https://github.com/nextest-rs/nextest/blob/daa60d57f7525ffcc7495bd38cf8ca534cd6b7d3/nextest-runner/src/runner/executor.rs#L1410)
+waits after process exit and prioritizes output reads over its timer. Human
+output mode uses separate stdout/stderr capture. This rules out the simple
+theory that this loop deliberately checks an expired timer before ready reads;
+it does not identify an owner of the historically open descriptor.
+The hover fixture explicitly kills/reaps its child; the earlier Settings case
+has no child launch. No speculative production patch follows from these facts.
+
+Owned commands finished and their tool sessions were reaped. The copied binaries
+and pinned upstream checkout remain in the task's temporary directory; unrelated
+test/model processes were left untouched. Startup/exit investigation remains
+open where exact historical attribution or a reproducible handle owner is
+missing. IME remains explicitly deferred by the user.
+
 ## Linux terminal tabs and browser links — 2026-09-08
 
 Follow-up native acceptance used the retained Debian ARM64 X11 environment and

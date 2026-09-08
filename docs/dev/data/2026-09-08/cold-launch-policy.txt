@@ -1,0 +1,6 @@
+Timestamp               Ty Process[PID:TID]
+2026-09-08 17:59:28.725 I  syspolicyd[30161:c5fa50a] [com.apple.syspolicy.exec:default] GK Xprotect results: PST: (path: f3691dbb9ea640ca), (team: (null)), (id: (null)), (bundle_id: (null)), XPScan: 0,-7493799054006505829,2026-09-08 15:59:28 +0000,(null),(null),file:///tmp/token-exit-diagnosis.LFEpy2/cold-discovery
+2026-09-08 17:59:31.611 I  kernel[0:c5fa939] (AppleSystemPolicy) evaluation result: 1037987, exec, allowed, cache,  1788883168, 0, 0, 9800ad76d7c8ae9b, 0, /tmp/token-exit-diagnosis.LFEpy2/cold-discovery
+2026-09-08 18:00:02.656 I  syspolicyd[30161:c5fac6d] [com.apple.syspolicy.exec:default] GK Xprotect results: PST: (path: e37eca65ead55ee5), (team: (null)), (id: (null)), (bundle_id: (null)), XPScan: 0,-7493799054006505829,2026-09-08 16:00:02 +0000,(null),(null),file:///tmp/token-exit-diagnosis.LFEpy2/cold-discovery-sampled
+2026-09-08 18:00:02.669 I  kernel[0:c5fadb5] (AppleSystemPolicy) evaluation result: 1037993, exec, allowed, cache,  1788883202, 0, 0, 9800ad76d7c8ae9b, 0, /tmp/token-exit-diagnosis.LFEpy2/cold-discovery-sampled
+2026-09-08 18:00:02.715 I  kernel[0:c5fadc1] (AppleSystemPolicy) evaluation result: 1037994, exec, allowed, cache,  1788883168, 0, 0, 9800ad76d7c8ae9b, 0, /tmp/token-exit-diagnosis.LFEpy2/cold-discovery

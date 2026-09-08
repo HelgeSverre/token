@@ -6,6 +6,13 @@ using fixture tests alone.
 
 ## Current checkpoint
 
+Latest diagnosis: an isolated zero-test binary showed a 3.02-second cold launch
+and 0.01-second warm launch, with a matching macOS execution-policy delay.
+Twenty hover-timeout repeats and five managed-server lifecycle repeats passed
+unchanged. See the [launch/exit record](docs/dev/refactoring-audit-2026-09-06.md#macos-launch-policy-and-exit-warning-diagnosis--2026-09-08).
+This establishes a host launch-delay mechanism, not the cause of every earlier
+timeout or nextest handle warning. No timeouts or host security settings changed.
+
 Latest verification: Linux X11 terminal tab creation, retained scrollback,
 independent shell closure, normal-click suppression and Ctrl-click browser
 opening passed. Both plain URLs and OSC 8 labels reached the loopback acceptance
@@ -111,6 +118,11 @@ see the [live-server record](docs/dev/refactoring-audit-2026-09-06.md#live-works
   The terminal-tabs run also reproduced ten fake-LSP startup failures; a sampled
   discovery process was still in `_dyld_start` about 25 seconds after launch.
   See the terminal-tabs record for evidence; this is not yet a root-cause fix.
+  The later launch-policy record above isolates a delay outside the test body;
+  historical per-process policy logs were unavailable, so do not conflate that
+  result with a proven explanation for all original failures. The runner's
+  leak detector prioritizes reading output before its timer; no speculative
+  cleanup patch or timeout suppression is justified by the current evidence.
 
 ## Deferred by user — not a closeout gate
 
