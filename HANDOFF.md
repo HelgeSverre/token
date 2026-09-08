@@ -11,7 +11,13 @@ Completed implementation history and detailed evidence are in the
 [benchmark reports](docs/benchmark/README.md), with earlier handoff entries
 preserved in Git history.
 
-Latest implementation: `56a3be8` reuses exact unchanged recency snapshots. The
+Latest implementation: `f0e1c4e` reuses coincident caret/selection coordinate
+conversions. The [multi-cursor report](docs/benchmark/2026-09-08-multicursor.md)
+attributes forward-edit costs and records before/after repeats, full tests and
+lint. This addresses the multi-cursor performance investigation; remaining
+forward-edit/Undo asymmetry is documented, not treated as a correctness defect.
+
+Earlier implementation: `56a3be8` reuses exact unchanged recency snapshots. The
 [recency report](docs/benchmark/2026-09-08-recency-refresh.md) records CPU sampling,
 before/after repeats, edited-path costs and allocation tradeoffs. Its full tests
 and lint passed. This addresses the recency profiling target without claiming
@@ -24,7 +30,7 @@ CPU and allocation measurements, full-suite/lint verification and preserved
 Unicode/regex semantics. Earlier completion response ownership work
 (`68cf62a`) reduced fresh allocation by roughly 81% at 1,000 items; see its
 [report](docs/benchmark/2026-09-08-completion-responses.md). The measured cold Find
-and completion-response investigations are addressed; other targets remain below.
+and completion-response investigations are addressed as well.
 
 Preserve the separate opaque Settings page, category navigation and form
 controls. Settings scrolls continuously in physical pixels with clipped partial
@@ -40,9 +46,6 @@ The default `target/` previously disappeared outside this task.
   targets). The plan names candidate providers but no selected backend contract;
   a backend/model preference has been requested. See
   [autocomplete](docs/feature/autocomplete.md).
-- Attribute forward multi-cursor edit costs and address them as warranted.
-  Existing measurements are in
-  [the September report](docs/benchmark/2026-09-07-current.md).
 
 ## Remaining verification
 

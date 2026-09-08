@@ -4,6 +4,8 @@ This document describes how to run benchmarks and profile the Token editor.
 
 ## Reports
 
+- [2026-09-08: forward multi-cursor edits](2026-09-08-multicursor.md) — CPU
+  attribution and coincident-position conversion reuse, with before/after repeats.
 - [2026-09-08: recency context refresh](2026-09-08-recency-refresh.md) — exact
   unchanged-snapshot reuse, CPU sample, edited-path control and allocation tradeoff.
 - [2026-09-08: ASCII literal Find](2026-09-08-find-literals.md) — gated literal
@@ -48,6 +50,7 @@ just profile-workloads find-cold
 just profile-workloads sample-find-cold
 just profile-workloads sample-find-worker
 just profile-workloads edit-history
+just profile-workloads sample-edit-history
 just profile-workloads insertions
 just profile-workloads replacements
 just profile-workloads settings

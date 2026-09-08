@@ -1,5 +1,18 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Multi-cursor coordinate reuse — 2026-09-08
+
+Commit `f0e1c4e` reuses exact coincident caret/selection conversions in shared
+transaction capture/restore. CPU sampling attributed roughly half of the
+two-pane duplication work to those stages. The
+[report](../benchmark/2026-09-08-multicursor.md) records about one-third lower
+1,000-cursor line-duplication medians, smaller nonempty-selection gains, controls
+and noisy tails. No new API, cache or tests were added. All 2,581 tests/two
+doctests, strict lint and formatting passed. Scoped review: **Approve**, no
+outstanding findings. This addresses the multi-cursor attribution target;
+native/live-service gates and unfinished edit prediction remain in `HANDOFF.md`.
+No additional plan became archive-eligible.
+
 ## Recency refresh — 2026-09-08
 
 Commit `56a3be8` reuses exact unchanged snapshots while preserving current

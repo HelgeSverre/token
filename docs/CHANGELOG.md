@@ -11,6 +11,8 @@ All notable changes to rust-editor are documented in this file.
 - Shared edit transactions reuse coordinate conversions when a caret and its
   selection endpoints coincide, reducing repeated Rope lookups for multi-cursor
   edits across split panes without changing selection or Undo/Redo semantics.
+  [Before/after profiling](benchmark/2026-09-08-multicursor.md) measured
+  two-pane line duplication at 1,000 cursors about one-third faster.
 - Recency context reuses an unchanged snippet's token index instead of repeating
   whole-ring similarity checks. It still captures current text, refreshes recency
   order and region metadata, and fully deduplicates changed snippets.
