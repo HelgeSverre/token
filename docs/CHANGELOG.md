@@ -64,6 +64,8 @@ All notable changes to rust-editor are documented in this file.
 
 ### Development
 
+- Managed-server lifecycle assertion failures now retain the actual worker reply
+  and child-start marker to diagnose intermittent startup failures.
 - Added a reproducible workspace-retrieval ranking benchmark and dated report
   under `docs/benchmark/`, separating warm ranking costs from unmeasured
   collection and inference latency.

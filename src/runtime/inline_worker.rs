@@ -418,9 +418,12 @@ exec '{test_exe}' --exact runtime::inline_worker::tests::managed_server_lifecycl
             "configuration alone must not launch a model"
         );
         assert!(owner.submit(Box::new(request.clone())));
+        let reply = replies.recv_timeout(Duration::from_secs(5)).unwrap();
         assert!(
-            matches!(replies.recv_timeout(Duration::from_secs(5)).unwrap(),
-            Msg::Completion(CompletionMsg::InlineReady { texts, .. }) if texts == ["owned suggestion"])
+            matches!(&reply,
+            Msg::Completion(CompletionMsg::InlineReady { texts, .. }) if texts.as_slice() == ["owned suggestion"]),
+            "unexpected initial reply: {reply:?}; child startup marker: {:?}",
+            std::fs::read_to_string(&pid_file)
         );
         let first_pid = std::fs::read_to_string(&pid_file).unwrap();
         owner.cancel();
