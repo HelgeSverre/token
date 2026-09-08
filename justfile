@@ -191,6 +191,11 @@ bench-completion *args:
 profile-workloads *args:
     cargo bench --bench editor_workloads -- {{args}}
 
+# Same CPU workload probes without release optimization, for debug-only diagnosis.
+[group('profile')]
+profile-workloads-debug *args:
+    cargo bench --profile dev --bench editor_workloads -- {{args}}
+
 [group('bench')]
 bench-search:
     cargo bench --bench search

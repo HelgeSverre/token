@@ -4,6 +4,8 @@ This document describes how to run benchmarks and profile the Token editor.
 
 ## Reports
 
+- [2026-09-08: Settings scrolling](2026-09-08-settings-scroll.md) — debug versus
+  optimized CPU costs, plus the shared backdrop-dimming before/after comparison.
 - [2026-09-07: current optimized working tree](2026-09-07-current.md) — fresh
   edit/history, Find, CPU-rendering and completion measurements, with raw output
   and a separately identified later dropdown-keystroke refresh.
@@ -31,6 +33,9 @@ just profile-workloads find
 just profile-workloads edit-history
 just profile-workloads insertions
 just profile-workloads replacements
+just profile-workloads settings
+# Explicitly unoptimized, for debug-only diagnosis
+just profile-workloads-debug settings
 
 # Completion suite; this recipe forwards filters/options to Divan
 just bench-completion

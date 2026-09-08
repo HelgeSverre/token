@@ -29,6 +29,11 @@ All notable changes to rust-editor are documented in this file.
 
 ### Performance
 
+- Modal backdrop dimming now reuses the clipped rectangle-blend primitive,
+  removing repeated per-pixel clip-stack checks while preserving rendered colors.
+- Added Settings scrolling CPU probes for debug and optimized builds, with
+  separate update, hit-layout, backdrop and rendering measurements.
+
 - Usages previews are prepared off the event loop with replaceable work and
   bounded file reads (1 MiB per file, 4 MiB per response). Slow or unreadable
   previews fall back to navigable file/line entries after 250 ms. Results retain

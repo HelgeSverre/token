@@ -393,7 +393,115 @@ fn replacements() {
     }
 }
 
+/// The actual modal painter, with warmed glyph/mask caches and no native surface.
+fn settings_render(
+    m: &AppModel,
+    font: &fontdue::Font,
+    cache: &mut GlyphCache,
+    masks: &mut token::view::RoundedRectMaskCache,
+    pixels: &mut [u32],
+    editor: bool,
+) {
+    let (width, height) = m.window_size;
+    let mut frame = Frame::new(pixels, width as usize, height as usize);
+    frame.clear(m.theme.editor.background.to_argb_u32());
+    let size = 14.0 * m.metrics.scale_factor as f32;
+    let mut painter = TextPainter::new(font, cache, size, size, m.char_width, m.line_height);
+    if editor {
+        let group = m.editor_area.focused_group().unwrap();
+        Renderer::render_editor_group(
+            &mut frame,
+            &mut painter,
+            m,
+            group.id,
+            group.rect,
+            true,
+            &mut Default::default(),
+        );
+    }
+    token::view::modal::render_modals(
+        &mut frame,
+        &mut painter,
+        m,
+        width as usize,
+        height as usize,
+        masks,
+    );
+    black_box(frame.buffer_mut());
+}
+
+fn settings_scrolling() {
+    use token::messages::{ModalMsg, UiMsg};
+    use token::view::hit_test::{hit_test_modal, HitTarget, Point};
+    println!(
+        "settings scroll: debug_assertions={} (CPU only; excludes native input/presentation)",
+        cfg!(debug_assertions)
+    );
+    let font = fontdue::Font::from_bytes(
+        include_bytes!("../assets/JetBrainsMono.ttf") as &[u8],
+        fontdue::FontSettings::default(),
+    )
+    .unwrap();
+    for (width, height, scale) in [(1100, 720, 1.0), (400, 750, 1.0), (2200, 1440, 2.0)] {
+        let mut m = model(&"ordinary background editor text\n".repeat(1000), false);
+        m.metrics = token::model::ScaledMetrics::new(scale);
+        m.line_height = (20.0 * scale) as usize;
+        m.char_width = 8.4 * scale as f32;
+        m.resize(width, height);
+        m.ui.open_modal(token::model::ModalState::Settings(Default::default()));
+        token::update::update(&mut m, Msg::Ui(UiMsg::Modal(ModalMsg::Scroll(127))));
+        let point = Point::new(width as f64 - 22.0 * scale, height as f64 / 2.0);
+        let Some(HitTarget::ModalScrollbar { geometry }) = hit_test_modal(&m, point) else {
+            panic!("fixture must exercise a scrolling Settings page");
+        };
+        assert_eq!(geometry.state.position, 127);
+        let label = format!("{width}x{height}@{scale}");
+        let mut direction = 1;
+        measure(&format!("settings_scroll_update {label}"), 120, || {
+            black_box(token::update::update(
+                &mut m,
+                Msg::Ui(UiMsg::Modal(ModalMsg::Scroll(direction))),
+            ));
+            direction = -direction;
+        });
+        measure(&format!("settings_hit_layout {label}"), 120, || {
+            black_box(hit_test_modal(&m, point));
+        });
+        let mut pixels = vec![0; width as usize * height as usize];
+        let mut cache = GlyphCache::new();
+        let mut masks = token::view::RoundedRectMaskCache::new();
+        measure(&format!("settings_backdrop_dim {label}"), 80, || {
+            let mut frame = Frame::new(&mut pixels, width as usize, height as usize);
+            frame.clear(m.theme.editor.background.to_argb_u32());
+            frame.dim(130);
+            black_box(frame.buffer_mut());
+        });
+        measure(&format!("settings_modal_paint {label}"), 80, || {
+            settings_render(&m, &font, &mut cache, &mut masks, &mut pixels, false);
+        });
+        measure(&format!("settings_scroll_and_paint {label}"), 80, || {
+            black_box(token::update::update(
+                &mut m,
+                Msg::Ui(UiMsg::Modal(ModalMsg::Scroll(direction))),
+            ));
+            direction = -direction;
+            settings_render(&m, &font, &mut cache, &mut masks, &mut pixels, false);
+        });
+        measure(
+            &format!("settings_editor_and_modal_paint {label}"),
+            80,
+            || {
+                settings_render(&m, &font, &mut cache, &mut masks, &mut pixels, true);
+            },
+        );
+    }
+}
+
 fn main() {
+    if std::env::args().any(|arg| arg == "settings") {
+        settings_scrolling();
+        return;
+    }
     if std::env::args().any(|arg| arg == "edit-history") {
         edit_history();
         return;

@@ -467,27 +467,9 @@ impl<'a> Frame<'a> {
     /// Dim the entire frame with a semi-transparent overlay
     /// Useful for modal backgrounds
     pub fn dim(&mut self, alpha: u8) {
-        if alpha == 0 {
-            return;
-        }
-        let dim_color = (alpha as u32) << 24; // Black with given alpha
-                                              // `alpha` is loop-invariant across the whole frame; extract it once
-                                              // instead of re-deriving it on every single pixel.
-        let a = alpha as f32 / 255.0;
-        if alpha == 0xFF {
-            return self.fill_rect_px(
-                self.min_x(),
-                self.min_y(),
-                self.width,
-                self.height,
-                dim_color | 0xFF000000,
-            );
-        }
-        for y in self.min_y()..self.max_y() {
-            for x in self.min_x()..self.max_x() {
-                self.blend_text_pixel(x, y, dim_color, a);
-            }
-        }
+        // The rectangle primitive resolves clipping once, rather than checking
+        // the clip stack again for every pixel through the text-glyph path.
+        self.blend_rect_px(0, 0, self.width, self.height, u32::from(alpha) << 24);
     }
 
     /// Draw a rectangle with a 1px border
@@ -1408,6 +1390,30 @@ mod tests {
         }
 
         assert_eq!(buffer_a, buffer_b);
+    }
+
+    #[test]
+    fn dim_preserves_all_alpha_values_colors_and_nested_clips() {
+        for alpha in 0..=255u8 {
+            for child in [Rect::new(3.0, 2.0, 5.0, 4.0), Rect::new(8.0, 6.0, 1.0, 1.0)] {
+                let initial: Vec<u32> = (0..63u32).map(|i| i.wrapping_mul(0x01234567)).collect();
+                let mut actual = initial.clone();
+                let mut expected = initial;
+                let mut frame = Frame::new(&mut actual, 9, 7);
+                let mut reference = Frame::new(&mut expected, 9, 7);
+                for target in [&mut frame, &mut reference] {
+                    target.push_clip(Rect::new(1.0, 1.0, 6.0, 5.0));
+                    target.push_clip(child);
+                }
+                frame.dim(alpha);
+                for y in 0..7 {
+                    for x in 0..9 {
+                        reference.blend_pixel(x, y, u32::from(alpha) << 24);
+                    }
+                }
+                assert_eq!(actual, expected, "alpha={alpha}, clip={child:?}");
+            }
+        }
     }
 
     #[test]
