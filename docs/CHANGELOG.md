@@ -63,6 +63,9 @@ All notable changes to rust-editor are documented in this file.
 
 ### Documentation
 
+- Archived the session-restore proposal after full-suite and native macOS
+  restart verification; broader sidebar/window and periodic-recovery ideas are
+  explicitly deferred.
 - Archived the implemented external-file protection proposal after live macOS
   verification; deferred compare/merge ideas remain explicitly marked.
 - Reconciled the active plan index with implementation and verification records;

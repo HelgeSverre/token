@@ -88,6 +88,7 @@ for partial implementations and suggested next work.
 | Embedded Terminal | ✅ MVP | [embedded-terminal.md](archived/embedded-terminal.md) |
 | File Dialogs | ✅ via `rfd` | [file-dialogs.md](archived/file-dialogs.md) |
 | External File Changes | ✅ Initial text-file protection; native macOS verified | [file-change-detection.md](archived/file-change-detection.md) |
+| Session Restore | ✅ Saved-file tabs/splits/pane state; native macOS restarts verified | [session-restore.md](archived/session-restore.md) |
 | Find Enhancements | ✅ | [find-enhancements.md](archived/find-enhancements.md) |
 | Damage Tracking | ✅ Coarse regions + cursor lines | [DAMAGE-TRACKING.md](archived/DAMAGE-TRACKING.md) |
 | Command Palette History, Pins & Ranking | ✅ Via OverlaySurface P4 | [command-palette-enhancements.md](archived/command-palette-enhancements.md) |
@@ -109,7 +110,6 @@ for partial implementations and suggested next work.
 | Whitespace Management (conversion and cleanup) | 2 - Search & Editing | [whitespace-management.md](future/whitespace-management.md) |
 | Indentation Guides | 2 - Refinement | [indent-guides.md](feature/indent-guides.md) |
 | Auto-Save | 3 - File Lifecycle | [auto-save.md](feature/auto-save.md) |
-| Session Restore | 3 - File Lifecycle | [session-restore.md](feature/session-restore.md) |
 | EditorConfig Integration | 3 - Quality of Life | [editorconfig.md](feature/editorconfig.md) |
 | Configurable Double-Tap Gestures | 3 - Keybinding Enhancements | [gesture-bindings.md](feature/gesture-bindings.md) |
 | Code Folding | 4 - Hard Problems | [folding-basic.md](feature/folding-basic.md) |

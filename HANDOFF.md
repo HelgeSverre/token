@@ -6,6 +6,14 @@ using fixture tests alone.
 
 ## Current checkpoint
 
+Requested feature sequence completed: themed indent guides (`e988572`),
+external-file protection (`27645e1`, `f5cd8c5`) and saved-file session restore
+(`d3e4269`). Native macOS restart checks, the full 2,605-test suite and strict
+lint passed for session restore. The external-file and session proposals are
+archived with broader deferred ideas distinguished from their accepted slices.
+See the [session record](docs/dev/refactoring-audit-2026-09-06.md#session-restore-implementation-and-native-restarts--2026-09-08).
+This closes that feature sequence, not the unrelated remaining scope below.
+
 Context-menu layout: `3c32795` sizes menus to labels/shortcuts, removes the empty
 icon column and reduces menu chips by 20%. Native macOS rendering, the full
 macOS suite and strict lint passed. The Linux rerun remains incomplete after

@@ -1,5 +1,66 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Session restore implementation and native restarts — 2026-09-08
+
+Implemented in `d3e4269`. The model captures versioned, text-free session
+metadata; runtime storage loads bounded JSON and uses the existing file loader
+before installing saved tabs and panes. Exit drains ordered file work before
+atomically replacing metadata. No unsaved buffer contents or undo history are
+serialized. Current disk contents win; missing files are omitted and empty
+branches collapse. Shared files use one document with independent pane editors.
+
+Restored state includes nested split directions/ratios, tab order and active
+tabs, focused pane, multi-cursors/selections, soft wrapping and viewport anchors.
+Logical top positions are resolved through the shared viewport mapping after
+layout, avoiding wrapped-row drift when the window or font metrics change.
+CSV grid selection/mode survives without restoring an unfinished cell edit.
+Workspace roots select separate metadata files; the non-workspace session is
+independent. Existing malformed/unsupported/wrong-workspace metadata is preserved
+on save failure. Settings exposes separate restore/save-on-exit switches.
+
+Verification:
+
+- `CARGO_BUILD_JOBS=1 just test`: **2,605 passed**, five skipped; **two doctests
+  passed**, six ignored. Nextest run `a1d06969-19bb-44ec-8f0b-048b7062ebff`,
+  24.378 seconds excluding compilation/discovery. Strict `just lint`,
+  `just fmt-check`, `just build` and `git diff --check` passed.
+- Five real-loader/storage regressions cover nested panes and independent
+  multi-cursors, current disk contents, omission of unsaved text, missing-file
+  collapse and clamping, command-line precedence, workspace identity, corrupt/
+  unsupported/oversized metadata preservation, wrapped anchors and CSV state.
+  Existing CLI/config tests cover explicit bypass and option defaults/opt-out.
+- Native macOS process lifecycle checks used the normal debug binary with
+  isolated workspace, configuration and socket in
+  `target/verification/native-session/`. A two-pane session was saved through
+  Quit, then reopened in another process. JSON assertions compared each pane's
+  file, cursor, selection, top row, horizontal scroll and wrap flag; all matched.
+  The previously focused second pane and its active tab were restored first.
+- Explicit workspace/file arguments with `--line 8 --column 5` selected the
+  requested tab and zero-based position `(7, 4)` with a single selection.
+- A no-workspace launch did not inherit the workspace session. After opening a
+  file and moving its cursor, quitting/reopening without arguments restored that
+  default session and position `(13, 2)`.
+- `--new` and `session.restore: false` each started empty despite existing
+  default metadata. With `session.save_on_exit: false`, SHA-1 readbacks confirmed
+  that quitting both instances left the existing JSON byte-for-byte unchanged.
+  Every task-owned instance exited normally; user files/config were untouched.
+
+Native checks drive actions through the automation endpoint in real windows;
+they establish startup/shutdown behavior, not a new pointer or cross-platform
+certification. No release performance claim is made from the debug runs.
+
+Diff-based self-review followed the Rust and code-review skills. It corrected
+failed-first-CLI focus, wrapped-row persistence and explicit-line navigation with
+restored multi-cursors. No remaining blocking findings in the changed paths.
+Verdict: **Approve** for the accepted saved-file slice.
+
+The session proposal is archived as historical/superseded, with sidebar/window
+state, periodic snapshots/history and external-change-since-exit warnings clearly
+deferred. This completes the requested sequence: simple themeable indent guides,
+initial external-file protection, then saved-file session restoration. The
+advanced indent-scope plan and unrelated HANDOFF native/provider checks remain
+open; completing these three features does not justify deleting HANDOFF.md.
+
 ## External-file protection native macOS verification — 2026-09-08
 
 Verified `f5cd8c5` through a real isolated Token window (PID 76369), built with

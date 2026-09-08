@@ -2,13 +2,32 @@
 
 Persist and restore editor state across restarts
 
-> **Status:** Planned
+> **Status:** Archived — saved-file slice implemented and verified; broader proposal superseded
 > **Priority:** P2
 > **Effort:** L
 > **Created:** 2025-12-19
 > **Milestone:** 3 - File Lifecycle
 
 ---
+
+## Implementation checkpoint — 2026-09-08
+
+The accepted first slice is saved-file tabs, split layout/ratios and per-pane
+cursor, selection and viewport state per workspace. The implementation uses
+`src/session.rs` for pure metadata capture/install and `src/runtime/session.rs`
+for bounded loading and atomic persistence, reusing the normal file loader.
+See the [current configuration reference](../user/config-editor.md#session-restore)
+for the actual options, CLI behavior and recovery limits.
+
+The proposal below is historical design context, not a checklist of shipped
+APIs. Sidebar/window restoration, periodic snapshots, session history and
+external-change-since-exit warnings are deferred. Current disk contents always
+win at startup. Existing `--new` / `-n` skips restore; no additional
+`--no-session` flag or SessionManager facade is needed. Implementation `d3e4269`
+passed the full macOS suite, strict lint and native process restart checks.
+See the [verification record](../dev/refactoring-audit-2026-09-06.md#session-restore-implementation-and-native-restarts--2026-09-08).
+Unchecked items below describe the original proposal, not unfinished gates for
+the accepted saved-file slice.
 
 ## Table of Contents
 
