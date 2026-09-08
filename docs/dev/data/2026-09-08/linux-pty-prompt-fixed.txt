@@ -1,0 +1,34 @@
+cargo nextest run spawns_shell_and_echoes_output --stress-count 5
+warning: tree-sitter-blade@0.12.0: src/scanner.c: In function 'scan_comment':
+warning: tree-sitter-blade@0.12.0: src/scanner.c:134:20: warning: this statement may fall through [-Wimplicit-fallthrough=]
+warning: tree-sitter-blade@0.12.0:   134 |                 if (dashes >= 2) {
+warning: tree-sitter-blade@0.12.0:       |                    ^
+warning: tree-sitter-blade@0.12.0: src/scanner.c:140:13: note: here
+warning: tree-sitter-blade@0.12.0:   140 |             default:
+warning: tree-sitter-blade@0.12.0:       |             ^~~~~~~
+    Finished `test` profile [unoptimized] target(s) in 0.24s
+────────────
+ Nextest run ID b4726a87-94e6-4214-9e23-b3e7cc6b957f with nextest profile: default
+    Starting 1 test across 42 binaries (2593 tests skipped)
+────────────
+ Stress test iteration 1/5 (00:00:00 elapsed so far, 5 iterations remaining)
+        PASS [   0.022s] [1/5] (1/1) token terminal::pty::tests::spawns_shell_and_echoes_output
+ Stress test [   0.024s] iteration 1/5: 1 test run: 1 passed, 2593 skipped
+────────────
+ Stress test iteration 2/5 (00:00:00 elapsed so far, 4 iterations remaining)
+        PASS [   0.025s] [2/5] (1/1) token terminal::pty::tests::spawns_shell_and_echoes_output
+ Stress test [   0.027s] iteration 2/5: 1 test run: 1 passed, 2593 skipped
+────────────
+ Stress test iteration 3/5 (00:00:00 elapsed so far, 3 iterations remaining)
+        PASS [   0.025s] [3/5] (1/1) token terminal::pty::tests::spawns_shell_and_echoes_output
+ Stress test [   0.026s] iteration 3/5: 1 test run: 1 passed, 2593 skipped
+────────────
+ Stress test iteration 4/5 (00:00:00 elapsed so far, 2 iterations remaining)
+        PASS [   0.024s] [4/5] (1/1) token terminal::pty::tests::spawns_shell_and_echoes_output
+ Stress test [   0.025s] iteration 4/5: 1 test run: 1 passed, 2593 skipped
+────────────
+ Stress test iteration 5/5 (00:00:00 elapsed so far, 1 iteration remaining)
+        PASS [   0.024s] [5/5] (1/1) token terminal::pty::tests::spawns_shell_and_echoes_output
+ Stress test [   0.025s] iteration 5/5: 1 test run: 1 passed, 2593 skipped
+────────────
+     Summary [   0.127s] 5/5 stress run iterations: 5 passed

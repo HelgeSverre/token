@@ -1,5 +1,77 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Linux native verification and portability fixes — 2026-09-08
+
+The task-owned Debian Bookworm ARM64 container ran the actual winit application
+under Xvfb/Openbox with a real `/bin/sh` PTY. The host repository was mounted
+read-only; configuration, clipboard and input events were isolated from macOS.
+Rust 1.98.0, just 1.58.0 and nextest 0.9.143 were installed in the container.
+These are debug functional checks, not release-performance measurements or
+Wayland/Windows certification. The minimal container also needed
+`libxkbcommon-x11-0` before the GUI could launch.
+
+Three logically separate commits address observed failures:
+
+- `3618108`: GNU ld could not resolve Janet/AppleScript external scanner symbols
+  referenced from later dependency archives. A shared scanner build retains
+  these small objects with `+whole-archive`; grammar behavior is unchanged.
+  The macOS-only open-file sender is platform-gated while preserving tests.
+- `f973884`: the Unix PTY fixture sometimes received
+  `echo hello-from-pty\r\n# hello-from-pty\r\n# `: execution succeeded, but the
+  startup prompt broke the exact-line assertion. Empty PS1/PS2 isolates output;
+  the same assertion and five-second deadline remain. Diagnostic output is
+  printed only on failure. See the [reproduction](data/2026-09-08/linux-pty-prompt-failure.txt)
+  and [five passing repeats](data/2026-09-08/linux-pty-prompt-fixed.txt).
+- `c104ed9`: copying dropped the last clipboard handle, losing X11 ownership
+  without a clipboard manager. Copy/paste effects now share one persistent,
+  ordered worker. The same commit fixes shortcut keys incorrectly allowing two
+  Alt presses inside a chord to activate the bare-Alt gesture. One focused
+  regression covers that distinction and preserved double-tap navigation.
+
+The clipboard ownership decision follows the installed arboard 3.6.1 source
+and its [lifetime documentation](https://docs.rs/arboard/3.6.1/arboard/struct.Clipboard.html).
+The scanner modifier uses the existing
+[cc build API](https://docs.rs/cc/latest/cc/struct.Build.html#method.link_lib_modifier).
+Rust/library/review guidance kept ownership explicit and reused existing effects;
+no dependency or public command surface was added. Clipboard persistence is
+while the application lives, not a promise to retain data after quit without a
+desktop clipboard manager. Separate context-menu clipboard probes are unchanged.
+
+Native acceptance:
+
+- Reverse-drag terminal selection was visible before the clipboard fix, but
+  external `xclip` retrieval failed with `target STRING not available`.
+  Afterward Ctrl+Shift+C returned exactly `copy this text`, including a later
+  read after Settings checks. [Selection capture](data/2026-09-08/linux-terminal-selection.png).
+- Settings displayed Ctrl chips and context hints. Cancelling capture created
+  no keymap file; pointer Save wrote overrides and reported success.
+- A saved Ctrl+Alt+K Ctrl+Alt+S shortcut initially failed despite correct
+  capture/persistence; a Ctrl-only chord worked. After the gesture fix the
+  Alt chord opened Settings from the editor immediately and after restart.
+- A 400-pixel window retained the opaque Settings page and wrapped navigation.
+  The fixture document remained unmodified throughout. Other focus contexts,
+  Wayland, Linux multi-tab/browser-click checks and native IME remain open.
+
+Final verification used repository recipes:
+
+| Platform | Full suite | Run ID | Strict lint |
+| --- | --- | --- | --- |
+| macOS | 2,588 passed, 5 skipped; 2 doctests passed | `e3df24a0-65b7-458e-ad52-bd6086f04fc3` | Passed |
+| Linux X11 environment | 2,593 passed, 1 skipped; 2 doctests passed | `f7bb70b2-31bc-4c81-9a19-b610bd84ac58` | Passed |
+
+Neither final run reported a leak. An intermediate macOS run
+`ce5fea14-e0ef-462e-8214-c0ad315f3540` passed 2,587 tests but flagged
+`a_hover_request_past_its_deadline_is_abandoned_with_no_content` as leaky.
+That and the older startup/process-exit issues remain unresolved; fixing the
+PTY prompt race does not establish their cause. macOS used nextest 0.9.118,
+so runner versions were not identical.
+
+All owned editors/shells exited; the container `token-handoff-linux-20260908`
+was stopped, retaining `/build` for further checks. Raw logs remain under
+`/tmp/token-linux-native.31IToo`. Scoped review found no outstanding findings
+in these changes. The Settings-keymap plan and HANDOFF remain active for their
+explicitly unverified scope.
+
 ## Terminal modifier-click links — 2026-09-08
 
 Commit `9d9f4fb` completes the requested terminal link interaction: Cmd on macOS,

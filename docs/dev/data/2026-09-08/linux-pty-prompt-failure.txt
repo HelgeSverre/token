@@ -1,0 +1,46 @@
+cargo nextest run spawns_shell_and_echoes_output --stress-count 5
+warning: tree-sitter-blade@0.12.0: src/scanner.c: In function 'scan_comment':
+warning: tree-sitter-blade@0.12.0: src/scanner.c:134:20: warning: this statement may fall through [-Wimplicit-fallthrough=]
+warning: tree-sitter-blade@0.12.0:   134 |                 if (dashes >= 2) {
+warning: tree-sitter-blade@0.12.0:       |                    ^
+warning: tree-sitter-blade@0.12.0: src/scanner.c:140:13: note: here
+warning: tree-sitter-blade@0.12.0:   140 |             default:
+warning: tree-sitter-blade@0.12.0:       |             ^~~~~~~
+   Compiling token v0.6.0 (/workspace)
+    Finished `test` profile [unoptimized] target(s) in 1m 34s
+────────────
+ Nextest run ID eff94998-fa6b-4ef0-9709-24b2f5d2d365 with nextest profile: default
+    Starting 1 test across 42 binaries (2592 tests skipped)
+────────────
+ Stress test iteration 1/5 (00:00:00 elapsed so far, 5 iterations remaining)
+        PASS [   0.070s] [1/5] (1/1) token terminal::pty::tests::spawns_shell_and_echoes_output
+ Stress test [   0.074s] iteration 1/5: 1 test run: 1 passed, 2592 skipped
+────────────
+ Stress test iteration 2/5 (00:00:00 elapsed so far, 4 iterations remaining)
+        FAIL [   5.015s] [2/5] (1/1) token terminal::pty::tests::spawns_shell_and_echoes_output
+  stdout ───
+
+    running 1 test
+    test terminal::pty::tests::spawns_shell_and_echoes_output ... FAILED
+
+    failures:
+
+    failures:
+        terminal::pty::tests::spawns_shell_and_echoes_output
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1415 filtered out; finished in 5.01s
+
+  stderr ───
+    PTY output before timeout: "echo hello-from-pty\r\n# hello-from-pty\r\n# "
+
+    thread 'terminal::pty::tests::spawns_shell_and_echoes_output' (40475) panicked at src/terminal/pty.rs:359:9:
+    expected PTY output to contain the echoed string within 5s
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure:
+ Stress test [   5.017s] iteration 2/5: 1 test run: 0 passed, 1 failed, 2592 skipped
+────────────
+     Summary [   5.091s] 2/5 stress run iterations: 1 passed, 1 failed
+        FAIL [   5.015s] [2/5] (1/1) token terminal::pty::tests::spawns_shell_and_echoes_output
+error: test run failed
+error: recipe `test-one` failed on line 85 with exit code 100

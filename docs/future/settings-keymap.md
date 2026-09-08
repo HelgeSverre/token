@@ -73,3 +73,14 @@ in `c2a1ee5`, with shared runtime wiring in `ac362d4`.
 The related [keymap enhancements](keymap-enhancements.md) plan owns timeout,
 pending-chord feedback, hot reload and broader routing work. Coordinate those
 changes instead of creating a second keymap engine.
+
+## 2026-09-08 Linux verification checkpoint
+
+An isolated Debian ARM64 X11 editor verified Ctrl keycaps, capture cancellation,
+pointer Save, override persistence after restart, and opaque 400-pixel Settings
+layout. Native checks exposed Alt-containing chords being mistaken for a bare
+Alt double-tap; `c104ed9` fixes that without changing the gesture timing.
+The saved Ctrl+Alt+K Ctrl+Alt+S sequence opened Settings from the editor both
+immediately and after restart. Final Linux/macOS full tests and strict lint passed.
+See the [native record](../dev/refactoring-audit-2026-09-06.md#linux-native-verification-and-portability-fixes--2026-09-08).
+This does not verify every focus context, Wayland or Windows. Keep the plan active.
