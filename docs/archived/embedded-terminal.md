@@ -2,7 +2,7 @@
 
 Integrated terminal panel at the bottom of the editor
 
-> **Status:** ✅ Shipped — MVP (Phases 1–4); archived 2026-09-02. Terminal tabs and selection/copy added as follow-ons on 2026-09-08; modifier-click links remain in progress.
+> **Status:** ✅ Shipped — MVP (Phases 1–4); archived 2026-09-02. Terminal tabs, selection/copy and modifier-click web links added as follow-ons on 2026-09-08.
 > **Priority:** P2
 > **Effort:** L (8–14 days)
 > **Created:** 2025-12-20
@@ -382,6 +382,16 @@ copy using Cmd+C (macOS) or Ctrl+Shift+C (other platforms). Plain Ctrl+C still
 reaches the shell. Selections stay with their session; the existing terminal
 engine handles wrapped lines, Unicode and scrollback during extraction.
 See [verification](../dev/refactoring-audit-2026-09-06.md#terminal-selection-and-copy--2026-09-08).
+
+### Post-MVP: Modifier-Click Web Links
+
+Added 2026-09-08: Cmd-hover/click on macOS, Ctrl-hover/click elsewhere. Plain
+HTTP/HTTPS URLs and OSC 8 hyperlinks use the same grid coordinates as selection
+and rendering. Hover underlines the target and shows a pointer cursor; normal
+clicks remain selection. External navigation shares the preview browser launcher
+and only accepts web schemes. Plain URL detection skips logical lines exceeding
+4,096 cells to bound regex work during pointer interaction.
+See [verification and platform scope](../dev/refactoring-audit-2026-09-06.md#terminal-modifier-click-links--2026-09-08).
 
 ---
 

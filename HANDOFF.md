@@ -11,11 +11,13 @@ Completed implementation history and detailed evidence are in the
 [benchmark reports](docs/benchmark/README.md), with earlier handoff entries
 preserved in Git history.
 
-Latest implementation: `0020f0e` adds terminal selection/copy using shared grid
-geometry and the terminal core's text extraction. Native macOS drag, word/line
-copy and retained selection across tabs passed, as did full tests and lint.
-Terminal session tabs (`0620310`) also passed native creation, switching,
-retained history and isolated close. Modifier-click links remain below.
+Latest implementation: `9d9f4fb` adds modifier-click terminal web links with
+shared grid geometry, underline/pointer hover cues and a shared browser launcher.
+Native macOS normal-click suppression, Cmd-hover and browser opening passed;
+full tests and lint passed. Selection/copy (`0020f0e`) and session tabs
+(`0620310`) also passed native macOS checks. The requested terminal enhancements
+are implemented; see the [terminal verification](docs/dev/refactoring-audit-2026-09-06.md#terminal-modifier-click-links--2026-09-08)
+and the updated [archived terminal plan](docs/archived/embedded-terminal.md).
 
 Earlier implementation: `f0e1c4e` reuses coincident caret/selection coordinate
 conversions. The [multi-cursor report](docs/benchmark/2026-09-08-multicursor.md)
@@ -48,20 +50,6 @@ The default `target/` previously disappeared outside this task.
 
 ## Remaining implementation
 
-- Terminal enhancements (requested 2026-09-08):
-  - Tabs with create, switch and close controls are implemented and live-checked
-    on macOS: independent shells, retained scrollback, and isolated close.
-    [Verification](docs/dev/refactoring-audit-2026-09-06.md#terminal-tabs--2026-09-08).
-  - Selection/copy is implemented: native macOS drag, word/line selection and
-    retained selection across tabs passed; focused checks cover wrapped Unicode
-    in scrollback and preserving Ctrl+C. [Verification](docs/dev/refactoring-audit-2026-09-06.md#terminal-selection-and-copy--2026-09-08).
-  - Make links clickable while a modifier is held, with a visible hover cue.
-    Follow the app's platform modifier conventions; ordinary clicks must not
-    open links or interfere with selection. Reuse existing URL-opening effects.
-  - Share terminal geometry between rendering and pointer interaction; verify
-    these behaviors with live PTYs before marking them complete. Keep the shipped
-    [terminal MVP plan](docs/archived/embedded-terminal.md) archived; these are
-    follow-on features, not already delivered functionality.
 - Autocomplete: edit prediction (anchored edits, deletion/diff preview and jump
   targets). The plan names candidate providers but no selected backend contract;
   a backend/model preference has been requested. See
@@ -79,7 +67,7 @@ see the [live-server record](docs/dev/refactoring-audit-2026-09-06.md#live-works
 
 - Native Windows/Linux keymap chips, contexts, capture and persistence; launcher
   detachment and per-instance port files on Windows; managed llama-server
-  startup/teardown on Windows/Linux.
+  startup/teardown and terminal tabs/selection/modifier-click on Windows/Linux.
 - Actual IME composition/candidate windows, CJK/emoji positioning and the remaining
   completion native-input matrix. Existing unit/macOS evidence is not a full
   platform certification.

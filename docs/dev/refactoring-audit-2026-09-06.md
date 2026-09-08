@@ -1,5 +1,53 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Terminal modifier-click links — 2026-09-08
+
+Commit `9d9f4fb` completes the requested terminal link interaction: Cmd on macOS,
+Ctrl elsewhere, with underline and pointer hover cues. Ordinary clicks retain
+selection behavior. Clicks resolve the current grid again instead of opening a
+cached hover URI; redraw refreshes the cue after output, scrolling or resize.
+Shared `TerminalViewport` mapping rejects padding for links while retaining
+clamped coordinates for captured selection.
+
+The installed Alacritty core supplies OSC 8 metadata, wrapped-grid regex search
+and range extraction. Its matcher is compiled once per thread; plain URL search
+skips logical lines above 4,096 cells. Hidden plain-link text and non-web schemes
+are rejected. Preview and terminal share HTTP/HTTPS validation and the existing
+system browser launcher, now behind a runtime effect. No dependency was added.
+The Rust/review skills guided API scope and shared geometry; the library skill's
+documentation search did not cover this API, so the installed 0.26 source was
+used directly.
+
+An isolated native macOS editor (PID 52275, window 80689, scale 2) used an owned
+`/bin/sh` PTY and the unchanged selection-test document. A temporary HTTP server
+bound only to `127.0.0.1:53449` served the acceptance page:
+
+- A normal click on the printed URL produced no HTTP request.
+- Cmd-hover underlined the target: [capture](data/2026-09-08/terminal-link-hover.png).
+- Cmd-click opened Chrome; the server recorded `GET /` with status 200 at
+  17:03:16 in the server log. Its incidental favicon request returned 404.
+- An OSC 8 label rendered in the same PTY. A follow-up native click was stopped
+  by the pointer-owner guard because the test window was not topmost; explicit
+  target correctness is covered by the focused test, not claimed as a second
+  native browser check.
+- Cleanup conditionally closed only Chrome's active tab with the exact test URL.
+  The terminal shell was closed and the editor quit with status 0. The owned
+  HTTP server was terminated; PIDs 52275, 52512 and 50374 were confirmed absent.
+  The editor document remained unmodified.
+
+All 63 focused terminal checks passed (`5e8f7f44-20fd-4280-9a9c-2f70045a57a2`).
+The final full run passed 2,587 tests plus two doctests
+(`b0a213a9-9853-4794-b1ca-cab298946aff`); strict all-target/all-feature lint,
+formatting and whitespace checks passed. Focused coverage includes wrapped URLs
+in scrollback, balanced delimiters, OSC 8 targets, unsafe schemes, hidden text,
+modifier release, selection capture and overlay precedence. Native Windows/Linux
+interaction remains unverified. Earlier intermittent startup/exit issues remain
+open; this green run does not establish their root cause.
+
+Scoped review: **Approve**, no outstanding findings. Review added exact-cell
+link hit bounds and excluded hidden plain-link ranges. No performance claim is
+made from this debug GUI run.
+
 ## Terminal selection and copy — 2026-09-08
 
 Selection uses the installed `alacritty_terminal` 0.26 core's selection ranges
