@@ -6,6 +6,13 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Theme polish
+
+- Hand-tuned the full overlay palettes for Fleet Dark, GitHub Dark/Light,
+  Dracula, Mocha, Nord, Tokyo Night and Gruvbox Dark: distinct selected rows,
+  readable secondary text and shortcut chips, and coordinated diagnostic colors.
+  Custom-theme fallback behavior and the opaque Settings page are unchanged.
+
 ### Scrollbar consistency
 
 - Settings scrolls continuously in pixels, with clipped partial rows at both

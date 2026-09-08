@@ -9,5 +9,6 @@ files:
     cursor_line: 18
     cursor_column: 10
 modal:
-  id: theme_picker
-  selected_index: 5
+  id: command_palette
+  input: "open"
+  selected_index: 1

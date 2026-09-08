@@ -54,9 +54,30 @@ ui:
     highlight: "#B8BB26"
     warning: "#FABD2F"
     error: "#FB4934"
-    # overlay-surface.md Phase 1: accent tuned to the theme's own palette;
-    # remaining overlay.* keys use the derivation fallbacks in theme.rs.
+    # Warm charcoal chrome, sage selection and cream-colored text.
     accent: "#83A598"
+    accent_bright: "#B8D2AD"
+    panel_background: "#282828"
+    panel_secondary: "#242424"
+    recessed_wash: "#1D2021"
+    hairline: "#504945"
+    selection_wash: "#35443C"
+    match_on_selection: "#E2F1C8"
+    text_primary: "#EBDBB2"
+    text_bright: "#FBF1C7"
+    text_secondary: "#D5C4A1"
+    text_dim: "#BDAE93"
+    keycap_bg: "#3C3836"
+    keycap_border: "#665C54"
+    keycap_fg: "#EBDBB2"
+    severity_error: "#FB6354"
+    severity_warning: "#FABD2F"
+    severity_info: "#83C2BA"
+    severity_hint: "#BDAE93"
+    severity_error_text: "#FFADA0"
+    severity_warning_text: "#FDDD85"
+    severity_info_text: "#B3E0CF"
+    severity_hint_text: "#D5C4A1"
 
   csv:
     header_background: "#3C3836"

@@ -54,9 +54,30 @@ ui:
     highlight: "#A6E3A1"
     warning: "#F9E2AF"
     error: "#F38BA8"
-    # overlay-surface.md Phase 1: accent tuned to the theme's own palette;
-    # remaining overlay.* keys use the derivation fallbacks in theme.rs.
+    # Catppuccin surface/crust ramp with blue selection and pastel diagnostics.
     accent: "#89B4FA"
+    accent_bright: "#B4BEFE"
+    panel_background: "#1E1E2E"
+    panel_secondary: "#181825"
+    recessed_wash: "#11111B"
+    hairline: "#45475A"
+    selection_wash: "#313C58"
+    match_on_selection: "#DCE5FF"
+    text_primary: "#CDD6F4"
+    text_bright: "#F5E0DC"
+    text_secondary: "#BAC2DE"
+    text_dim: "#A6ADC8"
+    keycap_bg: "#313244"
+    keycap_border: "#585B70"
+    keycap_fg: "#CDD6F4"
+    severity_error: "#F38BA8"
+    severity_warning: "#F9E2AF"
+    severity_info: "#89DCEB"
+    severity_hint: "#A6ADC8"
+    severity_error_text: "#F5B4C6"
+    severity_warning_text: "#FBE9C4"
+    severity_info_text: "#B5EAF2"
+    severity_hint_text: "#BAC2DE"
 
   csv:
     header_background: "#181825"

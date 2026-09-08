@@ -54,9 +54,30 @@ ui:
     highlight: "#9ECE6A"
     warning: "#E0AF68"
     error: "#F7768E"
-    # overlay-surface.md Phase 1: accent tuned to the theme's own palette;
-    # remaining overlay.* keys use the derivation fallbacks in theme.rs.
+    # Indigo chrome, blue selection and cool lavender text.
     accent: "#7AA2F7"
+    accent_bright: "#89DDFF"
+    panel_background: "#1A1B26"
+    panel_secondary: "#161720"
+    recessed_wash: "#15161E"
+    hairline: "#3B4261"
+    selection_wash: "#293956"
+    match_on_selection: "#CBEDFF"
+    text_primary: "#C0CAF5"
+    text_bright: "#E2E8FF"
+    text_secondary: "#A9B5DE"
+    text_dim: "#919EC6"
+    keycap_bg: "#292E42"
+    keycap_border: "#4C5882"
+    keycap_fg: "#BAC8F4"
+    severity_error: "#F7768E"
+    severity_warning: "#E0AF68"
+    severity_info: "#7DCFFF"
+    severity_hint: "#919EC6"
+    severity_error_text: "#FFA6B8"
+    severity_warning_text: "#F1C98A"
+    severity_info_text: "#ADE1FF"
+    severity_hint_text: "#BAC8F4"
 
   csv:
     header_background: "#24283B"

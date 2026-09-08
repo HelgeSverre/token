@@ -54,9 +54,30 @@ ui:
     highlight: "#6AAF6A"
     warning: "#D9A74A"
     error: "#E05252"
-    # overlay-surface.md Phase 1: accent tuned to the theme's own palette;
-    # remaining overlay.* keys use the derivation fallbacks in theme.rs.
+    # Neutral charcoal chrome with Fleet blue selection and cool-gray text.
     accent: "#3574F0"
+    accent_bright: "#80AEFF"
+    panel_background: "#181818E0"
+    panel_secondary: "#202124"
+    recessed_wash: "#111214"
+    hairline: "#383B40"
+    selection_wash: "#243955"
+    match_on_selection: "#C5DEFF"
+    text_primary: "#D7DAE0"
+    text_bright: "#FFFEF8"
+    text_secondary: "#AFB4BE"
+    text_dim: "#969DA8"
+    keycap_bg: "#2A2D33"
+    keycap_border: "#494E58"
+    keycap_fg: "#C4CAD4"
+    severity_error: "#F07878"
+    severity_warning: "#E4B45E"
+    severity_info: "#80AEFF"
+    severity_hint: "#969DA8"
+    severity_error_text: "#FFABAB"
+    severity_warning_text: "#F4CB87"
+    severity_info_text: "#ACCCFF"
+    severity_hint_text: "#B8BFCA"
 
   csv:
     header_background: "#1E1E1E"

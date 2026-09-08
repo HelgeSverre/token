@@ -54,9 +54,30 @@ ui:
     highlight: "#A3BE8C"
     warning: "#EBCB8B"
     error: "#BF616A"
-    # overlay-surface.md Phase 1: accent tuned to the theme's own palette;
-    # remaining overlay.* keys use the derivation fallbacks in theme.rs.
+    # Polar-night chrome, frost selection and snow-colored text.
     accent: "#88C0D0"
+    accent_bright: "#8FBCBB"
+    panel_background: "#3B4252"
+    panel_secondary: "#343B49"
+    recessed_wash: "#2E3440"
+    hairline: "#4C566A"
+    selection_wash: "#3E5060"
+    match_on_selection: "#E0F4F4"
+    text_primary: "#ECEFF4"
+    text_bright: "#FFFFFF"
+    text_secondary: "#D8DEE9"
+    text_dim: "#B0BACB"
+    keycap_bg: "#434C5E"
+    keycap_border: "#69768B"
+    keycap_fg: "#ECEFF4"
+    severity_error: "#E899A2"
+    severity_warning: "#EBCB8B"
+    severity_info: "#88C0D0"
+    severity_hint: "#B0BACB"
+    severity_error_text: "#F1B7BD"
+    severity_warning_text: "#F1D9A5"
+    severity_info_text: "#B4DFE8"
+    severity_hint_text: "#D8DEE9"
 
   csv:
     header_background: "#3B4252"

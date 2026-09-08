@@ -54,9 +54,30 @@ ui:
     highlight: "#3FB950"
     warning: "#D29922"
     error: "#F85149"
-    # overlay-surface.md Phase 1: accent tuned to the theme's own palette;
-    # remaining overlay.* keys use the derivation fallbacks in theme.rs.
+    # GitHub blue selection, cool slate chrome and restrained gray text.
     accent: "#58A6FF"
+    accent_bright: "#A5D6FF"
+    panel_background: "#0D1117E0"
+    panel_secondary: "#161B22"
+    recessed_wash: "#010409"
+    hairline: "#30363D"
+    selection_wash: "#183B5B"
+    match_on_selection: "#CAE8FF"
+    text_primary: "#E6EDF3"
+    text_bright: "#FFFFFF"
+    text_secondary: "#B1BAC4"
+    text_dim: "#919BA7"
+    keycap_bg: "#21262D"
+    keycap_border: "#484F58"
+    keycap_fg: "#C9D1D9"
+    severity_error: "#FF7B72"
+    severity_warning: "#E3B341"
+    severity_info: "#79C0FF"
+    severity_hint: "#919BA7"
+    severity_error_text: "#FFA198"
+    severity_warning_text: "#F2CC60"
+    severity_info_text: "#A5D6FF"
+    severity_hint_text: "#B1BAC4"
 
   csv:
     header_background: "#161B22"

@@ -54,9 +54,30 @@ ui:
     highlight: "#1A7F37"
     warning: "#9A6700"
     error: "#CF222E"
-    # overlay-surface.md Phase 1: accent tuned to the theme's own palette;
-    # remaining overlay.* keys use the derivation fallbacks in theme.rs.
+    # Light neutral chrome with blue selection and dark, readable secondary text.
     accent: "#0969DA"
+    accent_bright: "#0550AE"
+    panel_background: "#F0F0F0E0"
+    panel_secondary: "#EAEEF2"
+    recessed_wash: "#E2E7ED"
+    hairline: "#D0D7DE"
+    selection_wash: "#DDEBFF"
+    match_on_selection: "#0A3069"
+    text_primary: "#24292F"
+    text_bright: "#1B1F24"
+    text_secondary: "#46515E"
+    text_dim: "#505963"
+    keycap_bg: "#EAEEF2"
+    keycap_border: "#AFB8C1"
+    keycap_fg: "#424A53"
+    severity_error: "#CF222E"
+    severity_warning: "#9A6700"
+    severity_info: "#0969DA"
+    severity_hint: "#57606A"
+    severity_error_text: "#950E20"
+    severity_warning_text: "#744500"
+    severity_info_text: "#033D8B"
+    severity_hint_text: "#424A53"
 
   csv:
     header_background: "#F6F8FA"
