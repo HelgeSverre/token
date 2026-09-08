@@ -49,6 +49,12 @@ and wrapping were retained rather than adding feature-local rendering loops.
 Verdict: **Approve** for this bounded slice. External-file conflict protection,
 session restore and the handoff's remaining native checks are not closed by it.
 
+The subsequent [optimized guide comparison](../benchmark/2026-09-08-indent-guides.md)
+records three same-binary on/off pairs: median-of-medians 3.54 ms enabled versus
+3.47 ms disabled, with paired deltas from −0.01 to +0.11 ms. This small,
+variable difference does not justify adding an inference cache at this point.
+The probe excludes documentation cards and native presentation.
+
 ## Plan reconciliation — 2026-09-08
 
 Reviewed the scope/status of all 23 plans in `docs/feature/` and `docs/future/`

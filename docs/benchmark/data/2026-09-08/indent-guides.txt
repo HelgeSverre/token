@@ -1,0 +1,98 @@
+Optimized indent-guide comparison — 2026-09-08
+Commit: 94398a9 (guide implementation e988572)
+Apple M2 Max; macOS 15.6; rustc 1.98.0; Cargo release opt-level=3, thin LTO
+1920x1080 physical pixels at 2x; three synthetic Rust documents; 1000 frames per process
+Serial order: on-1, off-1, on-2, off-2, on-3, off-3
+Command: just profile-render --frames 1000 --splits 3 --scroll --stats
+Off adds: --no-indent-guides
+Only the timing summaries are retained below; compilation and progress output excluded.
+
+on-1
+
+Render complete!
+
+CPU editor-area timings (excludes window/present):
+  Min:        3.42ms
+  Max:        4.35ms
+  Avg:        3.58ms
+  Median:     3.55ms
+  P95:        3.75ms
+  P99:        3.96ms
+
+  Iterations/s:    279.6
+  Total:      3.58s
+
+off-1
+
+Render complete!
+
+CPU editor-area timings (excludes window/present):
+  Min:        3.31ms
+  Max:       14.67ms
+  Avg:        3.59ms
+  Median:     3.47ms
+  P95:        3.88ms
+  P99:        4.98ms
+
+  Iterations/s:    278.9
+  Total:      3.59s
+
+on-2
+
+Render complete!
+
+CPU editor-area timings (excludes window/present):
+  Min:        3.42ms
+  Max:        4.27ms
+  Avg:        3.57ms
+  Median:     3.54ms
+  P95:        3.75ms
+  P99:        4.05ms
+
+  Iterations/s:    280.0
+  Total:      3.57s
+
+off-2
+
+Render complete!
+
+CPU editor-area timings (excludes window/present):
+  Min:        3.31ms
+  Max:        4.12ms
+  Avg:        3.46ms
+  Median:     3.43ms
+  P95:        3.67ms
+  P99:        3.83ms
+
+  Iterations/s:    289.4
+  Total:      3.46s
+
+on-3
+
+Render complete!
+
+CPU editor-area timings (excludes window/present):
+  Min:        3.41ms
+  Max:        4.63ms
+  Avg:        3.57ms
+  Median:     3.54ms
+  P95:        3.82ms
+  P99:        4.25ms
+
+  Iterations/s:    279.9
+  Total:      3.57s
+
+off-3
+
+Render complete!
+
+CPU editor-area timings (excludes window/present):
+  Min:        3.31ms
+  Max:       17.65ms
+  Avg:        3.61ms
+  Median:     3.55ms
+  P95:        3.88ms
+  P99:        4.14ms
+
+  Iterations/s:    277.3
+  Total:      3.61s
