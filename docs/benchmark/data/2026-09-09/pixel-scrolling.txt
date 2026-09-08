@@ -1,0 +1,110 @@
+target/verification/pixel-profile-scroll-1.log
+CPU editor-area timings (excludes window/present):
+  Min:        3.67ms
+  Max:      118.36ms
+  Avg:        4.57ms
+  Median:     3.93ms
+  P95:        7.66ms
+  P99:        9.81ms
+
+  Iterations/s:    219.0
+  Total:      4.57s
+target/verification/pixel-profile-pixel-scroll-1.log
+CPU editor-area timings (excludes window/present):
+  Min:        3.75ms
+  Max:       19.57ms
+  Avg:        4.33ms
+  Median:     3.99ms
+  P95:        5.82ms
+  P99:        7.38ms
+
+  Iterations/s:    231.1
+  Total:      4.33s
+target/verification/pixel-profile-eased-scroll-1.log
+CPU editor-area timings (excludes window/present):
+  Min:        3.74ms
+  Max:       10.81ms
+  Avg:        4.61ms
+  Median:     4.20ms
+  P95:        6.48ms
+  P99:        8.35ms
+
+  Iterations/s:    216.9
+  Total:      4.61s
+target/verification/pixel-profile-scroll-2.log
+CPU editor-area timings (excludes window/present):
+  Min:        3.70ms
+  Max:       10.74ms
+  Avg:        4.60ms
+  Median:     4.17ms
+  P95:        6.70ms
+  P99:        8.67ms
+
+  Iterations/s:    217.4
+  Total:      4.60s
+target/verification/pixel-profile-pixel-scroll-2.log
+CPU editor-area timings (excludes window/present):
+  Min:        3.80ms
+  Max:        8.49ms
+  Avg:        4.35ms
+  Median:     4.03ms
+  P95:        5.76ms
+  P99:        7.00ms
+
+  Iterations/s:    230.1
+  Total:      4.35s
+target/verification/pixel-profile-eased-scroll-2.log
+CPU editor-area timings (excludes window/present):
+  Min:        3.59ms
+  Max:        9.49ms
+  Avg:        4.26ms
+  Median:     4.07ms
+  P95:        5.86ms
+  P99:        7.07ms
+
+  Iterations/s:    234.6
+  Total:      4.26s
+target/verification/pixel-profile-scroll-3.log
+CPU editor-area timings (excludes window/present):
+  Min:        3.62ms
+  Max:        4.93ms
+  Avg:        3.95ms
+  Median:     3.93ms
+  P95:        4.29ms
+  P99:        4.72ms
+
+  Iterations/s:    253.1
+  Total:      3.95s
+target/verification/pixel-profile-pixel-scroll-3.log
+CPU editor-area timings (excludes window/present):
+  Min:        3.56ms
+  Max:        4.58ms
+  Avg:        3.81ms
+  Median:     3.78ms
+  P95:        4.04ms
+  P99:        4.33ms
+
+  Iterations/s:    262.5
+  Total:      3.81s
+target/verification/pixel-profile-eased-scroll-3.log
+CPU editor-area timings (excludes window/present):
+  Min:        3.62ms
+  Max:        4.79ms
+  Avg:        3.89ms
+  Median:     3.86ms
+  P95:        4.15ms
+  P99:        4.50ms
+
+  Iterations/s:    257.3
+  Total:      3.89s
+target/verification/pixel-profile-source.log
+CPU editor-area timings (excludes window/present):
+  Min:        0.55ms
+  Max:        1.24ms
+  Avg:        0.66ms
+  Median:     0.65ms
+  P95:        0.74ms
+  P99:        0.80ms
+
+  Iterations/s:   1521.7
+  Total:      0.66s

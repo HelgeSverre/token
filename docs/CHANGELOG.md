@@ -77,6 +77,9 @@ All notable changes to rust-editor are documented in this file.
 
 ### Documentation
 
+- Added current-state optimized pixel/eased scrolling measurements under
+  `docs/benchmark/`, including repeated three-pane runs and a real-source case.
+
 - Archived the session-restore proposal after full-suite and native macOS
   restart verification; broader sidebar/window and periodic-recovery ideas are
   explicitly deferred.

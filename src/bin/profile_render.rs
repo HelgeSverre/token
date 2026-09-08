@@ -54,6 +54,14 @@ struct Args {
     #[arg(long)]
     scroll: bool,
 
+    /// Move partial rows/columns every frame (simulated 120 Hz trackpad input).
+    #[arg(long, conflicts_with_all = ["scroll", "eased_scroll"])]
+    pixel_scroll: bool,
+
+    /// Repeated wheel steps, advanced at a deterministic simulated 120 Hz.
+    #[arg(long, conflicts_with = "scroll")]
+    eased_scroll: bool,
+
     /// Print timing statistics
     #[arg(long)]
     stats: bool,
@@ -155,6 +163,41 @@ fn main() -> Result<()> {
         // Simulate scrolling to exercise different code paths
         if args.scroll && frame % 10 == 0 {
             scroll_model(&mut model, (frame / 10) % 100);
+        }
+        if args.pixel_scroll || args.eased_scroll {
+            let direction = if (frame / 240) % 2 == 0 { 1.0 } else { -1.0 };
+            let ids: Vec<_> = model
+                .editor_area
+                .groups
+                .values()
+                .filter_map(|group| group.active_editor_id())
+                .collect();
+            if args.pixel_scroll || frame % 12 == 0 {
+                for editor_id in ids {
+                    let (dx, dy) = if args.pixel_scroll {
+                        (0.75, 3.25)
+                    } else {
+                        (0.0, line_height as f64 * 3.0)
+                    };
+                    token::update::update(
+                        &mut model,
+                        token::messages::Msg::Editor(token::messages::EditorMsg::ScrollPixels {
+                            editor_id,
+                            delta_x: dx * direction,
+                            delta_y: dy * direction,
+                            animated: args.eased_scroll,
+                        }),
+                    );
+                }
+            }
+            if args.eased_scroll {
+                token::update::update(
+                    &mut model,
+                    token::messages::Msg::App(token::messages::AppMsg::ScrollAnimationTick {
+                        seconds: 1.0 / 120.0,
+                    }),
+                );
+            }
         }
 
         // Clear the buffer (as real renderer does)
