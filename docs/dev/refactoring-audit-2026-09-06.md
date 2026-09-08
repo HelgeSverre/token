@@ -1,5 +1,50 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Linux terminal tabs and browser links — 2026-09-08
+
+Follow-up native acceptance used the retained Debian ARM64 X11 environment and
+the same verified debug binary containing `c104ed9`. No application source or
+tests changed. Editor PID 38 (container namespace), window 4194306, used isolated
+configuration, an unchanged text fixture and real `/bin/sh` sessions.
+
+- Creating the second tab with the native `+` control produced independent
+  shell PIDs 205 and 241. Each displayed its own OSC title and output.
+  [Two-tab capture](data/2026-09-08/linux-terminal-tabs.png).
+- After printing 40 numbered lines and pressing Shift+PageUp, switching to the
+  second tab and clicking the first restored lines 29–35 and the same `6/36`
+  history offset. [Retained-history capture](data/2026-09-08/linux-terminal-history.png).
+- Clicking `x` on the first tab removed PID 205 while PID 241 remained live.
+  Closing the last tab later removed PID 241 as well.
+- A normal click on `http://127.0.0.1:53449/plain` made no HTTP request during
+  the observation window. Ctrl-hover visibly underlined the link. Ctrl-click
+  opened it through `xdg-open` and the isolated desktop's default browser.
+- An OSC 8 label (`label link`) also underlined on Ctrl-hover and opened its
+  distinct `/osc8` target, not the displayed text.
+  [Hover capture](data/2026-09-08/linux-terminal-osc8-hover.png) and
+  [browser capture](data/2026-09-08/linux-terminal-browser.png).
+
+The acceptance server bound only to container loopback. Its request output was:
+
+```text
+127.0.0.1 - - [08/Sep/2026 15:46:42] "GET /plain HTTP/1.1" 200 -
+127.0.0.1 - - [08/Sep/2026 15:47:00] "GET /osc8 HTTP/1.1" 200 -
+```
+
+Epiphany initially failed before requesting the page because its bubblewrap
+namespace creation was prohibited by the container. Direct launcher diagnosis
+confirmed that environmental failure. Dillo 3.0.5 was then installed and selected
+as the default browser inside the isolated configuration; neither the application
+nor container security settings were changed to make the check pass.
+
+Both browser windows exited through Ctrl+Q. Both shells were closed through the
+tab controls, the editor's Quit action exited with status 0, and the owned HTTP
+server was terminated. Process inspection confirmed those processes absent;
+the task container was then stopped with its build cache retained. The document
+snapshot still contained exactly `Isolated Linux native verification.\n`,
+revision 0, unmodified. Windows/Wayland and the other HANDOFF gates remain open.
+This functional check makes no new performance claim; prior full-suite/lint
+evidence for the unchanged application source is recorded below.
+
 ## Linux native verification and portability fixes — 2026-09-08
 
 The task-owned Debian Bookworm ARM64 container ran the actual winit application

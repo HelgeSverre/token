@@ -6,6 +6,14 @@ using fixture tests alone.
 
 ## Current checkpoint
 
+Latest verification: Linux X11 terminal tab creation, retained scrollback,
+independent shell closure, normal-click suppression and Ctrl-click browser
+opening passed. Both plain URLs and OSC 8 labels reached the loopback acceptance
+server through the default browser. See the
+[terminal record](docs/dev/refactoring-audit-2026-09-06.md#linux-terminal-tabs-and-browser-links--2026-09-08).
+This completes the requested terminal interaction checks on Linux X11, not
+Windows or Wayland. No application code changed in this verification pass.
+
 Completed implementation history and detailed evidence are in the
 [refactoring audit](docs/dev/refactoring-audit-2026-09-06.md) and
 [benchmark reports](docs/benchmark/README.md), with earlier handoff entries
@@ -79,7 +87,7 @@ see the [live-server record](docs/dev/refactoring-audit-2026-09-06.md#live-works
   capture/cancel, pointer save, restart persistence and terminal selection/copy
   now have native evidence. Launcher detachment and per-instance port files on
   Windows; managed llama-server startup/teardown on Windows/Linux; terminal
-  tabs/selection/modifier-click on Windows and tabs/modifier-click on Linux.
+  tabs/selection/modifier-click on Windows and Wayland.
 - Actual IME composition/candidate windows, CJK/emoji positioning and the remaining
   completion native-input matrix. Existing unit/macOS evidence is not a full
   platform certification.

@@ -9,6 +9,14 @@ Integrated terminal panel at the bottom of the editor
 > **Updated:** 2026-07-07
 > **Milestone:** 5 - Future
 
+Follow-on verification (2026-09-08): tabs, selection/copy and modifier-click
+web links have native macOS and Linux X11 evidence. Linux checks include
+independent shell closure, retained scrollback, persistent clipboard ownership,
+normal-click suppression and browser opening for plain and OSC 8 links.
+See the [Linux acceptance record](../dev/refactoring-audit-2026-09-06.md#linux-terminal-tabs-and-browser-links--2026-09-08).
+Windows/Wayland verification remains tracked in HANDOFF; the historical MVP
+checklist below is not a claim of complete cross-platform certification.
+
 ---
 
 ## Table of Contents
