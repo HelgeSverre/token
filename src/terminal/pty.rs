@@ -310,6 +310,10 @@ mod tests {
             let mut cmd = CommandBuilder::new("/bin/sh");
             cmd.arg("-s");
             cmd.env_remove("ENV");
+            // A prompt can precede output when input beats shell startup.
+            // Keep the full-line assertion independent of /bin/sh's prompt.
+            cmd.env("PS1", "");
+            cmd.env("PS2", "");
             cmd
         };
         cmd.cwd(std::env::temp_dir());
@@ -338,6 +342,10 @@ mod tests {
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
         }
+        eprintln!(
+            "PTY output before timeout: {:?}",
+            String::from_utf8_lossy(&collected)
+        );
         false
     }
 
