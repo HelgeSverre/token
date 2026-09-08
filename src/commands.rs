@@ -1204,7 +1204,7 @@ pub enum Cmd {
         revision: u64,
         server_id: crate::lsp::LspServerId,
         root: PathBuf,
-        raw_item: serde_json::Value,
+        raw_item: std::sync::Arc<lsp_types::CompletionItem>,
         selected: usize,
         purpose: ResolvePurpose,
     },
@@ -1217,7 +1217,7 @@ pub enum Cmd {
         revision: u64,
         server_id: crate::lsp::LspServerId,
         root: PathBuf,
-        raw_item: serde_json::Value,
+        raw_item: std::sync::Arc<lsp_types::CompletionItem>,
         selected: usize,
     },
     /// The master `lsp.enabled` switch flipped (`CommandId::ToggleLsp`).

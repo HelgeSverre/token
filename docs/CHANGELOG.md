@@ -6,6 +6,15 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Completion efficiency
+
+- LSP completion rows retain the original typed protocol item through filtering
+  and resolve debouncing. JSON is built only when an actual resolve request is
+  sent, avoiding eager copies of every candidate's fields and opaque server data.
+  Snippet normalization, initial edits and resolve round-trip contents are unchanged.
+- Completion-response debug traces now report identity and item count without
+  formatting or logging the entire candidate payload.
+
 ### Workspace-aware inline suggestions
 
 - Providers can opt into `workspace_retrieval` context: bounded, background BM25

@@ -78,12 +78,10 @@ pub struct LspInsert {
     /// back to it.
     pub server_id: LspServerId,
     pub root: PathBuf,
-    /// The raw item JSON, replayed verbatim as `completionItem/resolve`'s
-    /// parameter (the spec requires the *same* item object round-tripped).
-    /// Shared, not owned: carried LSP items are cloned on every keystroke
-    /// refresh, and a deep `Value` clone per item dominated that path
-    /// (~3.5 ms / 84k allocations per keystroke at 1000 items).
-    pub raw: std::sync::Arc<serde_json::Value>,
+    /// Original protocol item, shared through menu refreshes and resolve
+    /// debouncing. Serialized only at the runtime's resolve request boundary;
+    /// presentation/snippet normalization must never alter this snapshot.
+    pub raw: std::sync::Arc<lsp_types::CompletionItem>,
     /// Whether the server advertised `completionProvider.resolveProvider`,
     /// captured at conversion time from its capabilities snapshot.
     pub can_resolve: bool,

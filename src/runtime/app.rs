@@ -689,7 +689,7 @@ struct ScheduledResolve {
     revision: u64,
     server_id: LspServerId,
     root: PathBuf,
-    raw_item: serde_json::Value,
+    raw_item: std::sync::Arc<lsp_types::CompletionItem>,
     selected: usize,
     deadline: Instant,
 }
@@ -4785,7 +4785,7 @@ impl App {
         revision: u64,
         server_id: LspServerId,
         root: PathBuf,
-        raw_item: serde_json::Value,
+        raw_item: std::sync::Arc<lsp_types::CompletionItem>,
         selected: usize,
         purpose: ResolvePurpose,
     ) {
@@ -4807,7 +4807,12 @@ impl App {
             .servers
             .get(&(server_id.clone(), root.clone()))
             .filter(|_| can_resolve);
-        let Some(handle) = handle else {
+        let request = handle.and_then(|handle| {
+            serde_json::to_value(raw_item.as_ref())
+                .ok()
+                .map(|params| (handle, params))
+        });
+        let Some((handle, raw_item)) = request else {
             if purpose == ResolvePurpose::Accept {
                 self.emit_lsp_msg(Msg::Lsp(LspMsg::CompletionItemResolved {
                     document_id,

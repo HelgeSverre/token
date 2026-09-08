@@ -71,12 +71,11 @@ fn completion_item_to_menu_item(
     can_resolve: bool,
     default_commit_characters: &std::sync::Arc<[char]>,
 ) -> Option<MenuItem> {
-    // Serialize the *whole* item before destructuring it:
-    // `completionItem/resolve` requires the same item object round-tripped,
-    // including server-specific extension fields under `data`, and
-    // `CompletionItem` isn't `Clone`.
-    let raw = std::sync::Arc::new(serde_json::to_value(&item).unwrap_or(serde_json::Value::Null));
-    let detail = item_detail(&item);
+    // Keep the original typed item intact for resolve. Building JSON for every
+    // candidate duplicates its fields and opaque data before any row is chosen.
+    let raw = std::sync::Arc::new(item);
+    let item = raw.as_ref();
+    let detail = item_detail(item);
     let preselect = item.preselect.unwrap_or(false);
     // An explicit empty item list opts out of all server defaults. Do not union
     // the two sets or insert inherited fields into the raw resolve payload.
@@ -86,12 +85,14 @@ fn completion_item_to_menu_item(
         .map(normalize_commit_characters)
         .unwrap_or_else(|| default_commit_characters.clone());
 
-    let mut text_edit = match item.text_edit {
-        Some(lsp_types::CompletionTextEdit::Edit(edit)) => Some((edit.range, edit.new_text)),
+    let mut text_edit = match item.text_edit.as_ref() {
+        Some(lsp_types::CompletionTextEdit::Edit(edit)) => {
+            Some((edit.range, edit.new_text.clone()))
+        }
         // InsertAndReplace (3.16) — we advertise no support for it; use
         // the insert half rather than dropping the item outright.
         Some(lsp_types::CompletionTextEdit::InsertAndReplace(edit)) => {
-            Some((edit.insert, edit.new_text))
+            Some((edit.insert, edit.new_text.clone()))
         }
         None => None,
     };
@@ -99,7 +100,6 @@ fn completion_item_to_menu_item(
     let lsp_types::CompletionItem {
         label,
         filter_text,
-        mut insert_text,
         insert_text_format,
         kind,
         sort_text,
@@ -107,12 +107,13 @@ fn completion_item_to_menu_item(
         additional_text_edits,
         ..
     } = item;
+    let mut insert_text = item.insert_text.clone();
 
     // We advertise `snippetSupport: false`, but rust-analyzer still sends
     // snippet bodies. Insert readable text; the caret lands at `$0`. The
     // primary text (`textEdit` if present) decides the caret.
     let mut caret_offset = None;
-    if insert_text_format == Some(lsp_types::InsertTextFormat::SNIPPET) {
+    if *insert_text_format == Some(lsp_types::InsertTextFormat::SNIPPET) {
         if let Some(text) = insert_text.as_mut() {
             (*text, caret_offset) = strip_snippet(text);
         }
@@ -129,34 +130,35 @@ fn completion_item_to_menu_item(
     // autocomplete.md Phase 5 rule: matching runs against
     // `filterText ?? label` — never bare `label` alone (rust-analyzer
     // labels embed type signatures; matching them ranks visibly wrong).
-    let filter_text = filter_text.unwrap_or_else(|| label.clone());
+    let filter_text = filter_text.clone().unwrap_or_else(|| label.clone());
     // `insertText ?? textEdit.newText ?? label`.
     let plain_text = text.unwrap_or_else(|| label.clone());
 
     Some(MenuItem {
-        label,
+        label: label.clone(),
         filter_text,
         insert: MenuInsert::Lsp(Box::new(LspInsert {
             text: plain_text,
             server_id: server_id.clone(),
             root: root.to_path_buf(),
-            raw,
+            raw: std::sync::Arc::clone(&raw),
             can_resolve,
             resolved: false,
             text_edit,
             additional_text_edits: additional_text_edits
+                .as_deref()
                 .unwrap_or_default()
-                .into_iter()
-                .map(|edit| (edit.range, edit.new_text))
+                .iter()
+                .map(|edit| (edit.range, edit.new_text.clone()))
                 .collect(),
             commit_characters,
             caret_offset,
             documentation: documentation.as_ref().and_then(documentation_to_styled),
         })),
-        kind: map_kind(kind),
+        kind: map_kind(*kind),
         source: MenuSourceId::Lsp,
         detail,
-        sort_text,
+        sort_text: sort_text.clone(),
         preselect,
     })
 }
@@ -452,8 +454,9 @@ mod tests {
         let MenuInsert::Lsp(insert) = &menu_item.insert else {
             panic!("expected LSP insert");
         };
-        assert_eq!(insert.raw["data"]["autoImport"], serde_json::json!(true));
-        assert_eq!(insert.raw["label"], serde_json::json!("imported_fn"));
+        let wire = serde_json::to_value(insert.raw.as_ref()).unwrap();
+        assert_eq!(wire["data"]["autoImport"], serde_json::json!(true));
+        assert_eq!(wire["label"], serde_json::json!("imported_fn"));
     }
 
     #[test]
@@ -492,10 +495,13 @@ mod tests {
             &inserts[3].commit_characters
         ));
         assert!(
-            inserts[0].raw.get("commitCharacters").is_none(),
+            inserts[0].raw.commit_characters.is_none(),
             "resolve payload must remain the original item"
         );
-        assert_eq!(inserts[2].raw["commitCharacters"], serde_json::json!([]));
+        assert_eq!(
+            inserts[2].raw.commit_characters.as_deref(),
+            Some([].as_slice())
+        );
     }
 
     #[test]
@@ -559,12 +565,16 @@ mod tests {
         let MenuInsert::Lsp(data) = convert(item).unwrap().insert else {
             panic!("LSP insert")
         };
-        assert_eq!(*data.raw, expected_raw);
+        assert_eq!(
+            serde_json::to_value(data.raw.as_ref()).unwrap(),
+            expected_raw
+        );
         assert_eq!(data.additional_text_edits, expected_edits);
         assert_eq!(data.text, "method()");
         assert_eq!(data.caret_offset, Some(7));
         assert_eq!(data.commit_characters.as_ref(), &[';']);
         let copy = data.clone();
+        assert!(std::sync::Arc::ptr_eq(&data.raw, &copy.raw));
         assert!(std::sync::Arc::ptr_eq(
             &data.commit_characters,
             &copy.commit_characters

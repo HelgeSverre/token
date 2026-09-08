@@ -513,6 +513,9 @@ fn msg_type_name(msg: &Msg) -> String {
             )
         }
         Msg::Completion(m) => format!("Completion::{:?}", m),
+        Msg::Lsp(crate::messages::LspMsg::CompletionResolved {
+            document_id, revision, items, is_incomplete,
+        }) => format!("Lsp::CompletionResolved(document={document_id:?}, revision={revision}, items={}, incomplete={is_incomplete})", items.len()),
         Msg::Lsp(m) => format!("Lsp::{:?}", m),
         Msg::ContextMenu(m) => format!("ContextMenu::{:?}", m),
     }
@@ -520,7 +523,7 @@ fn msg_type_name(msg: &Msg) -> String {
 
 #[cfg(all(test, debug_assertions))]
 #[test]
-fn file_io_reply_trace_names_exclude_buffer_contents() {
+fn async_reply_trace_names_exclude_source_payloads() {
     use crate::messages::AppMsg;
     use crate::model::{Document, DocumentId, FileRequestKind};
     let mut doc = Document::with_text("do-not-log-file-contents");
@@ -546,4 +549,22 @@ fn file_io_reply_trace_names_exclude_buffer_contents() {
         assert!(!name.contains("do-not-log-file-contents"));
         assert!(name.chars().count() < 128);
     }
+    let items = crate::completion::lsp::items_to_menu_items(
+        vec![lsp_types::CompletionItem {
+            label: "do-not-log-completion-contents".into(),
+            ..Default::default()
+        }],
+        &crate::lsp::LspServerId::from("fixture"),
+        std::path::Path::new("/fixture"),
+        None,
+    );
+    let name = msg_type_name(&Msg::Lsp(crate::messages::LspMsg::CompletionResolved {
+        document_id: DocumentId(1),
+        revision: 0,
+        items,
+        is_incomplete: false,
+    }));
+    assert!(name.contains("items=1"));
+    assert!(!name.contains("do-not-log-completion-contents"));
+    assert!(name.chars().count() < 128);
 }

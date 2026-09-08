@@ -595,7 +595,7 @@ fn schedule_docs_resolve(model: &AppModel) -> Option<Cmd> {
         revision: state.revision,
         server_id: data.server_id.clone(),
         root: data.root.clone(),
-        raw_item: (*data.raw).clone(),
+        raw_item: std::sync::Arc::clone(&data.raw),
         selected,
     })
 }
@@ -804,7 +804,7 @@ fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
             let (server_id, root, raw_item) = (
                 data.server_id.clone(),
                 data.root.clone(),
-                (*data.raw).clone(),
+                std::sync::Arc::clone(&data.raw),
             );
             let (document_id, revision) = {
                 let state = model.ui.completion_menu.as_ref()?;
@@ -1440,7 +1440,10 @@ mod tests {
                 text: label.to_owned(),
                 server_id: crate::lsp::LspServerId::from("rust-analyzer"),
                 root: std::path::PathBuf::from("/tmp/proj"),
-                raw: std::sync::Arc::new(serde_json::json!({ "label": label })),
+                raw: std::sync::Arc::new(lsp_types::CompletionItem {
+                    label: label.into(),
+                    ..Default::default()
+                }),
                 can_resolve: false,
                 resolved: false,
                 text_edit: None,
@@ -2271,7 +2274,7 @@ mod tests {
         };
         assert!(cmds.iter().any(|c| matches!(c,
             Cmd::LspResolveCompletionItem { raw_item, selected, .. }
-                if raw_item["label"] == serde_json::json!("valid_fn") && *selected == 0)));
+                if raw_item.label == "valid_fn" && *selected == 0)));
 
         // Resolution lands: the deferred accept applies.
         let state = model.ui.completion_menu.clone().unwrap();

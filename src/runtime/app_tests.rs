@@ -2699,7 +2699,10 @@ fn a_docs_resolve_past_its_deadline_is_dropped_silently() {
                 text: "foo".to_owned(),
                 server_id: server_id.clone(),
                 root: root.clone(),
-                raw: std::sync::Arc::new(serde_json::json!({ "label": "foo" })),
+                raw: std::sync::Arc::new(lsp_types::CompletionItem {
+                    label: "foo".into(),
+                    ..Default::default()
+                }),
                 can_resolve: true,
                 resolved: false,
                 text_edit: None,
@@ -2760,7 +2763,10 @@ fn cancel_completion_drops_the_resolve_debounce() {
         revision: 1,
         server_id: LspServerId::from("rust-analyzer"),
         root: PathBuf::from("/tmp/proj-cancel-docs"),
-        raw_item: serde_json::json!({ "label": "foo" }),
+        raw_item: std::sync::Arc::new(lsp_types::CompletionItem {
+            label: "foo".into(),
+            ..Default::default()
+        }),
         selected: 0,
     });
     assert_eq!(app.lsp.resolve_debounces.len(), 1);

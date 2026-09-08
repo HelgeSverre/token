@@ -3559,7 +3559,10 @@ mod tests {
                 text: label.to_owned(),
                 server_id: crate::lsp::LspServerId::from("rust-analyzer"),
                 root: std::path::PathBuf::from("/tmp/proj"),
-                raw: std::sync::Arc::new(serde_json::json!({ "label": label })),
+                raw: std::sync::Arc::new(lsp_types::CompletionItem {
+                    label: label.into(),
+                    ..Default::default()
+                }),
                 can_resolve: true,
                 resolved: true,
                 text_edit: None,
