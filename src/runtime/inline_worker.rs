@@ -5,15 +5,86 @@ use std::sync::{mpsc::Sender, Arc};
 use token::completion::fim::{self, FimProvider};
 use token::completion::inline::{postprocess, MAX_ALTERNATIVES};
 use token::completion::postprocess::InlinePostprocessor;
-use token::completion::provider::{InlineJob, InlineProvider};
+use token::completion::provider::{InlineJob, InlineProvider, ProviderError};
+use token::config::ProviderConfig;
 use token::messages::{CompletionMsg, Msg};
 use tokio::sync::watch;
 use winit::event_loop::EventLoopProxy;
 
 use super::inline_cache::InlineCache;
+use super::inline_server::InlineServer;
+
+/// Window-owned channels and thread. Dropping the owner closes both watches and
+/// joins bounded worker cleanup before the application process can exit.
+pub(super) struct InlineWorker {
+    requests: Option<watch::Sender<Option<Arc<InlineJob>>>>,
+    providers: Option<watch::Sender<Option<ProviderConfig>>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl InlineWorker {
+    pub(super) fn start(msg_tx: Sender<Msg>, proxy: Option<EventLoopProxy<()>>) -> Self {
+        let (requests, rx) = watch::channel(None);
+        let (providers, provider_rx) = watch::channel(None);
+        let thread = std::thread::Builder::new()
+            .name("inline-suggestions".into())
+            .spawn(move || inline_worker_loop(rx, provider_rx, msg_tx, proxy))
+            .expect("spawn inline worker");
+        Self {
+            requests: Some(requests),
+            providers: Some(providers),
+            thread: Some(thread),
+        }
+    }
+
+    pub(super) fn configure(&self, provider: Option<&ProviderConfig>) {
+        let provider = provider.filter(|provider| provider.local_server.is_some());
+        if let Some(sender) = &self.providers {
+            sender.send_if_modified(|current| {
+                if current.as_ref() == provider {
+                    return false;
+                }
+                *current = provider.cloned();
+                true
+            });
+        }
+    }
+
+    pub(super) fn submit(&self, job: Box<InlineJob>) -> bool {
+        self.requests
+            .as_ref()
+            .is_some_and(|tx| tx.send(Some(Arc::from(job))).is_ok())
+    }
+
+    pub(super) fn cancel(&self) {
+        if let Some(tx) = &self.requests {
+            let _ = tx.send(None);
+        }
+    }
+
+    pub(super) fn stop(&mut self) {
+        self.requests.take();
+        self.providers.take();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn latest(&self) -> Option<Arc<InlineJob>> {
+        self.requests.as_ref()?.borrow().clone()
+    }
+}
+
+impl Drop for InlineWorker {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
 
 pub(crate) fn inline_worker_loop(
     rx: watch::Receiver<Option<Arc<InlineJob>>>,
+    provider_rx: watch::Receiver<Option<ProviderConfig>>,
     msg_tx: Sender<Msg>,
     event_proxy: Option<EventLoopProxy<()>>,
 ) {
@@ -27,23 +98,44 @@ pub(crate) fn inline_worker_loop(
             return;
         }
     };
-    runtime.block_on(work(rx, msg_tx, event_proxy));
+    runtime.block_on(async {
+        let mut server = InlineServer::default();
+        work(rx, provider_rx, msg_tx, event_proxy, &mut server).await;
+        server.stop().await;
+    });
     // DNS may use Tokio's blocking resolver; never wait for it during app exit.
     runtime.shutdown_timeout(std::time::Duration::from_millis(100));
 }
 
 async fn work(
     mut rx: watch::Receiver<Option<Arc<InlineJob>>>,
+    mut provider_rx: watch::Receiver<Option<ProviderConfig>>,
     msg_tx: Sender<Msg>,
     event_proxy: Option<EventLoopProxy<()>>,
+    server: &mut InlineServer,
 ) {
     let client = fim::client();
     let mut cache = InlineCache::default();
     let mut postprocessor = InlinePostprocessor::default();
     let mut wait_for_change = false;
+    let mut maintenance = tokio::time::interval(std::time::Duration::from_millis(200));
+    maintenance.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
-        if wait_for_change && rx.changed().await.is_err() {
-            return;
+        let configured = provider_rx.borrow_and_update().clone();
+        server.configure(configured.as_ref()).await;
+        if wait_for_change {
+            tokio::select! {
+                biased;
+                changed = provider_rx.changed() => {
+                    if changed.is_err() { return; }
+                    continue;
+                }
+                changed = rx.changed() => { if changed.is_err() { return; } }
+                _ = maintenance.tick(), if server.running() => {
+                    let _ = server.poll().await;
+                    continue;
+                }
+            }
         }
         let job = { rx.borrow_and_update().clone() };
         let Some(job) = job else {
@@ -53,15 +145,29 @@ async fn work(
         wait_for_change = false;
         let reply = tokio::select! {
             biased;
+            changed = provider_rx.changed() => {
+                if changed.is_err() { return; }
+                // A configuration change cancels this job. Never replay it
+                // with the replacement process/provider.
+                wait_for_change = true;
+                continue;
+            }
             changed = rx.changed() => {
                 if changed.is_err() { return; }
                 continue;
             }
             reply = async {
-                let provider = match &client {
-                    Ok(client) => FimProvider::new(client.clone(), job.provider.clone()),
-                    Err(_) => Err(token::completion::provider::ProviderError::Transport),
-                };
+                let provider = async {
+                    let client = client.as_ref().map_err(|_| ProviderError::Transport)?;
+                    let provider = FimProvider::new(client.clone(), job.provider.clone())?;
+                    if job.provider.local_server.is_some() {
+                        if configured.as_ref() != Some(&job.provider) {
+                            return Err(ProviderError::LocalServer("provider is no longer active"));
+                        }
+                        server.ready(client, job.request.explicit).await?;
+                    }
+                    Ok(provider)
+                }.await;
                 match provider {
                     Ok(mut provider) => run(&mut provider, &job, &mut cache, &mut postprocessor).await,
                     Err(error) => CompletionMsg::InlineFailed {
@@ -152,6 +258,31 @@ mod tests {
         })
     }
 
+    fn read_request(stream: &mut std::net::TcpStream) -> std::io::Result<(String, Vec<u8>)> {
+        let mut reader = BufReader::new(stream);
+        let mut request = String::new();
+        reader.read_line(&mut request)?;
+        let mut length = 0;
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line)? == 0 {
+                return Err(std::io::ErrorKind::UnexpectedEof.into());
+            }
+            if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                length = value
+                    .trim()
+                    .parse()
+                    .map_err(|_| std::io::ErrorKind::InvalidData)?;
+            }
+            if line == "\r\n" {
+                break;
+            }
+        }
+        let mut body = vec![0; length];
+        reader.read_exact(&mut body)?;
+        Ok((request, body))
+    }
+
     /// A server that either answers once, or waits for the client to disconnect.
     /// Handshakes avoid sleeps and prove cancellation of an active socket read.
     fn server(stall: bool) -> (String, mpsc::Receiver<()>, mpsc::Receiver<bool>) {
@@ -164,23 +295,10 @@ mod tests {
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
-            let mut reader = BufReader::new(stream.try_clone().unwrap());
-            let mut length = 0;
-            loop {
-                let mut line = String::new();
-                assert_ne!(reader.read_line(&mut line).unwrap(), 0);
-                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                    length = value.trim().parse().unwrap();
-                }
-                if line == "\r\n" {
-                    break;
-                }
-            }
-            let mut body = vec![0; length];
-            reader.read_exact(&mut body).unwrap();
+            read_request(&mut stream).unwrap();
             let _ = seen_tx.send(());
             if stall {
-                let closed = match reader.read(&mut [0]) {
+                let closed = match stream.read(&mut [0]) {
                     Ok(0) => true,
                     Err(error) => matches!(
                         error.kind(),
@@ -197,6 +315,187 @@ mod tests {
         (url, seen_rx, closed_rx)
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn managed_server_lifecycle_and_failures_use_the_owned_child() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::path::PathBuf;
+        use std::process::{Command, Stdio};
+
+        // Re-enter this test as a tiny real HTTP child. The shell wrapper only
+        // translates llama-server arguments into fixture-local environment;
+        // no personal shell files, installed model or backend is needed.
+        if let Ok(port) = std::env::var("TOKEN_INLINE_FIXTURE_PORT") {
+            let model = PathBuf::from(std::env::var_os("TOKEN_INLINE_FIXTURE_MODEL").unwrap());
+            std::fs::write(model.with_extension("pid"), std::process::id().to_string()).unwrap();
+            if std::fs::read_to_string(&model).unwrap() == "exit" {
+                return;
+            }
+            let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let Ok((request, body)) = read_request(&mut stream) else {
+                    continue; // Canceling a health probe may close it mid-header.
+                };
+                let (status, reply) = if request.starts_with("GET /health ") {
+                    if std::fs::read_to_string(&model).unwrap() == "loading" {
+                        (503, r#"{"error":{"message":"Loading model"}}"#)
+                    } else {
+                        (200, r#"{"status":"ok"}"#)
+                    }
+                } else {
+                    assert!(request.starts_with("POST /infill "));
+                    assert!(serde_json::from_slice::<serde_json::Value>(&body)
+                        .unwrap()
+                        .get("input_prefix")
+                        .is_some());
+                    (200, r#"{"content":"owned suggestion"}"#)
+                };
+                let _ = write!(stream, "HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len());
+            }
+            return;
+        }
+
+        fn wait_until(mut condition: impl FnMut() -> bool) {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !condition() {
+                assert!(std::time::Instant::now() < deadline, "fixture deadline");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+        fn exited(pid: &str) -> bool {
+            !Command::new("/bin/kill")
+                .args(["-0", pid])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("llama fixture");
+        let model = dir.path().join("model.gguf");
+        let pid_file = model.with_extension("pid");
+        let test_exe = std::env::current_exe()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .replace('\'', "'\\''");
+        std::fs::write(&executable, format!(r#"#!/bin/sh
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --port) export TOKEN_INLINE_FIXTURE_PORT="$2"; shift ;;
+        --model) export TOKEN_INLINE_FIXTURE_MODEL="$2"; shift ;;
+    esac
+    shift
+done
+exec '{test_exe}' --exact runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child --nocapture
+"#)).unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::write(&model, "ready").unwrap();
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut request = (*job(format!("http://127.0.0.1:{port}"), 1)).clone();
+        request.provider.local_server = Some(token::config::LocalServerConfig {
+            executable,
+            model_path: model.clone(),
+            startup_timeout_ms: 1000,
+            context_size: 8192,
+            gpu_layers: None,
+        });
+        let (tx, replies) = mpsc::channel();
+        let mut owner = InlineWorker::start(tx, None);
+        owner.configure(Some(&request.provider));
+        assert!(
+            !pid_file.exists(),
+            "configuration alone must not launch a model"
+        );
+        assert!(owner.submit(Box::new(request.clone())));
+        assert!(
+            matches!(replies.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Msg::Completion(CompletionMsg::InlineReady { texts, .. }) if texts == ["owned suggestion"])
+        );
+        let first_pid = std::fs::read_to_string(&pid_file).unwrap();
+        owner.cancel();
+        request.request.snapshot.request_id += 1;
+        assert!(owner.submit(Box::new(request.clone())));
+        assert!(matches!(
+            replies.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Msg::Completion(CompletionMsg::InlineReady { .. })
+        ));
+        assert_eq!(
+            std::fs::read_to_string(&pid_file).unwrap(),
+            first_pid,
+            "reuse the model across cancellation"
+        );
+        owner.configure(None);
+        wait_until(|| exited(&first_pid));
+
+        // A canceled load still expires and is reaped. Automatic requests do
+        // not restart it; one explicit request may retry after fixing the model.
+        std::fs::write(&model, "loading").unwrap();
+        owner.configure(Some(&request.provider));
+        request.request.snapshot.request_id += 1;
+        let began_loading = std::time::Instant::now();
+        assert!(owner.submit(Box::new(request.clone())));
+        wait_until(|| {
+            std::fs::read_to_string(&pid_file)
+                .is_ok_and(|pid| pid.parse::<u32>().is_ok() && pid != first_pid)
+        });
+        let loading_pid = std::fs::read_to_string(&pid_file).unwrap();
+        owner.cancel();
+        wait_until(|| exited(&loading_pid));
+        assert!(
+            began_loading.elapsed() >= Duration::from_secs(1),
+            "cancellation must not kill the loading model before its startup deadline"
+        );
+        request.request.snapshot.request_id += 1;
+        assert!(owner.submit(Box::new(request.clone())));
+        assert!(matches!(
+            replies.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Msg::Completion(CompletionMsg::InlineFailed { .. })
+        ));
+        assert_eq!(std::fs::read_to_string(&pid_file).unwrap(), loading_pid);
+        std::fs::write(&model, "ready").unwrap();
+        request.request.explicit = true;
+        request.request.snapshot.request_id += 1;
+        assert!(owner.submit(Box::new(request.clone())));
+        assert!(matches!(
+            replies.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Msg::Completion(CompletionMsg::InlineReady { .. })
+        ));
+        let retry_pid = std::fs::read_to_string(&pid_file).unwrap();
+        assert_ne!(retry_pid, loading_pid);
+        owner.stop();
+        assert!(
+            exited(&retry_pid),
+            "stop joins cleanup, not only cancellation"
+        );
+
+        let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
+        let (tx, replies) = mpsc::channel();
+        let owner = InlineWorker::start(tx, None);
+        owner.configure(Some(&request.provider));
+        assert!(owner.submit(Box::new(request)));
+        assert!(
+            matches!(replies.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Msg::Completion(CompletionMsg::InlineFailed { error, .. }) if error.contains("port"))
+        );
+        assert_eq!(std::fs::read_to_string(&pid_file).unwrap(), retry_pid);
+        drop(owner);
+        assert!(
+            listener.local_addr().is_ok(),
+            "external listener stays owned by its caller"
+        );
+    }
+
     fn worker() -> (
         watch::Sender<Option<Arc<InlineJob>>>,
         mpsc::Receiver<Msg>,
@@ -206,7 +505,8 @@ mod tests {
         let (reply_tx, reply_rx) = mpsc::channel();
         let (done_tx, done_rx) = mpsc::channel();
         std::thread::spawn(move || {
-            inline_worker_loop(rx, reply_tx, None);
+            let (_providers, provider_rx) = watch::channel(None);
+            inline_worker_loop(rx, provider_rx, reply_tx, None);
             let _ = done_tx.send(());
         });
         (tx, reply_rx, done_rx)

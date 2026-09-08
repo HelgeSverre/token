@@ -38,6 +38,8 @@ pub trait InlineProvider: Send {
 /// URL credentials, or query parameters returned by a backend.
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
+    #[error("local inline server: {0}")]
+    LocalServer(&'static str),
     #[error("invalid inline provider configuration: {0}")]
     Configuration(&'static str),
     #[error("inline request timed out")]

@@ -304,6 +304,54 @@ without opening a competing automatic dropdown. Other panes keep their normal
 document view. Explicit requests work mid-line; automatic requests still respect
 `completion.inline.max_line_suffix`.
 
+### Managed local llama-server
+
+To have Token own the server, add `local_server` to a `llama_cpp` provider:
+
+```yaml
+completion:
+  inline:
+    enabled: true
+    provider: local
+  providers:
+    local:
+      transport: llama_cpp
+      url: http://127.0.0.1:8012
+      timeout_ms: 5000
+      local_server:
+        executable: /opt/homebrew/bin/llama-server
+        model_path: /absolute/path/to/fim-model.gguf
+        startup_timeout_ms: 120000
+        context_size: 8192
+        # gpu_layers: 0   # optional; omit to use the server's default
+```
+
+Both paths must be absolute; `~`, environment substitutions and shell commands
+are not expanded. Install a FIM-capable GGUF model and llama-server yourself.
+Token does not download either and starts the server with `--offline`. The
+managed URL must use `http://127.0.0.1` with no proxy path, credentials, query or
+fragment. Choose an unused port; an existing listener is not adopted or killed.
+Each Token window owns its own child, so simultaneous managed windows need
+different ports. Use an externally managed server to share one model process.
+
+The first suggestion request starts the model. Token waits for the server's
+[`/health` readiness response](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md#api-endpoints)
+before sending source text. Startup has its own deadline (default 120 seconds,
+maximum 600 seconds); `timeout_ms` still controls generation separately.
+Cancellation interrupts generation but retains the model. Changing the selected
+provider configuration, disabling completion/inline suggestions, or closing the
+window stops its child. A failed startup or crashed child is not automatically
+restarted on every keystroke: “Trigger Inline Suggestion” retries explicitly.
+
+Inherited `LLAMA_*` settings are cleared so they cannot silently change the
+managed model or server policy. The optional `api_key_env` credential reference
+is forwarded to the child as `LLAMA_API_KEY`; no credential is placed in its
+command line. Other OS/GPU environment remains available. Child output is
+discarded, not saved alongside source code. Errors identify startup, exit,
+timeout or port failure without including backend output; for detailed model
+diagnostics or additional llama.cpp flags, run the server yourself and omit
+`local_server`. Older server builds must support the documented `--offline` flag.
+
 ### Local completion statistics
 
 `completion.inline.statistics` defaults to `true`; inline completion itself

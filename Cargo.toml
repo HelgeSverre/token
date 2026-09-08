@@ -75,7 +75,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # For CLI argument parsing
 clap = { version = "4", features = ["derive"] }
 rmcp = { version = "3.0.1", features = ["server", "transport-io"] }
-tokio = { version = "1", features = ["io-std", "rt", "sync", "macros", "time", "net"] }
+tokio = { version = "1", features = ["io-std", "rt", "sync", "macros", "time", "net", "process"] }
 reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls"] }
 thiserror = "2"
 

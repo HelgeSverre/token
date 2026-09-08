@@ -253,8 +253,7 @@ pub struct App {
     inline_deadline: Option<(Instant, token::completion::inline::RequestSnapshot, bool)>,
     inline_context: super::inline_context::InlineContextRing,
     /// Requests for the completion worker thread.
-    inline_tx:
-        tokio::sync::watch::Sender<Option<std::sync::Arc<token::completion::provider::InlineJob>>>,
+    inline_worker: super::inline_worker::InlineWorker,
     /// When this window last gained focus (process start until then);
     /// automation clients pick the most recently focused instance.
     focused_at: std::time::SystemTime,
@@ -1054,21 +1053,8 @@ impl App {
                 }) as std::sync::Arc<dyn Fn() + Send + Sync>
             });
         // Spawn the inline-suggestion worker (autocomplete.md Phase 2).
-        let (inline_tx, inline_rx) = tokio::sync::watch::channel(None);
-        {
-            let msg_tx_clone = msg_tx.clone();
-            let proxy = automation_proxy.clone();
-            std::thread::Builder::new()
-                .name("inline-suggestions".into())
-                .spawn(move || {
-                    crate::runtime::inline_worker::inline_worker_loop(
-                        inline_rx,
-                        msg_tx_clone,
-                        proxy,
-                    )
-                })
-                .expect("spawn inline worker");
-        }
+        let inline_worker =
+            super::inline_worker::InlineWorker::start(msg_tx.clone(), automation_proxy.clone());
         // Spawn syntax highlighting worker thread
         let (syntax_tx, syntax_rx) = mpsc::channel::<SyntaxWorkerRequest>();
         {
@@ -1121,7 +1107,7 @@ impl App {
             document_waiters: Vec::new(),
             inline_deadline: None,
             inline_context: super::inline_context::InlineContextRing::default(),
-            inline_tx,
+            inline_worker,
             focused_at: std::time::SystemTime::now(),
             syntax_scheduled: HashMap::new(),
             syntax_present_pending: Vec::new(),
@@ -2257,6 +2243,7 @@ impl App {
     }
 
     fn process_cmd(&mut self, cmd: Cmd) {
+        self.sync_inline_provider();
         #[cfg(target_os = "macos")]
         super::macos_menu::set_shortcut_capture(matches!(&self.model.ui.active_modal,
             Some(token::model::ModalState::Settings(state)) if state.keymap.capture.is_some()));
@@ -2946,11 +2933,7 @@ impl App {
             Cmd::RunInlineRequest(mut request) => {
                 self.inline_context
                     .attach(&self.model, &mut request, Instant::now());
-                if self
-                    .inline_tx
-                    .send(Some(std::sync::Arc::from(request)))
-                    .is_err()
-                {
+                if !self.inline_worker.submit(request) {
                     tracing::warn!("inline suggestion worker is gone");
                     self.model.ui.inline_in_flight = false;
                     self.model.ui.inline_session = None;
@@ -2958,7 +2941,7 @@ impl App {
             }
             Cmd::CancelInlineRequest => {
                 self.inline_deadline = None;
-                let _ = self.inline_tx.send(None);
+                self.inline_worker.cancel();
             }
             Cmd::LspCancelCompletion { document_id } => {
                 // Drop the pending debounce and supersede any in-flight
@@ -4996,10 +4979,16 @@ impl App {
         self.sweep_lsp_feature_deadlines::<PendingCodeActions>();
     }
 
-    /// Fires due completion debounces into real requests. Silent on gate
-    /// failure (`request_lsp_completion`'s own policy) — a debounce armed
-    /// for a document that lost its server between schedule and fire just
-    /// evaporates.
+    /// Configuration lifetime is independent of a canceled suggestion request.
+    fn sync_inline_provider(&self) {
+        let completion = &self.model.config.completion;
+        let provider = completion
+            .providers
+            .get(&completion.inline.provider)
+            .filter(|_| completion.enabled && completion.inline.enabled);
+        self.inline_worker.configure(provider);
+    }
+
     /// Replay elapsed inline-suggestion debounces into the update layer,
     /// which re-checks the revision and snapshots the request.
     fn check_inline_deadlines(&mut self) {
@@ -5018,6 +5007,10 @@ impl App {
         }
     }
 
+    /// Fires due completion debounces into real requests. Silent on gate
+    /// failure (`request_lsp_completion`'s own policy) — a debounce armed
+    /// for a document that lost its server between schedule and fire just
+    /// evaporates.
     fn check_lsp_completion_debounces(&mut self) {
         if self.lsp.completion_debounces.is_empty() {
             return;
@@ -5287,6 +5280,7 @@ impl ApplicationHandler for App {
         // Waiters first: a `--wait` client must read its answer before
         // the endpoint it connected through disappears.
         self.answer_exit_waiters();
+        self.inline_worker.stop();
         automation::remove_own_endpoint();
     }
 
@@ -5343,6 +5337,7 @@ impl ApplicationHandler for App {
         self.check_lsp_code_action_deadlines();
         self.check_lsp_completion_debounces();
         self.check_lsp_completion_deadlines();
+        self.sync_inline_provider();
         self.inline_context.observe(&self.model, Instant::now());
         self.check_inline_deadlines();
         self.check_lsp_resolve_debounces();

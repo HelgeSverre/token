@@ -6,6 +6,14 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Managed local suggestions
+
+- Inline providers can opt into a window-owned llama-server using a configured
+  executable and local GGUF model. Startup is on demand and loopback-only, with
+  offline mode, health checks, a startup deadline and explicit retry after failure.
+  Canceling generation keeps the model loaded; disabling/changing its provider
+  or exiting stops the owned child. Externally managed servers are unchanged.
+
 ### Development
 
 - PTY smoke tests use a known shell without personal startup files and check

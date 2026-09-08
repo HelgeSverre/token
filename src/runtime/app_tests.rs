@@ -724,7 +724,7 @@ fn recency_inline_suggestion_round_trips_through_the_worker_and_accepts() {
     assert!(app.inline_deadline.is_none());
     assert!(app.model.ui.inline_in_flight);
     {
-        let latest = app.inline_tx.borrow();
+        let latest = app.inline_worker.latest();
         let request = &latest.as_ref().unwrap().request;
         assert_eq!(request.extra_context.len(), 1);
         assert!(request.extra_context[0].text.contains("fn main()"));

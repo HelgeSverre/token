@@ -229,6 +229,9 @@ fn default_max_line_suffix() -> usize {
 /// One inline-suggestion backend. Credentials and network work stay runtime-side.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderConfig {
+    /// Opt-in ownership of a local llama-server executable and model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_server: Option<LocalServerConfig>,
     #[serde(default)]
     pub transport: TransportKind,
     /// Native by default; an explicit format selects raw FIM on compatible transports.
@@ -261,6 +264,7 @@ pub struct ProviderConfig {
 impl Default for ProviderConfig {
     fn default() -> Self {
         Self {
+            local_server: None,
             transport: TransportKind::default(),
             prompt_format: crate::completion::prompt::PromptFormat::default(),
             context: crate::completion::recency::ContextStrategy::default(),
@@ -273,6 +277,27 @@ impl Default for ProviderConfig {
             n: default_provider_n(),
         }
     }
+}
+
+/// Managed llama.cpp startup. Paths are literal absolute paths, not shell input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalServerConfig {
+    pub executable: std::path::PathBuf,
+    pub model_path: std::path::PathBuf,
+    #[serde(default = "default_server_startup_ms")]
+    pub startup_timeout_ms: u64,
+    #[serde(default = "default_server_context_size")]
+    pub context_size: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_layers: Option<u32>,
+}
+
+fn default_server_startup_ms() -> u64 {
+    120_000
+}
+
+fn default_server_context_size() -> u32 {
+    8192
 }
 
 fn default_provider_url() -> String {
