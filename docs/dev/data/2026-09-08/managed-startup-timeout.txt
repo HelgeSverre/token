@@ -1,0 +1,33 @@
+cargo nextest run --stress-count 10 --status-level pass managed_server_lifecycle_and_failures_use_the_owned_child
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.58s
+────────────
+ Nextest run ID 48d803b2-1364-471a-a910-d3a9f5c1eedb with nextest profile: default
+    Starting 1 test across 42 binaries (2585 tests skipped)
+────────────
+ Stress test iteration 1/10 (00:00:00 elapsed so far, 10 iterations remaining)
+        FAIL [   1.049s] [ 1/10] (1/1) token::bin/token runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+  stdout ───
+
+    running 1 test
+    test runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child ... FAILED
+
+    failures:
+
+    failures:
+        runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 326 filtered out; finished in 1.04s
+
+  stderr ───
+
+    thread 'runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child' (206786254) panicked at src/runtime/inline_worker.rs:422:9:
+    unexpected initial reply: Completion(InlineFailed { snapshot: RequestSnapshot { document_id: DocumentId(1), revision: 1, line: 0, column: 0, request_id: 1 }, error: "local inline server: startup timed out; check the model and retry explicitly" })
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 
+ Stress test [   1.051s] iteration 1/10: 1 test run: 0 passed, 1 failed, 2585 skipped
+────────────
+     Summary [   1.051s] 1/10 stress run iterations: 0 passed, 1 failed
+        FAIL [   1.049s] [ 1/10] (1/1) token::bin/token runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+error: test run failed
+error: Recipe `test-one` failed on line 85 with exit code 100

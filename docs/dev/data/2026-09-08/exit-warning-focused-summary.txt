@@ -1,0 +1,4 @@
+cargo nextest run --stress-count 100 --status-level leak -E 'test(settings_page_keeps_spacious_categories_and_shared_control_hits) | test(supersession_disconnects_old_socket_and_serves_new_request)'
+ Nextest run ID bd13969d-15c1-4f77-a1df-17809a767de0 with nextest profile: default
+    Starting 2 tests across 42 binaries (2584 tests skipped)
+     Summary [   1.744s] 100/100 stress run iterations: 100 passed

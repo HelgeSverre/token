@@ -49,6 +49,10 @@ The default `target/` previously disappeared outside this task.
 
 ## Remaining verification
 
+The macOS file-tree context-menu pointer check is now verified, including hover,
+separator clearing and click-to-open; see the
+[native record](docs/dev/refactoring-audit-2026-09-06.md#native-context-menu-acceptance-and-exit-diagnosis--2026-09-08).
+
 - Native Windows/Linux keymap chips, contexts, capture and persistence; launcher
   detachment and per-instance port files on Windows; managed llama-server
   startup/teardown on Windows/Linux.
@@ -59,7 +63,6 @@ The default `target/` previously disappeared outside this task.
   Tabby service/model behavior, and
   workspace-symbol/Usages live-server interaction. Fixture coverage is not live
   service verification.
-- Native context-menu pointer acceptance; automated runtime/pixel checks already pass.
 - Resolve intermittent nextest process-exit warnings. The September 8 theme
   suite flagged `settings_page_keeps_spacious_categories_and_shared_control_hits`
   as leaky. The Find overview full run also flagged
@@ -67,6 +70,11 @@ The default `target/` previously disappeared outside this task.
   (`ec5fa5f6-f57b-4b4a-baa3-4b7b2436420d`). Other spawn-test and managed-server
   runs passed without warnings, but did not establish their cause. Do not
   suppress or call that resolved.
+- Investigate the newly reproduced managed-server startup timeout and fake-LSP
+  initialization timeouts under the September 8 stress runs. The managed test
+  now retains the actual failure reply; ten later runs passed without timeout
+  changes. This is distinct from nextest's output-handle warning. Failures,
+  clean repeats and environment limits are in the native/exit record above.
 
 ## Archival and closeout
 

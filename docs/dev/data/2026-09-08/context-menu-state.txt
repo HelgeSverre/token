@@ -1,0 +1,39 @@
+{
+  "hover": {
+    "region": "file_tree",
+    "rows": [
+      {
+        "label": "Open",
+        "enabled": true
+      },
+      {
+        "label": "Reveal in Finder",
+        "enabled": true
+      },
+      {
+        "label": "Copy Absolute Path",
+        "enabled": true
+      },
+      {
+        "label": "Copy Relative Path",
+        "enabled": true
+      },
+      {
+        "label": "Refresh Tree",
+        "enabled": true
+      }
+    ],
+    "selected": 0
+  }
+}
+{
+  "accepted": {
+    "instance_id": 83444,
+    "document_name": "hover-target.txt",
+    "modified": false,
+    "context_menu": null,
+    "document": {
+      "text": "Temporary context-menu acceptance fixture.\n"
+    }
+  }
+}

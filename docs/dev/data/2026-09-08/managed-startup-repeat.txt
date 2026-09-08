@@ -1,0 +1,48 @@
+cargo nextest run --stress-count 10 --status-level pass managed_server_lifecycle_and_failures_use_the_owned_child
+   Compiling token v0.6.0 (/Users/helge/code/token-editor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.96s
+────────────
+ Nextest run ID ae0cd385-adf0-4190-82c1-0ca85cf20ccb with nextest profile: default
+    Starting 1 test across 42 binaries (2585 tests skipped)
+────────────
+ Stress test iteration 1/10 (00:00:00 elapsed so far, 10 iterations remaining)
+        PASS [   1.643s] [ 1/10] (1/1) token::bin/token runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+ Stress test [   1.645s] iteration 1/10: 1 test run: 1 passed, 2585 skipped
+────────────
+ Stress test iteration 2/10 (00:00:01 elapsed so far, 9 iterations remaining)
+        PASS [   1.647s] [ 2/10] (1/1) token::bin/token runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+ Stress test [   1.649s] iteration 2/10: 1 test run: 1 passed, 2585 skipped
+────────────
+ Stress test iteration 3/10 (00:00:03 elapsed so far, 8 iterations remaining)
+        PASS [   1.650s] [ 3/10] (1/1) token::bin/token runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+ Stress test [   1.652s] iteration 3/10: 1 test run: 1 passed, 2585 skipped
+────────────
+ Stress test iteration 4/10 (00:00:04 elapsed so far, 7 iterations remaining)
+        PASS [   1.858s] [ 4/10] (1/1) token::bin/token runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+ Stress test [   1.861s] iteration 4/10: 1 test run: 1 passed, 2585 skipped
+────────────
+ Stress test iteration 5/10 (00:00:06 elapsed so far, 6 iterations remaining)
+        PASS [   1.661s] [ 5/10] (1/1) token::bin/token runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+ Stress test [   1.666s] iteration 5/10: 1 test run: 1 passed, 2585 skipped
+────────────
+ Stress test iteration 6/10 (00:00:08 elapsed so far, 5 iterations remaining)
+        PASS [   1.669s] [ 6/10] (1/1) token::bin/token runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+ Stress test [   1.672s] iteration 6/10: 1 test run: 1 passed, 2585 skipped
+────────────
+ Stress test iteration 7/10 (00:00:10 elapsed so far, 4 iterations remaining)
+        PASS [   1.651s] [ 7/10] (1/1) token::bin/token runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+ Stress test [   1.653s] iteration 7/10: 1 test run: 1 passed, 2585 skipped
+────────────
+ Stress test iteration 8/10 (00:00:11 elapsed so far, 3 iterations remaining)
+        PASS [   1.645s] [ 8/10] (1/1) token::bin/token runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+ Stress test [   1.649s] iteration 8/10: 1 test run: 1 passed, 2585 skipped
+────────────
+ Stress test iteration 9/10 (00:00:13 elapsed so far, 2 iterations remaining)
+        PASS [   1.629s] [ 9/10] (1/1) token::bin/token runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+ Stress test [   1.631s] iteration 9/10: 1 test run: 1 passed, 2585 skipped
+────────────
+ Stress test iteration 10/10 (00:00:15 elapsed so far, 1 iteration remaining)
+        PASS [   1.829s] [10/10] (1/1) token::bin/token runtime::inline_worker::tests::managed_server_lifecycle_and_failures_use_the_owned_child
+ Stress test [   1.831s] iteration 10/10: 1 test run: 1 passed, 2585 skipped
+────────────
+     Summary [  16.908s] 10/10 stress run iterations: 10 passed

@@ -14,6 +14,10 @@ A context-sensitive popup menu triggered by right-click, rendered as an `Overlay
 > existing hover wash without changing keyboard selection; separators remain
 > unselectable. Runtime transition and rendered-pixel regressions cover this fix.
 
+> 2026-09-08 verification: native macOS file-tree right-click, hover independent
+> of keyboard selection, separator hover clearing and click-to-open passed in an
+> isolated window. [Evidence and captures](../dev/refactoring-audit-2026-09-06.md#native-context-menu-acceptance-and-exit-diagnosis--2026-09-08).
+
 ---
 
 ## Table of Contents

@@ -1,5 +1,68 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Native context-menu acceptance and exit diagnosis — 2026-09-08
+
+On source checkpoint `050b9a9`, an isolated macOS debug editor used a temporary
+workspace containing only `hover-target.txt`, separate configuration, and disabled
+LSP/completion. Native events checked the exposed target window and PID before
+every event, then restored the pointer. No user configuration, clipboard or
+unrelated window was changed. This is interaction evidence, not a benchmark.
+
+- Right-clicking the file opened its file-tree context menu.
+- Moving to **Refresh Tree** painted a distinct hover wash while **Open** remained
+  keyboard-selected (index 0). See the [native capture](data/2026-09-08/context-menu-hover.png).
+- Moving onto a separator cleared hover without moving keyboard selection;
+  see the [separator capture](data/2026-09-08/context-menu-separator.png).
+- Clicking **Open** dismissed the popup and opened the exact unchanged fixture
+  text. The [state extract](data/2026-09-08/context-menu-state.txt) records both
+  keyboard selection and acceptance. The owned editor exited normally afterward.
+
+The original artifacts and guarded pointer helper remain in
+`/tmp/token-context-native.NBsNXg/` (PID 83444, window 80585, both now closed).
+The two committed captures are byte-identical copies. This closes the pending
+macOS file-tree pointer acceptance check, not Windows/Linux or IME certification.
+The context-menu plan was already archived; no other plan becomes eligible here.
+
+For the intermittent nextest warning, a bounded 100-iteration run of the two
+named tests passed all 200 executions without warnings, using nextest 0.9.118,
+default timeouts and `--status-level leak`. Run ID:
+`bd13969d-15c1-4f77-a1df-17809a767de0`; [command and summary](data/2026-09-08/exit-warning-focused-summary.txt).
+[Nextest's detection](https://nexte.st/docs/features/leaky-tests/) concerns output
+handles remaining open after process exit, not heap memory. The Settings case
+constructs deterministic state/layout and has no subprocess launch; the named
+supersession case uses threads and loopback sockets. Neither observation proves
+the historical warning was a false positive or identifies its handle owner.
+
+Full-suite concurrency exposed separate startup failures:
+
+- `cdea2128-0dea-4c23-a722-3aebda515542`: the first of three requested iterations
+  stopped with 2,580 passing tests and one managed-server failure after 1.032 s.
+  [Full output](data/2026-09-08/exit-warning-full-stress.txt).
+- `03e94272-052c-4b14-8642-411cb7fc3695`: the diagnostic repeat stopped on eight
+  fake-LSP initialization timeouts; 792 tests were not run. It did not reach the
+  managed-server case. [Full output](data/2026-09-08/exit-warning-diagnostic-stress.txt).
+- `48d803b2-1364-471a-a910-d3a9f5c1eedb`: isolated managed-server execution
+  reproduced an explicit **startup timed out** reply at its existing one-second
+  startup deadline. [Failure](data/2026-09-08/managed-startup-timeout.txt).
+- `ae0cd385-adf0-4190-82c1-0ca85cf20ccb`: ten later lifecycle executions passed
+  unchanged timeout/cleanup assertions. [Repeat](data/2026-09-08/managed-startup-repeat.txt).
+
+The managed fixture's assertion (`aa27e5e`) now prints the actual reply and child-start
+marker on failure; no test was added, timeout increased, assertion weakened or
+production behavior changed. A direct launch of its child reached the marker
+within the one-second tool observation and was explicitly terminated afterward.
+Other projects' test/build processes were active and left untouched. Load/cold
+startup is a hypothesis, not an established explanation. Both startup failures
+and the original process-exit warnings remain unresolved; clean repeats alone
+do not close either requirement.
+
+Final verification after the diagnostic change: all 2,581 tests (five skipped)
+and two doctests (six ignored) passed, nextest run
+`ef25bed0-fbae-46d0-b56a-bb1435d08e18`, with no exit warnings. Strict all-target/
+all-feature lint, formatting and whitespace checks passed. Scoped review:
+**Approve**, no outstanding findings in the diagnostic/documentation patch.
+This verdict does not claim the intermittent failures are fixed.
+
 ## Multi-cursor coordinate reuse — 2026-09-08
 
 Commit `f0e1c4e` reuses exact coincident caret/selection conversions in shared

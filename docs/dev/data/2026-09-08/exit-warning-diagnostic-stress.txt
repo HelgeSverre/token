@@ -1,0 +1,175 @@
+cargo nextest run --stress-count 3 --status-level leak
+   Compiling token v0.6.0 (/Users/helge/code/token-editor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.94s
+────────────
+ Nextest run ID 03e94272-052c-4b14-8642-411cb7fc3695 with nextest profile: default
+    Starting 2581 tests across 42 binaries (5 tests skipped)
+────────────
+ Stress test iteration 1/3 (00:00:00 elapsed so far, 3 iterations remaining)
+        FAIL [   5.081s] [1/3] (1778/2581) token::lsp_fake_server_scenarios code_action_request_round_trips_through_the_fake_server
+  stdout ───
+
+    running 1 test
+    test code_action_request_round_trips_through_the_fake_server ... FAILED
+
+    failures:
+
+    failures:
+        code_action_request_round_trips_through_the_fake_server
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 5.04s
+
+  stderr ───
+
+    thread 'code_action_request_round_trips_through_the_fake_server' (206782907) panicked at tests/lsp_fake_server_scenarios.rs:654:5:
+    assertion failed: recv_until(&msg_rx, Duration::from_secs(5), is_ready).is_some()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 11 tests still running
+        FAIL [   5.078s] [1/3] (1779/2581) token::lsp_fake_server_scenarios exit_mid_request_reports_server_exited
+  stdout ───
+
+    running 1 test
+    test exit_mid_request_reports_server_exited ... FAILED
+
+    failures:
+
+    failures:
+        exit_mid_request_reports_server_exited
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 5.04s
+
+  stderr ───
+
+    thread 'exit_mid_request_reports_server_exited' (206782910) panicked at tests/lsp_fake_server_scenarios.rs:251:5:
+    assertion failed: recv_until(&msg_rx, Duration::from_secs(5), is_ready).is_some()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   5.078s] [1/3] (1780/2581) token::lsp_fake_server_scenarios full_lifecycle_including_workspace_configuration_mid_init
+  stdout ───
+
+    running 1 test
+    test full_lifecycle_including_workspace_configuration_mid_init ... FAILED
+
+    failures:
+
+    failures:
+        full_lifecycle_including_workspace_configuration_mid_init
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 5.04s
+
+  stderr ───
+
+    thread 'full_lifecycle_including_workspace_configuration_mid_init' (206782908) panicked at tests/lsp_fake_server_scenarios.rs:178:5:
+    expected Ready — client must have replied to workspace/configuration for the fake server to ever answer initialize
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   5.076s] [1/3] (1781/2581) token::lsp_fake_server_scenarios initialize_error_reports_failed_not_ready
+  stdout ───
+
+    running 1 test
+    test initialize_error_reports_failed_not_ready ... FAILED
+
+    failures:
+
+    failures:
+        initialize_error_reports_failed_not_ready
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 5.04s
+
+  stderr ───
+
+    thread 'initialize_error_reports_failed_not_ready' (206782909) panicked at tests/lsp_fake_server_scenarios.rs:414:5:
+    a rejected initialize must report Failed
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   5.081s] [1/3] (1782/2581) token::lsp_fake_server_scenarios duplicate_and_unknown_response_ids_are_dropped_not_fatal
+  stdout ───
+
+    running 1 test
+    test duplicate_and_unknown_response_ids_are_dropped_not_fatal ... FAILED
+
+    failures:
+
+    failures:
+        duplicate_and_unknown_response_ids_are_dropped_not_fatal
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 5.04s
+
+  stderr ───
+
+    thread 'duplicate_and_unknown_response_ids_are_dropped_not_fatal' (206782911) panicked at tests/lsp_fake_server_scenarios.rs:331:5:
+    assertion failed: recv_until(&msg_rx, Duration::from_secs(5), is_ready).is_some()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   5.073s] [1/3] (1783/2581) token::lsp_fake_server_scenarios malformed_frame_is_treated_as_exit_not_a_panic
+  stdout ───
+
+    running 1 test
+    test malformed_frame_is_treated_as_exit_not_a_panic ... FAILED
+
+    failures:
+
+    failures:
+        malformed_frame_is_treated_as_exit_not_a_panic
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 5.02s
+
+  stderr ───
+
+    thread 'malformed_frame_is_treated_as_exit_not_a_panic' (206782918) panicked at tests/lsp_fake_server_scenarios.rs:289:5:
+    assertion failed: recv_until(&msg_rx, Duration::from_secs(5), is_ready).is_some()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   5.021s] [1/3] (1787/2581) token::lsp_fake_server_scenarios rename_requests_round_trip_through_the_fake_server
+  stdout ───
+
+    running 1 test
+    test rename_requests_round_trip_through_the_fake_server ... FAILED
+
+    failures:
+
+    failures:
+        rename_requests_round_trip_through_the_fake_server
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 5.01s
+
+  stderr ───
+
+    thread 'rename_requests_round_trip_through_the_fake_server' (206783049) panicked at tests/lsp_fake_server_scenarios.rs:565:5:
+    assertion failed: recv_until(&msg_rx, Duration::from_secs(5), is_ready).is_some()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   5.018s] [1/3] (1789/2581) token::lsp_fake_server_scenarios signature_help_request_round_trips_through_the_fake_server
+  stdout ───
+
+    running 1 test
+    test signature_help_request_round_trips_through_the_fake_server ... FAILED
+
+    failures:
+
+    failures:
+        signature_help_request_round_trips_through_the_fake_server
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 5.01s
+
+  stderr ───
+
+    thread 'signature_help_request_round_trips_through_the_fake_server' (206783890) panicked at tests/lsp_fake_server_scenarios.rs:486:5:
+    assertion failed: recv_until(&msg_rx, Duration::from_secs(5), is_ready).is_some()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+ Stress test [  23.240s] iteration 1/3: 1789/2581 tests run: 1781 passed, 8 failed, 5 skipped
+────────────
+     Summary [  23.240s] 1/3 stress run iterations: 0 passed, 1 failed
+        FAIL [   5.081s] [1/3] (1778/2581) token::lsp_fake_server_scenarios code_action_request_round_trips_through_the_fake_server
+        FAIL [   5.078s] [1/3] (1779/2581) token::lsp_fake_server_scenarios exit_mid_request_reports_server_exited
+        FAIL [   5.078s] [1/3] (1780/2581) token::lsp_fake_server_scenarios full_lifecycle_including_workspace_configuration_mid_init
+        FAIL [   5.076s] [1/3] (1781/2581) token::lsp_fake_server_scenarios initialize_error_reports_failed_not_ready
+        FAIL [   5.081s] [1/3] (1782/2581) token::lsp_fake_server_scenarios duplicate_and_unknown_response_ids_are_dropped_not_fatal
+        FAIL [   5.073s] [1/3] (1783/2581) token::lsp_fake_server_scenarios malformed_frame_is_treated_as_exit_not_a_panic
+        FAIL [   5.021s] [1/3] (1787/2581) token::lsp_fake_server_scenarios rename_requests_round_trip_through_the_fake_server
+        FAIL [   5.018s] [1/3] (1789/2581) token::lsp_fake_server_scenarios signature_help_request_round_trips_through_the_fake_server
+warning: 792/2581 tests were not run due to test failure (run with --no-fail-fast to run all tests, or run with --max-fail)
+error: test run failed
+error: Recipe `test-one` failed on line 85 with exit code 100
