@@ -8,6 +8,9 @@ All notable changes to rust-editor are documented in this file.
 
 ### Performance investigation
 
+- Find overview markers reuse Rope chunk coordinates instead of constructing a
+  Rope slice for every matched line. Newline semantics and snapshot-bound,
+  lazy overview caching remain unchanged.
 - Added focused cold Find and worker-computation profiling modes, with
   [dense/sparse/absent results and CPU samples](benchmark/2026-09-08-cold-find.md).
   This adds reproducible diagnostics without changing search behavior.

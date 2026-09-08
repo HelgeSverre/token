@@ -467,26 +467,28 @@ impl std::fmt::Debug for FindResults {
 }
 
 impl FindResults {
-    /// Compute overview lines only when a scrollbar needs them. Walk adjacent
-    /// lines directly, but seek across gaps so sparse searches stay inexpensive.
+    /// Compute overview lines only when a scrollbar needs them. Reuse the Rope
+    /// chunk for nearby matches and seek directly across gaps. Advance within
+    /// each chunk so its prefix is never rescanned for subsequent matches.
     pub(crate) fn lines(&self) -> &[usize] {
         self.lines.get_or_init(|| {
             let buffer = &self.source.buffer;
             let mut result = Vec::new();
-            let mut lines = buffer.lines();
+            let mut chunk = "";
+            let mut char_offset = 0;
+            let mut chunk_end = 0;
             let mut line = 0;
-            let mut end = lines.next().map_or(0, |text| text.len_chars());
             for m in self.matches.iter() {
-                if m.start >= end && line + 1 < buffer.len_lines() {
-                    line += 1;
-                    end += lines.next().map_or(0, |text| text.len_chars());
-                    if m.start >= end && line + 1 < buffer.len_lines() {
-                        line = buffer.char_to_line(m.start);
-                        lines = buffer.lines_at(line);
-                        end = buffer.line_to_char(line)
-                            + lines.next().map_or(0, |text| text.len_chars());
-                    }
+                if m.start >= chunk_end {
+                    (chunk, _, char_offset, line) = buffer.chunk_at_char(m.start);
+                    chunk_end = char_offset + chunk.chars().count();
                 }
+                let byte_offset = ropey::str_utils::char_to_byte_idx(chunk, m.start - char_offset);
+                // Count against the full suffix before trimming: Ropey's helper
+                // leaves a CRLF break pending when the match starts on its LF.
+                line += ropey::str_utils::byte_to_line_idx(chunk, byte_offset);
+                chunk = &chunk[byte_offset..];
+                char_offset = m.start;
                 if result.last() != Some(&line) {
                     result.push(line);
                 }
@@ -2001,16 +2003,21 @@ mod tests {
 
     #[test]
     fn find_overview_lines_match_rope_coordinates_for_dense_sparse_and_eof_matches() {
+        // Cross many chunk boundaries, including CRLF and Unicode line endings.
+        let chunked = "猫猫\r\n猫\r猫\n猫\u{0085}猫\u{2028}猫\u{2029}".repeat(2_000);
+        let long_line = "猫".repeat(10_000);
         for text in [
             "",
             "猫猫\r\n猫\r猫\n",
             "a\u{0085}猫\u{2028}b\u{2029}猫\n",
             "猫\n",
             "猫",
+            chunked.as_str(),
+            long_line.as_str(),
         ] {
             let mut document = crate::model::Document::new();
             document.buffer = ropey::Rope::from_str(text);
-            for pattern in ["猫", ".", "(?m)^", "$", "(?s).*"] {
+            for pattern in ["猫", ".", "(?s).", "(?m)^", "$", "(?s).*"] {
                 let mut state = FindReplaceState {
                     use_regex: true,
                     ..Default::default()
