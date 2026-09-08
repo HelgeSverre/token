@@ -41,6 +41,7 @@ profile-tracing = []
 profile-chrome = ["profile-tracing", "dep:tracing-chrome"]
 
 [dependencies]
+tempfile = "3"
 winit = "0.30.12"
 softbuffer = "0.4"
 ropey = "1.6"
@@ -277,7 +278,6 @@ osx_info_plist_exts = ["assets/macos-info.plist"]
 
 [dev-dependencies]
 divan = "0.1"
-tempfile = "3"
 
 [[bench]]
 name = "rope_operations"

@@ -6,6 +6,19 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Session restore
+
+- Restore saved-file tabs, split layout and ratios, focused tabs, selections,
+  multiple cursors and per-pane scroll positions on startup. Each workspace has
+  separate session metadata; windows without a workspace use a default session.
+- Files are loaded from current disk contents. Missing or unreadable files are
+  skipped, empty split branches collapse, and positions clamp to changed files.
+  Wrapped viewports retain a document anchor across window-size changes.
+- Session settings independently control restore and saving on exit. `--new`
+  skips restoration; explicit command-line files take focus after restoration.
+  Metadata is written atomically after queued saves finish. Unsaved text, undo
+  history, terminal sessions and preview panes are not persisted.
+
 ### External-file protection
 
 - Ordinary saves now check the file's bytes against the last loaded/saved

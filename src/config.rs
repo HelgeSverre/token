@@ -22,6 +22,8 @@ pub enum ReloadResult {
 /// Editor configuration that persists across sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EditorConfig {
+    #[serde(default)]
+    pub session: SessionConfig,
     /// Selected theme id (e.g., "default-dark", "fleet-dark")
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -87,6 +89,24 @@ pub struct EditorConfig {
     /// Saves unformatted when the server can't format within ~2 s.
     #[serde(default)]
     pub format_on_save: bool,
+}
+
+/// Session metadata never includes unsaved text or undo history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionConfig {
+    #[serde(default = "default_true")]
+    pub restore: bool,
+    #[serde(default = "default_true")]
+    pub save_on_exit: bool,
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            restore: true,
+            save_on_exit: true,
+        }
+    }
 }
 
 /// Autocomplete settings, stored under `completion:` in `config.yaml`:
@@ -438,6 +458,7 @@ fn default_hover_delay_ms() -> u64 {
 impl Default for EditorConfig {
     fn default() -> Self {
         Self {
+            session: SessionConfig::default(),
             theme: default_theme(),
             editor_font: default_editor_font(),
             ui_font: default_ui_font(),

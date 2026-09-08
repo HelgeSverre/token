@@ -30,6 +30,7 @@ pub mod perf;
 pub mod product;
 pub mod recent_files;
 pub mod search;
+pub mod session;
 pub mod settings;
 pub mod syntax;
 pub mod terminal;

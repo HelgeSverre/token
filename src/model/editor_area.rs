@@ -196,6 +196,17 @@ pub enum LayoutNode {
     Preview(PreviewId),
 }
 
+impl LayoutNode {
+    /// Editor groups in visual tree order, excluding attached previews.
+    pub fn group_ids(&self) -> Vec<GroupId> {
+        match self {
+            Self::Group(id) => vec![*id],
+            Self::Split(split) => split.children.iter().flat_map(Self::group_ids).collect(),
+            Self::Empty | Self::Preview(_) => Vec::new(),
+        }
+    }
+}
+
 // ============================================================================
 // Editor Area (top-level container)
 // ============================================================================

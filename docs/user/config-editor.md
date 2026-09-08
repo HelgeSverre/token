@@ -51,6 +51,44 @@ edit (`lsp.servers.<id>.command`). They are read-only, as are the live process-s
 rows; Left/Right and Enter cannot change them. Status updates without reopening
 Settings. The existing Language Servers picker remains available.
 
+### Session restore
+
+The **Session** category controls two independent options, both enabled by default:
+
+```yaml
+session:
+  restore: true
+  save_on_exit: true
+```
+
+Token remembers saved-file tabs, split direction/ratios, the active tab in each
+pane, the focused pane, selections/multiple cursors, soft wrapping and scroll
+positions. CSV tabs retain their grid mode and selected cell, not an unfinished
+cell edit. Each workspace has its own session; windows without a workspace use
+the default session. Moving a workspace creates a new session identity.
+
+`--new` (`-n`) starts empty without restoring. Otherwise explicit command-line
+files open after the session and the first successfully opened argument takes
+focus; an explicit line/column takes precedence over the saved cursor.
+`--new` does not disable saving the new session on exit.
+
+Session JSON lives in `sessions/` beside `config.yaml`: `default.json` for
+non-workspace windows and a stable workspace-path hash for each workspace.
+Writes atomically replace the previous metadata after queued file saves finish.
+Multiple windows for the same workspace share that file; the last window to exit
+wins. There is no periodic crash snapshot or session history.
+
+Restoration reads current file contents from disk, skips missing/unreadable files,
+collapses empty panes and clamps positions to changed files. Unsaved text and undo
+history are **not** recovered. Untitled tabs, terminal sessions, preview panes,
+sidebar expansion and window geometry are not persisted by this feature.
+
+Malformed, unsupported or oversized metadata is left untouched rather than
+overwritten on exit. Restore/save failures are logged; restore failures also
+appear in the status bar. Move the affected JSON file out of `sessions/` to start
+saving a fresh session. Metadata is limited to 4 MiB, 512 tabs, 128 panes and
+4,096 selections per tab.
+
 ### External file changes
 
 `auto_reload: true` (the default) reloads open, unmodified text files when they

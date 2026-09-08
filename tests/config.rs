@@ -90,6 +90,11 @@ fn test_default_config() {
     assert!(legacy.indent_guides);
     assert!(config.auto_reload);
     assert!(legacy.auto_reload);
+    assert!(config.session.restore && config.session.save_on_exit);
+    assert!(legacy.session.restore && legacy.session.save_on_exit);
+    let opted_out: EditorConfig =
+        serde_yaml::from_str("session:\n  restore: false\n  save_on_exit: false").unwrap();
+    assert!(!opted_out.session.restore && !opted_out.session.save_on_exit);
     let manual: EditorConfig = serde_yaml::from_str("auto_reload: false").unwrap();
     assert!(!manual.auto_reload);
 }
@@ -107,6 +112,7 @@ fn test_config_path_returns_some() {
 #[test]
 fn test_config_serialize_deserialize() {
     let config = EditorConfig {
+        session: Default::default(),
         theme: "fleet-dark".to_string(),
         editor_font: "Menlo".into(),
         ui_font: "Inter".into(),

@@ -99,6 +99,7 @@ fn should_skip_non_global_keymap(
 struct PreparedApp {
     model: AppModel,
     workspace_root: Option<PathBuf>,
+    session: Option<super::session::SessionStore>,
 }
 
 /// Legacy/startup callers may not yet have a worker snapshot. Resolve once at
@@ -147,6 +148,7 @@ fn prepare_app(
 ) -> PreparedApp {
     let keymap = Keymap::with_bindings(load_default_keymap());
 
+    let restore = startup_config.restore_session;
     let (demo_mode, file_paths, workspace_root) = match startup_config.mode {
         StartupMode::Demo => (true, Vec::new(), None),
         StartupMode::Empty => (false, Vec::new(), None),
@@ -165,6 +167,14 @@ fn prepare_app(
         model.open_workspace(root.clone());
     }
     model.resize(window_width, window_height);
+    let session = (!demo_mode)
+        .then(|| super::session::SessionStore::for_model(&model))
+        .flatten();
+    if restore && model.config.session.restore {
+        if let Some(session) = &session {
+            session.restore(&mut model);
+        }
+    }
     super::file_io::prepare_startup_files(&mut model, file_paths);
     if demo_mode {
         let document_id = model.document().id;
@@ -179,6 +189,7 @@ fn prepare_app(
         let line = line.min(document.line_count().saturating_sub(1));
         let column = column.min(document.line_length(line));
         let editor = model.editor_mut();
+        editor.collapse_to_primary();
         editor.cursors[0].line = line;
         editor.cursors[0].column = column;
         editor.selections[0].anchor = Position::new(line, column);
@@ -189,11 +200,13 @@ fn prepare_app(
     PreparedApp {
         model,
         workspace_root,
+        session,
     }
 }
 
 pub struct App {
     model: AppModel,
+    session: Option<super::session::SessionStore>,
     renderer: Option<Renderer>,
     renderer_preparation: Option<RendererPreparation>,
     window: Option<Rc<Window>>,
@@ -1073,12 +1086,14 @@ impl App {
         let PreparedApp {
             model,
             workspace_root,
+            session,
         } = app_preparation
             .and_then(AppPreparation::finish)
             .unwrap_or_else(|| prepare_app(window_width, window_height, startup_config));
 
         let mut app = Self {
             model,
+            session,
             renderer: None,
             renderer_preparation,
             window: None,
@@ -5460,6 +5475,25 @@ impl ApplicationHandler for App {
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        // Finish queued writes before capturing paths (notably a just-completed
+        // Save As). Apply their replies without scheduling new work at shutdown.
+        self.file_io_tx.take();
+        while let Ok(message) = self.msg_rx.try_recv() {
+            if matches!(
+                message,
+                Msg::App(AppMsg::SaveCompleted { .. } | AppMsg::FileLoaded { .. })
+                    | Msg::Layout(LayoutMsg::FilePrepared { .. })
+            ) {
+                update(&mut self.model, message);
+            }
+        }
+        if self.model.config.session.save_on_exit {
+            if let Some(session) = &self.session {
+                if let Err(error) = session.save(&self.model) {
+                    tracing::warn!("Session save: {error:#}");
+                }
+            }
+        }
         // Waiters first: a `--wait` client must read its answer before
         // the endpoint it connected through disappears.
         self.answer_exit_waiters();

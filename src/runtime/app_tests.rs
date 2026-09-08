@@ -33,6 +33,7 @@ fn empty_startup_config() -> StartupConfig {
     StartupConfig {
         mode: StartupMode::Empty,
         initial_position: None,
+        restore_session: false,
         wait_mode: false,
     }
 }
@@ -362,6 +363,7 @@ fn multiple_startup_files_open_as_distinct_tabs() {
     let config = StartupConfig {
         mode: StartupMode::MultipleFiles(vec![first.clone(), second.clone()]),
         initial_position: None,
+        restore_session: false,
         wait_mode: false,
     };
     let preparation = AppPreparation::start(800, 600, config.clone())
@@ -402,6 +404,7 @@ fn startup_position_is_clamped_to_the_first_successful_document() {
         StartupConfig {
             mode: StartupMode::MultipleFiles(vec![dir.path().into(), first.clone(), second]),
             initial_position: Some((usize::MAX, usize::MAX)),
+            restore_session: false,
             wait_mode: false,
         },
     );
@@ -430,6 +433,7 @@ fn startup_workspace_files_record_the_workspace_and_keep_an_empty_workspace_usab
                     initial_files: files.clone(),
                 },
                 initial_position: None,
+                restore_session: false,
                 wait_mode: false,
             },
         );

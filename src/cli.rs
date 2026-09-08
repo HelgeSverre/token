@@ -101,6 +101,8 @@ pub enum StartupMode {
 /// Configuration derived from CLI arguments
 #[derive(Debug, Clone)]
 pub struct StartupConfig {
+    /// Restore saved session metadata unless explicitly bypassed by the caller.
+    pub restore_session: bool,
     /// What files/folders to open
     pub mode: StartupMode,
     /// Initial cursor position (line, column) - 1-indexed from user, converted to 0-indexed
@@ -155,6 +157,7 @@ impl CliArgs {
             .map(|(line, column)| (line.saturating_sub(1), column.saturating_sub(1)));
 
         Ok(StartupConfig {
+            restore_session: !self.new && !self.demo,
             mode,
             initial_position,
             wait_mode: self.wait,
@@ -167,7 +170,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_empty_args_gives_empty_mode() {
+    fn test_empty_args_restores_session() {
         let args = CliArgs {
             paths: vec![],
             new: false,
@@ -180,6 +183,7 @@ mod tests {
         };
         let config = args.into_config().unwrap();
         assert!(matches!(config.mode, StartupMode::Empty));
+        assert!(config.restore_session);
     }
 
     #[test]
@@ -196,6 +200,7 @@ mod tests {
         };
         let config = args.into_config().unwrap();
         assert!(matches!(config.mode, StartupMode::Empty));
+        assert!(!config.restore_session);
     }
 
     #[test]

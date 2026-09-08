@@ -420,6 +420,7 @@ mod tests {
             StartupConfig {
                 mode: StartupMode::Empty,
                 initial_position: None,
+                restore_session: false,
                 wait_mode: false,
             },
             None,
@@ -456,6 +457,7 @@ mod tests {
             StartupConfig {
                 mode: StartupMode::Empty,
                 initial_position: None,
+                restore_session: false,
                 wait_mode: false,
             },
             None,
@@ -501,6 +503,7 @@ mod tests {
             StartupConfig {
                 mode: StartupMode::Empty,
                 initial_position: None,
+                restore_session: false,
                 wait_mode: false,
             },
             None,

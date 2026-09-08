@@ -95,7 +95,7 @@ pub(super) fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd>
 
         LayoutMsg::FocusGroupByIndex(index) => {
             // 1-indexed for keyboard shortcuts (Cmd+1, Cmd+2, etc.)
-            let group_ids: Vec<GroupId> = collect_group_ids(&model.editor_area.layout);
+            let group_ids = model.editor_area.layout.group_ids();
             if index > 0 && index <= group_ids.len() {
                 model.editor_area.focused_group_id = group_ids[index - 1];
             }
@@ -886,7 +886,7 @@ fn close_group(
 
     // If we closed the focused group, focus another group
     if model.editor_area.focused_group_id == group_id {
-        let group_ids: Vec<GroupId> = collect_group_ids(&model.editor_area.layout);
+        let group_ids = model.editor_area.layout.group_ids();
         if let Some(&new_focus) = group_ids.first() {
             model.editor_area.focused_group_id = new_focus;
         }
@@ -962,23 +962,9 @@ fn remove_group_from_layout(layout: &mut LayoutNode, group_id: GroupId) -> bool 
     }
 }
 
-/// Collect all group IDs from the layout tree (in order)
-fn collect_group_ids(layout: &LayoutNode) -> Vec<GroupId> {
-    match layout {
-        LayoutNode::Empty => vec![],
-        LayoutNode::Group(id) => vec![*id],
-        LayoutNode::Preview(_) => vec![],
-        LayoutNode::Split(container) => container
-            .children
-            .iter()
-            .flat_map(collect_group_ids)
-            .collect(),
-    }
-}
-
 /// Focus the next or previous group
 fn focus_adjacent_group(model: &mut AppModel, next: bool) {
-    let group_ids = collect_group_ids(&model.editor_area.layout);
+    let group_ids = model.editor_area.layout.group_ids();
     if group_ids.len() <= 1 {
         return;
     }

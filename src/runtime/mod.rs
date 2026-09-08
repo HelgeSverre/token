@@ -26,6 +26,7 @@ mod lsp_slot;
 mod macos_menu;
 pub mod mouse;
 mod path_completion;
+mod session;
 pub mod webview;
 
 pub use app::{App, AppPreparation};

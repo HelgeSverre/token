@@ -59,6 +59,8 @@ impl std::fmt::Display for FileOpenSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileOpenPolicy {
     CreateOrOpen,
+    /// Existing files of any supported view mode (session restore).
+    Existing,
     ExistingText,
 }
 

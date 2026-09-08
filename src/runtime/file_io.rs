@@ -36,31 +36,66 @@ pub(super) enum FileJob {
 /// CLI startup uses exactly the same preparation and tab installation as later
 /// opens. This runs on the loader before the model is installed into the runtime.
 pub(super) fn prepare_startup_files(model: &mut token::AppModel, paths: Vec<PathBuf>) {
+    prepare_files(model, paths, token::model::FileOpenPolicy::CreateOrOpen);
+}
+
+pub(super) fn prepare_session_files(model: &mut token::AppModel, paths: Vec<PathBuf>) {
+    prepare_files(model, paths, token::model::FileOpenPolicy::Existing);
+}
+
+fn prepare_files(
+    model: &mut token::AppModel,
+    paths: Vec<PathBuf>,
+    policy: token::model::FileOpenPolicy,
+) {
     use token::update::update;
+    if paths.is_empty() {
+        return;
+    }
 
     let initial_tab = model
-        .editor_area
-        .focused_group()
-        .and_then(|group| group.active_tab())
-        .map(|tab| tab.id);
+        .try_document()
+        .filter(|doc| doc.file_path.is_none() && !doc.is_modified)
+        .and_then(|_| {
+            model
+                .editor_area
+                .focused_group()
+                .and_then(|group| group.active_tab())
+                .map(|tab| tab.id)
+        });
+    let mut first_tab = None;
     let mut first_error = None;
     let mut failures = 0;
     for path in paths {
-        if let Some(token::Cmd::PrepareFileOpen(request)) =
+        let mut failed = false;
+        if let Some(token::Cmd::PrepareFileOpen(mut request)) =
             update(model, Msg::Layout(LayoutMsg::OpenFileInNewTab(path)))
         {
+            request.policy = policy;
             let reply = FileJob::Open(request).run(None);
             if let Msg::Layout(LayoutMsg::FilePrepared {
                 result: Err(error), ..
             }) = &reply
             {
                 failures += 1;
+                failed = true;
                 first_error.get_or_insert_with(|| error.clone());
             }
             // Startup dispatches syntax/LSP work after installing this session
             // into the runtime. Redraws and FileOpenFinished have no consumers
             // in the loader; recent-file state is already updated by dispatch.
             update(model, reply);
+        }
+        if !failed && first_tab.is_none() {
+            first_tab = model
+                .editor_area
+                .focused_group()
+                .and_then(|group| group.active_tab().map(|tab| (group.id, tab.id)))
+                .filter(|_| {
+                    model
+                        .try_document()
+                        .is_some_and(|doc| doc.file_path.is_some())
+                });
         }
     }
     let opened = model
@@ -73,7 +108,17 @@ pub(super) fn prepare_startup_files(model: &mut token::AppModel, paths: Vec<Path
         if let Some(tab) = initial_tab {
             update(model, Msg::Layout(LayoutMsg::CloseTab(tab)));
         }
-        update(model, Msg::Layout(LayoutMsg::SwitchToTab(0)));
+        if let Some((group_id, tab_id)) = first_tab {
+            if let Some(index) = model
+                .editor_area
+                .groups
+                .get(&group_id)
+                .and_then(|group| group.tabs.iter().position(|tab| tab.id == tab_id))
+            {
+                update(model, Msg::Layout(LayoutMsg::FocusGroup(group_id)));
+                update(model, Msg::Layout(LayoutMsg::SwitchToTab(index)));
+            }
+        }
         model.ui.set_status(format!(
             "Opened {opened} file{}",
             if opened == 1 { "" } else { "s" }
