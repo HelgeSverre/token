@@ -1927,11 +1927,9 @@ impl App {
                 None
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let (h_delta, v_delta) = self.scroll_accumulator.deltas(
-                    *delta,
-                    self.model.char_width as f64,
-                    wheel_row_height(&self.model),
-                );
+                let (h_delta, v_delta) = self
+                    .scroll_accumulator
+                    .deltas_for_model(*delta, &self.model);
 
                 if let Some(renderer) = &mut self.renderer {
                     let mut painter = renderer.text_painter();
@@ -6111,18 +6109,6 @@ fn handle_syntax_worker_request(
 /// common editor default (VS Code, etc.).
 const LINES_PER_WHEEL_NOTCH: f64 = 3.0;
 
-/// Convert trackpad pixels using the row height actually painted by the target.
-fn wheel_row_height(model: &AppModel) -> f64 {
-    if matches!(
-        model.ui.active_modal,
-        Some(token::model::ModalState::Settings(_))
-    ) {
-        token::view::overlay_surface::settings_row_height(model.metrics.scale_factor) as f64
-    } else {
-        model.line_height as f64
-    }
-}
-
 /// Carries fractional scroll remainders between wheel events so trackpad
 /// scrolling keeps a consistent, non-truncating sensitivity.
 ///
@@ -6138,6 +6124,35 @@ struct ScrollAccumulator {
 }
 
 impl ScrollAccumulator {
+    /// Settings consumes physical pixels; editor/list surfaces consume rows.
+    /// Discrete wheel notches retain the editor's physical scrolling distance.
+    fn deltas_for_model(
+        &mut self,
+        delta: winit::event::MouseScrollDelta,
+        model: &AppModel,
+    ) -> (i32, i32) {
+        use winit::{dpi::PhysicalPosition, event::MouseScrollDelta};
+        let char_width = model.char_width as f64;
+        let line_height = model.line_height as f64;
+        if matches!(
+            model.ui.active_modal,
+            Some(token::model::ModalState::Settings(_))
+        ) {
+            let delta = match delta {
+                MouseScrollDelta::LineDelta(x, y) => {
+                    MouseScrollDelta::PixelDelta(PhysicalPosition::new(
+                        x as f64 * LINES_PER_WHEEL_NOTCH * char_width,
+                        y as f64 * LINES_PER_WHEEL_NOTCH * line_height,
+                    ))
+                }
+                pixels @ MouseScrollDelta::PixelDelta(_) => pixels,
+            };
+            self.deltas(delta, char_width, 1.0)
+        } else {
+            self.deltas(delta, char_width, line_height)
+        }
+    }
+
     /// Convert a raw winit mouse-wheel delta into integer `(h_delta, v_delta)`
     /// in the sign convention shared by `EditorState::scroll_vertical_by`,
     /// `EditorState::scroll_horizontal_visible_window_by`, and CSV's
@@ -6194,17 +6209,23 @@ mod scrollbar_wheel_tests {
     use winit::{dpi::PhysicalPosition, event::MouseScrollDelta};
 
     #[test]
-    fn settings_scrollbar_trackpad_uses_painted_rows_at_each_scale() {
+    fn settings_scrollbar_trackpad_preserves_pixels_at_each_scale() {
         for scale in [1.0, 1.5, 2.0] {
             let mut model = AppModel::new(800, 600, scale);
-            assert_eq!(wheel_row_height(&model), model.line_height as f64);
-            model.ui.active_modal = Some(token::model::ModalState::Settings(Default::default()));
-            let row = wheel_row_height(&model);
-            assert_eq!(row, (72.0_f64 * scale).round());
             let mut accumulator = ScrollAccumulator::default();
-            let half_row = MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -row / 2.0));
-            assert_eq!(accumulator.deltas(half_row, 8.0, row), (0, 0));
-            assert_eq!(accumulator.deltas(half_row, 8.0, row), (0, 1));
+            let pixel = MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -1.0));
+            assert_eq!(accumulator.deltas_for_model(pixel, &model), (0, 0));
+            model.ui.active_modal = Some(token::model::ModalState::Settings(Default::default()));
+            assert_eq!(accumulator.deltas_for_model(pixel, &model), (0, 1));
+            let half_pixel = MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -0.5));
+            assert_eq!(accumulator.deltas_for_model(half_pixel, &model), (0, 0));
+            assert_eq!(accumulator.deltas_for_model(half_pixel, &model), (0, 1));
+            assert_eq!(
+                accumulator.deltas_for_model(MouseScrollDelta::LineDelta(0.0, -1.0), &model),
+                (0, model.line_height as i32 * 3),
+            );
+            model.ui.close_modal();
+            assert_eq!(accumulator.deltas_for_model(pixel, &model), (0, 0));
         }
     }
 

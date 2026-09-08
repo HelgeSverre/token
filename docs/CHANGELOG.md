@@ -8,12 +8,15 @@ All notable changes to rust-editor are documented in this file.
 
 ### Scrollbar consistency
 
+- Settings scrolls continuously in pixels, with clipped partial rows at both
+  edges. Trackpad movement and thumb dragging no longer snap to settings or
+  section headings; keyboard navigation reveals rows with minimal movement.
+
 - Settings and list modals now use the shared scrollbar geometry, standard-width
   hit area, theme colors and renderer instead of separately painted indicators.
   Thumbs can be dragged and tracks clicked, including to the last settings row.
   Settings wheel scrolling preserves the incoming scroll amount instead of
-  forcing a three-row jump; trackpad pixels use the painted Settings row height.
-  Section headings are included in scroll positioning.
+  forcing a three-row jump. Section headings are included in scroll positioning.
 - Consolidated vertical/horizontal scrollbar messages and pointer-position math.
   Drag capture ends on release, focus loss, modal changes and window resizing.
 

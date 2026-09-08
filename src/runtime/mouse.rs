@@ -250,7 +250,46 @@ mod tests {
             Msg::Ui(UiMsg::Modal(ModalMsg::SetInput(String::new()))),
         );
         scroll_hovered_region(&mut model, None, 0, 5);
-        assert!(settings_scrollbar(&model).state.position > one);
+        assert_eq!(one, 1);
+        assert_eq!(settings_scrollbar(&model).state.position, 5);
+    }
+
+    #[test]
+    fn settings_scrollbar_does_not_snap_on_drag_or_visible_selection() {
+        let mut model = AppModel::new(800, 750, 1.0);
+        model
+            .ui
+            .open_modal(token::model::ModalState::Settings(Default::default()));
+        update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Scroll(13))));
+        assert_eq!(settings_scrollbar(&model).state.position, 13);
+        update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)));
+        assert_eq!(settings_scrollbar(&model).state.position, 13);
+        let event = grab_settings_scrollbar(&mut model);
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::ScrollbarDragUpdate {
+                mouse_coord: event.pos.y as f32,
+            }),
+        );
+        assert_eq!(settings_scrollbar(&model).state.position, 13);
+        let coord = event.pos.y as f32 + 1.0;
+        let expected = model
+            .ui
+            .scrollbar_drag
+            .as_ref()
+            .unwrap()
+            .position_from_mouse(coord);
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::ScrollbarDragUpdate { mouse_coord: coord }),
+        );
+        assert_eq!(settings_scrollbar(&model).state.position, expected);
+        assert!(
+            expected > 13 && expected < 72,
+            "a one-pixel drag must not jump a section"
+        );
+        update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::PageDown)));
+        assert!(settings_scrollbar(&model).state.position > expected);
     }
 
     #[test]

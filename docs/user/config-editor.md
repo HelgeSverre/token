@@ -17,8 +17,10 @@ General editor settings for Token.
 ## Settings
 
 The page uses the standard themed scrollbar: drag its thumb or click the track
-to jump. Scrolling leaves the selected setting unchanged. Wheel scrolling uses
-the incoming scroll amount rather than a fixed palette-style three-row step.
+to jump. Scrolling leaves the selected setting unchanged and moves continuously
+in pixels, including partially visible rows. Trackpad deltas retain their pixel
+distance; keyboard navigation reveals the selected row without snapping the
+rest of the page to section boundaries.
 
 Open the separate Settings page with `Cmd+,` (`Ctrl+,` on Windows/Linux) or
 the **Open Settings** command. Categories appear in the left navigation, with

@@ -39,7 +39,7 @@ const ROW: f32 = 72.0;
 const TOP: f32 = 108.0;
 const FOOT: f32 = 36.0;
 
-pub fn row_height(scale: f64) -> usize {
+fn row_height(scale: f64) -> usize {
     scaled(ROW, scale)
 }
 
@@ -104,13 +104,33 @@ fn chrome(p: &WidgetRect, sf: f64) -> Chrome {
     }
 }
 
-/// Display-row capacity shared by update, rendering, and screenshot navigation.
-pub fn visible_count(width: usize, height: usize, sf: f64) -> usize {
+/// Pixel viewport shared by rendering, hit testing, scrolling and row reveal.
+pub(crate) fn scroll_viewport(
+    width: usize,
+    height: usize,
+    sf: f64,
+    count: usize,
+    offset: usize,
+) -> crate::layout::RowListView {
     let p = panel(width, height, sf);
-    let top = chrome(&p, sf).body_top - p.y;
-    p.h.saturating_sub(top + scaled(FOOT, sf))
-        .checked_div(row_height(sf))
-        .unwrap_or(0)
+    let chrome = chrome(&p, sf);
+    crate::layout::RowListView::from_pixel_scroll(
+        Rect::new(
+            (p.x + chrome.sidebar) as f32,
+            chrome.body_top as f32,
+            p.w.saturating_sub(chrome.sidebar) as f32,
+            (p.y + p.h).saturating_sub(chrome.body_top + scaled(FOOT, sf)) as f32,
+        ),
+        row_height(sf) as f32,
+        count,
+        offset,
+    )
+}
+
+/// Full-row capacity for keyboard Page Up/Down, not pointer scrolling.
+pub fn visible_count(width: usize, height: usize, sf: f64) -> usize {
+    scroll_viewport(width, height, sf, 0, 0)
+        .visible_capacity()
         .max(1)
 }
 
@@ -161,23 +181,22 @@ pub(super) fn layout(
                 .collect()
         })
         .unwrap_or_default();
-    let top = chrome.body_top;
-    let capacity = visible_count(width, height, sf);
-    let (start, count, total) = match &spec.body {
+    let (total, offset) = match &spec.body {
         Body::List {
             sections, scroll, ..
-        } => {
-            let rows = flatten_rows(sections);
-            let (start, count) = resolve_visible_window(&rows, *scroll, capacity);
-            (start, count, rows.len())
-        }
-        _ => (0, 0, 0),
+        } => (flatten_rows(sections).len(), *scroll),
+        _ => (0, 0),
     };
+    let viewport = scroll_viewport(width, height, sf, total, offset);
+    let body = viewport.rect();
+    out.settings_viewport = Some(viewport);
     out.row_height = row_height(sf);
-    out.rows = (0..count)
-        .map(|i| WidgetRect {
+    out.rows = viewport
+        .drawn_range()
+        .filter_map(|i| viewport.row_rect(i))
+        .map(|rect| WidgetRect {
             x: p.x + sidebar + pad,
-            y: top + i * out.row_height,
+            y: rect.y as usize,
             w: p.w.saturating_sub(sidebar + pad * 2),
             h: out.row_height,
         })
@@ -188,16 +207,20 @@ pub(super) fn layout(
         w: p.w.saturating_sub(pad * 2),
         h: scaled(FOOT, sf),
     });
-    out.scrollbar = if total > count {
+    out.scrollbar = if viewport.max_scroll_pixels() > 0 {
         let body = WidgetRect {
-            x: p.x + sidebar,
-            y: top,
-            w: p.w.saturating_sub(sidebar),
-            h: p.h.saturating_sub(top - p.y + scaled(FOOT, sf)),
+            x: body.x as usize,
+            y: body.y as usize,
+            w: body.width as usize,
+            h: body.height as usize,
         };
         Some(list_scrollbar(
             body,
-            ScrollbarState::new(total, count, start),
+            ScrollbarState::new(
+                viewport.content_height_pixels(),
+                body.h,
+                viewport.scroll_offset_pixels(),
+            ),
             sf,
         ))
     } else {
@@ -302,15 +325,12 @@ pub(super) fn hit_test(
     if let Some(index) = layout.tab_rects.iter().position(|r| contains(r, x, y)) {
         return OverlayHit::Tab(index);
     }
-    if let Body::List {
-        sections,
-        scroll,
-        max_visible,
-        ..
-    } = &spec.body
-    {
+    if let (Body::List { sections, .. }, Some(viewport)) = (&spec.body, layout.settings_viewport) {
+        if !viewport.rect().contains(x as f32, y as f32) {
+            return OverlayHit::Inside;
+        }
         let rows = flatten_rows(sections);
-        let (start, _) = resolve_visible_window(&rows, *scroll, *max_visible);
+        let start = viewport.drawn_range().start;
         for (slot, rect) in layout.rows.iter().enumerate() {
             if !contains(rect, x, y) {
                 continue;
@@ -467,15 +487,16 @@ pub(super) fn render(
             );
         }
     }
-    if let Body::List {
-        sections,
-        scroll,
-        max_visible,
-        selected,
-    } = &spec.body
+    if let (
+        Body::List {
+            sections, selected, ..
+        },
+        Some(viewport),
+    ) = (&spec.body, layout.settings_viewport)
     {
+        frame.push_clip(viewport.rect());
         let rows = flatten_rows(sections);
-        let (start, _) = resolve_visible_window(&rows, *scroll, *max_visible);
+        let start = viewport.drawn_range().start;
         for (slot, rect) in layout.rows.iter().enumerate() {
             match rows.get(start + slot) {
                 Some(DisplayRow::SectionHeader(title)) => {
@@ -731,6 +752,7 @@ pub(super) fn render(
                 colors.text_dim,
             );
         }
+        frame.pop_clip();
     }
     render_list_scrollbar(frame, layout, colors);
     if let (Some(footer), Some(rect)) = (&spec.footer, layout.footer) {
@@ -744,6 +766,86 @@ mod tests {
     use super::*;
 
     #[test]
+    fn settings_partial_rows_share_pixel_scroll_geometry_and_clipping() {
+        let font = fontdue::Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        for (width, height, scale) in [(1100, 720, 1.0), (400, 750, 1.0), (1600, 1100, 2.0)] {
+            let model = crate::model::AppModel::new(width, height, scale);
+            let mut reference = Vec::new();
+            for offset in [0, 13, 71, 95, usize::MAX] {
+                let state = crate::settings::SettingsState {
+                    scroll_offset_px: offset,
+                    ..Default::default()
+                };
+                crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                    let layout = super::super::layout(spec, width as usize, height as usize, scale);
+                    let viewport = layout.settings_viewport.unwrap();
+                    let clip = viewport.rect();
+                    let Body::List { sections, .. } = &spec.body else {
+                        panic!("list expected")
+                    };
+                    let rows = flatten_rows(sections);
+                    assert_eq!(
+                        viewport.scroll_offset_pixels(),
+                        offset.min(viewport.max_scroll_pixels())
+                    );
+                    for (index, rect) in viewport.drawn_range().zip(&layout.rows) {
+                        assert_eq!(rect.y, viewport.row_rect(index).unwrap().y as usize);
+                    }
+                    let x = layout.rows[0].x + 1;
+                    for y in 0..height as usize {
+                        let hit = hit_test(spec, &layout, x, y);
+                        if let Some(index) = viewport.row_at_y(y as f32) {
+                            let expected = match &rows[index] {
+                                DisplayRow::Row(_, index) => OverlayHit::Row(*index),
+                                _ => OverlayHit::Inside,
+                            };
+                            assert_eq!(hit, expected, "hit at y={y}, offset={offset}");
+                        } else {
+                            assert!(!matches!(
+                                hit,
+                                OverlayHit::Row(_) | OverlayHit::Choice { .. }
+                            ));
+                        }
+                    }
+                    let mut pixels = vec![0; width as usize * height as usize];
+                    let mut frame = Frame::new(&mut pixels, width as usize, height as usize);
+                    let mut cache = crate::view::GlyphCache::default();
+                    let mut painter = TextPainter::new(&font, &mut cache, 14.0, 11.0, 8.0, 18);
+                    render(
+                        &mut frame,
+                        &mut painter,
+                        &mut RoundedRectMaskCache::new(),
+                        &Palette::from_theme(&model.theme),
+                        spec,
+                        &layout,
+                        scale,
+                        true,
+                    );
+                    if offset == 0 {
+                        reference = pixels;
+                    } else {
+                        for y in 0..height as usize {
+                            if y < clip.y as usize || y >= (clip.y + clip.height) as usize {
+                                let range = y * width as usize..(y + 1) * width as usize;
+                                assert_eq!(
+                                    pixels[range.clone()],
+                                    reference[range],
+                                    "chrome overwritten at y={y}"
+                                );
+                            }
+                        }
+                        assert_ne!(pixels, reference, "scrolling must move painted content");
+                    }
+                });
+            }
+        }
+    }
+
+    #[test]
     fn settings_scrollbar_paints_the_shared_theme_and_tracks_display_rows() {
         let font = fontdue::Font::from_bytes(
             include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
@@ -754,7 +856,7 @@ mod tests {
             let model = crate::model::AppModel::new(width, height, scale);
             for offset in [0, usize::MAX] {
                 let state = crate::settings::SettingsState {
-                    scroll_offset: offset,
+                    scroll_offset_px: offset,
                     ..Default::default()
                 };
                 crate::view::modal::with_settings_spec(&model, &state, |spec| {
@@ -774,7 +876,7 @@ mod tests {
                         }
                     );
                     assert!(
-                        bar.state.total > state.rows.len(),
+                        bar.state.total / geometry.row_height > state.rows.len(),
                         "section headings occupy real viewport space"
                     );
                     assert_eq!(

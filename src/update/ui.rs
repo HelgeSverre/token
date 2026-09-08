@@ -1334,6 +1334,22 @@ fn settings_capacity(model: &AppModel) -> usize {
     )
 }
 
+fn settings_scroll_geometry(model: &AppModel) -> Option<(crate::layout::RowListView, Vec<usize>)> {
+    let ModalState::Settings(state) = model.ui.active_modal.as_ref()? else {
+        return None;
+    };
+    let (positions, total) =
+        crate::view::overlay_surface::section_positions(&settings_shapes(state));
+    let viewport = crate::view::overlay_surface::settings_scroll_viewport(
+        model.window_size.0 as usize,
+        model.window_size.1 as usize,
+        model.metrics.scale_factor,
+        total,
+        state.scroll_offset_px,
+    );
+    Some((viewport, positions))
+}
+
 fn settings_shapes(state: &crate::settings::SettingsState) -> Vec<SectionShape> {
     state
         .sections()
@@ -1404,9 +1420,15 @@ fn move_list_selection(
     if total == 0 {
         return;
     }
-    let current = *selected as isize;
-    *selected = (current + delta).rem_euclid(total as isize) as usize;
+    *selected = offset_selection(*selected, total, delta);
     *scroll = resolve_scroll_for_selection(shapes, *selected, COMMAND_PALETTE_MAX_VISIBLE, *scroll);
+}
+
+fn offset_selection(selected: usize, total: usize, delta: isize) -> usize {
+    if total == 0 {
+        return 0;
+    }
+    (selected as isize + delta).rem_euclid(total as isize) as usize
 }
 
 /// Page `*selected` by a full visible page, clamping (not wrapping —
@@ -1478,24 +1500,16 @@ fn move_search_everywhere_selection(state: &mut CommandPaletteState, delta: isiz
 /// (-1/+1) in whichever list-body modal is active. Theme Picker previews
 /// the newly-selected theme live.
 fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
-    let capacity = settings_capacity(model);
+    let settings_geometry = settings_scroll_geometry(model);
     let modal = model.ui.active_modal.as_mut()?;
     let preview_theme_id = match modal {
         ModalState::Settings(state) => {
-            let shapes = settings_shapes(state);
-            let previous_scroll = state.scroll_offset;
-            move_list_selection(
-                &mut state.selected_index,
-                &mut state.scroll_offset,
-                &shapes,
-                delta,
-            );
-            state.scroll_offset = resolve_scroll_for_selection(
-                &shapes,
-                state.selected_index,
-                capacity,
-                previous_scroll,
-            );
+            state.selected_index = offset_selection(state.selected_index, state.rows.len(), delta);
+            if let Some((viewport, positions)) = settings_geometry {
+                state.scroll_offset_px = viewport.scroll_to_reveal_pixels(
+                    positions.get(state.selected_index).copied().unwrap_or(0),
+                );
+            }
             None
         }
         ModalState::CommandPalette(state) => {
@@ -1570,10 +1584,10 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
 /// whichever list-body modal is active.
 fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
     let capacity = settings_capacity(model);
+    let settings_geometry = settings_scroll_geometry(model);
     let modal = model.ui.active_modal.as_mut()?;
     match modal {
         ModalState::Settings(state) => {
-            let shapes = settings_shapes(state);
             state.selected_index = if forward {
                 state
                     .selected_index
@@ -1582,12 +1596,11 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
             } else {
                 state.selected_index.saturating_sub(capacity)
             };
-            state.scroll_offset = resolve_scroll_for_selection(
-                &shapes,
-                state.selected_index,
-                capacity,
-                state.scroll_offset,
-            );
+            if let Some((viewport, positions)) = settings_geometry {
+                state.scroll_offset_px = viewport.scroll_to_reveal_pixels(
+                    positions.get(state.selected_index).copied().unwrap_or(0),
+                );
+            }
         }
         ModalState::CommandPalette(state) => match state.active_tab {
             SearchTab::Commands => {
@@ -1692,17 +1705,23 @@ fn modal_scroll(model: &mut AppModel, delta: isize) -> Option<Cmd> {
 }
 
 fn modal_scroll_to(model: &mut AppModel, position: Option<usize>, delta: isize) -> Option<Cmd> {
-    let capacity = if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) {
-        settings_capacity(model)
-    } else {
-        COMMAND_PALETTE_MAX_VISIBLE
-    };
+    if let Some((viewport, _)) = settings_scroll_geometry(model) {
+        let ModalState::Settings(state) = model.ui.active_modal.as_mut()? else {
+            return None;
+        };
+        let offset = position
+            .unwrap_or_else(|| viewport.scroll_offset_pixels().saturating_add_signed(delta))
+            .min(viewport.max_scroll_pixels());
+        if offset == state.scroll_offset_px {
+            return None;
+        }
+        state.scroll_offset_px = offset;
+        return Some(Cmd::Redraw);
+    }
+    let capacity = COMMAND_PALETTE_MAX_VISIBLE;
     let modal = model.ui.active_modal.as_mut()?;
     let (scroll, shapes): (&mut usize, Vec<SectionShape>) = match modal {
-        ModalState::Settings(state) => {
-            let shapes = settings_shapes(state);
-            (&mut state.scroll_offset, shapes)
-        }
+        ModalState::Settings(_) => return None,
         ModalState::CommandPalette(state) => match state.active_tab {
             SearchTab::Commands => {
                 let shapes = commands_tab_shapes(state);

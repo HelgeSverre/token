@@ -182,6 +182,9 @@ fn default_sidebar_visible() -> bool {
 #[derive(Deserialize, Debug)]
 struct ModalConfig {
     id: ModalId,
+    /// Settings-only physical-pixel scroll delta, after selection setup.
+    #[serde(default)]
+    scroll_pixels: isize,
     #[serde(default)]
     input: Option<String>,
     #[serde(default)]
@@ -574,6 +577,10 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
             for _ in 0..config.selected_index.unwrap_or(0).min(100) {
                 token::update::update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)));
             }
+            token::update::update(
+                model,
+                Msg::Ui(UiMsg::Modal(ModalMsg::Scroll(config.scroll_pixels))),
+            );
             return;
         }
         ModalId::CommandPalette => {

@@ -242,8 +242,8 @@ pub enum ModalMsg {
     /// Search Everywhere: switch to tab `index` (`SearchTab::ORDER` order) —
     /// a no-op if that tab is `Unavailable` (tab click).
     ActivateTab(usize),
-    /// Move the scroll window by `delta` rows without moving selection
-    /// (mouse wheel over a list-body modal).
+    /// Move the viewport without moving selection: rows for lists, physical
+    /// pixels for the Settings form.
     Scroll(isize),
 
     // === Find/Replace Specific ===

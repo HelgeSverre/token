@@ -11,7 +11,7 @@
 
 #[path = "settings_page.rs"]
 mod settings_page;
-pub use settings_page::row_height as settings_row_height;
+pub(crate) use settings_page::scroll_viewport as settings_scroll_viewport;
 pub use settings_page::visible_count as settings_visible_count;
 
 use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
@@ -445,6 +445,7 @@ pub enum Body<'a> {
     List {
         sections: &'a [Section<'a>],
         selected: FlatIndex,
+        /// Selectable-row offset for lists; physical pixels for Settings forms.
         scroll: usize,
         max_visible: usize,
     },
@@ -642,7 +643,7 @@ pub struct SectionShape {
     pub len: usize,
 }
 
-fn section_positions(shapes: &[SectionShape]) -> (Vec<usize>, usize) {
+pub(crate) fn section_positions(shapes: &[SectionShape]) -> (Vec<usize>, usize) {
     let mut display_len = 0;
     let mut positions = Vec::new();
     for (index, shape) in shapes.iter().enumerate() {
@@ -847,6 +848,8 @@ pub struct OverlayLayout {
     /// One rect per visible display row (headers included), in list order.
     /// Empty for non-`List` bodies.
     pub rows: Vec<WidgetRect>,
+    /// Pixel-scrolled form body; painting and hit testing share its clipped range.
+    pub settings_viewport: Option<crate::layout::RowListView>,
     /// One entry per `Body::Fields` field, in order. Empty otherwise.
     pub fields: Vec<FieldLayout>,
     /// The banner zone of a `Body::Zones` body. `None` unless
@@ -1377,6 +1380,7 @@ pub fn layout_measured(
         header,
         row_height: row_h,
         rows,
+        settings_viewport: None,
         fields,
         zones_banner,
         zones_code,

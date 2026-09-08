@@ -1004,7 +1004,7 @@ pub(crate) fn with_settings_spec<R>(
         body: Body::List {
             sections: &sections,
             selected: FlatIndex(state.selected_index),
-            scroll: state.scroll_offset,
+            scroll: state.scroll_offset_px,
             max_visible: overlay_surface::settings_visible_count(
                 model.window_size.0 as usize,
                 model.window_size.1 as usize,

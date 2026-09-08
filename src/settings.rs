@@ -305,7 +305,8 @@ pub struct SettingsState {
     pub keymap: keymap::KeymapSettings,
     pub(crate) editable: EditableState<StringBuffer>,
     pub(crate) selected_index: usize,
-    pub(crate) scroll_offset: usize,
+    /// Physical-pixel offset in the Settings form, including section headings.
+    pub(crate) scroll_offset_px: usize,
     /// Stable metadata. Values and live status are read from the model, not cached.
     pub(crate) entries: Vec<SettingRow>,
     /// Entry indices, grouped by section in table/registry order. Input and view share this.
@@ -322,7 +323,7 @@ impl Default for SettingsState {
             keymap: keymap::KeymapSettings::default(),
             editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
             selected_index: 0,
-            scroll_offset: 0,
+            scroll_offset_px: 0,
             entries,
             rows,
         }
@@ -358,7 +359,7 @@ impl SettingsState {
         if self.tab == keymap::SettingsTab::Keymap && self.keymap.capture.is_some() {
             self.rows = (0..self.entries.len()).collect();
             self.selected_index = 0;
-            self.scroll_offset = 0;
+            self.scroll_offset_px = 0;
             return;
         }
         let query = self.editable.text().to_lowercase();
@@ -386,7 +387,7 @@ impl SettingsState {
             })
             .collect();
         self.selected_index = 0;
-        self.scroll_offset = 0;
+        self.scroll_offset_px = 0;
     }
 
     pub(crate) fn sections(&self) -> Vec<(&'static str, std::ops::Range<usize>)> {

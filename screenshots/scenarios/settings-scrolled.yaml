@@ -1,0 +1,11 @@
+name: settings-scrolled
+width: 1100
+height: 720
+scale: 1.0
+theme: default-dark
+files:
+  - path: samples/soft-wrap.txt
+modal:
+  id: settings
+  selected_index: 2
+  scroll_pixels: 95

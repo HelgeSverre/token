@@ -131,6 +131,7 @@ impl LayoutSnapshot {
             SolvedContent::RowList(solved) => Some(RowListView {
                 rect: node.rect,
                 solved,
+                offset_within_row: 0.0,
             }),
             _ => None,
         }
@@ -153,9 +154,60 @@ impl LayoutSnapshot {
 pub struct RowListView {
     rect: Rect,
     solved: RowListSolved,
+    offset_within_row: f32,
 }
 
 impl RowListView {
+    /// A continuously scrolled form/list, using the same drawn-row and hit geometry
+    /// as row-snapped panels. Offsets are physical pixels, not selectable rows.
+    pub fn from_pixel_scroll(rect: Rect, row_height: f32, count: usize, offset: usize) -> Self {
+        let mut view = Self {
+            rect,
+            solved: RowListSolved {
+                row_height,
+                count,
+                scroll_offset: 0,
+            },
+            offset_within_row: 0.0,
+        };
+        if row_height > 0.0 {
+            let offset = offset.min(view.max_scroll_pixels()) as f32;
+            view.solved.scroll_offset = (offset / row_height).floor() as usize;
+            view.offset_within_row = offset % row_height;
+        }
+        view
+    }
+
+    pub fn content_height_pixels(&self) -> usize {
+        (self.solved.count as f32 * self.solved.row_height).ceil() as usize
+    }
+
+    pub fn max_scroll_pixels(&self) -> usize {
+        self.content_height_pixels()
+            .saturating_sub(self.rect.height.max(0.0) as usize)
+    }
+
+    pub fn scroll_offset_pixels(&self) -> usize {
+        (self.solved.scroll_offset as f32 * self.solved.row_height + self.offset_within_row).round()
+            as usize
+    }
+
+    /// Reveal a complete row with the smallest pixel movement; do not snap an
+    /// already visible row. Oversized rows align at the viewport's top.
+    pub fn scroll_to_reveal_pixels(&self, selected: usize) -> usize {
+        let top = selected.min(self.solved.count.saturating_sub(1)) as f32 * self.solved.row_height;
+        let bottom = top + self.solved.row_height;
+        let offset = self.scroll_offset_pixels() as f32;
+        let target = if top < offset || self.solved.row_height > self.rect.height {
+            top
+        } else if bottom > offset + self.rect.height {
+            bottom - self.rect.height
+        } else {
+            offset
+        };
+        (target.ceil() as usize).min(self.max_scroll_pixels())
+    }
+
     pub fn rect(&self) -> Rect {
         self.rect
     }
@@ -181,14 +233,14 @@ impl RowListView {
         (self.rect.height / self.solved.row_height).floor() as usize
     }
 
-    /// Rows actually painted: `ceil(height / row_height)` starting at the
-    /// scroll offset — a partial bottom row is drawn (clipped by the
-    /// panel's scissor) and therefore hittable.
+    /// Rows intersecting the viewport, including partial rows at either edge.
+    /// Painting clips these rows to the same viewport used by hit testing.
     pub fn drawn_range(&self) -> Range<usize> {
-        if self.solved.row_height <= 0.0 {
+        if self.solved.row_height <= 0.0 || self.rect.height <= 0.0 {
             return self.solved.scroll_offset..self.solved.scroll_offset;
         }
-        let drawn = (self.rect.height / self.solved.row_height).ceil() as usize;
+        let drawn =
+            ((self.rect.height + self.offset_within_row) / self.solved.row_height).ceil() as usize;
         let start = self.solved.scroll_offset.min(self.solved.count);
         let end = start.saturating_add(drawn).min(self.solved.count);
         start..end
@@ -202,7 +254,8 @@ impl RowListView {
         if self.solved.row_height <= 0.0 {
             return None;
         }
-        let visual = ((y - self.rect.y) / self.solved.row_height).floor() as usize;
+        let visual =
+            ((y - self.rect.y + self.offset_within_row) / self.solved.row_height).floor() as usize;
         let index = self.solved.scroll_offset.saturating_add(visual);
         (index < self.solved.count).then_some(index)
     }
@@ -215,7 +268,7 @@ impl RowListView {
         let visual = index - self.solved.scroll_offset;
         Some(Rect::new(
             self.rect.x,
-            self.rect.y + visual as f32 * self.solved.row_height,
+            self.rect.y + visual as f32 * self.solved.row_height - self.offset_within_row,
             self.rect.width,
             self.solved.row_height,
         ))
@@ -248,5 +301,36 @@ impl RowListView {
         } else {
             scroll_offset
         }
+    }
+}
+
+#[cfg(test)]
+mod pixel_scroll_tests {
+    use super::*;
+
+    #[test]
+    fn pixel_scrolled_rows_share_range_hit_reveal_and_end_clamping() {
+        let rect = Rect::new(10.0, 100.0, 200.0, 100.0);
+        let view = RowListView::from_pixel_scroll(rect, 72.0, 4, 13);
+        assert_eq!(view.scroll_offset_pixels(), 13);
+        assert_eq!(view.drawn_range(), 0..2);
+        assert_eq!(view.row_rect(0).unwrap().y, 87.0);
+        assert_eq!(view.row_rect(1).unwrap().y, 159.0);
+        assert_eq!(view.row_at_y(99.0), None);
+        assert_eq!(view.row_at_y(100.0), Some(0));
+        assert_eq!(view.row_at_y(159.0), Some(1));
+        assert_eq!(view.row_at_y(200.0), None);
+        assert_eq!(view.scroll_to_reveal_pixels(0), 0);
+        assert_eq!(view.scroll_to_reveal_pixels(1), 44);
+        let bottom = RowListView::from_pixel_scroll(rect, 72.0, 4, usize::MAX);
+        assert_eq!(bottom.scroll_offset_pixels(), 188);
+        assert_eq!(bottom.drawn_range(), 2..4);
+        let last = bottom.row_rect(3).unwrap();
+        assert_eq!(last.y + last.height, rect.y + rect.height);
+        assert_eq!(bottom.scroll_to_reveal_pixels(3), 188);
+        let empty = RowListView::from_pixel_scroll(rect, 72.0, 0, usize::MAX);
+        assert_eq!(empty.scroll_offset_pixels(), 0);
+        assert!(empty.drawn_range().is_empty());
+        assert_eq!(empty.row_at_y(150.0), None);
     }
 }
