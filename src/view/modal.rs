@@ -2154,15 +2154,15 @@ pub fn with_cursor_overlay_spec<R>(
         let (x, y, h) = menu.anchor;
         let spec = OverlaySpec {
             tabs: None,
-            anchor: Anchor::Cursor {
+            anchor: Anchor::Menu {
                 x,
                 y,
                 h,
                 prefer_below: true,
                 width: WidthRule {
                     pct: 0.0,
-                    min: 160.0,
-                    max: 320.0,
+                    min: 200.0,
+                    max: 520.0,
                 },
             },
             header: None,
@@ -3395,6 +3395,36 @@ mod tests {
             "pointer row receives a visible hover wash"
         );
         assert_eq!(plain, sample_rows(None), "leaving clears the hover wash");
+
+        let mut item = MenuItem::custom("Reveal in File Explorer", true, vec![]);
+        item.shortcut_hint = Some("⌃⌥⇧⌘R".to_owned());
+        model.ui.context_menu.as_mut().unwrap().items = vec![item];
+        for scale in [1.0, 2.0] {
+            with_cursor_overlay_spec(&model, |spec| {
+                let mut painter = TextPainter::new(&font, &mut glyph_cache, 14.0, 11.0, 8.0, 18);
+                let mut measure = crate::layout::PainterMeasure::new(&mut painter);
+                let layout = overlay_surface::layout_measured(spec, 1200, 900, scale, &mut measure);
+                assert!(
+                    layout.panel.w > (200.0 * scale) as usize,
+                    "long menu grows beyond its floor"
+                );
+                assert!(layout.panel.w <= (520.0 * scale) as usize);
+                assert!(layout.panel.x + layout.panel.w <= 1200);
+                let narrow = overlay_surface::layout_measured(spec, 150, 300, scale, &mut measure);
+                assert!(narrow.panel.x + narrow.panel.w <= 150);
+                assert_eq!(
+                    overlay_surface::hit_test(
+                        spec,
+                        &layout,
+                        layout.panel.x + layout.panel.w - 2,
+                        layout.rows[0].y + 2
+                    ),
+                    overlay_surface::OverlayHit::Row(FlatIndex(0)),
+                    "expanded area is interactive too",
+                );
+            })
+            .unwrap();
+        }
     }
 
     #[test]

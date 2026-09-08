@@ -205,6 +205,14 @@ pub enum Anchor {
         prefer_below: bool,
         width: WidthRule,
     },
+    /// Content-sized context menu, sharing cursor placement and edge clamping.
+    Menu {
+        x: usize,
+        y: usize,
+        h: usize,
+        prefer_below: bool,
+        width: WidthRule,
+    },
 }
 
 impl Anchor {
@@ -212,6 +220,7 @@ impl Anchor {
         match self {
             Anchor::Centered { width, .. }
             | Anchor::Cursor { width, .. }
+            | Anchor::Menu { width, .. }
             | Anchor::Settings { width } => width,
         }
     }
@@ -892,6 +901,13 @@ fn float_decl(anchor: &Anchor) -> FloatDecl {
             h,
             prefer_below,
             ..
+        }
+        | Anchor::Menu {
+            x,
+            y,
+            h,
+            prefer_below,
+            ..
         } => FloatAnchor::Caret {
             x: *x as f32,
             y: *y as f32,
@@ -965,13 +981,15 @@ pub fn layout_measured(
     scale_factor: f64,
     measure: &mut dyn crate::layout::TextMeasure,
 ) -> OverlayLayout {
-    let panel_w = crate::layout::anchor::resolve_width(
-        spec.anchor.width(),
-        matches!(&spec.anchor, Anchor::Cursor { .. }),
-        window_width,
-        scale_factor,
-    );
-    let is_cursor = matches!(&spec.anchor, Anchor::Cursor { .. });
+    let mut width = *spec.anchor.width();
+    if matches!(spec.anchor, Anchor::Menu { .. }) {
+        width.min = (menu_content_width(spec, scale_factor, measure) as f32 / scale_factor as f32)
+            .ceil()
+            .clamp(width.min, width.max);
+    }
+    let is_cursor = matches!(&spec.anchor, Anchor::Cursor { .. } | Anchor::Menu { .. });
+    let panel_w =
+        crate::layout::anchor::resolve_width(&width, is_cursor, window_width, scale_factor);
 
     let header_h = spec
         .header
@@ -1026,6 +1044,13 @@ pub fn layout_measured(
             h,
             prefer_below,
             ..
+        }
+        | Anchor::Menu {
+            x,
+            y,
+            h,
+            prefer_below,
+            ..
         } => {
             crate::layout::anchor::position_at_caret(
                 *x,
@@ -1071,7 +1096,10 @@ pub fn layout_measured(
                 dir: Dir::Column,
                 sizing: SizingAxes::new(Sizing::FIT, Sizing::FIT),
                 clip: true,
-                float: Some(float_decl(&spec.anchor)),
+                float: Some(FloatDecl {
+                    width: Some(width),
+                    ..float_decl(&spec.anchor)
+                }),
                 ..Default::default()
             },
             |t| match &spec.body {
@@ -1737,7 +1765,7 @@ pub fn render(
     }
     let radius = match &spec.anchor {
         Anchor::Centered { .. } | Anchor::Settings { .. } => scaled(dims::RADIUS, scale_factor),
-        Anchor::Cursor { .. } => scaled(dims::RADIUS_CURSOR, scale_factor),
+        Anchor::Cursor { .. } | Anchor::Menu { .. } => scaled(dims::RADIUS_CURSOR, scale_factor),
     };
 
     if let Anchor::Centered { dim_alpha, .. } = &spec.anchor {
@@ -2165,7 +2193,8 @@ fn render_list(
     let display_rows = flatten_rows(sections);
     let (start, _visible) = resolve_visible_window(&display_rows, *scroll, *max_visible);
 
-    let is_cursor = matches!(spec.anchor, Anchor::Cursor { .. });
+    let is_cursor = matches!(spec.anchor, Anchor::Cursor { .. } | Anchor::Menu { .. });
+    let keycap_scale = keycap_scale(spec, scale_factor);
     let row_size = size_px(SIZE_ROW, scale_factor);
     let meta_size = size_px(SIZE_META, scale_factor);
     let inset = scaled(
@@ -2184,7 +2213,7 @@ fn render_list(
         },
         scale_factor,
     );
-    let icon_w = scaled(dims::ROW_ICON_W, scale_factor);
+    let icon_w = list_icon_width(sections, scale_factor);
     let text_pad = scaled(dims::ROW_TEXT_PAD_X, scale_factor);
 
     for (slot, rect) in layout.rows.iter().enumerate() {
@@ -2316,7 +2345,13 @@ fn render_list(
                     .map(|(_, rects)| rects.as_slice())
                     .unwrap_or_default();
                 let accessory_w = choice_rects.first().map_or_else(
-                    || accessory_width(painter, &row.accessory, meta_size, scale_factor),
+                    || {
+                        if let Accessory::Keycaps(steps) = &row.accessory {
+                            keycaps_width(painter, steps, keycap_scale)
+                        } else {
+                            accessory_width(painter, &row.accessory, meta_size, scale_factor)
+                        }
+                    },
                     |first| (rect.x + rect.w).saturating_sub(inset + text_pad + first.x),
                 );
                 let label_right = (rect.x + rect.w.saturating_sub(inset + text_pad + accessory_w))
@@ -2479,11 +2514,10 @@ fn render_list(
                             );
                         }
                         Accessory::Keycaps(steps) => {
-                            let chip_h = painter.line_height_for_size(meta_size)
-                                + 2 * scaled(2.0, scale_factor);
+                            let chip_h = super::frame::keycap_height(painter, keycap_scale);
                             let chip_y = rect.y + (rect.h.saturating_sub(chip_h)) / 2;
-                            let chip_gap = scaled(dims::CHIP_GAP, scale_factor);
-                            let step_gap = scaled(dims::CHIP_STEP_GAP, scale_factor);
+                            let chip_gap = scaled(dims::CHIP_GAP, keycap_scale);
+                            let step_gap = scaled(dims::CHIP_STEP_GAP, keycap_scale);
                             let mut cx = acc_x;
                             for (i, step) in steps.iter().enumerate() {
                                 if i > 0 {
@@ -2503,7 +2537,7 @@ fn render_list(
                                         colors.keycap_bg,
                                         colors.keycap_border,
                                         colors.keycap_fg,
-                                        scale_factor,
+                                        keycap_scale,
                                     );
                                     cx += w;
                                 }
@@ -2610,6 +2644,62 @@ fn choice_rects(row: WidgetRect, count: usize, scale: f64) -> Vec<WidgetRect> {
         .collect()
 }
 
+fn list_icon_width(sections: &[Section<'_>], scale_factor: f64) -> usize {
+    if sections
+        .iter()
+        .flat_map(|section| section.rows)
+        .any(|row| !matches!(row.icon, RowIcon::None))
+    {
+        scaled(dims::ROW_ICON_W, scale_factor)
+    } else {
+        0
+    }
+}
+
+fn keycap_scale(spec: &OverlaySpec, scale_factor: f64) -> f64 {
+    scale_factor
+        * if matches!(spec.anchor, Anchor::Menu { .. }) {
+            0.8
+        } else {
+            1.0
+        }
+}
+
+/// Measure the same label, accessory and padding that `render_list` paints.
+fn menu_content_width(
+    spec: &OverlaySpec,
+    scale_factor: f64,
+    measure: &mut dyn crate::layout::TextMeasure,
+) -> usize {
+    let Body::List { sections, .. } = &spec.body else {
+        return 0;
+    };
+    let row_style = crate::layout::TextStyle::sized(size_px(SIZE_ROW, scale_factor));
+    let meta_style = crate::layout::TextStyle::sized(size_px(SIZE_META, scale_factor));
+    let pad = scaled(dims::ROW_TEXT_PAD_X, scale_factor);
+    let edges = 2 * (scaled(dims::ROW_INSET_CURSOR, scale_factor) + pad);
+    let icon_w = list_icon_width(sections, scale_factor);
+    sections
+        .iter()
+        .flat_map(|section| section.rows)
+        .map(|row| {
+            let accessory = match &row.accessory {
+                Accessory::Keycaps(steps) => {
+                    keycaps_width(measure, steps, keycap_scale(spec, scale_factor))
+                }
+                Accessory::DimText(text) => measure.width(text, meta_style).ceil() as usize,
+                _ => 0, // Context menus only carry shortcut hints.
+            };
+            edges
+                + icon_w
+                + measure.width(row.label, row_style).ceil() as usize
+                + accessory
+                + if accessory > 0 { pad } else { 0 }
+        })
+        .max()
+        .unwrap_or(edges)
+}
+
 fn accessory_width(
     painter: &mut TextPainter,
     accessory: &Accessory,
@@ -2640,7 +2730,11 @@ fn accessory_width(
 
 /// Total width of a row of keycap chips: chip widths plus the intra-step and
 /// inter-step gaps (Visual Language > Keycaps).
-fn keycaps_width(painter: &mut TextPainter, steps: &[Vec<Chip>], scale_factor: f64) -> usize {
+fn keycaps_width(
+    measure: &mut dyn crate::layout::TextMeasure,
+    steps: &[Vec<Chip>],
+    scale_factor: f64,
+) -> usize {
     let chip_gap = scaled(dims::CHIP_GAP, scale_factor);
     let step_gap = scaled(dims::CHIP_STEP_GAP, scale_factor);
     let mut w = 0;
@@ -2652,7 +2746,7 @@ fn keycaps_width(painter: &mut TextPainter, steps: &[Vec<Chip>], scale_factor: f
             if j > 0 {
                 w += chip_gap;
             }
-            w += super::frame::keycap_width(painter, &chip.label, scale_factor);
+            w += super::frame::keycap_width(measure, &chip.label, scale_factor);
         }
     }
     w

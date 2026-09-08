@@ -1232,13 +1232,22 @@ const KEYCAP_PAD_X_LOGICAL: f32 = 4.0;
 /// The width `draw_keycap` will paint at, without painting anything — lets
 /// callers reserve layout space for a chip (e.g. accessory width in
 /// `overlay_surface::render_list`) before drawing it.
-pub fn keycap_width(painter: &mut TextPainter, label: &str, scale_factor: f64) -> usize {
+pub fn keycap_width(
+    measure: &mut dyn crate::layout::TextMeasure,
+    label: &str,
+    scale_factor: f64,
+) -> usize {
     let scale = |v: f32| (v as f64 * scale_factor).round().max(1.0) as usize;
     let size = (KEYCAP_SIZE_LOGICAL as f64 * scale_factor) as f32;
-    let text_w = painter.measure_sized(label, size, 0.0);
+    let text_w = measure.width(label, crate::layout::TextStyle::sized(size));
     let pad_x = scale(KEYCAP_PAD_X_LOGICAL);
     let min_width = scale(KEYCAP_MIN_WIDTH_LOGICAL);
     (text_w.ceil() as usize + pad_x * 2).max(min_width)
+}
+
+pub(crate) fn keycap_height(painter: &TextPainter, scale_factor: f64) -> usize {
+    painter.line_height_for_size((KEYCAP_SIZE_LOGICAL as f64 * scale_factor) as f32)
+        + 2 * (2.0 * scale_factor).round().max(1.0) as usize
 }
 
 /// A single keycap chip: bordered rounded rect + centered 11px label.
@@ -1258,21 +1267,19 @@ pub fn draw_keycap(
     fg: u32,
     scale_factor: f64,
 ) -> usize {
-    const PAD_Y_LOGICAL: f32 = 2.0;
     const RADIUS_LOGICAL: f32 = 4.0;
 
     let scale = |v: f32| (v as f64 * scale_factor).round().max(1.0) as usize;
 
     let size = (KEYCAP_SIZE_LOGICAL as f64 * scale_factor) as f32;
     let text_w = painter.measure_sized(label, size, 0.0);
-    let pad_y = scale(PAD_Y_LOGICAL);
     let radius = scale(RADIUS_LOGICAL);
     let border_w = scale(1.0);
     let border_bottom_w = border_w + scale(1.0);
 
     let text_h = painter.line_height_for_size(size);
     let width = keycap_width(painter, label, scale_factor);
-    let height = text_h + pad_y * 2;
+    let height = keycap_height(painter, scale_factor);
 
     frame.fill_rounded_rect(x, y, width, height, radius, border, mask_cache);
 
@@ -1874,5 +1881,7 @@ mod tests {
         );
         // Something was painted (border/background), not left transparent.
         assert_ne!(frame.get_pixel(2, 2 + 4), 0);
+        assert!(keycap_width(&mut painter, "a", 0.8) < width);
+        assert!(keycap_height(&painter, 0.8) < keycap_height(&painter, 1.0));
     }
 }

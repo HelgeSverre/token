@@ -45,6 +45,17 @@ pub trait TextMeasure {
     fn line_height(&mut self, style: TextStyle) -> f32;
 }
 
+/// Direct measurement without an additional memo table.
+impl TextMeasure for TextPainter<'_> {
+    fn width(&mut self, text: &str, style: TextStyle) -> f32 {
+        self.measure_sized(text, style.size, style.tracking)
+    }
+
+    fn line_height(&mut self, style: TextStyle) -> f32 {
+        self.line_height_for_size(style.size) as f32
+    }
+}
+
 /// Monospace-cell approximation: every char is `char_width` wide and every
 /// line is `line_height` tall, regardless of style.
 #[derive(Clone, Copy, Debug)]

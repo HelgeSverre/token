@@ -6,6 +6,13 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Context menus
+
+- Context menus size to their labels and shortcuts, up to 520 logical pixels
+  and within the window. Iconless lists no longer reserve an empty icon column.
+- Menu shortcut chips are 20% smaller and vertically centered using the shared
+  keycap geometry. Rendering and pointer hit targets use the same measured width.
+
 ### Fonts
 
 - Separate `editor_font` and `ui_font` preferences. Code and terminal grids
