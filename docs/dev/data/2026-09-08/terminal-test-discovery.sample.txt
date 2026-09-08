@@ -1,0 +1,32 @@
+Analysis of sampling fake_lsp_server-24d6fb79390ec30f (pid 80661) every 1 millisecond
+Process:         fake_lsp_server-24d6fb79390ec30f [80661]
+Path:            /private/tmp/*/fake_lsp_server-24d6fb79390ec30f
+Load Address:    0x102a20000
+Identifier:      fake_lsp_server-24d6fb79390ec30f
+Version:         ???
+Code Type:       ARM64
+Parent Process:  cargo-nextest [78346]
+Target Type:     live task
+
+Date/Time:       2026-09-08 16:30:32.453 +0200
+Launch Time:     2026-09-08 16:30:06.966 +0200
+OS Version:      macOS 15.6 (24G84)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         112K
+Physical footprint (peak):  112K
+Idle exit:                  untracked
+----
+
+Call graph:
+    891 Thread_207130893: Main Thread   DispatchQueue_<multiple>
+      891 _dyld_start  (in dyld) + 0  [0x102d6c7c0]
+
+Total number in stack (recursive counted multiple, when >=5):
+
+Sort by top of stack, same collapsed (when >= 5):
+        _dyld_start  (in dyld)        891
+
+Binary images description not available
+

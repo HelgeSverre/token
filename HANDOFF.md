@@ -11,7 +11,12 @@ Completed implementation history and detailed evidence are in the
 [benchmark reports](docs/benchmark/README.md), with earlier handoff entries
 preserved in Git history.
 
-Latest implementation: `f0e1c4e` reuses coincident caret/selection coordinate
+Latest implementation: `0620310` adds terminal session tabs using shared dock
+geometry, stable session IDs and runtime-owned close effects. Native macOS
+creation, switching, retained history and isolated close passed; selection/copy
+and modifier-click links remain below.
+
+Earlier implementation: `f0e1c4e` reuses coincident caret/selection coordinate
 conversions. The [multi-cursor report](docs/benchmark/2026-09-08-multicursor.md)
 attributes forward-edit costs and records before/after repeats, full tests and
 lint. This addresses the multi-cursor performance investigation; remaining
@@ -43,9 +48,9 @@ The default `target/` previously disappeared outside this task.
 ## Remaining implementation
 
 - Terminal enhancements (requested 2026-09-08):
-  - Add terminal tabs with create, switch and close controls. Build on the
-    existing session collection and dock; preserve each session's running
-    process and scrollback when switching, and clean up only the closed session.
+  - Tabs with create, switch and close controls are implemented and live-checked
+    on macOS: independent shells, retained scrollback, and isolated close.
+    [Verification](docs/dev/refactoring-audit-2026-09-06.md#terminal-tabs--2026-09-08).
   - Support mouse text selection and copying to the system clipboard, including
     scrollback, wrapped lines and Unicode. Preserve normal shell interrupt keys.
   - Make links clickable while a modifier is held, with a visible hover cue.
@@ -91,6 +96,9 @@ see the [live-server record](docs/dev/refactoring-audit-2026-09-06.md#live-works
   now retains the actual failure reply; ten later runs passed without timeout
   changes. This is distinct from nextest's output-handle warning. Failures,
   clean repeats and environment limits are in the native/exit record above.
+  The terminal-tabs run also reproduced ten fake-LSP startup failures; a sampled
+  discovery process was still in `_dyld_start` about 25 seconds after launch.
+  See the terminal-tabs record for evidence; this is not yet a root-cause fix.
 
 ## Archival and closeout
 

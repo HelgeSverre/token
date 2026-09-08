@@ -2,7 +2,7 @@
 
 Integrated terminal panel at the bottom of the editor
 
-> **Status:** ✅ Shipped — MVP (Phases 1–4); terminal tabs remain a roadmap item; archived 2026-09-02
+> **Status:** ✅ Shipped — MVP (Phases 1–4); archived 2026-09-02. Terminal tabs added as a follow-on on 2026-09-08; selection/copy and modifier-click links remain in progress.
 > **Priority:** P2
 > **Effort:** L (8–14 days)
 > **Created:** 2025-12-20
@@ -363,13 +363,17 @@ All other keys (when terminal is focused) are sent directly to the PTY as escape
 
 ### Post-MVP: Multiple Terminal Tabs
 
-**Not part of initial implementation.** When needed:
+Added 2026-09-08, after the initial MVP:
 
-1. [ ] Add tab bar rendering inside terminal panel
-2. [ ] Tab switching (Ctrl+Tab within terminal)
-3. [ ] New terminal button / Ctrl+Shift+\`
-4. [ ] Show running command in tab title
-5. [ ] Close individual terminals
+1. [x] Session tab strip using shared dock geometry.
+2. [x] Tab switching through tab clicks, previous/next controls and configurable
+   `NextTerminal` / `PreviousTerminal` commands. No new default shortcuts.
+3. [x] New terminal button and configurable `NewTerminal` command.
+4. [x] Shell-provided OSC titles and exited-session indication. Automatic
+   running-command discovery/shell integration is not implemented.
+5. [x] Close the active terminal without affecting other sessions.
+
+See [live verification](../dev/refactoring-audit-2026-09-06.md#terminal-tabs--2026-09-08).
 
 ---
 

@@ -1,5 +1,60 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Terminal tabs — 2026-09-08
+
+Commit `0620310` gives terminal sessions a strip with create, close, select and cycle actions,
+shared by pointer controls and the existing keymap/command registry. The dock
+snapshot owns control bounds and the grid area below them. Overflowed tabs are
+reachable through previous/next controls; selecting one reveals its solved box.
+No parallel dock framework, dependency or new default shortcut was added.
+
+Two duplicate max-live-ID calculations were replaced with one monotonic session
+allocator. Closing a tab no longer lets a late output/exit event address its
+replacement. PTY termination is a runtime command. Hidden panels retain pending
+shell starts, and completing startup does not steal focus from another surface.
+Revisited/new tabs resize to the current dock without discarding their session.
+
+The isolated macOS acceptance run used `/bin/sh`, empty `ENV`, separate config
+and an unchanged text fixture, with LSP/completion disabled. Fixed-socket actions
+and PID-targeted keyboard events drove the editor; pointer clicks checked the
+exposed window's owner and restored the pointer afterward.
+
+- **NewTerminal**, then native `+`, started independent shell PIDs 78164/78324
+  in editor PID 78086. OSC titles became `first` and `second`.
+  [Two-tab capture](data/2026-09-08/terminal-tabs.png).
+- After `seq 1 40` and Shift+PageUp in the first shell, switching to the second
+  and clicking the first restored the same visible lines 29–35 and `6/35`
+  history indicator. [Retained-history capture](data/2026-09-08/terminal-tab-history.png).
+- Native `x` on the first tab removed PID 78164 while PID 78324 remained live;
+  closing the last tab removed that shell. Explicit Quit closed the unchanged
+  editor. The earlier smoke run independently observed the same isolated-close
+  behavior with PIDs 73047/73444.
+
+Native inspection caught a solid-white selected tab caused by painting a
+translucent theme color without blending. The implementation now uses the shared
+blended-fill primitive; the committed captures show the corrected rendering.
+The Rust skill guided ownership/identity cleanup; diff-based review checked
+effect propagation, clipping, focus and delayed startup. Scoped review:
+**Approve**, no outstanding findings. Selection/copy and modifier-click links
+remain separate unfinished work; this is not Windows/Linux native certification.
+
+Verification: 59 focused tests passed (`9a98a63a-e01f-4993-b609-2476a161f3b7`).
+The first full run passed all 2,583 tests plus two doctests
+(`0aa32568-a8cd-473e-ba31-0d3afb20e666`). A post-paint-fix full run
+(`9a85df33-a923-429e-ae65-bdc8aa3dadae`) stopped after ten existing fake-LSP
+startup/handshake failures, with 454 tests not run;
+[complete output](data/2026-09-08/terminal-tabs-full-suite-failure.txt).
+During its slow discovery, sampling owned PID 80661 about 25 seconds after
+launch found all 891 samples at `_dyld_start + 0`, with a 112 KiB footprint and
+no available binary-image description;
+[sample](data/2026-09-08/terminal-test-discovery.sample.txt). This establishes
+pre-application startup delay in that observed process, not the cause of every
+handshake failure or the older nextest output-handle warning. No timeout was
+raised and no test was suppressed. An unchanged full repeat
+(`31d9fd90-18e2-414e-b85e-4469c8a746f1`) passed all 2,583 tests and both doctests;
+strict all-target/all-feature lint and formatting also passed. The intermittent
+startup investigation remains open.
+
 ## Live workspace symbols and Usages — 2026-09-08
 
 The existing debug executable in `/tmp/token-managed-server-check.5prvI4`
