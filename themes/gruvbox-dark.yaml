@@ -5,6 +5,7 @@ description: "Retro groove color scheme with warm, earthy tones"
 
 ui:
   editor:
+    indent_guide: "#504945"
     background: "#282828"
     foreground: "#EBDBB2"
     current_line_background: "#32302F"

@@ -5,6 +5,7 @@ description: "GitHub's light theme"
 
 ui:
   editor:
+    indent_guide: "#D8DEE4"
     background: "#FFFFFF"
     foreground: "#24292F"
     current_line_background: "#F6F8FA"

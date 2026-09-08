@@ -5,6 +5,7 @@ description: "Warm parchment on charcoal with gold, after sema-lang.com"
 
 ui:
   editor:
+    indent_guide: "#3A342C"
     background: "#131110"
     foreground: "#E9E3D6"
     current_line_background: "#181512"

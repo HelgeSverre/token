@@ -5,6 +5,7 @@ description: "Arctic, north-bluish color palette with dimmed pastels"
 
 ui:
   editor:
+    indent_guide: "#4C566A"
     background: "#2E3440"
     foreground: "#D8DEE9"
     current_line_background: "#3B4252"

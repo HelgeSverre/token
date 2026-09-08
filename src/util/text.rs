@@ -78,12 +78,17 @@ pub fn char_col_to_visual_col(text: &str, char_col: usize) -> usize {
 /// segment that begins at `start_col`. Tab expansion restarts at the segment,
 /// matching how wrapped segments are painted.
 pub fn char_col_to_visual_col_from(text: &str, start_col: usize, char_col: usize) -> usize {
+    visual_width(
+        text.chars()
+            .skip(start_col)
+            .take(char_col.saturating_sub(start_col)),
+    )
+}
+
+/// Width of a character stream using the editor's tab stops.
+pub fn visual_width(chars: impl IntoIterator<Item = char>) -> usize {
     let mut visual_col = 0;
-    for ch in text
-        .chars()
-        .skip(start_col)
-        .take(char_col.saturating_sub(start_col))
-    {
+    for ch in chars {
         if ch == '\t' {
             visual_col += TABULATOR_WIDTH - (visual_col % TABULATOR_WIDTH);
         } else {

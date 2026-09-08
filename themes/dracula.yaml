@@ -5,6 +5,7 @@ description: "The iconic dark theme with bold purples, pinks, and cyans"
 
 ui:
   editor:
+    indent_guide: "#4B5064"
     background: "#282A36"
     foreground: "#F8F8F2"
     current_line_background: "#44475A"

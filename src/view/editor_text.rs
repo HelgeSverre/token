@@ -9,7 +9,7 @@ use crate::perf::{PerfStage, PerfStats};
 
 use super::frame::{Frame, TextPainter};
 use super::geometry::{self, column_to_pixel_x, expand_tabs_for_display};
-use crate::util::text::char_col_to_visual_col;
+use crate::util::text::{char_col_to_visual_col, TABULATOR_WIDTH};
 
 /// Cursor width in pixels.
 const CURSOR_WIDTH: usize = 2;
@@ -64,6 +64,7 @@ struct EditorPalette {
     bracket_match: u32,
     text: u32,
     ghost_text: u32,
+    indent_guide: u32,
     gutter_background: u32,
     gutter_border: u32,
     line_number: u32,
@@ -81,6 +82,7 @@ impl EditorPalette {
             bracket_match: model.theme.editor.bracket_match_background.to_argb_u32(),
             text: model.theme.editor.foreground.to_argb_u32(),
             ghost_text: model.theme.editor.ghost_text.to_argb_u32(),
+            indent_guide: model.theme.editor.indent_guide.to_argb_u32(),
             gutter_background: model.theme.gutter.background.to_argb_u32(),
             gutter_border: model.theme.gutter.border_color.to_argb_u32(),
             line_number: model.theme.gutter.foreground.to_argb_u32(),
@@ -183,6 +185,7 @@ struct EditorTextBuffers {
     display_text: String,
     selection_spans: Vec<(usize, usize)>,
     bracket_visual_cols: [Option<usize>; 2],
+    indentation_columns: usize,
 }
 
 impl EditorTextBuffers {
@@ -192,6 +195,7 @@ impl EditorTextBuffers {
             display_text: String::with_capacity(max_chars + 16),
             selection_spans: Vec::with_capacity(8),
             bracket_visual_cols: [None, None],
+            indentation_columns: 0,
         }
     }
 }
@@ -264,6 +268,37 @@ struct TextEditorRenderer<'a> {
     ctx: EditorRenderContext<'a>,
     palette: EditorPalette,
     text_buffers: EditorTextBuffers,
+    indent_width: usize,
+}
+
+/// Prefer the most common small indentation increase, not alignment columns
+/// or the width of a tab. Sampling is bounded and independent of scroll position.
+fn document_indent_width(document: &Document) -> usize {
+    let mut increases = [0usize; 9];
+    let mut previous = 0;
+    for line in document.buffer.lines().take(200) {
+        let leading = line
+            .chars()
+            .take(256)
+            .take_while(|ch| matches!(ch, ' ' | '\t'))
+            .count();
+        if line
+            .get_char(leading)
+            .is_none_or(|ch| matches!(ch, '\r' | '\n' | ' ' | '\t'))
+        {
+            continue;
+        }
+        let width = crate::util::text::visual_width(line.chars().take(leading));
+        let increase = width.saturating_sub(previous);
+        if (2..=8).contains(&increase) {
+            increases[increase] += 1;
+        }
+        previous = width;
+    }
+    (2..=8)
+        .filter(|&width| increases[width] > 0)
+        .max_by_key(|&width| (increases[width], std::cmp::Reverse(width)))
+        .unwrap_or(TABULATOR_WIDTH)
 }
 
 impl<'a> TextEditorRenderer<'a> {
@@ -286,6 +321,11 @@ impl<'a> TextEditorRenderer<'a> {
             ctx,
             palette,
             text_buffers,
+            indent_width: if model.config.indent_guides && editor.is_plain_text_mode() {
+                document_indent_width(document)
+            } else {
+                TABULATOR_WIDTH
+            },
         }
     }
 
@@ -490,6 +530,24 @@ impl<'a> TextEditorRenderer<'a> {
 
         let line_text = line.text(document);
 
+        // Only real indentation, never wrapped continuation text. Use the same
+        // tab expansion as glyphs and selections, including projected row text.
+        self.text_buffers.indentation_columns = if self.model.config.indent_guides
+            && self.editor.is_plain_text_mode()
+            && !line.is_continuation
+        {
+            let leading = line_text
+                .chars()
+                // Every whitespace character occupies at least one column;
+                // indentation beyond the viewport cannot add a visible guide.
+                .take(viewport_left.saturating_add(ctx.visible_columns))
+                .take_while(|ch| matches!(ch, ' ' | '\t'))
+                .count();
+            char_col_to_visual_col(&line_text, leading)
+        } else {
+            0
+        };
+
         for (selection, fragment) in self.editor.selections.iter().flat_map(|selection| {
             line.source_fragments()
                 .map(move |fragment| (selection, fragment))
@@ -546,6 +604,21 @@ impl<'a> TextEditorRenderer<'a> {
     }
 
     fn render_line_decoration_stage(&self, frame: &mut Frame, line: &VisibleTextLine) {
+        // Draw underneath selections and glyphs. Bound traversal by the visible
+        // columns even for heavily indented, horizontally scrolled documents.
+        let left = self.viewport_left();
+        let first = left.div_ceil(self.indent_width) * self.indent_width;
+        let end = self
+            .text_buffers
+            .indentation_columns
+            .min(left.saturating_add(self.ctx.visible_columns));
+        for column in (first..end).step_by(self.indent_width) {
+            let x = self.ctx.pixel_x(column, left);
+            if x < self.ctx.text_right_x() {
+                frame.blend_rect_px(x, line.y, 1, line.height, self.palette.indent_guide);
+            }
+        }
+
         for &(x_start, x_end) in &self.text_buffers.selection_spans {
             frame.fill_rect_px(
                 x_start,
@@ -1320,6 +1393,77 @@ mod tests {
         editor.matched_brackets = Some((Position::new(1, 5), Position::new(1, 6)));
 
         model
+    }
+
+    #[test]
+    fn indent_guides_detect_two_and_four_space_steps_without_using_alignment_or_blank_lines() {
+        for (text, expected) in [
+            ("(define f\n  (fn (x)\n    (if x\n      value)))\n", 2),
+            (
+                "fn f() {\n    call(\n         aligned);\n    if x {\n        value\n    }\n}\n",
+                4,
+            ),
+            ("fn f() {\n\tif x {\n\t\tvalue\n\t}\n}\n", 4),
+            ("plain\n\ntext\n", 4),
+        ] {
+            let document = crate::model::Document::with_text(text);
+            assert_eq!(
+                super::document_indent_width(&document),
+                expected,
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn indent_guides_follow_tab_columns_and_clip_without_marking_wrapped_text() {
+        for text in ["\t  \tvalue", "        value", "  \t    value", "        "] {
+            for left in [0, 2, 4, 7, 8] {
+                for enabled in [false, true] {
+                    let mut model = make_text_model();
+                    model.document_mut().buffer = Rope::from_str(text);
+                    model.editor_mut().selections = vec![Selection::default()];
+                    model.editor_mut().matched_brackets = None;
+                    model.editor_mut().viewport.left_column = left;
+                    model.config.indent_guides = enabled;
+                    model.theme.editor.indent_guide = crate::theme::Color::rgb(0x12, 0x34, 0x56);
+                    let layout =
+                        GroupLayout::new(model.editor_area.focused_group().unwrap(), &model, 8.0);
+                    let mut renderer = TextEditorRenderer::new(
+                        &model,
+                        model.editor(),
+                        model.document(),
+                        &layout,
+                        8.0,
+                        20,
+                    );
+                    // This test isolates visual tab expansion from detection.
+                    renderer.indent_width = 4;
+                    let mut line = renderer.prepare_visible_line(0, 0).unwrap();
+                    for continuation in [false, true] {
+                        line.is_continuation = continuation;
+                        renderer.collect_line_decorations(&line);
+                        let mut pixels = vec![0; 220 * 140];
+                        let mut frame = Frame::new(&mut pixels, 220, 140);
+                        renderer.render_line_decoration_stage(&mut frame, &line);
+                        let expected: Vec<_> = [0, 4]
+                            .into_iter()
+                            .filter(|&column| enabled && !continuation && column >= left)
+                            .map(|column| layout.text_start_x + (column - left) * 8)
+                            .collect();
+                        let painted: Vec<_> = pixels[..220]
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(x, &pixel)| (pixel == 0xFF123456).then_some(x))
+                            .collect();
+                        assert_eq!(
+                            painted, expected,
+                            "{text:?}, left={left}, continuation={continuation}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// Frozen pre-optimization traversal. Keep the span/paint primitives shared:

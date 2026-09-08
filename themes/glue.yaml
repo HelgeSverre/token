@@ -5,6 +5,7 @@ description: "Graphite with a yellow highlighter, after getglue.dev"
 
 ui:
   editor:
+    indent_guide: "#303136"
     background: "#0A0A0B"
     foreground: "#F6F6F7"
     current_line_background: "#111113"

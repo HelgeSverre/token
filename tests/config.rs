@@ -86,6 +86,8 @@ fn test_default_config() {
     let legacy: EditorConfig = serde_yaml::from_str("theme: fleet-dark").unwrap();
     assert_eq!(legacy.editor_font, config.editor_font);
     assert_eq!(legacy.ui_font, config.ui_font);
+    assert!(config.indent_guides);
+    assert!(legacy.indent_guides);
 }
 
 #[test]
@@ -108,6 +110,7 @@ fn test_config_serialize_deserialize() {
         auto_surround: true,
         bracket_matching: true,
         show_scrollbar: true,
+        indent_guides: false,
         status_bar_font_size: 12.0,
         hover_on_mouse: true,
         hover_delay_ms: 300,
@@ -120,6 +123,7 @@ fn test_config_serialize_deserialize() {
     assert_eq!(parsed.theme, "fleet-dark");
     assert_eq!(parsed.editor_font, "Menlo");
     assert_eq!(parsed.ui_font, "Inter");
+    assert!(!parsed.indent_guides);
 }
 
 #[test]

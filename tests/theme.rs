@@ -118,7 +118,40 @@ fn test_all_builtin_themes_parse() {
             "Theme '{}' has empty name",
             builtin.id
         );
+        assert!(builtin.yaml.contains("indent_guide:"), "{}", builtin.id);
+        assert_ne!(
+            theme.editor.indent_guide.to_argb_u32(),
+            theme.editor.background.to_argb_u32()
+        );
     }
+}
+
+#[test]
+fn indent_guide_theme_override_and_legacy_fallback() {
+    let legacy = DEFAULT_DARK_YAML
+        .lines()
+        .filter(|line| !line.contains("indent_guide:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let theme = Theme::from_yaml(&legacy).unwrap();
+    assert_ne!(
+        theme.editor.indent_guide.to_argb_u32(),
+        theme.editor.background.to_argb_u32()
+    );
+    assert_ne!(
+        theme.editor.indent_guide.to_argb_u32(),
+        theme.editor.foreground.to_argb_u32()
+    );
+    let custom = legacy.replace("  editor:", "  editor:\n    indent_guide: '#12345680'");
+    assert_eq!(
+        Theme::from_yaml(&custom)
+            .unwrap()
+            .editor
+            .indent_guide
+            .to_argb_u32(),
+        Color::rgba(0x12, 0x34, 0x56, 0x80).to_argb_u32()
+    );
+    assert!(Theme::from_yaml(&custom.replace("#12345680", "invalid")).is_err());
 }
 
 // ============================================================================

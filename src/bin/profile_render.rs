@@ -57,6 +57,10 @@ struct Args {
     /// Print timing statistics
     #[arg(long)]
     stats: bool,
+
+    /// Disable indentation guides for a same-workload rendering comparison.
+    #[arg(long)]
+    no_indent_guides: bool,
 }
 
 fn main() -> Result<()> {
@@ -75,6 +79,8 @@ fn main() -> Result<()> {
 
     // Create the application model
     let mut model = create_model(&args)?;
+    model.config.indent_guides = !args.no_indent_guides;
+    eprintln!("Indent guides: {}", model.config.indent_guides);
 
     eprintln!(
         "Model created with {} splits",

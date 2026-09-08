@@ -125,6 +125,21 @@ platform font directories; neither setting installs fonts.
 Use **Reload Configuration** or restart after editing the file. Font family
 selection is currently file-configured, not a font picker in Settings.
 
+### `indent_guides`
+
+Show faint vertical lines at the document's inferred indentation stops. Enabled
+by default; toggle **Indent guides** under Settings → Appearance, or set
+`indent_guides: false` in `config.yaml`.
+
+Guides follow spaces and expanded tabs, including mixed indentation, and are
+clipped to the text viewport. Spacing is inferred from common indentation
+increases in a bounded sample of the first 200 lines, falling back to four
+columns; tab expansion itself remains four columns. They appear only on the
+first visual row of a soft-wrapped line. Whitespace-only lines show their actual indentation; empty
+lines do not infer a surrounding scope. CSV, image, binary and terminal views
+are unaffected. Set the color through
+[`ui.editor.indent_guide`](config-theme.md#editor).
+
 ### `cursor_blink_ms`
 
 Cursor blink interval in milliseconds. Set `0` for a steady, non-blinking caret.

@@ -6,6 +6,17 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Indent guides
+
+- Added indentation guides with an Appearance toggle (`indent_guides`, enabled
+  by default). Spaces and tabs use the existing text-column geometry, with
+  horizontal clipping and no guides on soft-wrap continuation rows. Guide
+  spacing follows common indentation increases, including two-space Lisp/YAML,
+  instead of assuming every document uses four-space indentation.
+- Added `ui.editor.indent_guide` to theme definitions, with subdued colors in
+  all 14 bundled themes and a foreground/background-derived fallback for older
+  custom themes. RGB and translucent RGBA overrides are supported.
+
 ### Documentation
 
 - Reconciled the active plan index with implementation and verification records;

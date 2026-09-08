@@ -5,6 +5,7 @@ description: "JetBrains Fleet-inspired dark theme"
 
 ui:
   editor:
+    indent_guide: "#343638"
     background: "#181818"
     foreground: "#BCBEC4"
     current_line_background: "#1E1E1E"

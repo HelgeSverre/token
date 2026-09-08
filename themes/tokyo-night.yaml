@@ -5,6 +5,7 @@ description: "Neon lights of downtown Tokyo at night"
 
 ui:
   editor:
+    indent_guide: "#3B4261"
     background: "#1A1B26"
     foreground: "#A9B1D6"
     current_line_background: "#24283B"

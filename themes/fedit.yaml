@@ -5,6 +5,7 @@ description: "Zinc terminal green, after fedit.dev"
 
 ui:
   editor:
+    indent_guide: "#303036"
     background: "#0B0B0D"
     foreground: "#FAFAFA"
     current_line_background: "#18181B"

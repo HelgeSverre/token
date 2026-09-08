@@ -5,6 +5,7 @@ description: "Rose on near-black, after jakefile.dev"
 
 ui:
   editor:
+    indent_guide: "#303036"
     background: "#0A0A0A"
     foreground: "#FAFAFA"
     current_line_background: "#111111"

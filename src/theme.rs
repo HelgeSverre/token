@@ -609,6 +609,9 @@ pub struct EditorThemeData {
     /// and background when absent.
     #[serde(default)]
     pub ghost_text: Option<String>,
+    /// Indentation guide color; derived from editor colors when absent.
+    #[serde(default)]
+    pub indent_guide: Option<String>,
 }
 
 /// Gutter (line numbers) colors
@@ -883,6 +886,8 @@ pub struct EditorTheme {
     /// Background color for matching bracket highlight
     pub bracket_match_background: Color,
     pub ghost_text: Color,
+    /// Vertical indentation guides, optionally translucent.
+    pub indent_guide: Color,
 }
 
 /// Gutter colors (resolved)
@@ -1415,6 +1420,14 @@ impl Theme {
                     0.55,
                 ),
             },
+            indent_guide: match data.ui.editor.indent_guide.as_ref() {
+                Some(s) => Color::from_hex(s)?,
+                None => mix(
+                    Color::from_hex(&data.ui.editor.foreground)?,
+                    Color::from_hex(&data.ui.editor.background)?,
+                    0.85,
+                ),
+            },
         };
 
         let gutter = GutterTheme {
@@ -1882,6 +1895,7 @@ impl Theme {
                         secondary_cursor_color: Color::rgba(0xFF, 0xFF, 0xFF, 0x80),
                         bracket_match_background: Color::rgba(0x58, 0xA6, 0xFF, 0x40),
                         ghost_text: Color::rgb(0x80, 0x80, 0x80),
+                        indent_guide: Color::rgb(0x39, 0x39, 0x39),
                     },
                     gutter: GutterTheme {
                         background: Color::rgb(0x1E, 0x1E, 0x1E),

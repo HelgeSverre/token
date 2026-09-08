@@ -52,6 +52,10 @@ pub struct EditorConfig {
     #[serde(default = "default_true")]
     pub show_scrollbar: bool,
 
+    /// Show vertical guides at inferred indentation steps (default: true).
+    #[serde(default = "default_true")]
+    pub indent_guides: bool,
+
     /// Status bar font size in logical px (default: 12, editor text is 14)
     #[serde(default = "default_status_bar_font_size")]
     pub status_bar_font_size: f32,
@@ -438,6 +442,7 @@ impl Default for EditorConfig {
             auto_surround: true,
             bracket_matching: true,
             show_scrollbar: true,
+            indent_guides: true,
             status_bar_font_size: default_status_bar_font_size(),
             hover_on_mouse: true,
             hover_delay_ms: default_hover_delay_ms(),

@@ -5,6 +5,7 @@ description: "Soothing pastel theme with warm, cozy colors"
 
 ui:
   editor:
+    indent_guide: "#45475A"
     background: "#1E1E2E"
     foreground: "#CDD6F4"
     current_line_background: "#28283D"

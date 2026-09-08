@@ -5,6 +5,7 @@ description: "VS Code-inspired dark theme"
 
 ui:
   editor:
+    indent_guide: "#393939"
     background: "#1E1E1E"
     foreground: "#D4D4D4"
     current_line_background: "#2A2A2A"

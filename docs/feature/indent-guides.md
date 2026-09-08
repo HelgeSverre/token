@@ -2,13 +2,35 @@
 
 Visual vertical lines showing indentation levels with depth-based coloring
 
-> **Status:** Planned
+> **Status:** Basic themed guides implemented and checked with automated tests and dark/light headless renders (2026-09-08). Advanced scope/color strategies below remain planned.
 > **Priority:** P2
 > **Effort:** M
 > **Created:** 2025-12-20
 > **Milestone:** 2 - Refinement
 
 ---
+
+## Current implementation scope — 2026-09-08
+
+The requested first slice is simple themed guides, not the full historical
+scope/rainbow proposal below. `src/view/editor_text.rs` uses its existing
+row-decoration pass for full and cursor-only redraws. Leading spaces/tabs use
+the shared four-column tab geometry, while guide spacing follows common
+indentation increases in a bounded sample of the first 200 lines (four-column
+fallback). This fixes two-space Lisp/YAML being drawn on a four-column grid.
+Guides are viewport-clipped, underneath selections and glyphs, and omitted on
+wrapped continuation rows. Whitespace-only
+rows use literal indentation; empty rows do not infer surrounding scope.
+
+`indent_guides` defaults to true and is editable through Settings → Appearance.
+`ui.editor.indent_guide` supports RGB/RGBA overrides. All bundled themes define
+it; older themes derive a subdued color from their editor foreground/background.
+This supersedes the old no-custom-colors non-goal and avoids introducing the
+proposed standalone renderer/config framework or an unverified default shortcut.
+
+Still planned: active scope highlighting, Tree-sitter/per-language scope policy,
+blank-line scope continuation and alternative depth palettes. Do not archive the
+whole plan when only this first slice is verified.
 
 ## Table of Contents
 
@@ -24,7 +46,7 @@ Visual vertical lines showing indentation levels with depth-based coloring
 
 ## Overview
 
-### Current State
+### Original baseline (before the first slice)
 
 The editor currently:
 - Has tab-aware text layout, but no configurable space/tab markers
