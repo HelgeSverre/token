@@ -4,6 +4,8 @@ This document describes how to run benchmarks and profile the Token editor.
 
 ## Reports
 
+- [2026-09-08: Find overview projection](2026-09-08-find-overview.md) — incremental
+  Rope chunk traversal, before/after results and a rejected slower prototype.
 - [2026-09-08: cold Find](2026-09-08-cold-find.md) — dense/sparse/absent scans,
   worker computation, independent repeat and native CPU stack samples.
 - [2026-09-08: completion response ownership](2026-09-08-completion-responses.md) —

@@ -11,11 +11,13 @@ Completed implementation history and detailed evidence are in the
 [benchmark reports](docs/benchmark/README.md), with earlier handoff entries
 preserved in Git history.
 
-Latest implementation: `68cf62a` defers completion-item JSON until an actual
-resolve request. The full suite passed 2,581 tests and two doctests, strict lint
-and formatting. The [response-conversion report](docs/benchmark/2026-09-08-completion-responses.md)
-records roughly 81% lower fresh allocation at 1,000 items. This closes the
-completion-response allocation investigation, not the other profiling targets.
+Latest implementation: `6974ba1` advances Find overview coordinates through
+Rope chunks. The [overview report](docs/benchmark/2026-09-08-find-overview.md)
+records a modest dense-worker improvement, full-suite/lint verification and an
+unresolved process-exit warning. Earlier completion response ownership work
+(`68cf62a`) reduced fresh allocation by roughly 81% at 1,000 items; see its
+[report](docs/benchmark/2026-09-08-completion-responses.md). Neither closes the
+remaining profiling targets below.
 
 Preserve the separate opaque Settings page, category navigation and form
 controls. Settings scrolls continuously in physical pixels with clipped partial
@@ -35,8 +37,8 @@ The default `target/` previously disappeared outside this task.
   larger recency refreshes and forward multi-cursor edits. Existing measurements are in
   [the September report](docs/benchmark/2026-09-07-current.md).
   [Cold Find sampling](docs/benchmark/2026-09-08-cold-find.md) now identifies dense
-  regex matching and overview-line traversal as the two next optimization targets;
-  no Find optimization has yet been made for these findings.
+  regex matching as the remaining Find target. Overview chunk traversal is now
+  implemented and measured; the report retains both gains and limitations.
 
 ## Remaining verification
 
@@ -53,8 +55,11 @@ The default `target/` previously disappeared outside this task.
 - Native context-menu pointer acceptance; automated runtime/pixel checks already pass.
 - Resolve intermittent nextest process-exit warnings. The September 8 theme
   suite flagged `settings_page_keeps_spacious_categories_and_shared_control_hits`
-  as leaky. Subsequent spawn-test and managed-server suites passed without
-  warnings, but did not establish their cause. Do not suppress or call that resolved.
+  as leaky. The Find overview full run also flagged
+  `supersession_disconnects_old_socket_and_serves_new_request`
+  (`ec5fa5f6-f57b-4b4a-baa3-4b7b2436420d`). Other spawn-test and managed-server
+  runs passed without warnings, but did not establish their cause. Do not
+  suppress or call that resolved.
 
 ## Archival and closeout
 

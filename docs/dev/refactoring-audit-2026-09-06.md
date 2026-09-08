@@ -1,5 +1,21 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+## Find overview projection — 2026-09-08
+
+Commit `6974ba1` replaces per-line Rope slice traversal with an advancing chunk
+suffix and Ropey's coordinate helpers. No matching semantics, worker lifecycle,
+cache policy or public API changed. An initial prefix-rescan prototype regressed
+and was discarded; the final dense 100,000-line worker medians were 10.2–10.3 ms
+versus 11.1–11.6 ms before. The regex scan remains a separate target.
+
+96 Find-focused tests and the full 2,581-test/two-doctest suite passed, plus
+strict lint and formatting. The final full run flagged the existing inline-worker
+supersession test as leaky; that investigation remains open. Existing coordinate
+coverage was expanded without new test functions. Scoped review: **Approve**, no
+outstanding findings. See [measurement, rejected experiment and verification](../benchmark/2026-09-08-find-overview.md).
+No additional feature plan became archive-eligible; `HANDOFF.md` retains its
+unfinished implementation and native/live verification gates.
+
 ## Completion response ownership — 2026-09-08
 
 Commit `68cf62a` addresses the September allocation finding: eager `CompletionItem` → JSON

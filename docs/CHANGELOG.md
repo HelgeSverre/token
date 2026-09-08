@@ -11,6 +11,8 @@ All notable changes to rust-editor are documented in this file.
 - Find overview markers reuse Rope chunk coordinates instead of constructing a
   Rope slice for every matched line. Newline semantics and snapshot-bound,
   lazy overview caching remain unchanged.
+  [Before/after profiling](benchmark/2026-09-08-find-overview.md) measured dense
+  100,000-line worker medians of 10.2–10.3 ms, down from 11.1–11.6 ms.
 - Added focused cold Find and worker-computation profiling modes, with
   [dense/sparse/absent results and CPU samples](benchmark/2026-09-08-cold-find.md).
   This adds reproducible diagnostics without changing search behavior.
