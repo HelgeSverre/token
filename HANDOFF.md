@@ -88,9 +88,9 @@ see the [live-server record](docs/dev/refactoring-audit-2026-09-06.md#live-works
   now have native evidence. Launcher detachment and per-instance port files on
   Windows; managed llama-server startup/teardown on Windows/Linux; terminal
   tabs/selection/modifier-click on Windows and Wayland.
-- Actual IME composition/candidate windows, CJK/emoji positioning and the remaining
-  completion native-input matrix. Existing unit/macOS evidence is not a full
-  platform certification.
+- CJK/emoji positioning outside IME composition and the remaining completion
+  native-input matrix. Existing unit/macOS evidence is not a full platform
+  certification. IME-specific work is deferred below, not a closeout gate.
 - Live hosted model/provider compatibility, retrieval-context relevance,
   and Tabby service/model behavior. Fixture coverage is not live service
   verification.
@@ -111,6 +111,17 @@ see the [live-server record](docs/dev/refactoring-audit-2026-09-06.md#live-works
   The terminal-tabs run also reproduced ten fake-LSP startup failures; a sampled
   discovery process was still in `_dyld_start` about 25 seconds after launch.
   See the terminal-tabs record for evidence; this is not yet a root-cause fix.
+
+## Deferred by user — not a closeout gate
+
+Native IME composition, candidate windows and their positioning were explicitly
+deprioritized on 2026-09-08 (near-zero priority). Do not resume this investigation
+or hold handoff completion for it unless the user asks. The Linux IBus/Anthy
+attempt was inconclusive: both Token and a standard GTK entry showed raw Roman
+input, so the control environment was not validated. No application fix was
+made or verified. The isolated editor/control were closed and the container
+stopped; the fixture's unsaved synthetic input was discarded. Host input sources
+were never changed. The autocomplete plan retains this as deferred scope.
 
 ## Archival and closeout
 

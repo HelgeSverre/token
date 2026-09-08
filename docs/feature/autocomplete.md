@@ -9,6 +9,13 @@ A pluggable completion system with two rendering surfaces — a popup menu at th
 > **Updated:** 2026-09-07
 > **Milestone:** 4 - Hard Problems
 
+> **IME deferral (2026-09-08):** The user explicitly assigned native IME
+> composition/candidate-window work near-zero priority. References to that
+> verification below are deferred follow-up, not current acceptance or handoff
+> closeout gates. Do not resume without a user request. The isolated Linux
+> IBus/Anthy attempt did not establish a working control: both Token and a GTK
+> entry received raw Roman input. No IME fix or native certification is claimed.
+
 ---
 
 ## Dropdown context policy — implemented 2026-09-06
