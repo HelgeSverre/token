@@ -92,7 +92,7 @@ pub(super) fn action(
     }
     super::completion::dismiss(model);
     super::inline::dismiss(model);
-    Some(Cmd::redraw_editor())
+    super::merge_cmds(Some(Cmd::redraw_editor()), super::hover::dismiss(model))
 }
 
 pub(super) fn install(model: &mut AppModel, id: DocumentId) {

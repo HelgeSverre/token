@@ -468,3 +468,33 @@ fn folding_gutter_hit_tracks_the_docked_find_bar_content_inset() {
         })
     ));
 }
+
+#[test]
+fn folding_cancels_hover_intent_when_geometry_changes_without_moving_the_caret() {
+    let mut model = model();
+    let id = model.document().id.unwrap();
+    model.ui.hover_request = Some(token::model::hover::HoverRequest {
+        anchor: token::model::hover::HoverAnchor::capture(&model).unwrap(),
+        position: Position::new(3, 2),
+        origin: token::model::hover::HoverOrigin::Mouse,
+    });
+    let command = update(
+        &mut model,
+        Msg::Editor(EditorMsg::Fold {
+            editor_id: None,
+            header: Some(0),
+            action: FoldAction::Collapse,
+        }),
+    )
+    .unwrap();
+    assert!(model.ui.hover_request.is_none());
+    assert_eq!(model.editor().active_cursor().line, 0);
+    fn cancels(command: &token::commands::Cmd, id: token::model::DocumentId) -> bool {
+        match command {
+            token::commands::Cmd::LspCancelHover { document_id } => *document_id == id,
+            token::commands::Cmd::Batch(commands) => commands.iter().any(|cmd| cancels(cmd, id)),
+            _ => false,
+        }
+    }
+    assert!(cancels(&command, id));
+}

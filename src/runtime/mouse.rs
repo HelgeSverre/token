@@ -2053,18 +2053,22 @@ fn handle_left_click(
             lane,
         } => {
             if *lane == Some(token::view::geometry::LaneId::Fold) {
+                let mut commands = Vec::new();
                 if *group_id != model.editor_area.focused_group_id {
-                    update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
+                    commands.extend(update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id))));
                 }
-                update(
+                commands.extend(update(
                     model,
                     Msg::Editor(token::messages::EditorMsg::Fold {
                         editor_id: Some(*editor_id),
                         header: Some(*line),
                         action: token::folding::FoldAction::Toggle,
                     }),
-                );
-                EventResult::consumed_with_focus(FocusTarget::Editor)
+                ));
+                EventResult::consumed_with_cmd(
+                    token::commands::Cmd::Batch(commands),
+                    FocusTarget::Editor,
+                )
             } else {
                 match interactive_gutter_lane_click(*lane) {
                     Some(result) => result,
