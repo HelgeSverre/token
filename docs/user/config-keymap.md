@@ -364,7 +364,8 @@ All navigation commands have `*WithSelection` variants that extend the selection
 |---------|-------------|
 | `ToggleCommandPalette` | Open/close command palette |
 | `ToggleGotoLine` | Open/close go to line |
-| `ToggleFindReplace` | Open/close find/replace |
+| `ToggleFindReplace` | Open/focus the docked Find bar (legacy command name) |
+| `OpenReplace` | Open/focus the docked bar with Replace expanded |
 
 ### Layout
 
@@ -466,7 +467,8 @@ All navigation commands have `*WithSelection` variants that extend the selection
 |--------|-----|---------------|
 | Command Palette | Cmd+Shift+A | Ctrl+Shift+A |
 | Go to Line | Cmd+L | Ctrl+L |
-| Find/Replace | Cmd+F | Ctrl+F |
+| Find | Cmd+F | Ctrl+F |
+| Replace | Cmd+R | Ctrl+R |
 
 ### Layout
 

@@ -74,15 +74,22 @@ The `cmd` modifier is the recommended cross-platform modifier. It maps to Comman
 | Accept inline suggestion | Tab (while ghost text shows) | `AcceptInlineSuggestion` |
 | Dismiss inline suggestion | Escape (while ghost text shows) | `DismissInlineSuggestion` |
 
-### Modals/Dialogs
+### Search and dialogs
 
 | Action              | Shortcut      | Command                |
 |---------------------|---------------|------------------------|
 | Command Palette     | Cmd+Shift+A   | `ToggleCommandPalette` |
 | Go to Line          | Cmd+L         | `ToggleGotoLine`       |
-| Find/Replace        | Cmd+F         | `ToggleFindReplace`    |
-| Find: next / previous | Enter / Shift+Enter (in the modal) | — |
-| Find: toggle case / whole word / regex / selection scope | Opt+Cmd+C / W / R / L (in the modal) | — |
+| Find                | Cmd+F         | `ToggleFindReplace`    |
+| Replace             | Cmd+R         | `OpenReplace`          |
+| Find: next / previous | Enter / Shift+Enter (in Find), F3 / Shift+F3 | — |
+| Find: toggle case / whole word / regex / selection scope | Opt+Cmd+C / W / R / L (in Find) | — |
+| Replace current / all | Enter / Cmd+Enter (in Replace) | — |
+| Close Find bar | Escape | — |
+
+Find and Replace are docked below the active pane's tabs. Click the editor to
+continue editing without closing the bar. Tab switches between Find and Replace
+inputs when expanded; in Find-only mode it returns focus to the editor.
 
 ### Panels/Docks
 
