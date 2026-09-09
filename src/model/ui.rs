@@ -1538,22 +1538,45 @@ pub struct UiState {
     /// `Some(CursorOverlayKind::ContextMenu)`. `None` whenever the menu is
     /// closed.
     pub context_menu: Option<ContextMenuState>,
-    /// The position captured by the most recently fired mouse-dwell hover
-    /// request (`LspMsg::ShowHoverAt`) — the `Mouse`-origin analogue of
-    /// comparing a keyboard `ShowHover` reply against the *live* caret
-    /// position in `LspMsg::HoverResolved`'s guard. The runtime clears this
-    /// whenever the dwell resets (pointer moved away before the reply
-    /// landed), so a stale reply for an abandoned dwell never opens a card.
-    pub mouse_hover_target: Option<crate::model::editor::Position>,
+    /// Ownership survives while the card is visible; dismissal invalidates
+    /// pending replies too, even when the caret did not move (e.g. Escape).
+    pub hover_request: Option<super::hover::HoverRequest>,
     /// Signature help float (`textDocument/signatureHelp`), anchored above
     /// the caret. Not a `cursor_overlay` kind: it never routes keys and
-    /// may show alongside the completion menu. Dismissed on Escape (when
+    /// yields visually to the completion menu. Dismissed on Escape (when
     /// no `cursor_overlay` claims it), caret leaving the line, focus or
     /// document change.
     pub signature_help: Option<SignatureHelpState>,
 }
 
 impl UiState {
+    pub fn has_hover(&self) -> bool {
+        self.hover_request.is_some()
+            || self.hover_card.is_some()
+            || self.cursor_overlay.is_some_and(|overlay| {
+                matches!(
+                    overlay.kind,
+                    CursorOverlayKind::Hover | CursorOverlayKind::DebugHover
+                )
+            })
+    }
+
+    /// Dismiss only hover documentation, never an unrelated cursor overlay.
+    pub fn dismiss_hover(&mut self) -> bool {
+        let mut changed = self.hover_request.take().is_some();
+        changed |= self.hover_card.take().is_some();
+        if self.cursor_overlay.is_some_and(|overlay| {
+            matches!(
+                overlay.kind,
+                CursorOverlayKind::Hover | CursorOverlayKind::DebugHover
+            )
+        }) {
+            self.cursor_overlay = None;
+            changed = true;
+        }
+        changed
+    }
+
     /// Pending completion requests have state but do not own keys or suppress
     /// inline suggestions until there are rows to display.
     pub fn has_visible_completion(&self) -> bool {
@@ -1607,7 +1630,7 @@ impl UiState {
             reference_list: None,
             code_action_list: None,
             context_menu: None,
-            mouse_hover_target: None,
+            hover_request: None,
             signature_help: None,
         }
     }

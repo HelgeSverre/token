@@ -2468,6 +2468,11 @@ pub fn with_signature_help_spec<R>(
     model: &AppModel,
     f: impl FnOnce(&OverlaySpec) -> R,
 ) -> Option<R> {
+    // A completion's documentation or explicit quick docs owns the reading
+    // surface. Retain signature state so it can return when the menu closes.
+    if model.ui.has_modal() || model.ui.cursor_overlay.is_some() {
+        return None;
+    }
     let help = model.ui.signature_help.as_ref()?;
     let sig = help.signatures.get(help.active)?;
     let (x, y, h) = cursor_overlay_anchor(model)?;
@@ -3389,6 +3394,16 @@ mod tests {
                 ("(1 of 2)", SpanStyle::Dim),
             ]
         );
+        model.ui.cursor_overlay = Some(crate::model::CursorOverlayState::new(
+            crate::model::CursorOverlayKind::Completion,
+        ));
+        assert!(with_signature_help_spec(&model, |_| ()).is_none());
+        assert!(
+            model.ui.signature_help.is_some(),
+            "priority hides rather than discards signature state"
+        );
+        model.ui.cursor_overlay = None;
+        assert!(with_signature_help_spec(&model, |_| ()).is_some());
     }
 
     /// Hover content keeps its markdown spans all the way to the card.

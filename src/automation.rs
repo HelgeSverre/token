@@ -441,7 +441,13 @@ fn hover_snapshot(model: &AppModel) -> Option<HoverSnapshot> {
         return None;
     }
     let doc = model.try_document()?;
-    let cursor = model.editor().active_cursor().to_position();
+    let cursor = model
+        .ui
+        .hover_card
+        .as_ref()
+        .and_then(|card| card.anchor)
+        .map(|(line, column)| token::model::Position::new(line, column))
+        .unwrap_or_else(|| model.editor().active_cursor().to_position());
     let diagnostics = token::model::decorations::diagnostics_at_position(doc, cursor);
     Some(HoverSnapshot {
         content: model

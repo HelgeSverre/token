@@ -16,6 +16,7 @@ pub(crate) use file_io::{PendingWorkspaceEdit, WorkspaceEditAction};
 pub mod editor;
 pub mod editor_area;
 mod ghost_text;
+pub mod hover;
 pub use ghost_text::GhostText;
 pub(crate) use ghost_text::{GhostProjection, GhostRow};
 mod overview;

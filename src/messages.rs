@@ -1201,6 +1201,8 @@ pub enum LspMsg {
     /// `(document_id, revision, position)` into `Cmd::LspRequestHover`,
     /// mirroring `GotoDefinition`'s message flow.
     ShowHover,
+    /// Dismiss displayed and pending documentation without moving the caret.
+    DismissHover,
     /// Mouse-dwell intent (the Zed-style hover-on-mouse feature): the
     /// runtime fires this from `about_to_wait` once the pointer has sat
     /// still over editor text for `hover_delay_ms`, carrying the hovered

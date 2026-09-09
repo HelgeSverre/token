@@ -255,6 +255,24 @@ Highlight matching brackets when the cursor is adjacent to `(`, `)`, `[`, `]`, `
 
 ---
 
+### Hover documentation
+
+Resting over text in the focused editor opens hover documentation after
+`hover_delay_ms` (300 ms by default). Moving within a word keeps that target;
+empty space, selections, dragging and other open documentation surfaces do not
+start automatic hover. Leaving a mouse card or its target allows 300 ms to move
+into the card before it closes.
+
+Show Hover requests documentation immediately at the caret, independently of
+`hover_on_mouse`. Incidental pointer movement does not dismiss it. Editing,
+moving the caret, scrolling, switching panes, losing focus or pressing Escape
+closes documentation and cancels its pending request. Empty automatic results
+are silent; an explicit request still reports when information is unavailable.
+
+Completion documentation takes precedence while its menu is open. Signature
+help yields visually until the menu closes, and automatic hover waits while
+signature help is visible.
+
 ### Completion dropdown
 
 The dropdown uses language-server results for member access such as `builder.`.

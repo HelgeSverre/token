@@ -232,10 +232,7 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
 
         EditorMsg::Scroll(delta) => {
             let scrolled = model.scroll_focused_editor_vertical_by(delta as isize);
-            if scrolled {
-                dismiss_hover_on_scroll(model);
-            }
-            scrolled.then_some(Cmd::redraw_editor())
+            finish_scroll(model, scrolled)
         }
 
         EditorMsg::ScrollPixels {
@@ -245,18 +242,12 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             animated,
         } => {
             let scrolled = model.scroll_editor_pixels_by(editor_id, delta_x, delta_y, animated);
-            if scrolled {
-                dismiss_hover_on_scroll(model);
-            }
-            scrolled.then_some(Cmd::redraw_editor())
+            finish_scroll(model, scrolled)
         }
 
         EditorMsg::ScrollHorizontal(delta) => {
             let scrolled = model.scroll_focused_editor_horizontal_by(delta as isize);
-            if scrolled {
-                dismiss_hover_on_scroll(model);
-            }
-            scrolled.then_some(Cmd::redraw_editor())
+            finish_scroll(model, scrolled)
         }
 
         // === Selection Movement (Shift+key) ===
@@ -966,32 +957,21 @@ fn shrink_selection(model: &mut AppModel) {
     }
 }
 
-/// A hover card re-anchors every frame from the doc line/col it was opened
-/// against (`editor_text_rect_at`) — once a scroll carries that line out
-/// of the viewport, the card would otherwise snap to the viewport edge
-/// and sit there describing an off-screen token (lsp-integration.md's
-/// hover card has no other invalidation hook for scrolling: unlike a
-/// keypress/edit, a wheel/trackpad scroll moves no pointer and reaches
-/// none of those paths). Also clears `mouse_hover_target` so a
-/// mouse-dwell request already in flight can't reopen the card for a
-/// token that has since scrolled away from the pointer — `HoverResolved`'s
-/// dwell-match guard reads this field.
-fn dismiss_hover_on_scroll(model: &mut AppModel) {
-    use crate::model::CursorOverlayKind;
-    match model.ui.cursor_overlay.map(|s| s.kind) {
-        Some(CursorOverlayKind::Hover | CursorOverlayKind::DebugHover) => {
-            model.ui.cursor_overlay = None;
-            model.ui.hover_card = None;
-        }
-        // A pixel-anchored context menu would float over the scrolled
-        // content otherwise.
-        Some(CursorOverlayKind::ContextMenu) => {
-            model.ui.cursor_overlay = None;
-            model.ui.context_menu = None;
-        }
-        _ => {}
+/// Scrolls invalidate documentation (including pending replies) and menus
+/// anchored to the previous viewport. Keep their effects in the returned batch.
+fn finish_scroll(model: &mut AppModel, scrolled: bool) -> Option<Cmd> {
+    if !scrolled {
+        return None;
     }
-    model.ui.mouse_hover_target = None;
+    if model
+        .ui
+        .cursor_overlay
+        .is_some_and(|overlay| overlay.kind == crate::model::CursorOverlayKind::ContextMenu)
+    {
+        model.ui.cursor_overlay = None;
+        model.ui.context_menu = None;
+    }
+    super::merge_cmds(Some(Cmd::redraw_editor()), super::hover::dismiss(model))
 }
 
 fn strictly_contains(outer: &Selection, inner: &Selection) -> bool {
@@ -1254,18 +1234,23 @@ mod scroll_tests {
     }
 
     /// The async race: a mouse-dwell hover request is in flight
-    /// (`mouse_hover_target` set) when a scroll happens before the reply
+    /// (a hover intent set) when a scroll happens before the reply
     /// lands — the scroll must clear the target too, or `HoverResolved`'s
     /// dwell-match guard (`update/lsp.rs`) still opens a card for a token
     /// that has since scrolled away from the pointer.
     #[test]
     fn scrolling_clears_a_pending_mouse_dwell_target() {
         let mut model = model_with_many_lines();
-        model.ui.mouse_hover_target = Some(crate::model::editor::Position::new(0, 0));
+        super::super::hover::show(
+            &mut model,
+            crate::model::Position::new(0, 0),
+            crate::model::hover::HoverOrigin::Mouse,
+        );
+        assert!(model.ui.hover_request.is_some());
 
         update_editor(&mut model, EditorMsg::Scroll(20));
 
-        assert!(model.ui.mouse_hover_target.is_none());
+        assert!(model.ui.hover_request.is_none());
     }
 
     #[test]

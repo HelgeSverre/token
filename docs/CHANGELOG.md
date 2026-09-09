@@ -100,6 +100,14 @@ All notable changes to rust-editor are documented in this file.
 
 ### Documentation cards
 
+- Automatic hover targets actual text, stays stable within a word, and leaves a
+  short grace period for moving into the card. Typing, scrolling, selecting,
+  switching panes or leaving the window cancels pending mouse documentation;
+  late replies no longer reopen dismissed cards.
+- Explicit Show Hover opens immediately and survives incidental pointer
+  movement. Completion documentation takes visual priority over hover and
+  signature help; automatic empty/unsupported hover results no longer flash
+  status messages.
 - Hover cards have a wider responsive layout and an opaque reading surface;
   completion documentation side cards are opaque too.
 - Documentation code spans use the configured editor font at a slightly smaller
