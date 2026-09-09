@@ -1134,6 +1134,10 @@ pub enum Cmd {
         cursor: crate::model::editor::Position,
         revision: u64,
     },
+    /// Invalidate an outstanding hover when its user intent is dismissed.
+    LspCancelHover {
+        document_id: DocumentId,
+    },
     /// `textDocument/signatureHelp`, mirroring `LspRequestHover`. `trigger`
     /// is the typed trigger/retrigger character (`triggerKind:
     /// TriggerCharacter`), `None` for an explicit invoke; `is_retrigger`
@@ -1396,6 +1400,7 @@ impl Cmd {
             Cmd::LspRequestDefinition { .. } => Damage::Areas(vec![]),
             Cmd::LspDidOpenOnServer { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestHover { .. } => Damage::Areas(vec![]),
+            Cmd::LspCancelHover { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestSignatureHelp { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestPrepareRename { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestRename { .. } => Damage::Areas(vec![]),

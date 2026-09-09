@@ -22,6 +22,7 @@ mod dock;
 mod document;
 mod editor;
 mod file_change;
+mod hover;
 mod image;
 pub mod inline;
 mod layout;
@@ -167,6 +168,7 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let find_search = ui::schedule_find_search(model);
     let result = merge_cmds(result, find_search);
     let result = merge_cmds(result, workspace_symbols::reconcile(model));
+    let result = merge_cmds(result, hover::reconcile(model));
     if was_loading != model.ui.is_loading && result.as_ref().is_none_or(|cmd| !cmd.needs_redraw()) {
         merge_cmds(result, Some(Cmd::redraw_status_bar()))
     } else {

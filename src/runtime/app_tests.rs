@@ -3023,7 +3023,7 @@ fn a_null_hover_reply_reports_still_indexing_before_ready() {
     let revision = app.model.document().revision;
     let server_id = LspServerId::from("rust-analyzer");
     let root = PathBuf::from("/tmp/proj-hover-empty-indexing");
-    let cursor = test_cursor(&app);
+    let cursor = capture_test_hover(&mut app);
     app.lsp.hover.insert(
         (server_id.clone(), root.clone(), 9),
         doc_id,
@@ -3189,12 +3189,27 @@ fn test_cursor(app: &App) -> token::model::editor::Position {
     app.model.editor().active_cursor().to_position()
 }
 
+/// Runtime fixtures install requests directly; still capture the user intent
+/// that real request commands carry so response ownership is exercised too.
+fn capture_test_hover(app: &mut App) -> token::model::Position {
+    app.model
+        .document_mut()
+        .file_path
+        .get_or_insert_with(|| PathBuf::from("/workspace/hover.rs"));
+    update(&mut app.model, Msg::Lsp(LspMsg::ShowHover));
+    app.model
+        .ui
+        .hover_request
+        .expect("hover intent captured")
+        .position
+}
+
 #[test]
 fn hover_request_with_no_synced_document_reports_not_supported() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     let doc_id = app.model.document().id.unwrap();
     let revision = app.model.document().revision;
-    let cursor = test_cursor(&app);
+    let cursor = capture_test_hover(&mut app);
 
     app.request_lsp_hover(
         doc_id,
@@ -3212,6 +3227,10 @@ fn hover_request_with_no_synced_document_reports_not_supported() {
         .transient_message
         .as_ref()
         .is_some_and(|t| t.text.contains("not supported")));
+    assert!(
+        app.model.ui.hover_request.is_none(),
+        "an empty explicit request must release pointer hover"
+    );
 }
 
 #[test]
@@ -3219,7 +3238,7 @@ fn hover_request_reports_not_supported_when_capabilities_lack_hover_provider() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     let doc_id = app.model.document().id.unwrap();
     let revision = app.model.document().revision;
-    let cursor = test_cursor(&app);
+    let cursor = capture_test_hover(&mut app);
     let server_id = LspServerId::from("rust-analyzer");
     let root = PathBuf::from("/tmp/proj-hover-nosupport");
     let uri = lsp::path_to_uri(&PathBuf::from("/tmp/proj-hover-nosupport/main.rs"));
@@ -3318,7 +3337,7 @@ fn an_abandoned_hover_response_is_consumed_and_discarded() {
     let revision = app.model.document().revision;
     let server_id = LspServerId::from("rust-analyzer");
     let root = PathBuf::from("/tmp/proj-hover-abandoned");
-    let cursor = test_cursor(&app);
+    let cursor = capture_test_hover(&mut app);
     app.lsp.hover.insert(
         (server_id.clone(), root.clone(), 7),
         doc_id,
@@ -3355,7 +3374,7 @@ fn a_hover_request_past_its_deadline_is_abandoned_with_no_content() {
     let revision = app.model.document().revision;
     let server_id = LspServerId::from("rust-analyzer");
     let root = PathBuf::from("/tmp/proj-hover-timeout");
-    let cursor = test_cursor(&app);
+    let cursor = capture_test_hover(&mut app);
     let handle = spawn_fake_handle(&server_id);
     let request_id = handle.begin_request("textDocument/hover", serde_json::json!({}));
     app.lsp
@@ -3415,7 +3434,7 @@ fn a_hover_deadline_for_an_already_superseded_request_removes_its_bookkeeping() 
     let revision = app.model.document().revision;
     let server_id = LspServerId::from("rust-analyzer");
     let root = PathBuf::from("/tmp/proj-hover-timeout-superseded");
-    let cursor = test_cursor(&app);
+    let cursor = capture_test_hover(&mut app);
 
     let stale_key = (server_id.clone(), root.clone(), 1);
     app.lsp.hover.requests.insert(
@@ -3450,144 +3469,149 @@ fn a_hover_deadline_for_an_already_superseded_request_removes_its_bookkeeping() 
 // Mouse-dwell hover (`hover_dwell` state machine)
 // ========================================================================
 
-#[test]
-fn hover_dwell_arms_on_the_first_move() {
+fn hover_app() -> App {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
-    assert!(app.hover_dwell.is_none());
-
-    app.update_hover_dwell(None, 10.0, 20.0);
-
-    let (x, y, _) = app.hover_dwell.expect("first move arms the dwell timer");
-    assert_eq!((x, y), (10.0, 20.0));
+    app.model.config.hover_on_mouse = true;
+    app.model.config.hover_delay_ms = 300;
+    app.model.document_mut().buffer = ropey::Rope::from("alpha beta\n");
+    app.model.document_mut().file_path = Some(PathBuf::from("/workspace/hover.rs"));
+    app.model.ui.focus = token::model::FocusTarget::Editor;
+    app
 }
 
-#[test]
-fn a_small_move_does_not_reset_the_dwell_position() {
-    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
-    app.update_hover_dwell(None, 10.0, 10.0);
-    let armed_at = app.hover_dwell.unwrap().2;
-
-    // 1px move, under HOVER_DWELL_MOVE_THRESHOLD_PX — jitter, not a
-    // real move.
-    app.update_hover_dwell(Some((10.0, 10.0)), 11.0, 10.0);
-
-    let (x, y, started) = app.hover_dwell.expect("still armed");
-    assert_eq!((x, y), (10.0, 10.0), "position must not move for jitter");
-    assert_eq!(started, armed_at, "timer must not restart for jitter");
-}
-
-#[test]
-fn a_significant_move_restarts_the_dwell_at_the_new_position() {
-    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
-    app.update_hover_dwell(None, 10.0, 10.0);
-
-    app.update_hover_dwell(Some((10.0, 10.0)), 200.0, 10.0);
-
-    let (x, y, _) = app.hover_dwell.expect("still armed at the new position");
-    assert_eq!((x, y), (200.0, 10.0));
-}
-
-#[test]
-fn dwell_does_not_arm_while_a_modal_is_open() {
-    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
-    app.model.ui.open_modal(token::model::ModalState::GotoLine(
-        token::model::GotoLineState::default(),
+fn hover_pointer(app: &mut App, column: f64, row: f64) {
+    let group = app.model.editor_area.focused_group().unwrap();
+    let layout = token::view::geometry::GroupLayout::new(group, &app.model, app.model.char_width);
+    app.mouse_position = Some((
+        layout.text_start_x as f64 + column * app.model.char_width as f64,
+        layout.content_y() as f64 + row * app.model.line_height as f64,
     ));
-
-    app.update_hover_dwell(None, 10.0, 10.0);
-
-    assert!(app.hover_dwell.is_none());
-}
-
-#[test]
-fn dwell_does_not_arm_while_a_cursor_overlay_is_open() {
-    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
-    app.model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
-        token::model::CursorOverlayKind::DebugCompletion,
-    ));
-
-    app.update_hover_dwell(None, 10.0, 10.0);
-
-    assert!(app.hover_dwell.is_none());
-}
-
-#[test]
-fn moving_outside_the_hover_card_panel_dismisses_it() {
-    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
-    app.model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
-        token::model::CursorOverlayKind::Hover,
-    ));
-    app.model.ui.hover_card = Some(token::model::HoverCardState {
-        content: Some("fn main()".into()),
-        ..Default::default()
-    });
-    // Simulates `update_cursor_icon` having hit-tested the new point
-    // outside the card's panel.
     app.model.ui.hover = token::model::HoverRegion::EditorText;
-
-    app.update_hover_dwell(Some((10.0, 10.0)), 200.0, 200.0);
-
-    assert!(app.model.ui.cursor_overlay.is_none());
-    assert!(app.model.ui.hover_card.is_none());
+    app.update_hover_dwell();
 }
 
-#[test]
-fn moving_within_the_hover_card_panel_does_not_dismiss_it() {
-    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
-    app.model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
-        token::model::CursorOverlayKind::Hover,
-    ));
-    app.model.ui.hover_card = Some(token::model::HoverCardState {
-        content: Some("fn main()".into()),
-        ..Default::default()
-    });
-    // Simulates `update_cursor_icon` having hit-tested the new point
-    // as still inside the card's own (scrollable/clickable) panel.
-    app.model.ui.hover = token::model::HoverRegion::CursorOverlay;
-
-    app.update_hover_dwell(Some((10.0, 10.0)), 200.0, 200.0);
-
-    assert!(
-        app.model.ui.cursor_overlay.is_some(),
-        "moving within the card must not dismiss it"
+fn open_test_hover(app: &mut App, keyboard: bool) {
+    update(
+        &mut app.model,
+        Msg::Lsp(if keyboard {
+            LspMsg::ShowHover
+        } else {
+            LspMsg::ShowHoverAt { line: 0, col: 0 }
+        }),
+    );
+    let request = app.model.ui.hover_request.unwrap();
+    update(
+        &mut app.model,
+        Msg::Lsp(LspMsg::HoverResolved {
+            document_id: request.anchor.document_id,
+            revision: request.anchor.revision,
+            cursor: request.position,
+            outcome: HoverOutcome::Content(Some("documentation".into())),
+        }),
     );
     assert!(app.model.ui.hover_card.is_some());
 }
 
 #[test]
-fn check_hover_dwell_is_a_noop_when_disabled_in_config() {
-    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+fn hover_dwell_tracks_words_and_rejects_clamped_empty_space() {
+    let mut app = hover_app();
+    hover_pointer(&mut app, 0.2, 0.5);
+    let started = app.hover_dwell.unwrap().started;
+    hover_pointer(&mut app, 4.8, 0.5);
+    assert_eq!(app.hover_dwell.unwrap().position, Position::new(0, 0));
+    assert_eq!(app.hover_dwell.unwrap().started, started);
+
+    for (column, row) in [(-0.5, 0.5), (5.5, 0.5), (12.0, 0.5), (0.5, 4.5)] {
+        hover_pointer(&mut app, column, row);
+        assert!(app.hover_dwell.is_none(), "not real text: {column}, {row}");
+    }
+    hover_pointer(&mut app, 6.2, 0.5);
+    assert_eq!(app.hover_dwell.unwrap().position, Position::new(0, 6));
+}
+
+#[test]
+fn hover_dwell_is_invalidated_by_caret_movement_and_competing_surfaces() {
+    let mut app = hover_app();
+    hover_pointer(&mut app, 0.5, 0.5);
+    app.hover_dwell.as_mut().unwrap().started -= Duration::from_secs(1);
+    app.model.editor_mut().cursors[0].column = 1;
+    assert!(!app.check_hover_dwell());
+    assert!(app.hover_dwell.is_none());
+
+    app.model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
+        token::model::CursorOverlayKind::DebugCompletion,
+    ));
+    hover_pointer(&mut app, 0.5, 0.5);
+    assert!(app.hover_dwell.is_none());
+    app.model.ui.cursor_overlay = None;
     app.model.config.hover_on_mouse = false;
-    app.model.ui.hover = token::model::HoverRegion::EditorText;
-    app.hover_dwell = Some((10.0, 10.0, Instant::now() - Duration::from_secs(1)));
+    hover_pointer(&mut app, 0.5, 0.5);
+    assert!(app.hover_dwell.is_none());
+}
 
-    assert!(!app.check_hover_dwell());
-    assert!(
-        app.hover_dwell.is_some(),
-        "a disabled feature must leave the armed dwell alone (no surprise clear)"
+#[test]
+fn hover_card_grace_allows_pointer_entry_and_expires_outside() {
+    let mut app = hover_app();
+    open_test_hover(&mut app, false);
+    hover_pointer(&mut app, 4.5, 0.5);
+    assert!(app.hover_hide_at.is_none(), "same word keeps the card");
+    hover_pointer(&mut app, 12.0, 0.5);
+    assert!(app.hover_hide_at.is_some());
+    assert!(app.model.ui.hover_card.is_some());
+    app.model.ui.hover = token::model::HoverRegion::CursorOverlay;
+    app.update_hover_dwell();
+    assert!(app.hover_hide_at.is_none());
+    hover_pointer(&mut app, 12.0, 0.5);
+    app.hover_hide_at = Some(Instant::now() - Duration::from_millis(1));
+    assert!(app.check_hover_dwell());
+    assert!(app.model.ui.hover_request.is_none());
+    assert!(app.model.ui.hover_card.is_none());
+}
+
+#[test]
+fn keyboard_documentation_ignores_incidental_pointer_motion_but_not_blur() {
+    let mut app = hover_app();
+    open_test_hover(&mut app, true);
+    hover_pointer(&mut app, 12.0, 0.5);
+    assert!(app.hover_hide_at.is_none());
+    assert!(app.model.ui.hover_card.is_some());
+    assert!(app.handle_event(&WindowEvent::Focused(false)).is_some());
+    assert!(app.model.ui.hover_request.is_none());
+    assert!(app.model.ui.hover_card.is_none());
+}
+
+#[test]
+fn leaving_a_pending_mouse_target_invalidates_its_reply() {
+    let mut app = hover_app();
+    update(
+        &mut app.model,
+        Msg::Lsp(LspMsg::ShowHoverAt { line: 0, col: 0 }),
     );
+    let request = app.model.ui.hover_request.unwrap();
+    hover_pointer(&mut app, 12.0, 0.5);
+    update(
+        &mut app.model,
+        Msg::Lsp(LspMsg::HoverResolved {
+            document_id: request.anchor.document_id,
+            revision: request.anchor.revision,
+            cursor: request.position,
+            outcome: HoverOutcome::Content(Some("late".into())),
+        }),
+    );
+    assert!(app.model.ui.hover_card.is_none());
 }
 
 #[test]
-fn check_hover_dwell_does_not_fire_before_the_delay_elapses() {
-    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
-    app.model.ui.hover = token::model::HoverRegion::EditorText;
-    app.hover_dwell = Some((10.0, 10.0, Instant::now()));
-
+fn hover_dwell_respects_delay_and_does_not_spin_after_expiry() {
+    let mut app = hover_app();
+    hover_pointer(&mut app, 0.5, 0.5);
     assert!(!app.check_hover_dwell());
-}
-
-#[test]
-fn next_wake_ignores_an_expired_dwell_deadline() {
-    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
-    app.model.ui.hover = token::model::HoverRegion::Sidebar;
-    app.hover_dwell = Some((10.0, 10.0, Instant::now() - Duration::from_secs(1)));
-
+    app.hover_dwell.as_mut().unwrap().started -= Duration::from_secs(1);
     let now = Instant::now();
-    assert!(
-        app.next_wake(now) > now,
-        "a past dwell deadline must not schedule an immediate (spinning) wake-up"
-    );
+    assert!(app.next_wake(now) > now);
+    app.model.ui.hover = token::model::HoverRegion::Sidebar;
+    assert!(!app.check_hover_dwell());
+    assert!(app.hover_dwell.is_none());
 }
 
 #[test]
@@ -3598,15 +3622,6 @@ fn settings_blink_off_uses_a_positive_maintenance_interval() {
     app.last_tick = now;
     assert_eq!(app.cursor_tick_interval(), Duration::from_millis(250));
     assert!(app.next_wake(now) > now);
-}
-
-#[test]
-fn check_hover_dwell_does_not_fire_outside_editor_text() {
-    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
-    app.model.ui.hover = token::model::HoverRegion::Sidebar;
-    app.hover_dwell = Some((10.0, 10.0, Instant::now() - Duration::from_secs(1)));
-
-    assert!(!app.check_hover_dwell());
 }
 
 /// End-to-end "hover resolved and rendered" (design doc's Testing
@@ -3729,7 +3744,7 @@ fn a_stale_hover_response_after_a_revision_bump_is_dropped() {
 
     let doc_id = app.model.document().id.unwrap();
     let revision = app.model.document().revision;
-    let cursor = test_cursor(&app);
+    let cursor = capture_test_hover(&mut app);
     // Issue the request directly (bypassing the flush the real
     // `ShowHover` -> `request_lsp_hover` path would run) so the edit
     // below is guaranteed to land after the request is already

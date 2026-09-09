@@ -7,10 +7,10 @@
 
 use crate::commands::Cmd;
 use crate::lsp::ServerState;
-use crate::messages::{DefinitionOutcome, HoverOutcome, LspMsg, ReferencesOutcome};
+use crate::messages::{DefinitionOutcome, LspMsg, ReferencesOutcome};
 use crate::model::editor::Position;
 use crate::model::editor_area::DocumentId;
-use crate::model::{AppModel, CursorOverlayKind, CursorOverlayState, HoverCardState};
+use crate::model::{AppModel, CursorOverlayKind, CursorOverlayState};
 use crate::update::navigation;
 use crate::update::text_edits::{apply_planned_edits, plan_text_edits};
 
@@ -701,92 +701,22 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         }
 
         LspMsg::ShowHover => {
-            let doc = model.try_document()?;
-            let document_id = doc.id?;
-            let revision = doc.revision;
-            // Untitled documents are never LSP-synced — nothing to
-            // request against (same rule as `GotoDefinition`).
-            doc.file_path.as_ref()?;
             let cursor = model.editor().active_cursor().to_position();
-            let position = crate::lsp::position_to_lsp(doc, cursor);
-            // Not a mouse-dwell request — the `HoverResolved` guard below
-            // must compare against the live caret instead.
-            model.ui.mouse_hover_target = None;
-            Some(Cmd::LspRequestHover {
-                document_id,
-                position,
-                cursor,
-                revision,
-            })
+            super::hover::show(model, cursor, crate::model::hover::HoverOrigin::Keyboard)
         }
-
-        LspMsg::ShowHoverAt { line, col } => {
-            let doc = model.try_document()?;
-            let document_id = doc.id?;
-            let revision = doc.revision;
-            doc.file_path.as_ref()?;
-            let target = crate::model::editor::Position::new(line, col);
-            let position = crate::lsp::position_to_lsp(doc, target);
-            // Captured so `HoverResolved` can tell a still-wanted reply
-            // from one whose dwell was abandoned before it arrived (the
-            // mouse equivalent of comparing against the live caret).
-            model.ui.mouse_hover_target = Some(target);
-            Some(Cmd::LspRequestHover {
-                document_id,
-                position,
-                cursor: target,
-                revision,
-            })
-        }
+        LspMsg::DismissHover => super::hover::dismiss(model),
+        LspMsg::ShowHoverAt { line, col } => super::hover::show(
+            model,
+            Position::new(line, col),
+            crate::model::hover::HoverOrigin::Mouse,
+        ),
 
         LspMsg::HoverResolved {
             document_id,
             revision,
             cursor,
             outcome,
-        } => {
-            // Revision + focus guards (see `stale_feature_response`), then
-            // the cursor rule: a document edit doesn't necessarily bump
-            // the cursor, but a bare cursor move doesn't bump the revision
-            // either — a stale reply for a position the user has since
-            // moved away from must never open, per the design doc's "any
-            // ... cursor move" dismissal rule extended to in-flight
-            // requests. A mouse-dwell reply (`ShowHoverAt`) stays live
-            // while the pointer still rests on the captured target (the
-            // runtime clears `mouse_hover_target` the moment it moves
-            // away), even though the caret may have moved.
-            if stale_feature_response(model, document_id, revision) {
-                return None;
-            }
-            let is_dwell_match = model.ui.mouse_hover_target == Some(cursor);
-            if !is_dwell_match && model.editor().active_cursor().to_position() != cursor {
-                return None;
-            }
-            let doc = model.editor_area.documents.get(&document_id)?;
-            match outcome {
-                HoverOutcome::Content(content) => {
-                    let has_diagnostics =
-                        !crate::model::decorations::diagnostics_at_position(doc, cursor).is_empty();
-                    if content.is_none() && !has_diagnostics {
-                        model.ui.set_status("No hover information");
-                        return Some(Cmd::redraw_status_bar());
-                    }
-                    let anchor = is_dwell_match.then_some((cursor.line, cursor.column));
-                    model.ui.hover_card = Some(HoverCardState { content, anchor });
-                    model.ui.cursor_overlay =
-                        Some(CursorOverlayState::new(CursorOverlayKind::Hover));
-                    Some(Cmd::Redraw)
-                }
-                HoverOutcome::StillIndexing => {
-                    model.ui.set_status("Language server still indexing…");
-                    Some(Cmd::redraw_status_bar())
-                }
-                HoverOutcome::NotSupported => {
-                    model.ui.set_status("Hover not supported by this server");
-                    Some(Cmd::redraw_status_bar())
-                }
-            }
-        }
+        } => super::hover::resolved(model, document_id, revision, cursor, outcome),
 
         // Consumed by `process_async_messages`'s interception pass before
         // reaching here — mirrors `DefinitionResponseFromServer`.
@@ -1053,6 +983,7 @@ pub(crate) fn find_document_by_uri(model: &AppModel, uri: &lsp_types::Uri) -> Op
 mod tests {
     use super::*;
     use crate::lsp::{LspServerId, ServerState};
+    use crate::messages::HoverOutcome;
     use std::path::{Path, PathBuf};
 
     fn model() -> AppModel {
@@ -1170,7 +1101,9 @@ mod tests {
     /// document, not merely whatever editor is currently focused.
     #[test]
     fn hover_resolved_for_a_document_no_longer_focused_is_dropped() {
-        let mut model = model();
+        let (_dir, mut model) = model_with_file();
+        update_lsp(&mut model, LspMsg::ShowHover);
+        assert!(model.ui.hover_request.is_some());
         let requested_doc = model.document().id.unwrap();
 
         // Simulate the focused editor switching to a different document
@@ -1645,13 +1578,13 @@ mod tests {
         };
         assert_eq!(cursor, crate::model::editor::Position::new(0, 8));
         assert_eq!(
-            model.ui.mouse_hover_target,
+            model.ui.hover_request.map(|request| request.position),
             Some(crate::model::editor::Position::new(0, 8)),
             "the dwell target must be captured for HoverResolved's guard"
         );
     }
 
-    /// The runtime clears `mouse_hover_target` the moment the pointer moves
+    /// The runtime clears the hover intent the moment the pointer moves
     /// away from a still-pending dwell request (see `App::update_hover_dwell`)
     /// — a reply that arrives after that must never open the card, even
     /// though the caret never moved (it's mouse-driven, not caret-driven).
@@ -1663,10 +1596,13 @@ mod tests {
         let target = crate::model::editor::Position::new(0, 8);
 
         update_lsp(&mut model, LspMsg::ShowHoverAt { line: 0, col: 8 });
-        assert_eq!(model.ui.mouse_hover_target, Some(target));
+        assert_eq!(
+            model.ui.hover_request.map(|request| request.position),
+            Some(target)
+        );
         // Simulate the runtime's dwell reset (pointer moved on before the
         // reply landed).
-        model.ui.mouse_hover_target = None;
+        update_lsp(&mut model, LspMsg::DismissHover);
 
         update_lsp(
             &mut model,
@@ -1726,7 +1662,7 @@ mod tests {
             panic!("expected Cmd::LspRequestHover, got {cmd:?}");
         };
         assert!(
-            model.ui.mouse_hover_target.is_none(),
+            model.ui.hover_request.is_some_and(|request| request.origin == crate::model::hover::HoverOrigin::Keyboard),
             "a caret-triggered request must not look like a live dwell target"
         );
 
@@ -1741,6 +1677,75 @@ mod tests {
         );
 
         assert_eq!(model.ui.hover_card.as_ref().and_then(|c| c.anchor), None);
+    }
+
+    #[test]
+    fn hover_drops_replies_after_editing_or_moving_the_caret() {
+        for edit in [false, true] {
+            let (_dir, mut model) = model_with_file();
+            update_lsp(&mut model, LspMsg::ShowHoverAt { line: 0, col: 8 });
+            let request = model.ui.hover_request.unwrap();
+            let change = if edit {
+                crate::messages::Msg::Document(crate::messages::DocumentMsg::InsertChar('x'))
+            } else {
+                crate::messages::Msg::Editor(crate::messages::EditorMsg::MoveCursor(
+                    crate::messages::Direction::Right,
+                ))
+            };
+            crate::update::update(&mut model, change);
+            assert!(model.ui.hover_request.is_none());
+            update_lsp(
+                &mut model,
+                LspMsg::HoverResolved {
+                    document_id: request.anchor.document_id,
+                    revision: request.anchor.revision,
+                    cursor: request.position,
+                    outcome: HoverOutcome::Content(Some("stale".into())),
+                },
+            );
+            assert!(model.ui.hover_card.is_none());
+        }
+    }
+
+    #[test]
+    fn automatic_hover_is_silent_and_yields_to_other_popups() {
+        let (_dir, mut model) = model_with_file();
+        for outcome in [
+            HoverOutcome::Content(None),
+            HoverOutcome::StillIndexing,
+            HoverOutcome::NotSupported,
+        ] {
+            update_lsp(&mut model, LspMsg::ShowHoverAt { line: 0, col: 8 });
+            let request = model.ui.hover_request.unwrap();
+            let status = model
+                .ui
+                .transient_message
+                .as_ref()
+                .map(|message| message.text.clone());
+            assert!(update_lsp(
+                &mut model,
+                LspMsg::HoverResolved {
+                    document_id: request.anchor.document_id,
+                    revision: request.anchor.revision,
+                    cursor: request.position,
+                    outcome,
+                }
+            )
+            .is_none());
+            assert_eq!(
+                model
+                    .ui
+                    .transient_message
+                    .as_ref()
+                    .map(|message| message.text.clone()),
+                status
+            );
+            assert!(model.ui.hover_card.is_none());
+            update_lsp(&mut model, LspMsg::DismissHover);
+        }
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Completion));
+        assert!(update_lsp(&mut model, LspMsg::ShowHoverAt { line: 0, col: 8 }).is_none());
+        assert!(model.ui.hover_request.is_none());
     }
 
     fn loc(path: &Path, line: u32, col: u32, preview: &str) -> navigation::LocationItem {

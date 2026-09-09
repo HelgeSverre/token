@@ -8,7 +8,7 @@
 //! tested independently of the rendering infrastructure.
 
 use crate::model::editor_area::{EditorGroup, Rect};
-use crate::model::{AppModel, Document, EditorState};
+use crate::model::{AppModel, Document, EditorState, Position};
 
 use crate::util::text::TABULATOR_WIDTH;
 
@@ -123,6 +123,64 @@ pub fn pixel_to_cursor(
         // No focused group/editor/document - safe fallback
         (0, 0)
     }
+}
+
+/// A documentation target must hit real text, not a caret clamped from a gutter,
+/// line margin, ghost-text row or space below EOF. Use the same viewport mapping
+/// as editing, then check the source glyph's rendered cell before accepting it.
+pub fn hover_position(x: f64, y: f64, model: &AppModel) -> Option<Position> {
+    let (group, editor, document) = focused_group_editor_document(model)?;
+    let layout = GroupLayout::new(group, model, model.char_width);
+    if !editor.is_plain_text_mode() || !layout.content_rect.contains(x as f32, y as f32) {
+        return None;
+    }
+    let width = model.char_width as f64;
+    let height = model.line_height as f64;
+    // Caret hit testing rounds to the nearest boundary; hover wants the cell
+    // under the pointer instead, including its right half.
+    let (line, column) = layout.pixel_to_cursor(
+        x - width / 2.0,
+        y,
+        model.char_width,
+        height,
+        editor,
+        document,
+    );
+    let text = document.buffer.get_line(line)?;
+    let ch = text.get_char(column)?;
+    if ch.is_whitespace() {
+        return None;
+    }
+    let viewport = editor.viewport_map(document);
+    let row = viewport.visible_row_at_pixel(y - layout.content_y() as f64, height);
+    let visual_column = if let Some(projected) = viewport.ghost_row_for_visible_row(row) {
+        // Carets have before-insertion affinity; glyphs follow the renderer's
+        // source spans, which place a suffix after the inline suggestion.
+        let source = projected
+            .sources
+            .iter()
+            .flatten()
+            .find(|source| source.columns.contains(&column))?;
+        source.visual_column(&projected.text, column)
+    } else {
+        if viewport.visible_row_for_position(line, column)? != row {
+            return None;
+        }
+        viewport.display_position(document, line, column).1
+    };
+    let left =
+        layout.text_start_x as f64 + viewport.column_pixel_offset(visual_column, model.char_width);
+    let top = layout.content_y() as f64 + viewport.row_pixel_offset(row, height);
+    if x < layout.text_start_x as f64
+        || x < left
+        || x >= left + width
+        || y < top
+        || y >= top + height
+    {
+        return None;
+    }
+
+    Some(Position::new(line, column))
 }
 
 /// Convert pixel coordinates to line and VISUAL column (screen position).
@@ -630,6 +688,70 @@ pub fn binary_placeholder_layout(
 mod tests {
     use super::*;
     use crate::util::text::{char_col_to_visual_col, visual_col_to_char_col};
+
+    #[test]
+    fn hover_hits_source_cells_after_tabs_and_fractional_scroll() {
+        let mut model = AppModel::with_document(800, 600, 1.25, Document::with_text("\talpha\n"));
+        model.resize(800, 600);
+        model.editor_mut().viewport.pixels.x.offset = 3.0;
+        model.editor_mut().viewport.pixels.y.offset = 4.0;
+        let layout = GroupLayout::new(
+            model.editor_area.focused_group().unwrap(),
+            &model,
+            model.char_width,
+        );
+        let x = layout.text_start_x as f64;
+        let y = layout.content_y() as f64;
+        let width = model.char_width as f64;
+        let height = model.line_height as f64;
+        // A tab occupies four display columns, but is not a hover target.
+        assert_eq!(
+            hover_position(x + 2.5 * width - 3.0, y + height / 2.0 - 4.0, &model),
+            None
+        );
+        // The right half of 'a' must still request 'a', not the next caret cell.
+        assert_eq!(
+            hover_position(x + 4.8 * width - 3.0, y + height / 2.0 - 4.0, &model),
+            Some(Position::new(0, 1))
+        );
+        assert_eq!(
+            hover_position(x + 9.5 * width - 3.0, y + height / 2.0 - 4.0, &model),
+            None
+        );
+    }
+
+    #[test]
+    fn hover_uses_source_spans_not_caret_affinity_at_inline_suggestions() {
+        let mut model = AppModel::with_document(800, 600, 1.0, Document::with_text("before tail"));
+        model.resize(800, 600);
+        let ghost = crate::model::GhostProjection::new(
+            model.document(),
+            Position::new(0, 7),
+            "inserted\n",
+            None,
+        )
+        .unwrap();
+        model.editor_mut().ghost_text.0 = Some(std::sync::Arc::new(ghost));
+        let layout = GroupLayout::new(
+            model.editor_area.focused_group().unwrap(),
+            &model,
+            model.char_width,
+        );
+        let x = layout.text_start_x as f64;
+        let y = layout.content_y() as f64;
+        let width = model.char_width as f64;
+        let height = model.line_height as f64;
+        assert_eq!(
+            hover_position(x + 7.5 * width, y + 0.5 * height, &model),
+            None,
+            "the first ghost glyph is not the source at its insertion caret"
+        );
+        assert_eq!(
+            hover_position(x + 0.5 * width, y + 1.5 * height, &model),
+            Some(Position::new(0, 7)),
+            "the displaced suffix is still source text"
+        );
+    }
 
     #[test]
     fn test_expand_tabs() {

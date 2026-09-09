@@ -4774,3 +4774,51 @@ Original review verdict: **Request changes** for the reproduced completion
 correctness defects, now addressed by the implementation follow-up above. The
 other items are scoped follow-up recommendations, not a request for a
 repository-wide rewrite.
+
+## Documentation interaction policy — 2026-09-09
+
+Compared current upstream code, not just settings or screenshots:
+
+- [Zed hover lifecycle](https://github.com/zed-industries/zed/blob/fceace0b84325d8706732f75a6d17192f288bd5f/crates/editor/src/hover_popover.rs):
+  stable targets, delayed automatic versus immediate explicit requests, task
+  cancellation and sticky cards. Its [completion path](https://github.com/zed-industries/zed/blob/fceace0b84325d8706732f75a6d17192f288bd5f/crates/editor/src/completions.rs)
+  hides hover when completions appear; signature help also yields to completions.
+- [VS Code hover controller](https://github.com/microsoft/vscode/blob/c435ee34c6778062206c9f310ef12bee20de9d3b/src/vs/editor/contrib/hover/browser/contentHoverController.ts):
+  keyboard-origin hover survives incidental mouse movement, while automatic
+  hover uses delayed hiding and sticky card interaction. Its [defaults](https://github.com/microsoft/vscode/blob/c435ee34c6778062206c9f310ef12bee20de9d3b/src/vs/editor/common/config/editorOptions.ts)
+  specify 300 ms dwell and hiding delays. We did not establish a universal
+  cross-feature documentation priority in VS Code.
+- [Lapce editor](https://github.com/lapce/lapce/blob/b604d57de4a820006d335a3be0d7583eb8fab558/lapce-app/src/editor.rs):
+  a simpler pointer timer and code-boundary target. Its weaker hover lifetime
+  guards are not a useful model for Token's asynchronous response handling.
+
+Token adopts a deliberately smaller policy: keep the existing 300 ms configurable
+dwell, target non-whitespace source cells through shared pane/viewport geometry,
+stabilize within words, allow 300 ms to enter a mouse card, and keep explicit
+quick documentation independent of incidental pointer movement. Completion docs
+take visual priority; signature help suppresses automatic hover. This priority is
+a Token choice closest to Zed, not a claim that all three editors are identical.
+
+Hover ownership now includes editor, document, revision, caret/selection and pixel
+scroll position. Dismissal cancels runtime requests and invalidates model intent;
+responses cannot reopen a dismissed or changed interaction. Empty automatic
+responses are silent. Timing belongs in the runtime; response admission and
+cross-surface reconciliation share one update module.
+
+This does not copy upstream's half-delay LSP prefetch, geometric approach corridor,
+or focused/selectable/scrollable hover widget. The existing completion-sidecard
+reading controls are unchanged. These are separate enhancements, not prerequisites
+for fixing unsolicited or stale documentation.
+
+Verification on macOS: `just test --no-fail-fast` passed 2,615 tests (5 skipped)
+and both enabled doctests (6 ignored); `just lint` passed. After releasing the
+intent on an empty explicit response, the final runtime hover rerun passed all
+21 selected tests. Geometry checks cover tab expansion, fractional scrolling and
+source text displaced by inline suggestions; lifecycle checks include fake-server
+replies, dismissal, pointer grace and signature-help visibility. `just fmt` and
+`git diff --check` passed. No native interactive walkthrough was performed.
+
+Self-review verdict: **Approve**. The review corrected source-glyph versus caret
+affinity around inline suggestions and ensured an empty explicit response cannot
+keep suppressing automatic hover. No blocking findings remain in this change;
+the other LSP/completion audit findings are separate work.

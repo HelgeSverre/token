@@ -137,6 +137,40 @@ pub fn handle_key(
     modifiers: KeyModifiers,
     option_double_tapped: bool,
 ) -> Option<Cmd> {
+    let dismissal = dismiss_hover_for_key(model, &key);
+    if dismissal.is_some() && key == Key::Named(NamedKey::Escape) {
+        return dismissal;
+    }
+    let result = handle_key_inner(model, key, physical_key, modifiers, option_double_tapped);
+    match (dismissal, result) {
+        (Some(a), Some(b)) => Some(Cmd::Batch(vec![a, b])),
+        (a, b) => a.or(b),
+    }
+}
+
+pub(crate) fn is_modifier_key(key: &Key) -> bool {
+    matches!(
+        key,
+        Key::Named(
+            NamedKey::Shift | NamedKey::Control | NamedKey::Alt | NamedKey::Super | NamedKey::Meta
+        )
+    )
+}
+
+fn dismiss_hover_for_key(model: &mut AppModel, key: &Key) -> Option<Cmd> {
+    if is_modifier_key(key) || !model.ui.has_hover() {
+        return None;
+    }
+    update(model, Msg::Lsp(token::messages::LspMsg::DismissHover))
+}
+
+fn handle_key_inner(
+    model: &mut AppModel,
+    key: Key,
+    physical_key: winit::keyboard::PhysicalKey,
+    modifiers: KeyModifiers,
+    option_double_tapped: bool,
+) -> Option<Cmd> {
     if let Some(cmd) = handle_settings_capture_key(model, &key, physical_key, modifiers) {
         return Some(cmd);
     }
@@ -388,12 +422,14 @@ pub(crate) fn handle_cursor_overlay_key(
     if kind == token::model::CursorOverlayKind::DebugHover
         || kind == token::model::CursorOverlayKind::Hover
     {
-        // Hover = any keypress dismisses (overlay-surface.md: "a keyboard-
-        // invoked card that any key dismisses needs no key routing at all").
-        // Dismiss as a side effect and fall through so the key still
-        // reaches the editor normally (e.g. typing, arrow movement).
-        model.ui.cursor_overlay = None;
-        model.ui.hover_card = None;
+        // Normal keypress invalidation happens before runtime keymap dispatch;
+        // do not discard its cancellation command as a side effect here.
+        if matches!(key, Key::Named(NamedKey::Escape)) {
+            return Some(update(
+                model,
+                Msg::Lsp(token::messages::LspMsg::DismissHover),
+            ));
+        }
         return None;
     }
     let KeyModifiers {
