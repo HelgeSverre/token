@@ -116,3 +116,21 @@ fn text_settings_line_ending_detection_counts_crlf_once_and_breaks_ties_by_order
             .starts_with(ending.as_str()));
     }
 }
+
+#[test]
+fn text_settings_wide_tabs_stop_expanding_at_the_visible_edge() {
+    let visited = std::cell::Cell::new(0);
+    let input = "\t".repeat(100_000);
+    let visible: String = TabStops::new(256)
+        .expanded_chars(input.chars().inspect(|_| visited.set(visited.get() + 1)))
+        .take(80)
+        .collect();
+    assert_eq!(visible, " ".repeat(80));
+    assert_eq!(visited.get(), 1);
+    assert_eq!(
+        TabStops::new(4)
+            .expanded_chars("ab\t🦀\tZ".chars())
+            .collect::<String>(),
+        "ab  🦀   Z"
+    );
+}

@@ -38,6 +38,7 @@ All notable changes to rust-editor are documented in this file.
 - Failed saves retain dirty state and show a persistent failure indicator;
   automatic retries wait for new edits or a successful manual save. Untitled and
   image/binary tabs are excluded, and unfinished CSV cell edits defer saving.
+
 ### Docked Find and Replace
 
 - Find and Replace now open beneath the active editor pane's tabs instead of

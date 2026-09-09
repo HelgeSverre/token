@@ -155,23 +155,24 @@ impl TabStops {
         result
     }
 
+    /// Expand tabs lazily so rendering can stop at the viewport's right edge.
+    pub fn expanded_chars(
+        self,
+        chars: impl IntoIterator<Item = char>,
+    ) -> impl Iterator<Item = char> {
+        let mut column = 0;
+        chars.into_iter().flat_map(move |ch| {
+            let count = if ch == '\t' { self.advance(column) } else { 1 };
+            column += count;
+            std::iter::repeat_n(if ch == '\t' { ' ' } else { ch }, count)
+        })
+    }
+
     pub fn expand(self, text: &str) -> std::borrow::Cow<'_, str> {
         if !text.contains('\t') {
             return text.into();
         }
-        let mut result = String::with_capacity(text.len());
-        let mut column = 0;
-        for ch in text.chars() {
-            if ch == '\t' {
-                let spaces = self.advance(column);
-                result.extend(std::iter::repeat_n(' ', spaces));
-                column += spaces;
-            } else {
-                result.push(ch);
-                column += 1;
-            }
-        }
-        result.into()
+        self.expanded_chars(text.chars()).collect::<String>().into()
     }
 }
 

@@ -702,7 +702,7 @@ impl<'a> TextEditorRenderer<'a> {
 
         let max_chars = ctx.visible_columns;
         let segment_text = &line_text;
-        let expanded_text = self.ctx.tabs.expand(segment_text);
+        let expanded_text = self.ctx.tabs.expanded_chars(segment_text.chars());
         let ghost_columns = line.projected.map(|row| {
             self.ctx
                 .tabs
@@ -715,7 +715,6 @@ impl<'a> TextEditorRenderer<'a> {
 
         text_buffers.display_text.clear();
         for (column, ch) in expanded_text
-            .chars()
             .enumerate()
             .skip(viewport_left)
             .take(max_chars)
@@ -1146,8 +1145,13 @@ impl<'a> TextEditorRenderer<'a> {
             .char_col_to_visual_col(&row.text, row.ghost.end)
             .min(viewport_left.saturating_add(self.ctx.visible_columns));
         if start < end {
-            let expanded = self.ctx.tabs.expand(&row.text);
-            let text: String = expanded.chars().skip(start).take(end - start).collect();
+            let text: String = self
+                .ctx
+                .tabs
+                .expanded_chars(row.text.chars())
+                .skip(start)
+                .take(end - start)
+                .collect();
             painter.draw(
                 frame,
                 self.ctx.pixel_x(start, viewport_left),
