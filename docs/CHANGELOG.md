@@ -77,9 +77,9 @@ All notable changes to rust-editor are documented in this file.
 
 ### Documentation
 
-- Reduced the temporary handoff to the unresolved cursor report and essential
-  continuation notes; roadmap and optional verification items remain in their
-  existing plans and audit records.
+- Removed the temporary handoff after user confirmation that its last item,
+  the editor I-beam report, was already fixed. Roadmap and optional verification
+  items remain in their existing plans and audit records.
 - Added current-state optimized pixel/eased scrolling measurements under
   `docs/benchmark/`, including repeated three-pane runs and a real-source case.
 - Archived the pixel-scrolling plan after native macOS pixel/wheel input,
