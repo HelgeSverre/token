@@ -43,8 +43,9 @@ feature docs can describe intent but may lag implementation.
   `just test` and `just lint` before handing off a substantial change.
 - Preserve unrelated work in a dirty tree. Stage explicit files rather than
   relying on `git add -A`.
-- Record user-visible changes in `docs/CHANGELOG.md` under `Unreleased`, creating
-  that section when necessary.
+- Record user-visible application changes in `docs/CHANGELOG.md` under
+  `Unreleased`, creating that section when necessary. Do not add documentation,
+  handoff, plan-archival or agent-workflow bookkeeping to the changelog.
 - Use `ByteSize` constructors for binary limits, capacities, thresholds, and
   displayed sizes. Keep raw bytes at external boundaries, and do not use
   `ByteSize` for pixels, characters, rows, or other unrelated quantities.

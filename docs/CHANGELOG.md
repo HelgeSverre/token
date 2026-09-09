@@ -75,26 +75,6 @@ All notable changes to rust-editor are documented in this file.
   all 14 bundled themes and a foreground/background-derived fallback for older
   custom themes. RGB and translucent RGBA overrides are supported.
 
-### Documentation
-
-- Removed the temporary handoff after user confirmation that its last item,
-  the editor I-beam report, was already fixed. Roadmap and optional verification
-  items remain in their existing plans and audit records.
-- Added current-state optimized pixel/eased scrolling measurements under
-  `docs/benchmark/`, including repeated three-pane runs and a real-source case.
-- Archived the pixel-scrolling plan after native macOS pixel/wheel input,
-  scrollbar dragging, pointer hit testing and fractional restart checks.
-
-- Archived the session-restore proposal after full-suite and native macOS
-  restart verification; broader sidebar/window and periodic-recovery ideas are
-  explicitly deferred.
-- Archived the implemented external-file protection proposal after live macOS
-  verification; deferred compare/merge ideas remain explicitly marked.
-- Reconciled the active plan index with implementation and verification records;
-  documented completed selection-scoped replacement and corrected stale session
-  and indent-guide assumptions. Completed plans were already archived; unfinished
-  features and native verification gates remain active.
-
 ### Internal cleanup
 
 - Rendering and editing now share tab-column conversion, and split-pane layout,
@@ -232,18 +212,6 @@ All notable changes to rust-editor are documented in this file.
   offline mode, health checks, a startup deadline and explicit retry after failure.
   Canceling generation keeps the model loaded; disabling/changing its provider
   or exiting stops the owned child. Externally managed servers are unchanged.
-
-### Development
-
-- Managed-server lifecycle assertion failures now retain the actual worker reply
-  and child-start marker to diagnose intermittent startup failures.
-- Added a reproducible workspace-retrieval ranking benchmark and dated report
-  under `docs/benchmark/`, separating warm ranking costs from unmeasured
-  collection and inference latency.
-- PTY smoke tests use a known shell without personal startup files and check
-  actual command output; shell-exit coverage runs by default again. Removed the
-  ignored shell-script LSP handshake duplicate in favor of the existing
-  real-process integration scenario.
 
 ### Theme polish
 
@@ -415,14 +383,6 @@ All notable changes to rust-editor are documented in this file.
   cancellation, non-blocking shutdown and panic-to-failure replies. Find's
   synchronous fallback and mid-scan interruption remain separate follow-ups.
 
-- Performance documentation is consolidated under `docs/benchmark/`, with a
-  report index, the preserved August baseline and a fresh September working-tree
-  report covering edit/history, Find, CPU rendering and completion. Reports keep
-  raw benchmark output and distinguish CPU-stage timings from native latency;
-  the guide now uses repository recipes and documents comparison limits.
-  A separately labeled completion-keystroke refresh covers the later working
-  tree without overwriting the broader snapshot or claiming a controlled speedup.
-
 - Undo and Redo restore each existing pane's exact selections, cursor order,
   active cursor and desired columns, including positions clipped by deletions
   and overlapping selections merged while typing. History is tied to editor
@@ -476,12 +436,6 @@ All notable changes to rust-editor are documented in this file.
   unmodified key; unbound character input keeps its composed text. Chord state
   advances once even when the event has both interpretations.
 
-- Archived implemented Soft Wrap, Damage Tracking, Command Palette and Settings
-  v1 plans, with updated documentation links. Deferred work stays in active
-  follow-ups; the incomplete autocomplete plan and temporary handoff remain active.
-  Clarified the older, partially implemented Line Operations archive and linked
-  its unfinished join-line and whitespace commands from the active feature index.
-
 - Inline suggestions support OpenAI-compatible native-suffix completions and
   Mistral FIM through the existing cancelable HTTP/TLS worker. Optional bearer
   credentials are referenced by environment-variable name (required for Mistral),
@@ -493,9 +447,7 @@ All notable changes to rust-editor are documented in this file.
   existing configuration/lifecycle effects; unchanged choices do not save.
   Process-state updates refresh an open Settings or Language Servers modal
   without changing the query or selection.
-  Archived the completed Settings v1 plan; the unfinished keymap tab is preserved
-  in a separate active follow-up. Shared overlay rows keep a gap between their
-  text and right-hand accessories.
+  Shared overlay rows keep a gap between their text and right-hand accessories.
 
 - Added searchable Settings (`Cmd+,` / “Open Settings”) on the shared modal
   surface. Preset chips support keyboard cycling and direct clicks, save changes
@@ -554,10 +506,6 @@ All notable changes to rust-editor are documented in this file.
 - Workspace edits prepare closed text files in the background before applying
   edits or acknowledging success. Changed/closed targets and load failures
   reject the deferred operation; code-action follow-up commands wait for edits.
-
-- Archived the implemented damage-tracking and superseded command-palette plans,
-  retaining unfinished history ideas in a follow-up note. Documentation indexes
-  now separate implemented soft wrap and selection features from active work.
 
 - Save, Save As and explicit reload replies are tied to the initiating document.
   Switching tabs cannot apply them to another buffer, and a stale reload cannot
@@ -625,13 +573,6 @@ All notable changes to rust-editor are documented in this file.
 - TabbyML inline completions through `transport: tabby`, using its native segments
   API and the shared cancellation, bounded-response, credential, filtering and
   acceptance pipeline. Model selection and generation limits stay server-side.
-
-- **Durable Amp conversation archive**: the 171 conversations referenced by
-  the AI-assisted development write-up now live in the repository, with an
-  inventory, chronological index, and provenance notes. README and website
-  links now point to the archive instead of the retired Amp profile and thread
-  URLs. Superseded roadmap and refactoring documents have also moved under
-  `docs/archived/`.
 
 - Local inline completion statistics record one outcome per offered response:
   accepted (including partial acceptance), dismissed, or fully typed through.
