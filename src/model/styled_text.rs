@@ -7,19 +7,48 @@
 
 use std::ops::Range;
 
-/// How a span is painted. The overlay has one monospace face, so `Strong`
-/// and `Accent` are synthetic-bold (double strike) rather than a bold face.
+/// How a span is painted. `Strong` and `Accent` use synthetic bold;
+/// code styles select the editor font independently of the UI prose font.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpanStyle {
     /// Emphasis (`**x**`, `*x*`, headings): synthetic bold, primary color.
     Strong,
-    /// Inline code / fenced code: a recessed chip behind the run.
+    /// Plain code; inline runs get a recessed chip, whole code lines do not.
     Code,
+    /// Code token colored with the current theme's syntax palette.
+    Syntax(crate::syntax::HighlightId),
     /// The thing to look at (signature help's active parameter): accent
     /// color, synthetic bold.
     Accent,
     /// Secondary text (signature counts, meta).
     Dim,
+}
+
+impl SpanStyle {
+    pub(crate) fn is_code(self) -> bool {
+        matches!(self, Self::Code | Self::Syntax(_))
+    }
+}
+
+/// Whether sorted, non-overlapping runs cover the entire range as code.
+pub(crate) fn code_spans_cover(
+    range: Range<usize>,
+    runs: impl IntoIterator<Item = (Range<usize>, SpanStyle)>,
+) -> bool {
+    let mut covered = range.start;
+    for (run, style) in runs {
+        if run.end <= covered {
+            continue;
+        }
+        if run.start > covered || !style.is_code() {
+            return false;
+        }
+        covered = run.end;
+        if covered >= range.end {
+            return true;
+        }
+    }
+    false
 }
 
 /// `range` is a byte range into the owning `StyledText::text`; spans are
@@ -106,7 +135,7 @@ impl StyledText {
         );
     }
 
-    /// Splits off the leading block of whole `Code` lines (a hover's
+    /// Splits off the leading block of whole code lines (a hover's
     /// signature fence) from the prose that follows: `(code, rest)`. `code`
     /// is `None` when the text doesn't start with a code line. The
     /// separating blank line, if any, is dropped from `rest`.
@@ -119,9 +148,10 @@ impl StyledText {
                 // blank line before prose is left to the prose side).
                 continue;
             }
-            let covered = self.spans.iter().any(|s| {
-                s.style == SpanStyle::Code && s.range.start <= start && s.range.end >= line
-            });
+            let covered = code_spans_cover(
+                start..line,
+                self.spans.iter().map(|s| (s.range.clone(), s.style)),
+            );
             if covered {
                 end = line;
             } else {

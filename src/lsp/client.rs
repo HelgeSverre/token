@@ -35,7 +35,7 @@ use serde_json::{json, Value};
 use super::transport::{read_message, write_message};
 use super::{LspServerId, ServerState};
 use crate::messages::{LspMsg, Msg};
-use crate::model::{SpanStyle, StyledText};
+use crate::model::StyledText;
 
 /// The exact client capabilities block from lsp-integration.md's
 /// "Client Capabilities" section. Rule stated there: never advertise a
@@ -1618,11 +1618,8 @@ fn documentation_to_styled(doc: &lsp_types::Documentation) -> StyledText {
 fn marked_string_to_styled(marked: &lsp_types::MarkedString) -> StyledText {
     match marked {
         lsp_types::MarkedString::String(markdown) => markdown_to_styled(markdown),
-        // A bare code block by construction: one `Code` run.
         lsp_types::MarkedString::LanguageString(ls) => {
-            let mut out = StyledText::default();
-            out.push_styled(&ls.value, SpanStyle::Code);
-            out
+            crate::lsp::markdown::code_to_styled(&ls.value, &ls.language)
         }
     }
 }
@@ -2400,12 +2397,12 @@ mod tests {
     #[test]
     fn hover_result_array_of_marked_strings_joins_with_blank_line() {
         let result = json!({ "contents": ["one", { "language": "rust", "value": "two()" }] });
-        assert_eq!(
-            parse_hover_result(Some(&result))
-                .as_ref()
-                .map(|t| t.text.as_str()),
-            Some("one\n\ntwo()")
-        );
+        let text = parse_hover_result(Some(&result)).unwrap();
+        assert_eq!(text.text, "one\n\ntwo()");
+        assert!(text.spans.iter().any(|span| {
+            matches!(span.style, crate::model::SpanStyle::Syntax(_))
+                && &text.text[span.range.clone()] == "two"
+        }));
     }
 
     #[test]

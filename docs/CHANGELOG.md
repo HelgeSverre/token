@@ -100,6 +100,9 @@ All notable changes to rust-editor are documented in this file.
 
 ### Documentation cards
 
+- Language-tagged code snippets in hover, completion and signature documentation
+  use the editor's syntax highlighting and current theme colors. Unknown languages
+  remain plain code, and inline identifiers retain their compact code styling.
 - Hover documentation now scrolls through the full signature and prose instead
   of cutting off long content. Use the mouse wheel, Alt+PageUp/PageDown, or the
   shared footer and F1 expansion controls without moving the editor caret.

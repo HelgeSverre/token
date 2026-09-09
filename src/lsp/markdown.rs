@@ -4,7 +4,51 @@
 //! text. No resource loading or executable markup enters an overlay.
 
 use crate::model::{SpanStyle, StyledText};
-use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+use crate::syntax::LanguageId;
+use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+
+/// Preserve literal source and code typography while adding theme-independent
+/// syntax tokens. Unknown/unlabelled languages remain plain code.
+pub(crate) fn code_to_styled(source: &str, info: &str) -> StyledText {
+    let language = info
+        .split(|c: char| c.is_whitespace() || c == ',')
+        .next()
+        .and_then(LanguageId::from_code_fence_info)
+        .unwrap_or(LanguageId::PlainText);
+    let highlights = crate::syntax::highlight_snippet(source, language);
+    if highlights.lines.is_empty() {
+        let mut out = StyledText::default();
+        out.push_styled(source, SpanStyle::Code);
+        return out;
+    }
+    let mut out = StyledText::plain(source);
+    let mut offset = 0;
+    for (row, line) in source.split_inclusive('\n').enumerate() {
+        let mut tokens = highlights.get_line_tokens(row);
+        for (column, (byte, ch)) in line.char_indices().enumerate() {
+            // Match LineHighlights::highlight_at's first-containing-token
+            // precedence without rescanning earlier tokens for every character.
+            while tokens.first().is_some_and(|token| token.end_col <= column) {
+                tokens = &tokens[1..];
+            }
+            let style = tokens
+                .first()
+                .filter(|token| token.start_col <= column && ch != '\n')
+                .map_or(SpanStyle::Code, |token| SpanStyle::Syntax(token.highlight));
+            let end = offset + byte + ch.len_utf8();
+            if let Some(last) = out.spans.last_mut().filter(|last| last.style == style) {
+                last.range.end = end;
+            } else {
+                out.spans.push(crate::model::Span {
+                    range: offset + byte..end,
+                    style,
+                });
+            }
+        }
+        offset += line.len();
+    }
+    out
+}
 
 /// Reduces Markdown to the overlay's shared text and non-overlapping spans.
 /// Lists, quotes and tables retain readable text structure; code remains
@@ -39,9 +83,13 @@ pub fn markdown_to_styled(markdown: &str) -> StyledText {
                 }
                 Tag::Strong | Tag::Emphasis => text.strong += 1,
                 Tag::Strikethrough => text.dim += 1,
-                Tag::CodeBlock(_) => {
+                Tag::CodeBlock(kind) => {
                     text.boundary(1);
-                    text.code = true;
+                    let info = match kind {
+                        CodeBlockKind::Fenced(info) => info.into_string(),
+                        CodeBlockKind::Indented => String::new(),
+                    };
+                    text.code = Some((String::new(), info));
                 }
                 Tag::BlockQuote(_) => {
                     text.boundary(1);
@@ -89,7 +137,12 @@ pub fn markdown_to_styled(markdown: &str) -> StyledText {
                 TagEnd::Strong | TagEnd::Emphasis => text.strong -= 1,
                 TagEnd::Strikethrough => text.dim -= 1,
                 TagEnd::CodeBlock => {
-                    text.code = false;
+                    if let Some((source, info)) = text.code.take() {
+                        let code = code_to_styled(&source, &info);
+                        for span in &code.spans {
+                            text.push(&code.text[span.range.clone()], Some(span.style));
+                        }
+                    }
                     text.boundary(1);
                 }
                 TagEnd::BlockQuote(_) => {
@@ -109,7 +162,11 @@ pub fn markdown_to_styled(markdown: &str) -> StyledText {
                 _ => {}
             },
             Event::Text(value) | Event::Html(value) | Event::InlineHtml(value) => {
-                text.push(&value, text.style());
+                if let Some((source, _)) = &mut text.code {
+                    source.push_str(&value);
+                } else {
+                    text.push(&value, text.style());
+                }
             }
             Event::Code(value) | Event::InlineMath(value) | Event::DisplayMath(value) => {
                 text.push(&value, Some(SpanStyle::Code));
@@ -142,7 +199,7 @@ struct CardText {
     breaks: usize,
     strong: usize,
     dim: usize,
-    code: bool,
+    code: Option<(String, String)>,
     quotes: usize,
     lists: Vec<Option<u64>>,
     column: usize,
@@ -150,9 +207,7 @@ struct CardText {
 
 impl CardText {
     fn style(&self) -> Option<SpanStyle> {
-        if self.code {
-            Some(SpanStyle::Code)
-        } else if self.dim > 0 {
+        if self.dim > 0 {
             Some(SpanStyle::Dim)
         } else if self.strong > 0 {
             Some(SpanStyle::Strong)
@@ -334,13 +389,11 @@ mod tests {
             t.text,
             "Signature\nfn f(a: *const u8)\nsee docs and [valid]\n\nend"
         );
-        assert_eq!(
-            spans(&t),
-            vec![
-                ("Signature", SpanStyle::Strong),
-                ("fn f(a: *const u8)\n", SpanStyle::Code),
-            ]
-        );
+        assert_eq!(spans(&t)[0], ("Signature", SpanStyle::Strong));
+        assert!(crate::model::styled_text::code_spans_cover(
+            10..28,
+            t.spans.iter().map(|span| (span.range.clone(), span.style)),
+        ));
         // Old flattener behaviour retained for the plaintext view.
         assert_eq!(markdown_to_plain_text("a\n* * *\nb"), "a\n\nb");
         assert_eq!(
@@ -448,6 +501,8 @@ mod tests {
             "## **Header** &amp; `x`",
             "`unclosed **thing",
             "~~~\nα\n\nβ\n~~~",
+            "```rust,ignore\nfn café() { let 猫 = \"hé\"; }\n```",
+            "> ```rust\n> fn café() {}\n> ```",
             "",
             "\n",
             "***",
@@ -468,10 +523,43 @@ mod tests {
         let t = markdown_to_styled("First paragraph.\n\nSecond **paragraph**.\n\n```rust\nfn f() {\n    call();\n\n    again();\n}\n```\n\nLast.");
         assert_eq!(t.text, "First paragraph.\n\nSecond paragraph.\n\nfn f() {\n    call();\n\n    again();\n}\n\nLast.");
         assert_eq!(&t.text[t.spans[0].range.clone()], "paragraph");
-        assert!(t
-            .spans
-            .iter()
-            .any(|s| s.style == SpanStyle::Code
-                && t.text[s.range.clone()].contains("\n\n    again();")));
+        let start = t.text.find("fn f()").unwrap();
+        let end = t.text.find("\n\nLast.").unwrap();
+        assert!(crate::model::styled_text::code_spans_cover(
+            start..end,
+            t.spans.iter().map(|span| (span.range.clone(), span.style)),
+        ));
+    }
+
+    #[test]
+    fn snippets_keep_language_colors_and_literal_source() {
+        let keyword = SpanStyle::Syntax(crate::syntax::highlight_id_for_name("keyword").unwrap());
+        let string = SpanStyle::Syntax(crate::syntax::highlight_id_for_name("string").unwrap());
+        let source = "fn café() { let value = \"猫\"; }";
+        let rust = markdown_to_styled(&format!("```rust,ignore\n{source}\n```\n\nProse `value`."));
+        let (code, prose) = rust.split_leading_code();
+        let code = code.unwrap();
+        assert_eq!(code.text, source);
+        assert!(spans(&code).contains(&("fn", keyword)));
+        assert!(spans(&code).contains(&("\"猫\"", string)));
+        assert_eq!(spans(&prose), vec![("value", SpanStyle::Code)]);
+
+        let quoted = markdown_to_styled("> ```rust\n> fn café() { let value = \"猫\"; }\n> ```");
+        assert_eq!(quoted.text, format!("│ {source}"));
+        assert!(spans(&quoted).contains(&("\"猫\"", string)));
+
+        let sema = code_to_styled("(define x \"猫\")", "sema");
+        assert!(spans(&sema).contains(&("\"猫\"", string)));
+        for info in ["", "unknown-language"] {
+            assert_eq!(
+                spans(&code_to_styled(source, info)),
+                vec![(source, SpanStyle::Code)]
+            );
+        }
+        let large = "x".repeat(crate::util::ByteSize::kibibytes(32).as_usize() + 1);
+        assert_eq!(
+            spans(&code_to_styled(&large, "rust")),
+            vec![(large.as_str(), SpanStyle::Code)]
+        );
     }
 }

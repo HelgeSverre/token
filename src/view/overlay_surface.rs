@@ -1556,6 +1556,7 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
 /// Resolved colors pulled once from `OverlayTheme` per render call.
 struct Palette {
     scrollbar: ScrollbarColors,
+    syntax: crate::theme::SyntaxTheme,
     panel_bg: u32,
     hairline: u32,
     text_primary: u32,
@@ -1583,9 +1584,11 @@ struct Palette {
 impl Palette {
     fn from_theme(theme: &crate::theme::Theme) -> Self {
         let scrollbar = ScrollbarColors::from(&theme.scrollbar);
+        let syntax = theme.syntax.clone();
         let theme = &theme.overlay;
         Self {
             scrollbar,
+            syntax,
             panel_bg: theme.panel_background.to_argb_u32(),
             hairline: theme.hairline.to_argb_u32(),
             text_primary: theme.text_primary.to_argb_u32(),
@@ -3220,7 +3223,7 @@ fn documentation_style(
     mut base: crate::layout::TextStyle,
     span: Option<SpanStyle>,
 ) -> crate::layout::TextStyle {
-    if base.code || span == Some(SpanStyle::Code) {
+    if base.code || span.is_some_and(SpanStyle::is_code) {
         base.code = true;
         base.size *= 0.92;
     }
@@ -3598,8 +3601,11 @@ fn draw_styled_run(
     let chip_pad = scaled(2.0, scale_factor);
     // A standalone code line already reads as a block. Reserve chips for
     // identifiers embedded in prose, avoiding a second wash on signatures.
-    let code_line = matches!(line.runs.as_slice(), [(range, SpanStyle::Code)]
-        if range.start == 0 && range.end == line.text.len());
+    let code_line = base_style.code
+        || crate::model::styled_text::code_spans_cover(
+            0..line.text.len(),
+            line.runs.iter().cloned(),
+        );
     let mut cursor = 0usize;
     let mut cx = x as f32;
     let mut segment = |frame: &mut Frame,
@@ -3621,6 +3627,17 @@ fn draw_styled_run(
         let w = painter.measure_sized(text, size, 0.0);
         let sx = cx.round() as usize;
         match style {
+            Some(SpanStyle::Syntax(id)) => {
+                painter.draw_sized(
+                    frame,
+                    sx,
+                    text_y,
+                    text,
+                    size,
+                    0.0,
+                    colors.syntax.color_for_highlight(id).to_argb_u32(),
+                );
+            }
             Some(SpanStyle::Code) => {
                 let inset = if documentation {
                     scaled(2.0, scale_factor)
@@ -3945,7 +3962,7 @@ mod tests {
             test_painter(&font, &mut cache).with_ui_font(&ui_font, &mut ui_cache, FontRole::Ui);
         let before = painter.measure_sized("proportional width", 13.0, 0.0);
         let docs = crate::lsp::markdown::markdown_to_styled(
-            "Replace `current` with `(map/update m key f)` and keep café readable.",
+            "Replace `current` with `(map/update m key f)` and keep café readable.\n\n```rust\nfn café() { let value = \"猫\"; }\n```",
         );
         let lines = wrap_documentation(
             &docs.text,
@@ -3985,7 +4002,12 @@ mod tests {
             code: true,
             ..crate::layout::TextStyle::sized(SIZE_ROW)
         };
-        for span in [None, Some(SpanStyle::Accent), Some(SpanStyle::Code)] {
+        for span in [
+            None,
+            Some(SpanStyle::Accent),
+            Some(SpanStyle::Code),
+            Some(SpanStyle::Syntax(10)),
+        ] {
             let style = documentation_style(code, span);
             assert_eq!(style.font_role(FontRole::Ui), FontRole::Code);
             assert_eq!(style.size, SIZE_ROW * 0.92);
@@ -4416,7 +4438,14 @@ mod tests {
         assert!(text.y >= code.y + code.h, "prose sits below the code block");
         let (code_lines, _) = l.docs_code_plan.as_ref().unwrap();
         assert_eq!(code_lines[0].text, "fn foo() -> u8");
-        assert_eq!(code_lines[0].runs, vec![(0..14, SpanStyle::Code)]);
+        assert!(crate::model::styled_text::code_spans_cover(
+            0..code_lines[0].text.len(),
+            code_lines[0].runs.iter().cloned(),
+        ));
+        assert!(code_lines[0]
+            .runs
+            .iter()
+            .any(|(_, style)| matches!(style, SpanStyle::Syntax(_))));
         let (prose_lines, _, _) = l.docs_plan.as_ref().unwrap();
         assert_eq!(prose_lines[0].text, "Returns a byte.");
         assert_eq!(prose_lines[0].runs, vec![(10..14, SpanStyle::Strong)]);
