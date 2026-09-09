@@ -59,6 +59,7 @@ pub(crate) struct LanguageDefinition {
     pub compound_suffixes: &'static [&'static str],
     pub parser: Option<ParserDefinition>,
     pub selection: SelectionProfile,
+    pub folding: super::folding::FoldingProfile,
     pub outline: &'static dyn OutlineBehavior,
     pub injections: &'static dyn InjectionBehavior,
 }
@@ -86,6 +87,7 @@ macro_rules! parser_language_module {
                     highlights: $highlights,
                 }),
                 selection: $selection,
+                folding: super::super::folding::profile(LanguageId::$id),
                 outline: $outline,
                 injections: $injections,
             };
@@ -108,6 +110,7 @@ macro_rules! plain_language_module {
                 compound_suffixes: &$suffixes,
                 parser: None,
                 selection: $selection,
+                folding: super::super::folding::profile(LanguageId::$id),
                 outline: $outline,
                 injections: $injections,
             };

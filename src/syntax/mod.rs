@@ -20,6 +20,7 @@
 //! - Rust
 
 mod compat;
+pub mod folding;
 mod highlights;
 mod languages;
 mod parser;

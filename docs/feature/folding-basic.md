@@ -1,5 +1,10 @@
 # Code Folding - Basic (Indentation-Based)
 
+> **Implementation plan updated 2026-09-09:** Use the
+> [coordinated save, EditorConfig, and folding plan](file-policy-and-folding-plan.md#basic-code-folding).
+> The historical sketch below is superseded. Folding must compose with the
+> implemented soft-wrap, pixel-scroll, and ghost-text viewport mapping.
+
 Collapse and expand code regions based on indentation levels
 
 > **Status:** 📋 Planned
@@ -30,6 +35,7 @@ Collapse and expand code regions based on indentation levels
 ### Current State
 
 The editor has:
+
 - Line number gutter rendering
 - Syntax highlighting (tree-sitter)
 - Viewport scrolling with line tracking
@@ -465,13 +471,13 @@ This should not be implemented as a one-off `render_document()` branch. The same
 
 ## Keybindings
 
-| Action | Mac | Windows/Linux | Command |
-|--------|-----|---------------|---------|
-| Toggle fold at cursor | `Cmd+Option+[` | `Ctrl+Shift+[` | `ToggleFold` |
-| Fold at cursor | `Cmd+Option+[` | `Ctrl+Shift+[` | `Fold` |
-| Unfold at cursor | `Cmd+Option+]` | `Ctrl+Shift+]` | `Unfold` |
-| Fold all | `Cmd+K Cmd+0` | `Ctrl+K Ctrl+0` | `FoldAll` |
-| Unfold all | `Cmd+K Cmd+J` | `Ctrl+K Ctrl+J` | `UnfoldAll` |
+| Action                | Mac            | Windows/Linux   | Command      |
+| --------------------- | -------------- | --------------- | ------------ |
+| Toggle fold at cursor | `Cmd+Option+[` | `Ctrl+Shift+[`  | `ToggleFold` |
+| Fold at cursor        | `Cmd+Option+[` | `Ctrl+Shift+[`  | `Fold`       |
+| Unfold at cursor      | `Cmd+Option+]` | `Ctrl+Shift+]`  | `Unfold`     |
+| Fold all              | `Cmd+K Cmd+0`  | `Ctrl+K Ctrl+0` | `FoldAll`    |
+| Unfold all            | `Cmd+K Cmd+J`  | `Ctrl+K Ctrl+J` | `UnfoldAll`  |
 
 ```yaml
 # keymap.yaml additions

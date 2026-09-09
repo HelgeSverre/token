@@ -156,6 +156,7 @@ mod tests {
             matched_brackets: None,
             soft_wrap: false,
             wrap_cache: token::wrap::WrapCache::new(),
+            folds: Default::default(),
             ghost_text: Default::default(),
             overview_cache: Default::default(),
         };
@@ -763,6 +764,7 @@ mod tests {
             matched_brackets: None,
             soft_wrap: false,
             wrap_cache: token::wrap::WrapCache::new(),
+            folds: Default::default(),
             ghost_text: Default::default(),
             overview_cache: Default::default(),
         };

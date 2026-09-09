@@ -160,6 +160,12 @@ fn update_editor_inner(model: &mut AppModel, msg: EditorMsg) -> Option<Cmd> {
             move_cursors(model, arrow_movement(direction), MovementSelection::Move)
         }
 
+        EditorMsg::Fold {
+            editor_id,
+            header,
+            action,
+        } => super::folding::action(model, editor_id, header, action),
+
         EditorMsg::ToggleSoftWrap => {
             if !model.editor().is_plain_text_mode() {
                 return None;

@@ -1,0 +1,5 @@
+root = TrUe
+ignore = false
+
+[*.a]
+child=true

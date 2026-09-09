@@ -10,7 +10,7 @@
 use crate::model::editor_area::{EditorGroup, Rect};
 use crate::model::{AppModel, Document, EditorState};
 
-use crate::util::text::TABULATOR_WIDTH;
+use crate::util::text::TabStops;
 
 // ============================================================================
 // Tab Expansion Helpers
@@ -34,29 +34,7 @@ use std::borrow::Cow;
 /// assert_eq!(&*expanded, "a   b");  // Tab becomes 3 spaces (to reach column 4)
 /// ```
 pub fn expand_tabs_for_display(text: &str) -> Cow<'_, str> {
-    // Fast path: if no tabs, return borrowed reference (no allocation)
-    if !text.contains('\t') {
-        return Cow::Borrowed(text);
-    }
-
-    // Slow path: expand tabs
-    let mut result = String::with_capacity(text.len() * 2);
-    let mut visual_col = 0;
-
-    for ch in text.chars() {
-        if ch == '\t' {
-            let spaces = TABULATOR_WIDTH - (visual_col % TABULATOR_WIDTH);
-            for _ in 0..spaces {
-                result.push(' ');
-            }
-            visual_col += spaces;
-        } else {
-            result.push(ch);
-            visual_col += 1;
-        }
-    }
-
-    Cow::Owned(result)
+    TabStops::default().expand(text)
 }
 
 /// Convert a visual column into a viewport-relative pixel x-coordinate.
@@ -183,6 +161,7 @@ pub fn pixel_to_line_and_visual_column_in_group(
         &model.metrics,
         document.line_count(),
         !document.diagnostics.is_empty(),
+        editor.is_plain_text_mode(),
     )
     .round() as f64;
 
@@ -225,6 +204,7 @@ pub fn pixel_to_cursor_in_group(
         &model.metrics,
         document.line_count(),
         !document.diagnostics.is_empty(),
+        editor.is_plain_text_mode(),
     )
     .round() as f64;
     let text_start_y = model.metrics.tab_bar_height as f64;
@@ -238,6 +218,47 @@ pub fn pixel_to_cursor_in_group(
 // ============================================================================
 // GutterLayout - Gutter lane widths
 // ============================================================================
+
+/// The collapsed-line decoration's geometry is shared by painting and hit tests.
+pub fn fold_badge_rect(
+    editor: &EditorState,
+    document: &Document,
+    layout: &GroupLayout,
+    header: usize,
+    char_width: f32,
+    line_height: usize,
+) -> Option<Rect> {
+    if !editor.is_plain_text_mode() {
+        return None;
+    }
+    let index = editor
+        .folds
+        .collapsed()
+        .binary_search_by_key(&header, |r| r.header)
+        .ok()?;
+    let region = &editor.folds.collapsed()[index];
+    let map = editor.viewport_map(document);
+    if map.hidden_header(header).is_some() {
+        return None;
+    }
+    let (row, column) = map.display_position(document, header, document.line_length(header));
+    let visible_row = row.checked_sub(map.top_line())?;
+    if visible_row >= map.drawn_rows() {
+        return None;
+    }
+    let x = layout.text_start_x as f64 + map.column_pixel_offset(column + 2, char_width);
+    let y = layout.content_y() as f64 + map.row_pixel_offset(visible_row, line_height as f64);
+    let count = region.end - region.header - 1;
+    let columns = count.checked_ilog10().unwrap_or(0) as usize + 5;
+    (x >= layout.text_start_x as f64).then(|| {
+        Rect::new(
+            x as f32,
+            y as f32,
+            columns as f32 * char_width,
+            line_height as f32,
+        )
+    })
+}
 
 /// Gutter lane widths, in physical pixels.
 ///
@@ -265,6 +286,7 @@ impl GutterLayout {
         metrics: &crate::model::ScaledMetrics,
         line_count: usize,
         has_marks: bool,
+        has_folds: bool,
     ) -> Self {
         // Round the marks lane and the combined gutter-border width from
         // the *same* single sum `gutter_border_x_scaled` uses, then
@@ -278,14 +300,19 @@ impl GutterLayout {
             0
         };
         let border_w = crate::model::gutter_border_x_scaled(
-            char_width, metrics, line_count, has_marks,
+            char_width, metrics, line_count, has_marks, has_folds,
         )
         .round() as u16;
-        let numbers_w = border_w.saturating_sub(marks_w);
+        let fold_w = if has_folds {
+            char_width.round() as u16
+        } else {
+            0
+        };
+        let numbers_w = border_w.saturating_sub(marks_w + fold_w);
         Self {
             marks_w,
             numbers_w,
-            fold_w: 0,
+            fold_w,
             diff_w: 0,
         }
     }
@@ -394,11 +421,17 @@ impl GroupLayout {
         let has_marks = document.is_some_and(|doc| !doc.diagnostics.is_empty());
 
         let rect_x = group_rect.x.round() as usize;
-        let gutter = GutterLayout::new(char_width, metrics, line_count, has_marks);
+        let has_folds = group
+            .active_tab()
+            .and_then(|tab| model.editor_area.editors.get(&tab.editor_id))
+            .is_some_and(EditorState::is_plain_text_mode);
+        let gutter = GutterLayout::new(char_width, metrics, line_count, has_marks, has_folds);
         let gutter_right_x = rect_x + gutter.total_width();
         let text_start_x = rect_x
-            + crate::model::text_start_x_scaled(char_width, metrics, line_count, has_marks).round()
-                as usize;
+            + crate::model::text_start_x_scaled(
+                char_width, metrics, line_count, has_marks, has_folds,
+            )
+            .round() as usize;
 
         Self {
             group_rect,

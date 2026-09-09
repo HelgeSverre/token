@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::commands::{Cmd, CommandId, ConfigResource};
 use crate::messages::{AppMsg, DockMsg, LayoutMsg, TerminalMsg, UiMsg};
-use crate::model::{AppModel, FileRequestKind, ModalId};
+use crate::model::{AppModel, DocumentId, FileRequestKind, ModalId, SaveIntent, SaveReason};
 use crate::panel::PanelId;
 use crate::syntax::LanguageId;
 
@@ -58,15 +58,9 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             if model.document().external_change.is_some() {
                 return super::file_change::show_focused(model, true);
             }
-            // `format_on_save`: the formatting resolution (or its
-            // gate/timeout fallback in the runtime) performs the save.
-            if model.config.format_on_save && model.config.lsp.enabled {
-                if let Some(cmd) = super::lsp::request_formatting(model, false, true) {
-                    return Some(cmd);
-                }
-            }
             save_document(model)
         }
+        AppMsg::AutoSave(request) => super::auto_save::save(model, request),
 
         AppMsg::LoadFile(path) => {
             let target = model
@@ -77,7 +71,13 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             Some(Cmd::LoadFile { target, path })
         }
 
-        AppMsg::FilesChanged(paths) => super::file_change::changed(model, &paths),
+        AppMsg::FilesChanged(paths) => {
+            super::file_policy::changed(model, &paths);
+            super::file_change::changed(model, &paths)
+        }
+        AppMsg::FilePolicyResolved { request, result } => {
+            super::file_policy::resolved(model, request, result)
+        }
         AppMsg::FileObserved { target, observed } => {
             super::file_change::observed(model, target, observed)
         }
@@ -223,7 +223,7 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
                 return None;
             }
             if let Some(path) = path {
-                begin_save(model, target.document_id, path)
+                request_save(model, target.document_id, path, SaveReason::SaveAs)
             } else {
                 model.ui.set_status("Save cancelled");
                 Some(Cmd::redraw_status_bar())
@@ -328,12 +328,156 @@ pub(super) fn save_document(model: &mut AppModel) -> Option<Cmd> {
     let doc = model.try_document()?;
     let document_id = doc.id?;
     match doc.file_path.clone() {
-        Some(path) => begin_save(model, document_id, path),
+        Some(path) => request_save(model, document_id, path, SaveReason::Manual),
         None => {
             model.ui.set_status("No file path - cannot save");
             Some(Cmd::redraw_status_bar())
         }
     }
+}
+
+/// Prepare a specific document without moving focus or taking its final snapshot
+/// until any formatter has completed. The token also invalidates older replies.
+pub(super) fn request_save(
+    model: &mut AppModel,
+    document_id: DocumentId,
+    path: PathBuf,
+    reason: SaveReason,
+) -> Option<Cmd> {
+    if !can_save_document(model, document_id) {
+        return Some(Cmd::redraw_status_bar());
+    }
+    let doc = model.editor_area.documents.get_mut(&document_id)?;
+    if doc.external_change.is_some() && reason != SaveReason::SaveAs {
+        return None;
+    }
+    let automatic_policy = reason
+        .is_automatic()
+        .then(|| model.config.auto_save.clone());
+    let intent = SaveIntent::new(doc, document_id, path, reason, automatic_policy);
+    doc.pending_save = Some(intent.clone());
+    if let Some(command) = super::file_policy::prepare_save(model, &intent) {
+        return Some(command);
+    }
+    prepare_resolved_save(model, intent)
+}
+
+pub(super) fn prepare_resolved_save(model: &mut AppModel, intent: SaveIntent) -> Option<Cmd> {
+    let document_id = intent.document_id;
+    let reason = intent.reason;
+    let doc = model.editor_area.documents.get_mut(&document_id)?;
+    if !intent.is_current(doc) {
+        return None;
+    }
+    if reason.is_automatic()
+        && (doc.revision != intent.revision
+            || intent.automatic_policy.as_ref() != Some(&model.config.auto_save))
+    {
+        doc.pending_save = None;
+        return None;
+    }
+    let format = if reason.is_automatic() {
+        model.config.auto_save.format_on_save
+    } else {
+        model.config.format_on_save
+    };
+    let same_language =
+        reason != SaveReason::SaveAs || LanguageId::from_path(&intent.path) == doc.language;
+    doc.pending_save = Some(intent.clone());
+    if format && model.config.lsp.enabled && doc.file_path.is_some() && same_language {
+        Some(Cmd::LspRequestFormatting {
+            document_id,
+            revision: doc.revision,
+            range: None,
+            options: super::lsp::formatting_options(intent.settings),
+            save: Some(intent),
+        })
+    } else {
+        finish_preparing_save(model, intent)
+    }
+}
+
+pub(super) fn finish_save_formatting(
+    model: &mut AppModel,
+    intent: SaveIntent,
+    revision: u64,
+    edits: Option<Vec<(lsp_types::Range, String)>>,
+) -> Option<Cmd> {
+    let doc = model.editor_area.documents.get(&intent.document_id)?;
+    if !intent.is_current(doc) {
+        return None;
+    }
+    if !doc
+        .pending_save
+        .as_ref()
+        .is_some_and(|pending| pending.resolution_generation == intent.resolution_generation)
+    {
+        return None;
+    }
+    let intent = doc.pending_save.clone()?;
+    if let Some(command) = super::file_policy::prepare_save(model, &intent) {
+        return Some(command);
+    }
+    let doc = model.editor_area.documents.get(&intent.document_id)?;
+    let current_policy = intent
+        .automatic_policy
+        .as_ref()
+        .is_none_or(|policy| policy == &model.config.auto_save);
+    if !current_policy || (intent.reason.is_automatic() && doc.revision != intent.revision) {
+        model
+            .editor_area
+            .documents
+            .get_mut(&intent.document_id)?
+            .pending_save = None;
+        return None;
+    }
+    let mut effects = None;
+    if doc.revision == revision
+        && doc.language == intent.language
+        && doc.text_policy_generation == intent.text_policy_generation
+        && doc.external_change.is_none()
+    {
+        if let Some(edits) = edits.as_deref() {
+            let planned = super::text_edits::plan_text_edits(doc, edits);
+            effects = super::text_edits::apply_planned_edits(
+                model,
+                intent.document_id,
+                &planned,
+                super::text_edits::EditCarets::Preserve,
+            );
+        }
+    }
+    let save = finish_preparing_save(model, intent);
+    if edits.is_none() && save.is_some() {
+        model
+            .ui
+            .set_status("Formatter unavailable, saved unformatted");
+    }
+    super::merge_cmds(effects, save)
+}
+
+fn finish_preparing_save(model: &mut AppModel, intent: SaveIntent) -> Option<Cmd> {
+    let doc = model.editor_area.documents.get_mut(&intent.document_id)?;
+    if !intent.is_current(doc) {
+        return None;
+    }
+    doc.pending_save = None;
+    if doc.external_change.is_some() && intent.reason != SaveReason::SaveAs {
+        return None;
+    }
+    let settings = intent
+        .destination_policy
+        .as_ref()
+        .filter(|_| model.config.editorconfig)
+        .map_or(doc.text_settings, |policy| {
+            policy.settings(model.config.text)
+        });
+    let cleanup = super::save_cleanup::apply(model, intent.document_id, settings);
+    let mut command = begin_save(model, intent.document_id, intent.path.clone())?;
+    if let Cmd::SaveFile { target, .. } = &mut command {
+        target.file_policy = intent.destination_policy.clone();
+    }
+    super::merge_cmds(cleanup, Some(command))
 }
 
 pub(super) fn begin_save(
@@ -393,6 +537,7 @@ fn finish_save(
         return None;
     }
     if let Err(error) = result {
+        doc.save_error = Some((target.revision, error.clone()));
         doc.file_io.check_again = true;
         model
             .ui
@@ -404,6 +549,18 @@ fn finish_save(
     let old_uri = doc.file_identity().map(|identity| identity.uri().clone());
     let old_path = doc.file_path.replace(path.clone());
     doc.set_file_identity(identity);
+    if model.config.editorconfig {
+        if let Some(policy) = target.file_policy {
+            let source = doc
+                .file_identity()
+                .map_or(path.as_path(), |id| id.path())
+                .to_path_buf();
+            doc.file_policy.enabled = true;
+            doc.file_policy.install(source, (*policy).clone());
+            doc.file_text_preferences = doc.file_policy.resolved.as_ref()?.preferences;
+            doc.resolve_text_settings(model.config.text);
+        }
+    }
     let renamed = old_path.as_ref() != Some(&path)
         || old_uri
             .as_ref()
@@ -481,7 +638,9 @@ pub(super) fn finish_load(
             .as_ref()
             .zip(doc.file_identity())
             .is_some_and(|(old, current)| old != current.uri());
+    doc.detected_line_ending = crate::model::LineEnding::detect(&content);
     doc.buffer = ropey::Rope::from(content);
+    doc.folds = None;
     doc.record_saved_buffer(doc.buffer.clone());
     doc.undo_stack.clear();
     doc.redo_stack.clear();
@@ -662,6 +821,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             update_ui(model, UiMsg::ToggleModal(ModalId::LspServers))
         }
         CommandId::SetLanguage => update_ui(model, UiMsg::ToggleModal(ModalId::LanguagePicker)),
+        CommandId::ShowFileTextSettings => super::file_policy::show_details(model),
         #[cfg(debug_assertions)]
         CommandId::TogglePerfOverlay => Some(Cmd::TogglePerfOverlay),
         #[cfg(debug_assertions)]
@@ -776,13 +936,7 @@ mod tests {
         model.config.format_on_save = true;
         let cmd = update_app(&mut model, AppMsg::SaveFile);
         assert!(
-            matches!(
-                cmd,
-                Some(Cmd::LspRequestFormatting {
-                    then_save: true,
-                    ..
-                })
-            ),
+            matches!(cmd, Some(Cmd::LspRequestFormatting { save: Some(_), .. })),
             "got {cmd:?}"
         );
         assert!(!model.ui.is_saving);
@@ -959,6 +1113,20 @@ mod tests {
             },
         )
         .expect("Save As should produce a command");
+        let Cmd::ResolveFilePolicy(request) = cmd else {
+            panic!("destination policy request")
+        };
+        let cmd = update_app(
+            &mut model,
+            AppMsg::FilePolicyResolved {
+                result: Ok(crate::editorconfig::ResolvedFilePolicy {
+                    path: request.path.clone(),
+                    ..Default::default()
+                }),
+                request,
+            },
+        )
+        .unwrap();
 
         // `file_path` (and thus every `path_to_uri` call) must not change
         // until the write actually lands — computing the URI against a

@@ -800,6 +800,28 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
         });
     }
 
+    let map = editor.viewport_map(document);
+    let row = map.visible_row_at_pixel(pt.y - content_y_start, model.line_height as f64);
+    if let Some(header) = map.doc_line_for_visible_row(row) {
+        if super::geometry::fold_badge_rect(
+            editor,
+            document,
+            &layout,
+            header,
+            char_width,
+            model.line_height,
+        )
+        .is_some_and(|rect| rect.contains(pt.x as f32, pt.y as f32))
+        {
+            return Some(HitTarget::EditorGutter {
+                group_id,
+                editor_id,
+                line: header,
+                lane: Some(super::geometry::LaneId::Fold),
+            });
+        }
+    }
+
     // Editor content area
     Some(HitTarget::EditorContent {
         group_id,

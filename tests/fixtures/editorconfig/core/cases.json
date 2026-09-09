@@ -1,0 +1,1786 @@
+[
+  {
+    "name": "meta_multiline",
+    "config": "meta.in",
+    "target": "@fixtures/meta/meta.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*answer=42[ \t\n\r]+$"
+    ]
+  },
+  {
+    "name": "star_single_ML",
+    "config": "star.in",
+    "target": "@fixtures/glob/ace.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*key=value[ \t\n\r]+keyc=valuec[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_zero_ML",
+    "config": "star.in",
+    "target": "@fixtures/glob/ae.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*key=value[ \t\n\r]+keyc=valuec[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_multiple_ML",
+    "config": "star.in",
+    "target": "@fixtures/glob/abcde.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*key=value[ \t\n\r]+keyc=valuec[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_over_slash",
+    "config": "star.in",
+    "target": "@fixtures/glob/a/e.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*keyc=valuec[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_after_slash_ML",
+    "config": "star.in",
+    "target": "@fixtures/glob/Bar/foo.txt",
+    "sorted": true,
+    "expected": [
+      "^[\n]*keyb=valueb[ \t\n\r]+keyc=valuec[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_matches_dot_file_after_slash_ML",
+    "config": "star.in",
+    "target": "@fixtures/glob/Bar/.editorconfig",
+    "sorted": true,
+    "expected": [
+      "^[\n]*keyb=valueb[ \t\n\r]+keyc=valuec[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_matches_dot_file",
+    "config": "star.in",
+    "target": "@fixtures/glob/.editorconfig",
+    "sorted": false,
+    "expected": [
+      "^keyc=valuec[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_after_slash_ML_in_subdir",
+    "config": "star.in",
+    "target": "@fixtures/glob/bat/Bar/foo.txt",
+    "sorted": true,
+    "expected": [
+      "^[\n]*^[ \t\n\r]*keyc=valuec[ \t\n\r]*$$"
+    ]
+  },
+  {
+    "name": "star_matches_dot_file_after_slash_ML_in_subdir",
+    "config": "star.in",
+    "target": "@fixtures/glob/bat/Bar/.editorconfig",
+    "sorted": true,
+    "expected": [
+      "^[\n]*^[ \t\n\r]*keyc=valuec[ \t\n\r]*$$"
+    ]
+  },
+  {
+    "name": "question_single",
+    "config": "question.in",
+    "target": "@fixtures/glob/some.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "question_zero",
+    "config": "question.in",
+    "target": "@fixtures/glob/som.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "question_multiple",
+    "config": "question.in",
+    "target": "@fixtures/glob/something.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "question_slash",
+    "config": "question.in",
+    "target": "@fixtures/glob/som/.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_close_inside",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/].g",
+    "sorted": false,
+    "expected": [
+      "^close_inside=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_close_outside",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/b].g",
+    "sorted": false,
+    "expected": [
+      "^close_outside=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_nclose_inside",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/c.g",
+    "sorted": false,
+    "expected": [
+      "^close_inside=false[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_nclose_outside",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/c].g",
+    "sorted": false,
+    "expected": [
+      "^close_outside=false[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_choice",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/a.a",
+    "sorted": false,
+    "expected": [
+      "^choice=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_choice2",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/c.a",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_nchoice",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/c.b",
+    "sorted": false,
+    "expected": [
+      "^choice=false[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_nchoice2",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/a.b",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_range",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/f.c",
+    "sorted": false,
+    "expected": [
+      "^range=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_range2",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/h.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_nrange",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/h.d",
+    "sorted": false,
+    "expected": [
+      "^range=false[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_nrange2",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/f.d",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_range_and_choice",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/e.e",
+    "sorted": false,
+    "expected": [
+      "^range_and_choice=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_choice_with_dash",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/-.f",
+    "sorted": false,
+    "expected": [
+      "^choice_with_dash=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_slash_inside1",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/ab/cd.i",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_slash_inside2",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/abecd.i",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_slash_inside3",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/ab[e/]cd.i",
+    "sorted": false,
+    "expected": [
+      "^slash_inside=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "brackets_slash_inside4",
+    "config": "brackets.in",
+    "target": "@fixtures/glob/ab[/c",
+    "sorted": false,
+    "expected": [
+      "^slash_half_open=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_word_choice1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/test.py",
+    "sorted": false,
+    "expected": [
+      "^choice=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_word_choice2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/test.js",
+    "sorted": false,
+    "expected": [
+      "^choice=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_word_choice3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/test.html",
+    "sorted": false,
+    "expected": [
+      "^choice=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_word_choice4",
+    "config": "braces.in",
+    "target": "@fixtures/glob/test.pyc",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_single_choice",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{single}.b",
+    "sorted": false,
+    "expected": [
+      "^choice=single[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_single_choice_negative",
+    "config": "braces.in",
+    "target": "@fixtures/glob/.b",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_empty_choice",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{}.c",
+    "sorted": false,
+    "expected": [
+      "^empty=all[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_empty_choice_negative",
+    "config": "braces.in",
+    "target": "@fixtures/glob/.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_empty_word1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/a.d",
+    "sorted": false,
+    "expected": [
+      "^empty=word[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_empty_word2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/ab.d",
+    "sorted": false,
+    "expected": [
+      "^empty=word[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_empty_word3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/ac.d",
+    "sorted": false,
+    "expected": [
+      "^empty=word[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_empty_word4",
+    "config": "braces.in",
+    "target": "@fixtures/glob/a,.d",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_empty_words1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/a.e",
+    "sorted": false,
+    "expected": [
+      "^empty=words[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_empty_words2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/ab.e",
+    "sorted": false,
+    "expected": [
+      "^empty=words[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_empty_words3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/ac.e",
+    "sorted": false,
+    "expected": [
+      "^empty=words[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_empty_words4",
+    "config": "braces.in",
+    "target": "@fixtures/glob/a,.e",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_no_closing",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{.f",
+    "sorted": false,
+    "expected": [
+      "^closing=false[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_no_closing_negative",
+    "config": "braces.in",
+    "target": "@fixtures/glob/.f",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/word,this}.g",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{also,this}.g",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/word.g",
+    "sorted": false,
+    "expected": [
+      "^nested=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested4",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{also}.g",
+    "sorted": false,
+    "expected": [
+      "^nested=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested5",
+    "config": "braces.in",
+    "target": "@fixtures/glob/this.g",
+    "sorted": false,
+    "expected": [
+      "^nested=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested_start1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{{a,b},c}.k",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested_start2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{a,b}.k",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested_start3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/a.k",
+    "sorted": false,
+    "expected": [
+      "^nested_start=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested_start4",
+    "config": "braces.in",
+    "target": "@fixtures/glob/b.k",
+    "sorted": false,
+    "expected": [
+      "^nested_start=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested_start5",
+    "config": "braces.in",
+    "target": "@fixtures/glob/c.k",
+    "sorted": false,
+    "expected": [
+      "^nested_start=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested_end1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{a,{b,c}}.l",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested_end2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{b,c}.l",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested_end3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/a.l",
+    "sorted": false,
+    "expected": [
+      "^nested_end=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested_end4",
+    "config": "braces.in",
+    "target": "@fixtures/glob/b.l",
+    "sorted": false,
+    "expected": [
+      "^nested_end=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_nested_end5",
+    "config": "braces.in",
+    "target": "@fixtures/glob/c.l",
+    "sorted": false,
+    "expected": [
+      "^nested_end=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_closing_in_beginning",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{},b}.h",
+    "sorted": false,
+    "expected": [
+      "^closing=inside[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_unmatched1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{{,b,c{d}.i",
+    "sorted": false,
+    "expected": [
+      "^unmatched=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_unmatched2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{.i",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_unmatched3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/b.i",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_unmatched4",
+    "config": "braces.in",
+    "target": "@fixtures/glob/c{d.i",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_unmatched5",
+    "config": "braces.in",
+    "target": "@fixtures/glob/.i",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_escaped_comma1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/a,b.txt",
+    "sorted": false,
+    "expected": [
+      "^comma=yes[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_escaped_comma2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/a.txt",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_escaped_comma3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/cd.txt",
+    "sorted": false,
+    "expected": [
+      "^comma=yes[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_escaped_brace1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/e.txt",
+    "sorted": false,
+    "expected": [
+      "^closing=yes[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_escaped_brace2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/}.txt",
+    "sorted": false,
+    "expected": [
+      "^closing=yes[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_escaped_brace3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/f.txt",
+    "sorted": false,
+    "expected": [
+      "^closing=yes[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_escaped_backslash1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/g.txt",
+    "sorted": false,
+    "expected": [
+      "^backslash=yes[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_escaped_backslash2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/\\.txt",
+    "sorted": false,
+    "expected": [
+      "^backslash=yes[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_escaped_backslash3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/i.txt",
+    "sorted": false,
+    "expected": [
+      "^backslash=yes[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_patterns_nested1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/some.j",
+    "sorted": false,
+    "expected": [
+      "^patterns=nested[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_patterns_nested2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/abe.j",
+    "sorted": false,
+    "expected": [
+      "^patterns=nested[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_patterns_nested3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/abf.j",
+    "sorted": false,
+    "expected": [
+      "^patterns=nested[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_patterns_nested4",
+    "config": "braces.in",
+    "target": "@fixtures/glob/abg.j",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_patterns_nested5",
+    "config": "braces.in",
+    "target": "@fixtures/glob/ace.j",
+    "sorted": false,
+    "expected": [
+      "^patterns=nested[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_patterns_nested6",
+    "config": "braces.in",
+    "target": "@fixtures/glob/acf.j",
+    "sorted": false,
+    "expected": [
+      "^patterns=nested[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_patterns_nested7",
+    "config": "braces.in",
+    "target": "@fixtures/glob/acg.j",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_patterns_nested8",
+    "config": "braces.in",
+    "target": "@fixtures/glob/abce.j",
+    "sorted": false,
+    "expected": [
+      "^patterns=nested[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_patterns_nested9",
+    "config": "braces.in",
+    "target": "@fixtures/glob/abcf.j",
+    "sorted": false,
+    "expected": [
+      "^patterns=nested[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_patterns_nested10",
+    "config": "braces.in",
+    "target": "@fixtures/glob/abcg.j",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_patterns_nested11",
+    "config": "braces.in",
+    "target": "@fixtures/glob/ae.j",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_patterns_nested12",
+    "config": "braces.in",
+    "target": "@fixtures/glob/.j",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_numeric_range1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/1",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_numeric_range2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/3",
+    "sorted": false,
+    "expected": [
+      "^number=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_numeric_range3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/15",
+    "sorted": false,
+    "expected": [
+      "^number=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_numeric_range4",
+    "config": "braces.in",
+    "target": "@fixtures/glob/60",
+    "sorted": false,
+    "expected": [
+      "^number=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_numeric_range5",
+    "config": "braces.in",
+    "target": "@fixtures/glob/5a",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_numeric_range6",
+    "config": "braces.in",
+    "target": "@fixtures/glob/120",
+    "sorted": false,
+    "expected": [
+      "^number=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_numeric_range7",
+    "config": "braces.in",
+    "target": "@fixtures/glob/121",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_numeric_range8",
+    "config": "braces.in",
+    "target": "@fixtures/glob/060",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_alpha_range1",
+    "config": "braces.in",
+    "target": "@fixtures/glob/{aardvark..antelope}",
+    "sorted": false,
+    "expected": [
+      "^words=a[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_alpha_range2",
+    "config": "braces.in",
+    "target": "@fixtures/glob/a",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_alpha_range3",
+    "config": "braces.in",
+    "target": "@fixtures/glob/aardvark",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_alpha_range4",
+    "config": "braces.in",
+    "target": "@fixtures/glob/agreement",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_alpha_range5",
+    "config": "braces.in",
+    "target": "@fixtures/glob/antelope",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "braces_alpha_range6",
+    "config": "braces.in",
+    "target": "@fixtures/glob/antimatter",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "utf_8_char",
+    "config": "utf8char.in",
+    "target": "@fixtures/glob/\u4e2d\u6587.txt",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator1",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/a/z.c",
+    "sorted": false,
+    "expected": [
+      "^key1=value1[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator2",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/amnz.c",
+    "sorted": false,
+    "expected": [
+      "^key1=value1[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator3",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/am/nz.c",
+    "sorted": false,
+    "expected": [
+      "^key1=value1[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator4",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/a/mnz.c",
+    "sorted": false,
+    "expected": [
+      "^key1=value1[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator5",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/amn/z.c",
+    "sorted": false,
+    "expected": [
+      "^key1=value1[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator6",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/a/mn/z.c",
+    "sorted": false,
+    "expected": [
+      "^key1=value1[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator7",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/b/z.c",
+    "sorted": false,
+    "expected": [
+      "^key2=value2[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator8",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/b/mnz.c",
+    "sorted": false,
+    "expected": [
+      "^key2=value2[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator9",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/b/mn/z.c",
+    "sorted": false,
+    "expected": [
+      "^key2=value2[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator10",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/bmnz.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator11",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/bm/nz.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator12",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/bmn/z.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator13",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/c/z.c",
+    "sorted": false,
+    "expected": [
+      "^key3=value3[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator14",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/cmn/z.c",
+    "sorted": false,
+    "expected": [
+      "^key3=value3[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator15",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/c/mn/z.c",
+    "sorted": false,
+    "expected": [
+      "^key3=value3[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator16",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/cmnz.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator17",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/cm/nz.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator18",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/c/mnz.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator19",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/d/z.c",
+    "sorted": false,
+    "expected": [
+      "^key4=value4[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator20",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/d/mn/z.c",
+    "sorted": false,
+    "expected": [
+      "^key4=value4[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator21",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/dmnz.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator22",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/dm/nz.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator23",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/d/mnz.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "star_star_over_separator24",
+    "config": "star_star.in",
+    "target": "@fixtures/glob/dmn/z.c",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "tab_width_default_ML",
+    "config": "tab_width_default.in",
+    "target": "@fixtures/properties/test.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*indent_size=4[ \t]*[\n\r]+indent_style=space[ \t]*[\n\r]+tab_width=4[\t\n\r]*$"
+    ]
+  },
+  {
+    "name": "tab_width_default_indent_size_tab_ML",
+    "config": "tab_width_default.in",
+    "target": "@fixtures/properties/test2.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*indent_size=tab[ \t]*[\n\r]+indent_style=tab[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "indent_size_default_ML",
+    "config": "indent_size_default.in",
+    "target": "@fixtures/properties/test.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*indent_size=tab[ \t]*[\n\r]+indent_style=tab[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "indent_size_default_space",
+    "config": "indent_size_default.in",
+    "target": "@fixtures/properties/test2.c",
+    "sorted": false,
+    "expected": [
+      "^indent_style=space[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "indent_size_default_with_tab_width_ML",
+    "config": "indent_size_default.in",
+    "target": "@fixtures/properties/test3.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*indent_size=2[ \t]*[\n\r]+indent_style=tab[ \t]*[\n\r]+tab_width=2[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "lowercase_values1_ML",
+    "config": "lowercase_values.in",
+    "target": "@fixtures/properties/test1.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*end_of_line=crlf[ \t]*[\n\r]+indent_style=space[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "lowercase_values2_ML",
+    "config": "lowercase_values.in",
+    "target": "@fixtures/properties/test2.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*charset=utf-8[ \t]*[\n\r]+insert_final_newline=true[ \t]*[\n\r]+trim_trailing_whitespace=false[ \t\n\r]*$$"
+    ]
+  },
+  {
+    "name": "lowercase_values3",
+    "config": "lowercase_values.in",
+    "target": "@fixtures/properties/test3.c",
+    "sorted": false,
+    "expected": [
+      "^test_property=TestValue[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "lowercase_names",
+    "config": "lowercase_names.in",
+    "target": "@fixtures/properties/test.c",
+    "sorted": false,
+    "expected": [
+      "^testproperty=testvalue[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "repeat_sections_ML",
+    "config": "basic.in",
+    "target": "@fixtures/parser/a.a",
+    "sorted": true,
+    "expected": [
+      "^[\n]*option1=value1[ \t]*[\n\r]+option2=value2[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "basic_cascade_ML",
+    "config": "basic.in",
+    "target": "@fixtures/parser/b.b",
+    "sorted": true,
+    "expected": [
+      "^[\n]*option1=c[ \t]*[\n\r]+option2=b[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "no_whitespace",
+    "config": "whitespace.in",
+    "target": "@fixtures/parser/test1.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "single_spaces_around_equals",
+    "config": "whitespace.in",
+    "target": "@fixtures/parser/test2.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "multiple_spaces_around_equals",
+    "config": "whitespace.in",
+    "target": "@fixtures/parser/test3.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "spaces_before_property_name",
+    "config": "whitespace.in",
+    "target": "@fixtures/parser/test4.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "spaces_after_property_value",
+    "config": "whitespace.in",
+    "target": "@fixtures/parser/test5.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "blank_lines_between_properties_ML",
+    "config": "whitespace.in",
+    "target": "@fixtures/parser/test6.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*key1=value1[ \t]*[\n\r]+key2=value2[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "spaces_in_section_name",
+    "config": "whitespace.in",
+    "target": "@fixtures/parser/ test 7 ",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "spaces_before_section_name",
+    "config": "whitespace.in",
+    "target": "@fixtures/parser/test8.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "spaces_after_section_name",
+    "config": "whitespace.in",
+    "target": "@fixtures/parser/test9.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "spaces_before_middle_property_ML",
+    "config": "whitespace.in",
+    "target": "@fixtures/parser/test10.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*key1=value1[ \t]*[\n\r]+key2=value2[ \t]*[\n\r]+key3=value3[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "value_with_whitespace_inside",
+    "config": "whitespace.in",
+    "target": "@fixtures/parser/test11.c",
+    "sorted": false,
+    "expected": [
+      "^key=value with whitespace inside[\n\r]+$"
+    ]
+  },
+  {
+    "name": "spaces_in_middle_key",
+    "config": "whitespace.in",
+    "target": "@fixtures/parser/test12.c",
+    "sorted": false,
+    "expected": [
+      "ke y=value[ \t\n\r]*"
+    ]
+  },
+  {
+    "name": "comment_before_props",
+    "config": "comments.in",
+    "target": "@fixtures/parser/test3.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "comment_between_props_ML",
+    "config": "comments.in",
+    "target": "@fixtures/parser/test4.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*key1=value1[ \t]*[\n\r]+key2=value2[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "semicolon_or_hash_in_property",
+    "config": "comments.in",
+    "target": "@fixtures/parser/test5.c",
+    "sorted": false,
+    "expected": [
+      "^key1=value",
+      " not comment[\n\r]+key2=value # not comment[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "backslashed_semicolon_or_hash_in_property",
+    "config": "comments.in",
+    "target": "@fixtures/parser/test6.c",
+    "sorted": false,
+    "expected": [
+      "^key1=value [\\]",
+      " not comment[\n\r]+key2=value [\\]# not comment[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "escaped_semicolon_in_section",
+    "config": "comments.in",
+    "target": "@fixtures/parser/test;.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "octothorpe_comment_before_props",
+    "config": "comments.in",
+    "target": "@fixtures/parser/test9.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "octothorpe_comment_between_props_ML",
+    "config": "comments.in",
+    "target": "@fixtures/parser/test10.c",
+    "sorted": true,
+    "expected": [
+      "^[\n]*key1=value1[ \t]*[\n\r]+key2=value2[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "octothorpe_in_value",
+    "config": "comments.in",
+    "target": "@fixtures/parser/test11.c",
+    "sorted": false,
+    "expected": [
+      "^key=value# not comment[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "escaped_octothorpe_in_section",
+    "config": "comments.in",
+    "target": "@fixtures/parser/test#.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "bom_at_head",
+    "config": "bom.in",
+    "target": "@fixtures/parser/a.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "crlf_linesep",
+    "config": "crlf.in",
+    "target": "@fixtures/parser/a.c",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "min_supported_key_length",
+    "config": "limits.in",
+    "target": "@fixtures/parser/test1",
+    "sorted": false,
+    "expected": [
+      "^aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=v1024[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "min_supported_value_length",
+    "config": "limits.in",
+    "target": "@fixtures/parser/test2",
+    "sorted": false,
+    "expected": [
+      "^k4096=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "min_supported_section_name_length",
+    "config": "limits.in",
+    "target": "@fixtures/parser/test3",
+    "sorted": false,
+    "expected": [
+      "^k1024=v1024[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "empty_editorconfig_file",
+    "config": "empty.in",
+    "target": "@fixtures/parser/test4",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "newlines_only_editorconfig_file",
+    "config": "newlines_only.in",
+    "target": "@fixtures/parser/test4",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "comments_only_editorconfig_file",
+    "config": "comments_only.in",
+    "target": "@fixtures/parser/test4",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "comments_and_newlines_editorconfig_file",
+    "config": "comments_and_newlines.in",
+    "target": "@fixtures/parser/test4",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "key_set_to_empty_string",
+    "config": "empty_values.in",
+    "target": "@fixtures/parser/test1",
+    "sorted": false,
+    "expected": [
+      "^key1=[\n\r]+key2=[\n\r]+key3=[\n\r]+$"
+    ]
+  },
+  {
+    "name": "leading_slash_relevance",
+    "config": "leading_slash.in",
+    "target": "@fixtures/parser/test1/file.java",
+    "sorted": false,
+    "expected": [
+      "^key1=val1[\n\r]+key2=val2[\n\r]+key3=val3[\n\r]+$"
+    ]
+  },
+  {
+    "name": "parent_directory",
+    "config": "parent_directory.in",
+    "target": "@fixtures/filetree/parent_directory/test.a",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "parent_and_current_dir_ML",
+    "config": "parent_directory.in",
+    "target": "@fixtures/filetree/parent_directory/test.b",
+    "sorted": true,
+    "expected": [
+      "^[\n]*key1=value1[ \t]*[\n\r]+key2=value2[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "parent_dir_overload",
+    "config": "parent_directory.in",
+    "target": "@fixtures/filetree/parent_directory/test.c",
+    "sorted": false,
+    "expected": [
+      "^key=valueB[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "parent_dir_overload_repeat",
+    "config": "parent_directory.in",
+    "target": "@fixtures/filetree/parent_directory/test.d",
+    "sorted": false,
+    "expected": [
+      "^key=value_c[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "parent_dir_overload_repeat2",
+    "config": "parent_directory.in",
+    "target": "@fixtures/filetree/parent_directory/test.e",
+    "sorted": false,
+    "expected": [
+      "^key=value_g[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "root_file",
+    "config": "root_file.in",
+    "target": "@fixtures/filetree/root_file/test.a",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "root_file_mixed_case",
+    "config": "root_file.in",
+    "target": "@fixtures/filetree/root_mixed/test.a",
+    "sorted": false,
+    "expected": [
+      "^child=true[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "root_pattern",
+    "config": "root_file.in",
+    "target": "@fixtures/filetree/root",
+    "sorted": false,
+    "expected": [
+      "^name=root[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "path_separator",
+    "config": "path_separator.in",
+    "target": "@fixtures/filetree/path/separator",
+    "sorted": false,
+    "expected": [
+      "^key1=value1[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "path_separator_backslash_in_cmd_line",
+    "config": "path_separator.in",
+    "target": "@fixtures/filetree\\path\\separator",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "nested_path_separator",
+    "config": "path_separator.in",
+    "target": "@fixtures/filetree/nested/path/separator",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "top_level_path_separator",
+    "config": "path_separator.in",
+    "target": "@fixtures/filetree/top/of/path",
+    "sorted": false,
+    "expected": [
+      "^key2=value2[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "top_level_path_separator_neg",
+    "config": "path_separator.in",
+    "target": "@fixtures/filetree/not/top/of/path",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "windows_separator",
+    "config": "path_separator.in",
+    "target": "@fixtures/filetree/windows/separator",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "windows_separator2",
+    "config": "path_separator.in",
+    "target": "@fixtures/filetree/windows/separator2",
+    "sorted": false,
+    "expected": [
+      "^[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "backslash_not_on_windows",
+    "config": "path_separator.in",
+    "target": "@fixtures/filetree/windows\\separator2",
+    "sorted": false,
+    "expected": [
+      "^key4=value4[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "path_with_special_chars",
+    "config": "path_with_special_chars.in",
+    "target": "@fixtures/filetree/path_with_special_[chars/test.a",
+    "sorted": false,
+    "expected": [
+      "^key=value[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "unset_charset",
+    "config": "unset.in",
+    "target": "@fixtures/filetree/unset/charset.txt",
+    "sorted": false,
+    "expected": [
+      "^charset=unset[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "unset_end_of_line",
+    "config": "unset.in",
+    "target": "@fixtures/filetree/unset/end_of_line.txt",
+    "sorted": false,
+    "expected": [
+      "^end_of_line=unset[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "unset_indent_size_ML",
+    "config": "unset.in",
+    "target": "@fixtures/filetree/unset/indent_size.txt",
+    "sorted": true,
+    "expected": [
+      "^[\n]*indent_size=unset[ \t\n\r]*tab_width=unset[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "unset_indent_style",
+    "config": "unset.in",
+    "target": "@fixtures/filetree/unset/indent_style.txt",
+    "sorted": false,
+    "expected": [
+      "^indent_style=unset[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "unset_insert_final_newline",
+    "config": "unset.in",
+    "target": "@fixtures/filetree/unset/insert_final_newline.txt",
+    "sorted": false,
+    "expected": [
+      "^insert_final_newline=unset[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "unset_tab_width",
+    "config": "unset.in",
+    "target": "@fixtures/filetree/unset/tab_width.txt",
+    "sorted": false,
+    "expected": [
+      "^tab_width=unset[ \t\n\r]*$"
+    ]
+  },
+  {
+    "name": "unset_trim_trailing_whitespace",
+    "config": "unset.in",
+    "target": "@fixtures/filetree/unset/trim_trailing_whitespace.txt",
+    "sorted": false,
+    "expected": [
+      "^trim_trailing_whitespace=unset[ \t\n\r]*$"
+    ]
+  }
+]

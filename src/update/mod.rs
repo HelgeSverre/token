@@ -15,6 +15,7 @@
 //! ```
 
 mod app;
+pub mod auto_save;
 mod completion;
 pub mod context_menu;
 mod csv;
@@ -22,6 +23,8 @@ mod dock;
 mod document;
 mod editor;
 mod file_change;
+mod file_policy;
+mod folding;
 mod image;
 pub mod inline;
 mod layout;
@@ -30,6 +33,7 @@ pub mod navigation;
 pub(crate) mod outline;
 mod preview;
 pub mod problems;
+mod save_cleanup;
 mod settings;
 mod syntax;
 mod terminal;
@@ -110,6 +114,14 @@ pub(crate) fn finish_test_file_opens(model: &mut AppModel, cmd: Option<Cmd>) -> 
 /// In release builds, it's a direct dispatch with zero overhead.
 #[inline]
 pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
+    // A user's navigation/edit/fold choice cancels delayed session restoration.
+    if matches!(&msg, Msg::Editor(_) | Msg::Document(_)) {
+        if let Some(editor) = model.editor_area.focused_editor_mut() {
+            editor.folds.pending = None;
+        }
+    }
+    let policy_commands = file_policy::reconcile(model);
+    let policy_damage = resolve_text_settings(model);
     match &msg {
         Msg::Editor(crate::messages::EditorMsg::ScrollPixels { .. }) => {}
         Msg::Editor(_) | Msg::Document(_) | Msg::Layout(_) => model.cancel_scroll_animations(),
@@ -123,9 +135,19 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let result = update_inner(model, msg);
     let result = merge_cmds(result, usages::reconcile(model));
     let result = merge_cmds(result, file_change::reconcile(model));
+    let result = merge_cmds(result, file_policy::reconcile(model));
+    let result = merge_cmds(result, auto_save::reconcile(model));
+    let result = merge_cmds(
+        result,
+        merge_cmds(
+            policy_commands,
+            merge_cmds(policy_damage, resolve_text_settings(model)),
+        ),
+    );
     if model.ui.has_modal() || model.ui.context_menu.is_some() {
         model.cancel_scroll_animations();
     }
+    let result = merge_cmds(result, folding::reconcile(model));
     // This wrapper also covers early returns in special-tab dispatch.
     let completion_cleanup = completion::reconcile_pending_commit(model);
     let path_cleanup = completion::reconcile_paths(model);
@@ -162,6 +184,22 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     } else {
         result
     }
+}
+
+fn resolve_text_settings(model: &mut AppModel) -> Option<Cmd> {
+    let mut changed = false;
+    for document in model.editor_area.documents.values_mut() {
+        changed |= document.resolve_text_settings(model.config.text);
+    }
+    if changed {
+        model.editor_area.refresh_wrap_caches();
+        for editor in model.editor_area.editors.values_mut() {
+            for cursor in &mut editor.cursors {
+                cursor.clear_desired_column();
+            }
+        }
+    }
+    changed.then(Cmd::redraw_editor)
 }
 
 /// Inner update logic (no tracing)

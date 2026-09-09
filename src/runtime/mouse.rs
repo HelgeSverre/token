@@ -1935,16 +1935,34 @@ fn handle_left_click(
         // owning feature instead of falling through to the default
         // focus/drag-select behavior (editor-decorations.md). No lane owner
         // has shipped yet, so those consume the press as a no-op.
-        HitTarget::EditorGutter { group_id, lane, .. } => {
-            match interactive_gutter_lane_click(*lane) {
-                Some(result) => result,
-                None => {
-                    if *group_id != model.editor_area.focused_group_id {
-                        update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
+        HitTarget::EditorGutter {
+            group_id,
+            editor_id,
+            line,
+            lane,
+        } => {
+            if *lane == Some(token::view::geometry::LaneId::Fold) {
+                if *group_id != model.editor_area.focused_group_id {
+                    update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
+                }
+                update(
+                    model,
+                    Msg::Editor(token::messages::EditorMsg::Fold {
+                        editor_id: Some(*editor_id),
+                        header: Some(*line),
+                        action: token::folding::FoldAction::Toggle,
+                    }),
+                );
+                EventResult::consumed_with_focus(FocusTarget::Editor)
+            } else {
+                match interactive_gutter_lane_click(*lane) {
+                    Some(result) => result,
+                    None => {
+                        if *group_id != model.editor_area.focused_group_id {
+                            update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
+                        }
+                        EventResult::consumed_with_focus(FocusTarget::Editor)
                     }
-                    // For now, treat like editor content click
-                    // Future: could select entire line
-                    EventResult::consumed_with_focus(FocusTarget::Editor)
                 }
             }
         }

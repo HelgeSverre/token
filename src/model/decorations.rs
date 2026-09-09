@@ -68,6 +68,25 @@ pub fn collect_line_marks(doc: &Document, doc_line: usize) -> LineMarks {
     }
 }
 
+/// Hidden diagnostics share their visible header's priority slot.
+pub fn collect_projected_line_marks(
+    doc: &Document,
+    map: &super::TextViewportMap<'_>,
+    line: usize,
+) -> LineMarks {
+    LineMarks {
+        mark: best_mark(
+            doc.diagnostics
+                .iter()
+                .filter(|diagnostic| {
+                    diagnostic_touches_line(diagnostic, line)
+                        || map.hidden_header(diagnostic.range.start.line as usize) == Some(line)
+                })
+                .map(|diagnostic| diagnostic_mark(diagnostic.severity)),
+        ),
+    }
+}
+
 /// Whether a diagnostic's (LSP, 0-based) range covers `doc_line`.
 fn diagnostic_touches_line(diagnostic: &lsp_types::Diagnostic, doc_line: usize) -> bool {
     let line = doc_line as u32;

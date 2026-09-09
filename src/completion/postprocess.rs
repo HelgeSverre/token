@@ -10,7 +10,7 @@ use tree_sitter::{ParseOptions, Parser, Tree};
 
 use crate::model::Document;
 use crate::syntax::{registry, LanguageId};
-use crate::util::text::{char_col_to_visual_col, TABULATOR_WIDTH};
+use crate::util::text::TabStops;
 use crate::util::ByteSize;
 
 const SOURCE_LIMIT: ByteSize = ByteSize::mebibytes(1);
@@ -23,6 +23,7 @@ pub struct InlineContext {
     source: Rope,
     cursor: usize,
     language: LanguageId,
+    settings: crate::model::DocumentTextSettings,
 }
 
 impl fmt::Debug for InlineContext {
@@ -47,6 +48,7 @@ impl InlineContext {
             source: document.buffer.clone(),
             cursor: document.cursor_to_offset(cursor.0, cursor.1),
             language: document.language,
+            settings: document.text_settings,
         })
     }
 }
@@ -126,12 +128,19 @@ impl InlinePostprocessor {
                 | LanguageId::Cpp
         )
         .then(|| {
-            infer_style(
-                &original,
-                insertion,
-                source.len() - original.len(),
-                &analysis.opaque,
-            )
+            if context.settings.explicit_indent {
+                Some(match context.settings.indent_style {
+                    crate::model::IndentStyle::Tab => IndentStyle::Tabs,
+                    crate::model::IndentStyle::Space => IndentStyle::Spaces,
+                })
+            } else {
+                infer_style(
+                    &original,
+                    insertion,
+                    source.len() - original.len(),
+                    &analysis.opaque,
+                )
+            }
         })
         .flatten();
         Some(match style {
@@ -140,6 +149,7 @@ impl InlinePostprocessor {
                 &original[..insertion],
                 insertion,
                 style,
+                context.settings.tabs,
                 &analysis.opaque,
             ),
             None => text.to_owned(),
@@ -246,7 +256,7 @@ fn infer_style(
     opaque: &[Range<usize>],
 ) -> Option<IndentStyle> {
     let (mut tabs, mut spaces, mut byte) = (0, 0, 0);
-    for line in original.split_inclusive('\n') {
+    for line in crate::util::text::lines_with_endings(original) {
         let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
         let content = byte + indent;
         let edited = content + if content >= insertion { added } else { 0 };
@@ -271,22 +281,23 @@ fn normalize(
     prefix: &str,
     insertion: usize,
     style: IndentStyle,
+    tabs: TabStops,
     opaque: &[Range<usize>],
 ) -> String {
-    let first_prefix = prefix.rsplit_once('\n').map_or(prefix, |(_, line)| line);
+    let first_prefix = prefix.rsplit(['\r', '\n']).next().unwrap_or(prefix);
     let mut byte = insertion;
     let mut result = String::with_capacity(text.len());
-    for (index, line) in text.split_inclusive('\n').enumerate() {
+    for (index, line) in crate::util::text::lines_with_endings(text).enumerate() {
         let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
         let leading = index > 0 || first_prefix.chars().all(|ch| matches!(ch, ' ' | '\t'));
         if leading && indent > 0 && !is_opaque(byte, opaque) && !is_opaque(byte + indent, opaque) {
             let before = if index == 0 { first_prefix } else { "" };
-            let start = char_col_to_visual_col(before, before.chars().count());
+            let start = tabs.char_col_to_visual_col(before, before.chars().count());
             let combined = format!("{before}{}", &line[..indent]);
-            let end = char_col_to_visual_col(&combined, combined.chars().count());
+            let end = tabs.char_col_to_visual_col(&combined, combined.chars().count());
             let mut column = start;
             while column < end {
-                let next = column + TABULATOR_WIDTH - column % TABULATOR_WIDTH;
+                let next = column + tabs.advance(column);
                 if matches!(style, IndentStyle::Tabs) && next <= end {
                     result.push('\t');
                     column = next;

@@ -50,6 +50,11 @@ pub enum EditorMsg {
     },
     /// Toggle soft wrapping for this editor pane.
     ToggleSoftWrap,
+    Fold {
+        editor_id: Option<crate::model::EditorId>,
+        header: Option<usize>,
+        action: crate::folding::FoldAction,
+    },
 
     // === Selection Movement (Shift+key) ===
     /// Move cursor with selection (Shift+Arrow)
@@ -434,6 +439,17 @@ pub enum LayoutMsg {
     CancelSplitterDrag,
 }
 
+/// Automatic trigger captured by the runtime, never an instruction to save a
+/// different revision, destination, or policy after subsequent user actions.
+#[derive(Debug, Clone)]
+pub struct AutoSaveRequest {
+    pub document_id: crate::model::DocumentId,
+    pub revision: u64,
+    pub path: PathBuf,
+    pub policy: crate::config::AutoSaveConfig,
+    pub reason: crate::model::SaveReason,
+}
+
 /// Application-level messages (file operations, window events)
 #[derive(Debug, Clone)]
 pub enum AppMsg {
@@ -447,6 +463,8 @@ pub enum AppMsg {
     ScaleFactorChanged(f64),
     /// Save current file
     SaveFile,
+    /// A runtime deadline/focus trigger, revalidated by document and policy.
+    AutoSave(AutoSaveRequest),
     /// Load a file
     LoadFile(PathBuf),
     /// Filesystem notifications; empty paths request a focus/startup recheck.
@@ -524,6 +542,10 @@ pub enum AppMsg {
 
     /// Paste text retrieved from system clipboard
     PasteFromClipboard(String),
+    FilePolicyResolved {
+        request: crate::editorconfig::PolicyRequest,
+        result: Result<crate::editorconfig::ResolvedFilePolicy, String>,
+    },
     /// Request path discovery and preparation in the runtime.
     OpenConfigResource(crate::commands::ConfigResource),
 }
@@ -543,6 +565,7 @@ pub enum SyntaxMsg {
         highlights: crate::syntax::SyntaxHighlights,
         syntax_tree: Option<crate::syntax::SyntaxTreeSnapshot>,
         outline: Option<crate::outline::OutlineData>,
+        folds: Option<std::sync::Arc<crate::folding::FoldCandidates>>,
         timing: Box<SyntaxWorkerTiming>,
         replace_line_ranges: Option<Vec<std::ops::Range<usize>>>,
     },
@@ -1314,7 +1337,7 @@ pub enum LspMsg {
         selection_only: bool,
     },
     /// Runtime -> update: a formatting reply (or its gate/timeout
-    /// fallback, `edits: None`). Revision-guarded; `then_save` chains the
+    /// fallback, `edits: None`). Revision-guarded; `save` chains the
     /// pending `format_on_save` save after applying.
     FormattingResolved {
         document_id: crate::model::editor_area::DocumentId,
@@ -1322,7 +1345,7 @@ pub enum LspMsg {
         /// `None` when the formatter never answered (no server, no
         /// capability, timeout); `Some(vec![])` when it had nothing to do.
         edits: Option<Vec<(lsp_types::Range, String)>>,
-        then_save: bool,
+        save: Option<crate::model::SaveIntent>,
     },
     /// Worker -> runtime only: the raw `textDocument/formatting` /
     /// `rangeFormatting` response, keyed like `HoverResponseFromServer`.

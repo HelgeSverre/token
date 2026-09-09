@@ -580,23 +580,30 @@ impl<'a> EditorGroupScene<'a> {
     ) {
         match &self.content {
             EditorContentKind::Text { document } => {
-                let visible_lines = self.editor.viewport_map(document).visible_doc_lines();
+                let map = self.editor.viewport_map(document);
                 // Match highlighting only applies to the focused pane — find
                 // navigation only ever operates on it (see
                 // find-enhancements.md). Diagnostics are document state,
                 // not a focused-pane search, so they render in every pane
                 // showing the document.
-                let mut decorations = if self.is_focused {
-                    find_match_decorations(
-                        model,
-                        document,
-                        &self.editor.selections[0],
-                        visible_lines.clone(),
-                    )
-                } else {
-                    Vec::new()
-                };
-                decorations.extend(diagnostic_decorations(model, document, visible_lines));
+                let mut decorations = Vec::new();
+                for visible_lines in map.visible_doc_ranges() {
+                    if self.is_focused {
+                        decorations.extend(find_match_decorations(
+                            model,
+                            document,
+                            &self.editor.selections[0],
+                            visible_lines,
+                        ));
+                    }
+                }
+                // One diagnostic can span several disjoint visible ranges.
+                // Keep its decoration once; the shared row renderer clips it.
+                decorations.extend(diagnostic_decorations(
+                    model,
+                    document,
+                    map.visible_doc_lines(),
+                ));
                 editor_text::render_text_area(
                     frame,
                     painter,

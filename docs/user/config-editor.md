@@ -6,11 +6,11 @@ General editor settings for Token.
 
 ## Configuration File
 
-| Platform | Path |
-|----------|------|
-| macOS | `~/.config/token-editor/config.yaml` |
-| Linux | `~/.config/token-editor/config.yaml` |
-| Windows | `%APPDATA%\token-editor\config.yaml` |
+| Platform | Path                                 |
+| -------- | ------------------------------------ |
+| macOS    | `~/.config/token-editor/config.yaml` |
+| Linux    | `~/.config/token-editor/config.yaml` |
+| Windows  | `%APPDATA%\token-editor\config.yaml` |
 
 ---
 
@@ -50,6 +50,36 @@ Command rows show the configured command or registry default and the YAML key to
 edit (`lsp.servers.<id>.command`). They are read-only, as are the live process-state
 rows; Left/Right and Enter cannot change them. Status updates without reopening
 Settings. The existing Language Servers picker remains available.
+
+### Auto-save
+
+Auto-save is off by default. The **Editor** category offers focus-loss, idle,
+and combined modes, along with delay presets and an independent formatter switch:
+
+```yaml
+auto_save:
+  mode: after_delay
+  delay_ms: 1000
+  format_on_save: false
+```
+
+Modes are `off`, `on_focus_loss`, `after_delay`, and `on_focus_loss_and_delay`.
+Idle means time since the last edit in each file, including background tabs.
+Cursor movement and scrolling do not reset it. Focus loss means leaving the
+native window, not switching tabs or panes. Custom YAML delays are preserved;
+their effective range is 100 ms through 24 hours.
+
+Auto-save writes modified files with a path, including new named files. It skips
+untitled and image/binary documents, known external conflicts, and pending file
+operations. CSV saving waits until every pane's cell draft has been committed or
+cancelled; losing focus never commits the draft. Automatic formatting is separate
+from the manual `format_on_save` setting.
+
+Write failures preserve unsaved contents and show `!` in the tab plus **Save
+failed** in the status bar. They do not repeatedly retry the same revision;
+new edits or a successful manual save allow saving again. The writer retains
+its external-change checks. Auto-save does not recover untitled text or edits
+closed before their timer fires, and is not crash recovery.
 
 ### Session restore
 
@@ -256,11 +286,11 @@ completions.
 
 ```yaml
 completion:
-  enabled: true             # master switch for dropdown and inline suggestions
+  enabled: true # master switch for dropdown and inline suggestions
   menu:
-    enabled: true           # automatically open the dropdown while typing
-    min_word_length: 3      # candidate identifier length, in characters
-    words: fallback        # fallback | enabled | disabled
+    enabled: true # automatically open the dropdown while typing
+    min_word_length: 3 # candidate identifier length, in characters
+    words: fallback # fallback | enabled | disabled
 ```
 
 `completion.menu.enabled: false` stops new automatic dropdowns, including on
@@ -376,10 +406,10 @@ server. Off until you point Token at one:
 completion:
   inline:
     enabled: true
-    provider: local        # key into providers
-    statistics: true       # local aggregate counts; disable to opt out
-    debounce_ms: 300       # quiet time after the last keystroke
-    max_line_suffix: 8     # auto-trigger only near the end of the line
+    provider: local # key into providers
+    statistics: true # local aggregate counts; disable to opt out
+    debounce_ms: 300 # quiet time after the last keystroke
+    max_line_suffix: 8 # auto-trigger only near the end of the line
   providers:
     local:
       transport: llama_cpp
@@ -512,7 +542,7 @@ completion:
       model: your-suffix-capable-model
       # api_key_env: TOKEN_COMPLETION_KEY  # optional environment-variable name
       max_tokens: 128
-      n: 1  # 1..8; higher values request more alternatives and may cost more
+      n: 1 # 1..8; higher values request more alternatives and may cost more
       timeout_ms: 5000
 ```
 
@@ -580,14 +610,14 @@ receive format-specific stop strings and retain existing cancellation, limits,
 credentials and acceptance behavior. Raw formats are rejected for `llama_cpp`
 and `mistral_fim` or `tabby`, which build FIM prompts server-side.
 
-| `prompt_format` | Layout |
-| --- | --- |
-| `qwen` | Qwen FIM tokens, prefix then suffix |
-| `star_coder` | StarCoder FIM tokens, prefix then suffix |
-| `code_llama` | CodeLlama prefix-first infilling, including marker word-boundary spaces |
-| `deep_seek` | DeepSeek's Unicode FIM tokens, prefix then suffix |
-| `codestral` | Suffix then prefix |
-| `mellum` | Suffix then prefix, with optional current-file basename |
+| `prompt_format` | Layout                                                                  |
+| --------------- | ----------------------------------------------------------------------- |
+| `qwen`          | Qwen FIM tokens, prefix then suffix                                     |
+| `star_coder`    | StarCoder FIM tokens, prefix then suffix                                |
+| `code_llama`    | CodeLlama prefix-first infilling, including marker word-boundary spaces |
+| `deep_seek`     | DeepSeek's Unicode FIM tokens, prefix then suffix                       |
+| `codestral`     | Suffix then prefix                                                      |
+| `mellum`        | Suffix then prefix, with optional current-file basename                 |
 
 For example, with a compatible raw-completion server already serving this model:
 
@@ -627,11 +657,11 @@ Extra context is off by default. To opt in for one provider, add:
 ```yaml
 completion:
   providers:
-    local:                      # your existing inline provider
+    local: # your existing inline provider
       context:
-        strategy: recency_ring  # none (default) | recency_ring
-        max_chunks: 8           # 1–32
-        chunk_lines: 64         # 1–256
+        strategy: recency_ring # none (default) | recency_ring
+        max_chunks: 8 # 1–32
+        chunk_lines: 64 # 1–256
 ```
 
 This permits sending snippets from other open text buffers, including **unsaved
@@ -681,8 +711,8 @@ alternative to `recency_ring` on your existing provider:
 ```yaml
 context:
   strategy: workspace_retrieval
-  max_chunks: 8       # 1–32
-  chunk_lines: 64     # 1–256
+  max_chunks: 8 # 1–32
+  chunk_lines: 64 # 1–256
 ```
 
 This permits sending workspace source, including unsaved text from eligible
@@ -749,3 +779,8 @@ cursor_blink_ms: 500
 auto_surround: true
 bracket_matching: true
 ```
+
+## Per-file text settings
+
+See [EditorConfig and text settings](editorconfig.md) for project rules, user
+defaults, line-ending handling, and undoable save cleanup.

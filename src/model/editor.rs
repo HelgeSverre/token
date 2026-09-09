@@ -91,6 +91,7 @@ pub struct TextViewportMap<'a> {
     visible_lines: usize,
     line_count: usize,
     wrap_cache: Option<&'a WrapCache>,
+    folds: Option<&'a crate::folding::FoldProjection>,
     ghost: Option<&'a super::GhostProjection>,
 }
 
@@ -103,6 +104,7 @@ impl<'a> TextViewportMap<'a> {
             visible_lines: viewport.visible_lines,
             line_count,
             wrap_cache: None,
+            folds: None,
             ghost: None,
         }
     }
@@ -121,6 +123,7 @@ impl<'a> TextViewportMap<'a> {
             visible_lines: viewport.visible_lines,
             line_count,
             wrap_cache: Some(wrap_cache),
+            folds: None,
             ghost: None,
         }
     }
@@ -185,14 +188,17 @@ impl<'a> TextViewportMap<'a> {
         let base = self
             .wrap_cache
             .map_or(self.line_count, WrapCache::total_visual_lines);
+        let base = self.folds.map_or(base, |folds| folds.row_count(base));
         self.ghost.map_or(base, |ghost| {
             base - self.base_line_rows(ghost.anchor.line) + ghost.rows.len()
         })
     }
 
     fn base_line_row(&self, line: usize) -> usize {
-        self.wrap_cache
-            .map_or(line, |cache| cache.logical_line_to_visual(line))
+        let row = self
+            .wrap_cache
+            .map_or(line, |cache| cache.logical_line_to_visual(line));
+        self.folds.map_or(row, |folds| folds.project(row))
     }
 
     fn base_line_rows(&self, line: usize) -> usize {
@@ -202,20 +208,21 @@ impl<'a> TextViewportMap<'a> {
 
     /// Remove the insertion's row displacement to address the ordinary cache.
     fn base_row(&self, row: usize) -> usize {
-        let Some(ghost) = self.ghost else {
-            return row;
-        };
-        let start = self.base_line_row(ghost.anchor.line);
-        if row < start {
-            row
-        } else if row < start + ghost.rows.len() {
-            start
-        } else {
-            row - ghost.rows.len() + self.base_line_rows(ghost.anchor.line)
-        }
+        let row = self.ghost.map_or(row, |ghost| {
+            let start = self.base_line_row(ghost.anchor.line);
+            if row < start {
+                row
+            } else if row < start + ghost.rows.len() {
+                start
+            } else {
+                row - ghost.rows.len() + self.base_line_rows(ghost.anchor.line)
+            }
+        });
+        self.folds.map_or(row, |folds| folds.unproject(row))
     }
 
     fn projected_row(&self, base: usize) -> usize {
+        let base = self.folds.map_or(base, |folds| folds.project(base));
         let Some(ghost) = self.ghost else {
             return base;
         };
@@ -268,7 +275,7 @@ impl<'a> TextViewportMap<'a> {
 
     #[inline]
     pub fn visible_row_for_doc_line(&self, doc_line: usize) -> Option<usize> {
-        if doc_line >= self.line_count {
+        if doc_line >= self.line_count || self.hidden_header(doc_line).is_some() {
             return None;
         }
         let visual_line = self.visual_line_for_position(doc_line, 0);
@@ -298,6 +305,34 @@ impl<'a> TextViewportMap<'a> {
         first..last.saturating_add(1)
     }
 
+    /// Contiguous visible document ranges, excluding hidden bodies. Decoration
+    /// producers can query their indexes without visiting matches inside folds.
+    pub fn visible_doc_ranges(&self) -> Vec<std::ops::Range<usize>> {
+        if self
+            .folds
+            .is_none_or(crate::folding::FoldProjection::is_empty)
+        {
+            return vec![self.visible_doc_lines()];
+        }
+        let mut ranges: Vec<std::ops::Range<usize>> = Vec::new();
+        for row in 0..self.drawn_rows() {
+            let Some(line) = self.doc_line_for_visible_row(row) else {
+                break;
+            };
+            if let Some(last) = ranges.last_mut() {
+                if line < last.end {
+                    continue;
+                }
+                if line == last.end {
+                    last.end += 1;
+                    continue;
+                }
+            }
+            ranges.push(line..line + 1);
+        }
+        ranges
+    }
+
     /// Row and tab-expanded column for a logical position.
     pub fn display_position(
         &self,
@@ -305,6 +340,9 @@ impl<'a> TextViewportMap<'a> {
         line: usize,
         column: usize,
     ) -> (usize, usize) {
+        if let Some(header) = self.hidden_header(line) {
+            return self.display_position(document, header, document.line_length(header));
+        }
         if let Some(ghost) = self.ghost.filter(|g| g.anchor.line == line) {
             let (row, column) = ghost.display_position(column);
             return (self.base_line_row(line) + row, column);
@@ -317,7 +355,10 @@ impl<'a> TextViewportMap<'a> {
         let text = document.get_line_cow(line).unwrap_or_default();
         (
             row,
-            crate::util::text::char_col_to_visual_col_from(&text, start, column),
+            document
+                .text_settings
+                .tabs
+                .char_col_to_visual_col_from(&text, start, column),
         )
     }
 
@@ -353,7 +394,10 @@ impl<'a> TextViewportMap<'a> {
         let text = document.get_line_cow(line).unwrap_or_default();
         Position::new(
             line,
-            crate::util::text::visual_col_to_char_col_from(&text, start, end, column),
+            document
+                .text_settings
+                .tabs
+                .visual_col_to_char_col_from(&text, start, end, column),
         )
     }
 
@@ -374,7 +418,7 @@ impl<'a> TextViewportMap<'a> {
     }
 
     pub fn visible_row_for_position(&self, line: usize, column: usize) -> Option<usize> {
-        if line >= self.line_count {
+        if line >= self.line_count || self.hidden_header(line).is_some() {
             return None;
         }
         let visual_line = self.visual_line_for_position(line, column);
@@ -391,6 +435,11 @@ impl<'a> TextViewportMap<'a> {
             self.wrap_cache
                 .map_or(line, |cache| cache.logical_to_visual(line, column).0),
         )
+    }
+
+    /// Distinguish an aggregated hidden location from a real visible caret row.
+    pub fn hidden_header(&self, line: usize) -> Option<usize> {
+        self.folds.and_then(|folds| folds.hidden_header(line))
     }
 
     pub fn segment_for_visible_row(
@@ -664,6 +713,7 @@ pub struct EditorState {
     pub soft_wrap: bool,
     /// Per-pane logical/visual row mapping, rebuilt by revision and width.
     pub wrap_cache: WrapCache,
+    pub folds: crate::folding::FoldState,
     /// Derived inline insertion geometry for this pane only.
     pub ghost_text: super::GhostText,
     /// Shared Find/diagnostic scrollbar projection, memoized per pane.
@@ -691,6 +741,7 @@ impl EditorState {
             matched_brackets: None,
             soft_wrap: false,
             wrap_cache: WrapCache::new(),
+            folds: Default::default(),
             ghost_text: super::GhostText::default(),
             overview_cache: super::OverviewCache::default(),
         }
@@ -781,6 +832,109 @@ impl EditorState {
         matches!(self.tab_content, TabContent::Text) && matches!(self.view_mode, ViewMode::Text)
     }
 
+    /// Apply a pane-local fold action without changing the buffer or its history.
+    pub fn fold(
+        &mut self,
+        document: &Document,
+        action: crate::folding::FoldAction,
+        header: Option<usize>,
+    ) -> bool {
+        use crate::folding::FoldAction;
+        if !self.is_plain_text_mode() {
+            return false;
+        }
+        self.ensure_wrap_cache(document);
+        let mut collapsed = self.folds.collapsed().to_vec();
+        let mut collapsed_headers: std::collections::HashSet<_> =
+            collapsed.iter().map(|region| region.header).collect();
+        if action == FoldAction::ExpandAll {
+            collapsed.clear();
+        } else {
+            let Some(candidates) = &document.folds else {
+                return false;
+            };
+            let line = header.unwrap_or(self.active_cursor().line);
+            let selected = candidates
+                .regions
+                .iter()
+                .filter(|r| {
+                    if header.is_some() {
+                        r.header == line
+                    } else {
+                        r.contains(line)
+                    }
+                })
+                .min_by_key(|r| r.end - r.header);
+            let regions: Vec<_> = if action == FoldAction::CollapseAll {
+                candidates.regions.iter().collect()
+            } else {
+                selected.into_iter().collect()
+            };
+            for region in regions {
+                let already = collapsed_headers.contains(&region.header);
+                let expand =
+                    action == FoldAction::Expand || (action == FoldAction::Toggle && already);
+                if expand {
+                    collapsed.retain(|r| r.header != region.header);
+                    continue;
+                }
+                // A selection retains its exact contents, even across a hidden body.
+                if already
+                    || self.selections.iter().any(|selection| {
+                        !selection.is_empty()
+                            && selection.start().line < region.end
+                            && (selection.end().line > region.header + 1
+                                || selection.end().line == region.header + 1
+                                    && selection.end().column > 0)
+                    })
+                {
+                    continue;
+                }
+                for (cursor, selection) in self.cursors.iter_mut().zip(&mut self.selections) {
+                    if selection.is_empty() && region.hides(cursor.line) {
+                        *cursor = Cursor::at(region.header, document.line_length(region.header));
+                        *selection = Selection::new(cursor.to_position());
+                    }
+                }
+                collapsed_headers.insert(region.header);
+                collapsed.push(region.clone());
+            }
+        }
+        collapsed.sort_by_key(|r| r.header);
+        if !self.folds.replace(collapsed) {
+            return false;
+        }
+        self.deduplicate_cursors();
+        self.clear_selection_history();
+        self.ensure_wrap_cache(document);
+        if self.ghost_text.0.as_ref().is_some_and(|ghost| {
+            self.folds
+                .projection
+                .hidden_header(ghost.anchor.line)
+                .is_some()
+        }) {
+            self.set_ghost_text(document, None);
+        }
+        true
+    }
+
+    /// Explicit navigation and selection endpoints take precedence over folding.
+    pub(crate) fn reveal_folded_carets(&mut self, document: &Document) -> bool {
+        if self.folds.collapsed().is_empty() {
+            return false;
+        }
+        let mut collapsed = self.folds.collapsed().to_vec();
+        collapsed.retain(|region| {
+            self.is_plain_text_mode()
+                && region.end <= document.line_count()
+                && !self.cursors.iter().any(|cursor| region.hides(cursor.line))
+                && !self.selections.iter().any(|selection| {
+                    region.hides(selection.anchor.line) || region.hides(selection.head.line)
+                })
+        });
+        self.folds.replace(collapsed)
+    }
+
     /// Toggle wrapping without changing the logical cursor position.
     pub fn toggle_soft_wrap(&mut self, document: &Document) {
         if !self.is_plain_text_mode() {
@@ -789,23 +943,22 @@ impl EditorState {
         if self.ghost_text.0.is_some() {
             self.set_ghost_text(document, None);
         }
-        let logical_top = if self.soft_wrap {
-            self.wrap_cache
-                .visual_line_to_logical(self.viewport.top_line)
-        } else {
-            self.viewport.top_line
-        };
+        let top = self.viewport_map(document).position_at_display_column(
+            document,
+            self.viewport.top_line,
+            0,
+        );
         self.soft_wrap = !self.soft_wrap;
-        if self.soft_wrap {
-            self.wrap_cache
-                .rebuild(document, self.viewport.visible_columns);
-            self.viewport.left_column = 0;
-            self.viewport.pixels.x.offset = 0.0;
-            self.viewport.top_line = self.wrap_cache.logical_line_to_visual(logical_top);
-        } else {
-            self.viewport.top_line = logical_top;
+        if !self.soft_wrap {
             self.wrap_cache.invalidate();
         }
+        self.ensure_wrap_cache(document);
+        self.viewport.top_line = self
+            .viewport_map(document)
+            .visual_line_for_position(top.line, top.column);
+        self.viewport.left_column = 0;
+        self.viewport.pixels.x.offset = 0.0;
+        self.viewport.animation = None;
         for cursor in &mut self.cursors {
             cursor.clear_desired_column();
         }
@@ -814,6 +967,12 @@ impl EditorState {
 
     /// Rebuild the per-pane wrap cache after content or width changes.
     pub fn ensure_wrap_cache(&mut self, document: &Document) {
+        let top = self.viewport_map(document).position_at_display_column(
+            document,
+            self.viewport.top_line,
+            0,
+        );
+        let mut geometry_changed = false;
         // The integral viewport dimensions remain the grid/navigation contract.
         // Retain the measured trailing partial cell when a caller resizes that grid.
         let pixels = &mut self.viewport.pixels;
@@ -840,21 +999,23 @@ impl EditorState {
                 .wrap_cache
                 .needs_refresh(document, self.viewport.visible_columns)
         {
-            let preserve_top_position = self.wrap_cache.is_valid();
-            let top_position = self.wrap_cache.visual_to_logical(self.viewport.top_line, 0);
             self.wrap_cache
                 .refresh(document, self.viewport.visible_columns);
-            if preserve_top_position {
-                self.viewport.top_line = self
-                    .wrap_cache
-                    .logical_to_visual(
-                        top_position.0.min(document.line_count().saturating_sub(1)),
-                        top_position.1,
-                    )
-                    .0;
-            }
+            geometry_changed = true;
             self.viewport.left_column = 0;
             self.viewport.pixels.x.offset = 0.0;
+            self.viewport.animation = None;
+        }
+        geometry_changed |= self.folds.refresh(
+            (self.soft_wrap && self.is_plain_text_mode() && self.wrap_cache.is_valid())
+                .then_some(&self.wrap_cache),
+            document.line_count(),
+        );
+        if geometry_changed && self.is_plain_text_mode() {
+            self.viewport.top_line = self.viewport_map(document).visual_line_for_position(
+                top.line.min(document.line_count().saturating_sub(1)),
+                top.column,
+            );
             self.viewport.animation = None;
         }
         // Runtime metric/gutter changes also refresh viewports directly, outside
@@ -1223,7 +1384,12 @@ impl EditorState {
             TextViewportMap::new(&self.viewport, document.line_count())
         };
         if self.is_plain_text_mode() {
-            map.ghost = self.ghost_text.0.as_deref();
+            map.folds = Some(&self.folds.projection);
+            map.ghost = self
+                .ghost_text
+                .0
+                .as_deref()
+                .filter(|ghost| map.hidden_header(ghost.anchor.line).is_none());
         }
         map
     }
@@ -1293,13 +1459,16 @@ impl EditorState {
         (0..viewport.end_line().saturating_sub(viewport.top_line()))
             .filter_map(|row| {
                 if let Some(ghost) = viewport.ghost_row_for_visible_row(row) {
-                    Some(crate::util::text::visual_width(ghost.text.chars()))
+                    Some(document.text_settings.tabs.visual_width(ghost.text.chars()))
                 } else {
                     viewport.doc_line_for_visible_row(row).map(|line| {
                         let length = document.line_length(line);
                         let text = document.buffer.line(line);
                         if text.chunks().any(|chunk| chunk.contains('\t')) {
-                            crate::util::text::visual_width(text.chars().take(length))
+                            document
+                                .text_settings
+                                .tabs
+                                .visual_width(text.chars().take(length))
                         } else {
                             length
                         }
@@ -1368,6 +1537,7 @@ impl EditorState {
     /// Use this for mouse clicks where the target position is already visible on screen.
     /// Only scrolls if the cursor is completely outside the viewport bounds.
     pub fn ensure_cursor_visible_no_padding(&mut self, document: &Document) {
+        self.reveal_folded_carets(document);
         self.ensure_wrap_cache(document);
         let cursor = self.cursors[self.active_cursor_index];
         let viewport = self.viewport_map(document);
@@ -1395,6 +1565,7 @@ impl EditorState {
     /// - `BottomAligned`: place cursor at bottom of safe zone (good for downward movement)
     /// - `Centered`: place cursor in center of viewport (good for jumps/search)
     pub fn ensure_cursor_visible_with_mode(&mut self, document: &Document, mode: ScrollRevealMode) {
+        self.reveal_folded_carets(document);
         self.ensure_wrap_cache(document);
         let cursor = self.cursors[self.active_cursor_index];
         let padding = self.scroll_padding;
@@ -1585,7 +1756,7 @@ impl EditorState {
 
     /// Move a single cursor up by one line
     pub fn move_cursor_up_at(&mut self, doc: &Document, idx: usize) {
-        if self.soft_wrap {
+        if self.is_plain_text_mode() && (self.soft_wrap || !self.folds.collapsed().is_empty()) {
             self.move_cursor_visual_by(doc, idx, -1);
             return;
         }
@@ -1601,7 +1772,7 @@ impl EditorState {
 
     /// Move a single cursor down by one line
     pub fn move_cursor_down_at(&mut self, doc: &Document, idx: usize) {
-        if self.soft_wrap {
+        if self.is_plain_text_mode() && (self.soft_wrap || !self.folds.collapsed().is_empty()) {
             self.move_cursor_visual_by(doc, idx, 1);
             return;
         }
@@ -1658,7 +1829,7 @@ impl EditorState {
 
     /// Move a single cursor up by `jump` lines (for page up)
     pub fn page_up_at(&mut self, doc: &Document, jump: usize, idx: usize) {
-        if self.soft_wrap {
+        if self.is_plain_text_mode() && (self.soft_wrap || !self.folds.collapsed().is_empty()) {
             self.move_cursor_visual_by(doc, idx, -(jump.min(isize::MAX as usize) as isize));
             return;
         }
@@ -1672,7 +1843,7 @@ impl EditorState {
 
     /// Move a single cursor down by `jump` lines (for page down)
     pub fn page_down_at(&mut self, doc: &Document, jump: usize, idx: usize) {
-        if self.soft_wrap {
+        if self.is_plain_text_mode() && (self.soft_wrap || !self.folds.collapsed().is_empty()) {
             self.move_cursor_visual_by(doc, idx, jump.min(isize::MAX as usize) as isize);
             return;
         }

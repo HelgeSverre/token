@@ -22,6 +22,11 @@ pub enum ReloadResult {
 /// Editor configuration that persists across sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EditorConfig {
+    /// Fallbacks for text documents; matching .editorconfig rules take precedence.
+    #[serde(default)]
+    pub text: crate::model::TextPreferences,
+    #[serde(default = "default_true")]
+    pub editorconfig: bool,
     #[serde(default)]
     pub session: SessionConfig,
     /// Selected theme id (e.g., "default-dark", "fleet-dark")
@@ -89,6 +94,56 @@ pub struct EditorConfig {
     /// Saves unformatted when the server can't format within ~2 s.
     #[serde(default)]
     pub format_on_save: bool,
+    /// Automatic saving of file-backed documents, off until enabled.
+    #[serde(default)]
+    pub auto_save: AutoSaveConfig,
+}
+
+/// Independent automatic save triggers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoSaveMode {
+    #[default]
+    Off,
+    OnFocusLoss,
+    AfterDelay,
+    OnFocusLossAndDelay,
+}
+
+impl AutoSaveMode {
+    pub fn on_focus_loss(self) -> bool {
+        matches!(self, Self::OnFocusLoss | Self::OnFocusLossAndDelay)
+    }
+
+    pub fn after_delay(self) -> bool {
+        matches!(self, Self::AfterDelay | Self::OnFocusLossAndDelay)
+    }
+}
+
+/// Auto-save uses document idle time, independently of cursor movement.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AutoSaveConfig {
+    pub mode: AutoSaveMode,
+    pub delay_ms: u64,
+    pub format_on_save: bool,
+}
+
+impl Default for AutoSaveConfig {
+    fn default() -> Self {
+        Self {
+            mode: AutoSaveMode::Off,
+            delay_ms: 1000,
+            format_on_save: false,
+        }
+    }
+}
+
+impl AutoSaveConfig {
+    /// Keep invalid/extreme YAML values from spinning or overflowing deadlines.
+    pub fn delay(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.delay_ms.clamp(100, 86_400_000))
+    }
 }
 
 /// Session metadata never includes unsaved text or undo history.
@@ -458,6 +513,8 @@ fn default_hover_delay_ms() -> u64 {
 impl Default for EditorConfig {
     fn default() -> Self {
         Self {
+            text: Default::default(),
+            editorconfig: true,
             session: SessionConfig::default(),
             theme: default_theme(),
             editor_font: default_editor_font(),
@@ -474,6 +531,7 @@ impl Default for EditorConfig {
             lsp: LspConfig::default(),
             completion: CompletionConfig::default(),
             format_on_save: false,
+            auto_save: AutoSaveConfig::default(),
         }
     }
 }

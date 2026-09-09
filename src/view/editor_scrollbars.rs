@@ -54,6 +54,7 @@ fn overview_rows(
         if cached.revision == document.revision
             && cached.buffer.is_instance(&document.buffer)
             && same_identity(&cached.wrap_identity, &wrap_identity)
+            && Arc::ptr_eq(&cached.fold_identity, &editor.folds.identity)
             && same_identity(&cached.find, &find)
             && cached.total_rows == total_rows
             && cached.track_height == track_height
@@ -80,6 +81,7 @@ fn overview_rows(
         buffer: document.buffer.clone(),
         revision: document.revision,
         wrap_identity,
+        fold_identity: Arc::clone(&editor.folds.identity),
         find,
         diagnostics: document
             .diagnostics
@@ -239,6 +241,33 @@ mod tests {
         let unfocused = overview_rows(&editor, &document, None, 100.0);
         assert!(!Arc::ptr_eq(&previous, &unfocused));
         assert!(unfocused.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn folding_overview_invalidates_different_folds_with_equal_row_counts() {
+        let source = "one\n  body\ntwo\n  body\nend\n";
+        let mut document = Document::with_text(source);
+        document.folds = Some(Arc::new(crate::syntax::folding::detect(
+            source,
+            crate::folding::FoldStamp {
+                revision: 0,
+                language: document.language,
+                policy_generation: 0,
+            },
+            document.text_settings.tabs,
+            None,
+        )));
+        let mut editor = EditorState::new();
+        editor.fold(&document, crate::folding::FoldAction::Collapse, Some(0));
+        let rows = editor.viewport_map(&document).row_count();
+        let first = overview_rows(&editor, &document, None, 100.0);
+        editor.fold(&document, crate::folding::FoldAction::Expand, Some(0));
+        editor.fold(&document, crate::folding::FoldAction::Collapse, Some(2));
+        assert_eq!(rows, editor.viewport_map(&document).row_count());
+        assert!(!Arc::ptr_eq(
+            &first,
+            &overview_rows(&editor, &document, None, 100.0)
+        ));
     }
 
     #[test]

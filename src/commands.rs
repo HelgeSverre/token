@@ -23,6 +23,7 @@ pub enum CommandId {
     SaveFile,
     SaveFileAs,
     ResolveFileChange,
+    ShowFileTextSettings,
 
     // Edit operations
     Undo,
@@ -77,6 +78,11 @@ pub enum CommandId {
     // CSV
     ToggleCsvView,
     ToggleSoftWrap,
+    ToggleFold,
+    CollapseFold,
+    ExpandFold,
+    CollapseAllFolds,
+    ExpandAllFolds,
 
     // Markdown
     ToggleMarkdownPreview,
@@ -438,6 +444,36 @@ pub static COMMANDS: &[CommandDef] = &[
         label: "Toggle Soft Wrap",
     },
     CommandDef {
+        id: CommandId::ToggleFold,
+        action: Some(KeymapCommand::ToggleFold),
+        category: CommandCategory::View,
+        label: "Toggle Fold",
+    },
+    CommandDef {
+        id: CommandId::CollapseFold,
+        action: Some(KeymapCommand::CollapseFold),
+        category: CommandCategory::View,
+        label: "Collapse Fold",
+    },
+    CommandDef {
+        id: CommandId::ExpandFold,
+        action: Some(KeymapCommand::ExpandFold),
+        category: CommandCategory::View,
+        label: "Expand Fold",
+    },
+    CommandDef {
+        id: CommandId::CollapseAllFolds,
+        action: Some(KeymapCommand::CollapseAllFolds),
+        category: CommandCategory::View,
+        label: "Collapse All Folds",
+    },
+    CommandDef {
+        id: CommandId::ExpandAllFolds,
+        action: Some(KeymapCommand::ExpandAllFolds),
+        category: CommandCategory::View,
+        label: "Expand All Folds",
+    },
+    CommandDef {
         id: CommandId::ToggleMarkdownPreview,
         action: Some(KeymapCommand::MarkdownTogglePreview),
         category: CommandCategory::View,
@@ -634,6 +670,12 @@ pub static COMMANDS: &[CommandDef] = &[
         action: None,
         category: CommandCategory::System,
         label: "Set Language...",
+    },
+    CommandDef {
+        id: CommandId::ShowFileTextSettings,
+        action: None,
+        category: CommandCategory::System,
+        label: "Show File Text Settings",
     },
     CommandDef {
         id: CommandId::Quit,
@@ -881,6 +923,12 @@ pub enum ConfigResource {
 /// Commands returned by update functions
 #[derive(Debug, Clone, Default)]
 pub enum Cmd {
+    /// Record a real buffer mutation in the runtime's idle scheduler.
+    ScheduleAutoSave {
+        document_id: DocumentId,
+        revision: u64,
+    },
+    CancelAutoSave(DocumentId),
     /// Replace the workspace-wide symbol query; None cancels current work.
     WorkspaceSymbols(Option<crate::lsp::workspace_symbols::SymbolSearchRequest>),
     /// Coalesced background Find scan against an immutable document snapshot.
@@ -905,6 +953,7 @@ pub enum Cmd {
         path: PathBuf,
     },
     ObserveFile(crate::model::FileRequest),
+    ResolveFilePolicy(crate::editorconfig::PolicyRequest),
     /// Prepare a file or configuration resource off the UI thread.
     PrepareFileOpen(crate::model::FileOpenRequest),
     /// Notify runtime waiters after installation (or rejection), not after reading.
@@ -957,6 +1006,7 @@ pub enum Cmd {
     RunSyntaxParse {
         document_id: DocumentId,
         revision: u64,
+        fold_policy: (u64, crate::util::text::TabStops),
         // Arc<str>, not String: `check_lsp_did_change_deadlines` shares
         // this exact snapshot with a coincident LSP didChange deadline
         // via a cheap refcount clone instead of a second full-buffer
@@ -1178,14 +1228,14 @@ pub enum Cmd {
         arguments: Option<Vec<serde_json::Value>>,
     },
     /// `textDocument/formatting` (`range: None`) or `rangeFormatting`.
-    /// `then_save` marks a `format_on_save` request: the resolution (or
+    /// `save` marks a `format_on_save` request: the resolution (or
     /// its gate/timeout fallback) performs the save the user asked for.
     LspRequestFormatting {
         document_id: DocumentId,
         revision: u64,
         range: Option<lsp_types::Range>,
         options: lsp_types::FormattingOptions,
-        then_save: bool,
+        save: Option<crate::model::SaveIntent>,
     },
     /// `textDocument/references` (Show Usages / Find Usages), tagged with
     /// the document's `revision` and (char-column) `cursor` at request
@@ -1318,6 +1368,7 @@ impl Cmd {
     pub fn damage(&self) -> Damage {
         match self {
             Cmd::None => Damage::Areas(vec![]), // No damage
+            Cmd::ScheduleAutoSave { .. } | Cmd::CancelAutoSave(_) => Damage::None,
             Cmd::Redraw => Damage::Full,
             Cmd::RedrawAreas(areas) => {
                 if areas.is_empty() {
@@ -1329,7 +1380,7 @@ impl Cmd {
             // File operations may cause full redraw (file load changes content)
             Cmd::SaveFile { .. } => Damage::Full,
             Cmd::LoadFile { .. } => Damage::Full,
-            Cmd::ObserveFile(_) => Damage::None,
+            Cmd::ObserveFile(_) | Cmd::ResolveFilePolicy(_) => Damage::None,
             Cmd::PrepareFileOpen(_) => Damage::status_bar(),
             Cmd::FileOpenFinished { .. } => Damage::None,
             Cmd::OpenInExplorer { .. } => Damage::Full,

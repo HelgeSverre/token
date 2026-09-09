@@ -2,6 +2,11 @@
 
 Automatic editor settings from `.editorconfig` files
 
+> **Implementation plan updated 2026-09-09:** Use the
+> [coordinated save, EditorConfig, and folding plan](file-policy-and-folding-plan.md#editorconfig-and-document-text-policy).
+> The historical sketch below is superseded by the current per-document policy,
+> shared tab geometry, resolver evaluation, and save-pipeline design.
+
 > **Status:** Planned
 > **Priority:** P2
 > **Effort:** M
@@ -26,6 +31,7 @@ Automatic editor settings from `.editorconfig` files
 ### Current State
 
 The editor currently:
+
 - Uses global/default settings for indentation
 - Has no per-file or per-project configuration
 - Requires manual setting changes per file type
@@ -107,28 +113,28 @@ src/
 pub struct FileConfig {
     /// Indentation style: "space" or "tab"
     pub indent_style: IndentStyle,
-    
+
     /// Number of columns per indentation level
     pub indent_size: IndentSize,
-    
+
     /// Width of a tab character
     pub tab_width: u8,
-    
+
     /// Line ending style
     pub end_of_line: EndOfLine,
-    
+
     /// File character encoding
     pub charset: Charset,
-    
+
     /// Remove trailing whitespace on save
     pub trim_trailing_whitespace: bool,
-    
+
     /// Ensure file ends with newline on save
     pub insert_final_newline: bool,
-    
+
     /// Maximum line length (for soft wrap, rulers)
     pub max_line_length: Option<usize>,
-    
+
     /// Source file path(s) that contributed to this config
     pub sources: Vec<PathBuf>,
 }
@@ -199,10 +205,10 @@ impl Default for FileConfig {
 pub struct EditorConfigFile {
     /// File path
     pub path: PathBuf,
-    
+
     /// Whether this is a root config (stop searching)
     pub root: bool,
-    
+
     /// Sections by glob pattern
     pub sections: Vec<ConfigSection>,
 }
@@ -212,7 +218,7 @@ pub struct EditorConfigFile {
 pub struct ConfigSection {
     /// Glob pattern (e.g., "*.ts", "[*.{js,jsx}]")
     pub pattern: String,
-    
+
     /// Properties in this section
     pub properties: HashMap<String, String>,
 }
@@ -223,20 +229,20 @@ impl EditorConfigFile {
         let content = fs::read_to_string(path)?;
         Self::parse_str(&content, path.to_path_buf())
     }
-    
+
     pub fn parse_str(content: &str, path: PathBuf) -> io::Result<Self> {
         let mut root = false;
         let mut sections = Vec::new();
         let mut current_section: Option<ConfigSection> = None;
-        
+
         for line in content.lines() {
             let line = line.trim();
-            
+
             // Skip empty lines and comments
             if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
                 continue;
             }
-            
+
             // Section header
             if line.starts_with('[') && line.ends_with(']') {
                 if let Some(section) = current_section.take() {
@@ -249,12 +255,12 @@ impl EditorConfigFile {
                 });
                 continue;
             }
-            
+
             // Key-value pair
             if let Some((key, value)) = line.split_once('=') {
                 let key = key.trim().to_lowercase();
                 let value = value.trim().to_string();
-                
+
                 if key == "root" && value.to_lowercase() == "true" {
                     root = true;
                 } else if let Some(ref mut section) = current_section {
@@ -262,11 +268,11 @@ impl EditorConfigFile {
                 }
             }
         }
-        
+
         if let Some(section) = current_section {
             sections.push(section);
         }
-        
+
         Ok(Self { path, root, sections })
     }
 }
@@ -281,7 +287,7 @@ impl EditorConfigFile {
 pub struct ConfigResolver {
     /// Cache of parsed .editorconfig files
     cache: HashMap<PathBuf, EditorConfigFile>,
-    
+
     /// File watcher for live reload
     watcher: Option<notify::RecommendedWatcher>,
 }
@@ -293,29 +299,29 @@ impl ConfigResolver {
             watcher: None,
         }
     }
-    
+
     /// Resolve configuration for a file path
     pub fn resolve(&mut self, file_path: &Path) -> FileConfig {
         let mut config = FileConfig::default();
         let configs = self.find_configs(file_path);
-        
+
         // Apply configs from root to file (root first, nearest last)
         for ec_file in configs.iter().rev() {
             config.sources.push(ec_file.path.clone());
             self.apply_matching_sections(&mut config, ec_file, file_path);
         }
-        
+
         config
     }
-    
+
     /// Find all .editorconfig files from file to root
     fn find_configs(&mut self, file_path: &Path) -> Vec<EditorConfigFile> {
         let mut configs = Vec::new();
         let mut search_dir = file_path.parent();
-        
+
         while let Some(dir) = search_dir {
             let ec_path = dir.join(".editorconfig");
-            
+
             if ec_path.exists() {
                 let ec_file = self.cache.entry(ec_path.clone())
                     .or_insert_with(|| {
@@ -328,21 +334,21 @@ impl ConfigResolver {
                         })
                     })
                     .clone();
-                
+
                 let is_root = ec_file.root;
                 configs.push(ec_file);
-                
+
                 if is_root {
                     break;
                 }
             }
-            
+
             search_dir = dir.parent();
         }
-        
+
         configs
     }
-    
+
     /// Apply sections that match the file
     fn apply_matching_sections(
         &self,
@@ -357,42 +363,42 @@ impl ConfigResolver {
             .ok()
             .and_then(|p| p.to_str())
             .unwrap_or(file_name);
-        
+
         for section in &ec_file.sections {
             if self.pattern_matches(&section.pattern, file_name, relative_path) {
                 self.apply_properties(config, &section.properties);
             }
         }
     }
-    
+
     /// Check if pattern matches file
     fn pattern_matches(&self, pattern: &str, file_name: &str, relative_path: &str) -> bool {
         // Handle common patterns
         if pattern == "*" {
             return true;
         }
-        
+
         // Simple extension matching: *.ext
         if pattern.starts_with("*.") {
             let ext = &pattern[2..];
             return file_name.ends_with(&format!(".{}", ext));
         }
-        
+
         // Brace expansion: *.{js,ts}
         if pattern.contains('{') && pattern.contains('}') {
             // Parse and expand braces
             return self.match_brace_pattern(pattern, file_name);
         }
-        
+
         // Path pattern with **
         if pattern.contains("**") {
             return self.match_glob_pattern(pattern, relative_path);
         }
-        
+
         // Exact match
         pattern == file_name || pattern == relative_path
     }
-    
+
     fn match_brace_pattern(&self, pattern: &str, file_name: &str) -> bool {
         // e.g., "*.{js,ts,jsx,tsx}" -> check each extension
         if let Some(start) = pattern.find('{') {
@@ -400,7 +406,7 @@ impl ConfigResolver {
                 let prefix = &pattern[..start];
                 let suffix = &pattern[end+1..];
                 let alternatives = pattern[start+1..end].split(',');
-                
+
                 for alt in alternatives {
                     let expanded = format!("{}{}{}", prefix, alt.trim(), suffix);
                     if self.pattern_matches(&expanded, file_name, file_name) {
@@ -411,12 +417,12 @@ impl ConfigResolver {
         }
         false
     }
-    
+
     fn match_glob_pattern(&self, _pattern: &str, _path: &str) -> bool {
         // Use globset crate for full glob matching
         todo!()
     }
-    
+
     /// Apply parsed properties to config
     fn apply_properties(&self, config: &mut FileConfig, props: &HashMap<String, String>) {
         for (key, value) in props {
@@ -472,12 +478,12 @@ impl ConfigResolver {
             }
         }
     }
-    
+
     /// Invalidate cache for a specific .editorconfig
     pub fn invalidate(&mut self, path: &Path) {
         self.cache.remove(path);
     }
-    
+
     /// Clear entire cache
     pub fn clear_cache(&mut self) {
         self.cache.clear();
@@ -492,7 +498,7 @@ impl ConfigResolver {
 
 pub struct Document {
     // ... existing fields ...
-    
+
     /// EditorConfig settings for this file
     pub file_config: FileConfig,
 }
@@ -501,7 +507,7 @@ impl Document {
     /// Apply EditorConfig settings
     pub fn apply_file_config(&mut self, config: FileConfig) {
         self.file_config = config;
-        
+
         // Update internal settings
         self.indent_style = config.indent_style;
         self.indent_size = match config.indent_size {
@@ -607,7 +613,7 @@ indent_size = 4
 [*.rs]
 indent_size = 4
 "#;
-    
+
     let config = EditorConfigFile::parse_str(content, PathBuf::from(".editorconfig")).unwrap();
     assert!(config.root);
     assert_eq!(config.sections.len(), 2);
@@ -616,7 +622,7 @@ indent_size = 4
 #[test]
 fn test_pattern_matching() {
     let resolver = ConfigResolver::new();
-    
+
     assert!(resolver.pattern_matches("*.rs", "main.rs", "main.rs"));
     assert!(resolver.pattern_matches("*.{js,ts}", "app.ts", "app.ts"));
     assert!(!resolver.pattern_matches("*.rs", "main.ts", "main.ts"));
@@ -635,7 +641,7 @@ fn test_property_cascade() {
 #[test]
 fn test_resolve_real_editorconfig() {
     let temp_dir = tempdir().unwrap();
-    
+
     // Create .editorconfig
     fs::write(temp_dir.path().join(".editorconfig"), r#"
 root = true
@@ -644,12 +650,12 @@ indent_size = 2
 [*.rs]
 indent_size = 4
 "#).unwrap();
-    
+
     let mut resolver = ConfigResolver::new();
-    
+
     let rs_config = resolver.resolve(&temp_dir.path().join("test.rs"));
     assert_eq!(rs_config.indent_size, IndentSize::Value(4));
-    
+
     let js_config = resolver.resolve(&temp_dir.path().join("test.js"));
     assert_eq!(js_config.indent_size, IndentSize::Value(2));
 }

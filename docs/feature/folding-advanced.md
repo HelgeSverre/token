@@ -1,5 +1,10 @@
 # Code Folding - Advanced (Syntax-Based)
 
+> **Implementation plan updated 2026-09-09:** Use the
+> [coordinated save, EditorConfig, and folding plan](file-policy-and-folding-plan.md#syntax-aware-folding-and-saved-state).
+> The historical sketch below is superseded by registry-based syntax providers
+> and fold metadata in the existing session store.
+
 Syntax-aware folding, region markers, and fold persistence
 
 > **Status:** 📋 Planned (Future)
@@ -19,6 +24,7 @@ This document covers **advanced folding features** that build on the basic inden
 ### Prerequisites
 
 Before implementing this phase:
+
 - ✅ Basic indentation-based folding working
 - ✅ Fold regions, toggle, and rendering complete
 - ✅ Shared text viewport / visual-line mapping for collapsed folds
@@ -89,11 +95,11 @@ fn detect_region_markers(document: &Document) -> Vec<FoldRegion> {
 
 Fold to a specific nesting depth:
 
-| Command | Behavior |
-|---------|----------|
-| Fold Level 1 | Fold only top-level regions |
+| Command      | Behavior                       |
+| ------------ | ------------------------------ |
+| Fold Level 1 | Fold only top-level regions    |
 | Fold Level 2 | Fold level 1 + level 2 regions |
-| Fold Level 3 | Fold level 1, 2, and 3 |
+| Fold Level 3 | Fold level 1, 2, and 3         |
 
 ```rust
 pub fn fold_to_level(&mut self, max_level: usize) {
@@ -110,18 +116,17 @@ Save fold state per file:
 ```json
 // ~/.config/token-editor/fold-state.json
 {
-    "/path/to/file.rs": {
-        "version": 1,
-        "collapsed_lines": [10, 45, 120],
-        "manual_folds": [
-            { "start": 50, "end": 55 }
-        ],
-        "timestamp": "2025-12-20T10:00:00Z"
-    }
+  "/path/to/file.rs": {
+    "version": 1,
+    "collapsed_lines": [10, 45, 120],
+    "manual_folds": [{ "start": 50, "end": 55 }],
+    "timestamp": "2025-12-20T10:00:00Z"
+  }
 }
 ```
 
 **Restore logic:**
+
 1. Load fold state on file open
 2. Match collapsed lines to current fold regions
 3. Apply collapsed state
@@ -159,7 +164,7 @@ pub struct FoldRegion {
     pub level: usize,
     pub collapsed: bool,
     pub source: FoldSource,          // NEW
-    pub summary: Option<String>,     // NEW: e.g., "fn main()" 
+    pub summary: Option<String>,     // NEW: e.g., "fn main()"
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,11 +180,11 @@ pub enum FoldSource {
 
 ## Keybindings
 
-| Action | Mac | Windows/Linux | Command |
-|--------|-----|---------------|---------|
-| Fold Level 1 | `Cmd+K Cmd+1` | `Ctrl+K Ctrl+1` | `FoldLevel(1)` |
-| Fold Level 2 | `Cmd+K Cmd+2` | `Ctrl+K Ctrl+2` | `FoldLevel(2)` |
-| Fold Level 3 | `Cmd+K Cmd+3` | `Ctrl+K Ctrl+3` | `FoldLevel(3)` |
+| Action         | Mac           | Windows/Linux   | Command         |
+| -------------- | ------------- | --------------- | --------------- |
+| Fold Level 1   | `Cmd+K Cmd+1` | `Ctrl+K Ctrl+1` | `FoldLevel(1)`  |
+| Fold Level 2   | `Cmd+K Cmd+2` | `Ctrl+K Ctrl+2` | `FoldLevel(2)`  |
+| Fold Level 3   | `Cmd+K Cmd+3` | `Ctrl+K Ctrl+3` | `FoldLevel(3)`  |
 | Fold Selection | `Cmd+K Cmd+[` | `Ctrl+K Ctrl+[` | `FoldSelection` |
 
 ---

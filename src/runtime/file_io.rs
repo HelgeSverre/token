@@ -14,6 +14,7 @@ use token::model::{
 
 #[derive(Debug)]
 pub(super) enum FileJob {
+    Policy(token::editorconfig::PolicyRequest),
     Watch(Vec<PathBuf>),
     Observe(FileRequest),
     Keymap {
@@ -137,11 +138,12 @@ pub(super) struct FileWorker {
 }
 
 impl FileWorker {
-    pub fn send(&self, job: FileJob) -> Result<(), mpsc::SendError<FileJob>> {
+    pub fn send(&self, job: FileJob) -> Result<(), Box<mpsc::SendError<FileJob>>> {
         self.sender
             .as_ref()
             .expect("sender exists until exclusive Drop")
             .send(job)
+            .map_err(Box::new)
     }
 }
 
@@ -186,6 +188,13 @@ impl FileJob {
                         })
                         .map_err(|error| error.to_string()),
                 ))
+            }
+            Self::Policy(request) => {
+                let policy = super::editorconfig::resolve(&request.path);
+                Msg::App(AppMsg::FilePolicyResolved {
+                    request,
+                    result: Ok(policy),
+                })
             }
             Self::Open(request) => {
                 let result = prepare_open(&request, config_dir)
@@ -232,6 +241,10 @@ impl FileJob {
 
     pub fn failed(self, error: String) -> Msg {
         match self {
+            Self::Policy(request) => Msg::App(AppMsg::FilePolicyResolved {
+                request,
+                result: Err(error),
+            }),
             Self::Watch(_) => Msg::Ui(token::messages::UiMsg::SetTransientMessage {
                 text: error,
                 duration_ms: 5000,
@@ -489,6 +502,19 @@ fn prepare_open(
         Err(error) => anyhow::bail!(error.user_message(&filename_for_display(path))),
     };
     document.set_file_identity(Some(identity));
+    if matches!(view_mode, ViewMode::Text) && matches!(tab_content, TabContent::Text) {
+        document.file_policy.enabled = request.editorconfig;
+        document.file_policy.path = document.file_identity().map(|id| id.path().to_path_buf());
+        if request.editorconfig {
+            let source = document
+                .file_identity()
+                .map_or(path.as_path(), |id| id.path())
+                .to_path_buf();
+            let policy = super::editorconfig::resolve(&source);
+            document.file_text_preferences = policy.preferences;
+            document.file_policy.install(source, policy);
+        }
+    }
     anyhow::ensure!(
         request.policy != token::model::FileOpenPolicy::ExistingText
             || (matches!(view_mode, ViewMode::Text) && matches!(tab_content, TabContent::Text)),
@@ -1045,18 +1071,22 @@ mod tests {
             else {
                 panic!("Save As dialog")
             };
-            let Cmd::SaveFile {
-                target,
-                path,
-                content,
-            } = update(
+            let Cmd::ResolveFilePolicy(request) = update(
                 &mut model,
                 Msg::App(AppMsg::SaveFileAsDialogResult {
                     target,
                     path: Some(destination.clone()),
                 }),
             )
-            .unwrap()
+            .unwrap() else {
+                panic!("Save As policy")
+            };
+            let policy = FileJob::Policy(request).run(None);
+            let Cmd::SaveFile {
+                target,
+                path,
+                content,
+            } = update(&mut model, policy).unwrap()
             else {
                 panic!("Save As write")
             };

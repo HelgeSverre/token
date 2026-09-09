@@ -178,6 +178,15 @@ impl EditOffsetMap {
             }
     }
 
+    /// Boundary before any text inserted exactly at this pristine position.
+    pub(crate) fn map_left(&self, offset: usize) -> usize {
+        let index = self.edits.partition_point(|edit| edit.start < offset);
+        self.edits
+            .get(index)
+            .filter(|edit| edit.start == offset)
+            .map_or_else(|| self.map(offset), |edit| edit.final_start)
+    }
+
     /// Final offset inside one edit's inserted text, identified by application
     /// index. Later equal-point insertions move this copy, not its ownership.
     pub(crate) fn inserted_offset(&self, edit_index: usize, relative: usize) -> usize {
@@ -422,6 +431,7 @@ pub(crate) fn apply_planned_edits(
         .unwrap_or_default();
 
     positions.transform_planned(planned);
+    super::folding::before_edits(model, document_id, planned);
     let doc = model.editor_area.documents.get_mut(&document_id)?;
     let operations = planned
         .iter()
@@ -438,6 +448,7 @@ pub(crate) fn apply_planned_edits(
         })
         .collect();
 
+    super::folding::after_edits(model, document_id);
     positions.restore(model, document_id);
     let doc = &model.editor_area.documents[&document_id];
     if let EditCarets::Place {

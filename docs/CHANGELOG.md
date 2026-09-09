@@ -6,6 +6,39 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Code folding
+
+- Collapse blocks using gutter chevrons, hidden-line badges, or command-palette
+  actions. Folding composes with soft wrap, pixel scrolling, selection, navigation,
+  inline suggestions, and diagnostic/Find overview marks.
+- Detect structural regions in Rust, JavaScript/TypeScript/JSX/TSX, Python,
+  JSON/YAML, HTML/CSS, and Markdown, including supported embedded languages.
+  Other text and malformed syntax use indentation folding.
+- Keep collapse choices independent across split panes, preserve unaffected folds
+  through edits and undo, and restore matching folds from saved-file sessions and
+  recent close/reopen metadata.
+
+### Text settings and EditorConfig
+
+- Apply per-file EditorConfig indentation and line-ending rules, with live reload
+  and user defaults in Settings.
+- Keep tab geometry consistent across wrapping, drawing, navigation and inline
+  suggestions; formatting requests use the same indentation preferences.
+- Apply trailing-whitespace, line-ending and final-newline rules as undoable save
+  cleanup. Support CR-only files and resolve destination rules for Save As.
+
+### Auto-save
+
+- Optional automatic saving when the window loses focus, after each document's
+  idle delay, or both. Configure modes, delay, and optional formatting in Settings.
+  Background tabs share the same guarded, ordered save pipeline as manual saves.
+- Formatting before save follows its original document after tab switches. Newer
+  saves supersede old formatter replies, and formatter shutdowns fall back to
+  saving the current buffer.
+- Failed saves retain dirty state and show a persistent failure indicator;
+  automatic retries wait for new edits or a successful manual save. Untitled and
+  image/binary tabs are excluded, and unfinished CSV cell edits defer saving.
+
 ### Pixel scrolling
 
 - Plain-text panes scroll vertically and horizontally by pixels, including
@@ -1375,11 +1408,12 @@ Critical fix for the event loop spinning issue that caused ~7 FPS in multi-split
 - Multi-split FPS improved from ~7 to 60 (VSync limited)
 
 **Performance Profile (30-second live session):**
-| Category | Time |
-|----------|------|
-| Idle/Waiting | 77.6% |
+
+| Category       | Time  |
+| -------------- | ----- |
+| Idle/Waiting   | 77.6% |
 | Event Handling | 21.5% |
-| Rendering | ~0.9% |
+| Rendering      | ~0.9% |
 
 ### Fixed - Debug Overlay HiDPI Scaling
 
@@ -1778,12 +1812,13 @@ Implemented proper incremental parsing for significantly faster syntax highlight
 4. Tree-sitter reuses unchanged nodes, only re-parsing the changed region
 
 **Performance Results:**
-| File Size | Full Reparse | Incremental |
-|-----------|--------------|-------------|
-| 100 lines | 67µs | 68µs |
-| 500 lines | 330µs | 356µs |
-| 1000 lines | 660µs | 728µs |
-| 5000 lines | 3.4ms | 3.6ms |
+
+| File Size  | Full Reparse | Incremental |
+| ---------- | ------------ | ----------- |
+| 100 lines  | 67µs         | 68µs        |
+| 500 lines  | 330µs        | 356µs       |
+| 1000 lines | 660µs        | 728µs       |
+| 5000 lines | 3.4ms        | 3.6ms       |
 
 _Note: Incremental is similar speed due to highlight extraction dominating; benefit increases for larger files._
 

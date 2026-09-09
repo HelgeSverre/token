@@ -1,7 +1,7 @@
 //! Soft-wrap segmentation and logical/visual position mapping.
 
 use crate::model::Document;
-use crate::util::text::TABULATOR_WIDTH;
+use crate::util::text::TabStops;
 
 /// One visual-row segment of a logical document line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +34,7 @@ pub struct WrapCache {
     total_visual_lines: usize,
     wrap_width: usize,
     revision: u64,
+    tabs: TabStops,
     valid: bool,
     source: Option<ropey::Rope>,
     layout_identity: std::sync::Arc<()>,
@@ -71,6 +72,7 @@ impl WrapCache {
     /// stale layout even when their revision number happens to match.
     pub fn needs_refresh(&self, document: &Document, wrap_width: usize) -> bool {
         self.needs_rebuild(document.revision, wrap_width)
+            || self.tabs != document.text_settings.tabs
             || !self
                 .source
                 .as_ref()
@@ -84,11 +86,11 @@ impl WrapCache {
         if !self.needs_refresh(document, wrap_width) {
             return;
         }
-        let Some(source) = self
-            .source
-            .as_ref()
-            .filter(|_| self.valid && self.wrap_width == wrap_width.max(1))
-        else {
+        let Some(source) = self.source.as_ref().filter(|_| {
+            self.valid
+                && self.wrap_width == wrap_width.max(1)
+                && self.tabs == document.text_settings.tabs
+        }) else {
             self.rebuild(document, wrap_width);
             return;
         };
@@ -138,7 +140,8 @@ impl WrapCache {
         let replacement: Vec<_> = (first..new_end)
             .map(|line| {
                 let text = document.get_line_cow(line).unwrap_or_default();
-                let segments = compute_line_wraps(&text, self.wrap_width, next_row);
+                let segments =
+                    compute_line_wraps_with_tabs(&text, self.wrap_width, next_row, self.tabs);
                 next_row += segments.len();
                 segments
             })
@@ -177,7 +180,12 @@ impl WrapCache {
 
         for logical_line in 0..document.line_count() {
             let line = document.get_line_cow(logical_line).unwrap_or_default();
-            let segments = compute_line_wraps(&line, wrap_width, self.visual_rows.len());
+            let segments = compute_line_wraps_with_tabs(
+                &line,
+                wrap_width,
+                self.visual_rows.len(),
+                document.text_settings.tabs,
+            );
             for segment_index in 0..segments.len() {
                 self.visual_rows.push((logical_line, segment_index));
             }
@@ -186,6 +194,7 @@ impl WrapCache {
 
         self.total_visual_lines = self.visual_rows.len();
         self.wrap_width = wrap_width;
+        self.tabs = document.text_settings.tabs;
         self.revision = document.revision;
         self.valid = true;
         self.source = Some(document.buffer.clone());
@@ -263,6 +272,15 @@ pub fn compute_line_wraps(
     wrap_width: usize,
     starting_visual_line: usize,
 ) -> Vec<WrapSegment> {
+    compute_line_wraps_with_tabs(line, wrap_width, starting_visual_line, TabStops::default())
+}
+
+pub fn compute_line_wraps_with_tabs(
+    line: &str,
+    wrap_width: usize,
+    starting_visual_line: usize,
+    tabs: TabStops,
+) -> Vec<WrapSegment> {
     if line.is_empty() {
         return vec![WrapSegment {
             start_col: 0,
@@ -285,7 +303,7 @@ pub fn compute_line_wraps(
 
         for (byte, ch) in remaining.char_indices() {
             let char_width = if ch == '\t' {
-                TABULATOR_WIDTH - (visual_width % TABULATOR_WIDTH)
+                tabs.advance(visual_width)
             } else {
                 // The editor's existing column and glyph-placement model is
                 // character based. Keep wrapping on that same model until the

@@ -243,6 +243,7 @@ pub struct EditorArea {
     next_untitled_number: u32,
 
     pub(crate) file_opens: super::FileOpenState,
+    pub(crate) recent_folds: Vec<crate::folding::persistence::RecentFolds>,
 
     /// Last layout rect used for compute_layout (for splitter drag calculations)
     pub last_layout_rect: Option<Rect>,
@@ -261,7 +262,7 @@ impl EditorArea {
             .and_then(|document_id| self.documents.get(&document_id))
             .map(|document| {
                 let mut name = document.display_name();
-                if document.external_change.is_some() {
+                if document.external_change.is_some() || document.save_error.is_some() {
                     name.push_str(" !");
                 }
                 name
@@ -322,6 +323,7 @@ impl EditorArea {
             next_preview_id: 1,
             next_untitled_number: 1,
             file_opens: Default::default(),
+            recent_folds: Vec::new(),
             last_layout_rect: None,
         }
     }
@@ -774,7 +776,11 @@ impl EditorArea {
                     let line_count = doc.map(|d| d.line_count()).unwrap_or(1);
                     let has_marks = doc.is_some_and(|d| !d.diagnostics.is_empty());
                     let text_x = crate::model::text_start_x_scaled(
-                        char_width, metrics, line_count, has_marks,
+                        char_width,
+                        metrics,
+                        line_count,
+                        has_marks,
+                        editor.is_plain_text_mode(),
                     )
                     .round();
                     let visible_columns = crate::model::text_viewport_columns(

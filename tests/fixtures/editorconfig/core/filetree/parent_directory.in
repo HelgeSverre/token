@@ -1,0 +1,16 @@
+root = true
+
+[test.a]
+key=value
+
+[test.b]
+key1=value1
+
+[test.c]
+key=valueA
+
+[test.d]
+key=value_a
+
+[test.e]
+key=value_e

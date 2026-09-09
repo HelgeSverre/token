@@ -62,9 +62,7 @@ pub(super) fn ellipsize(
 /// derived from this text matches what's actually rendered.
 #[inline]
 pub fn trim_line_ending(text: &str) -> &str {
-    text.strip_suffix("\r\n")
-        .or_else(|| text.strip_suffix('\n'))
-        .unwrap_or(text)
+    crate::util::text::trim_line_ending(text)
 }
 
 #[cfg(test)]

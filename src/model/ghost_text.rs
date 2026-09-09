@@ -4,7 +4,7 @@
 use std::{ops::Range, sync::Arc};
 
 use super::{Document, Position};
-use crate::{util::text::char_col_to_visual_col, wrap::compute_line_wraps};
+use crate::{util::text::TabStops, wrap::compute_line_wraps_with_tabs};
 
 /// Per-pane derived ghost geometry. It is synchronized by the update lifecycle.
 #[derive(Debug, Clone, Default)]
@@ -16,6 +16,7 @@ pub(crate) struct GhostProjection {
     pub anchor: Position,
     suggestion: String,
     width: Option<usize>,
+    tabs: TabStops,
     inserted_chars: usize,
     pub rows: Vec<GhostRow>,
 }
@@ -38,11 +39,12 @@ pub(crate) struct GhostRow {
 pub(crate) struct SourceSpan {
     pub columns: Range<usize>,
     pub row_start: usize,
+    pub tabs: TabStops,
 }
 
 impl SourceSpan {
     pub fn visual_column(&self, text: &str, column: usize) -> usize {
-        char_col_to_visual_col(
+        self.tabs.char_col_to_visual_col(
             text,
             self.row_start + column.saturating_sub(self.columns.start),
         )
@@ -76,12 +78,14 @@ impl GhostProjection {
         let projected = ropey::Rope::from_str(&projected);
         for part in projected.lines() {
             let raw: std::borrow::Cow<'_, str> = part.into();
-            let text = raw
-                .strip_suffix("\r\n")
-                .or_else(|| raw.strip_suffix('\n'))
-                .unwrap_or(&raw);
+            let text = crate::util::text::trim_line_ending(&raw);
             let line_chars = text.chars().count();
-            let segments = compute_line_wraps(text, width.unwrap_or(usize::MAX), rows.len());
+            let segments = compute_line_wraps_with_tabs(
+                text,
+                width.unwrap_or(usize::MAX),
+                rows.len(),
+                document.text_settings.tabs,
+            );
             let mut chars = text.chars();
             for segment in segments {
                 let start = offset + segment.start_col;
@@ -92,6 +96,7 @@ impl GhostProjection {
                     (lo < hi).then(|| SourceSpan {
                         columns: lo - shift..hi - shift,
                         row_start: lo - start,
+                        tabs: document.text_settings.tabs,
                     })
                 };
                 rows.push(GhostRow {
@@ -114,6 +119,7 @@ impl GhostProjection {
             anchor,
             suggestion: suggestion.to_owned(),
             width,
+            tabs: document.text_settings.tabs,
             inserted_chars,
             rows,
         })
@@ -132,7 +138,9 @@ impl GhostProjection {
     }
 
     pub fn source_is_current(&self, document: &Document, width: Option<usize>) -> bool {
-        self.source.is_instance(&document.buffer) && self.width == width
+        self.source.is_instance(&document.buffer)
+            && self.width == width
+            && self.tabs == document.text_settings.tabs
     }
 
     pub fn reflow(&self, document: &Document, width: Option<usize>) -> Option<Self> {
@@ -158,7 +166,10 @@ impl GhostProjection {
         let data = &self.rows[row];
         (
             row,
-            char_col_to_visual_col(&data.text, offset.saturating_sub(data.start).min(data.len)),
+            self.tabs.char_col_to_visual_col(
+                &data.text,
+                offset.saturating_sub(data.start).min(data.len),
+            ),
         )
     }
 
@@ -168,8 +179,9 @@ impl GhostProjection {
         if data.wraps {
             end = end.saturating_sub(1);
         }
-        let column =
-            crate::util::text::visual_col_to_char_col_from(&data.text, 0, end, display_column);
+        let column = self
+            .tabs
+            .visual_col_to_char_col_from(&data.text, 0, end, display_column);
         let offset = data.start + column;
         if offset <= self.anchor.column {
             offset

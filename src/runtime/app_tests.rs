@@ -39,6 +39,207 @@ fn empty_startup_config() -> StartupConfig {
 }
 
 #[test]
+fn auto_save_runtime_focus_loss_saves_both_documents_and_preserves_focus() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.auto_save.mode = token::config::AutoSaveMode::OnFocusLoss;
+    app.model.config.lsp.enabled = false;
+    let first = dir.path().join("a.txt");
+    app.model.document_mut().file_path = Some(first.clone());
+    app.process_automation_msg(Msg::Document(DocumentMsg::InsertChar('A')));
+    app.process_automation_msg(Msg::Layout(LayoutMsg::NewTab));
+    let second = dir.path().join("b.txt");
+    app.model.document_mut().file_path = Some(second.clone());
+    app.process_automation_msg(Msg::Document(DocumentMsg::InsertChar('B')));
+    let focused = app.model.document().id;
+    if let Some(cmd) = app.handle_event(&WindowEvent::Focused(false)) {
+        app.process_cmd(cmd);
+    }
+    assert!(app.check_auto_save(Instant::now()));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_saving));
+    assert_eq!(std::fs::read_to_string(first).unwrap(), "A");
+    assert_eq!(std::fs::read_to_string(second).unwrap(), "B");
+    assert_eq!(app.model.document().id, focused);
+    assert!(app
+        .model
+        .editor_area
+        .documents
+        .values()
+        .all(|doc| !doc.is_modified));
+    assert!(!app.check_auto_save(Instant::now()));
+}
+
+#[test]
+fn auto_save_runtime_idle_uses_deadline_and_preserves_late_external_edits() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.txt");
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.auto_save.mode = token::config::AutoSaveMode::AfterDelay;
+    app.model.config.auto_save.delay_ms = 100;
+    app.model.config.lsp.enabled = false;
+    app.model.document_mut().file_path = Some(path.clone());
+    app.process_automation_msg(Msg::Document(DocumentMsg::InsertChar('A')));
+    let now = Instant::now();
+    app.last_tick = now;
+    assert!(app.next_wake(now) <= now + Duration::from_millis(100));
+    assert!(!app.check_auto_save(now));
+    assert!(app.check_auto_save(now + Duration::from_secs(1)));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_saving));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "A");
+    app.process_automation_msg(Msg::Document(DocumentMsg::InsertChar('B')));
+    // No notification has been processed; the write-time byte guard must catch it.
+    std::fs::write(&path, "outside").unwrap();
+    app.check_auto_save(Instant::now() + Duration::from_secs(1));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_saving));
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "outside");
+    assert_eq!(app.model.document().buffer.to_string(), "AB");
+    assert!(app.model.document().is_modified);
+    assert!(app.model.document().save_error.is_some());
+    assert!(!app.check_auto_save(Instant::now() + Duration::from_secs(10)));
+}
+
+#[test]
+fn auto_save_runtime_defers_csv_draft_until_commit_without_committing_on_focus_loss() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("table.csv");
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.auto_save.mode = token::config::AutoSaveMode::OnFocusLoss;
+    app.model.config.lsp.enabled = false;
+    app.model.document_mut().file_path = Some(path.clone());
+    app.process_automation_msg(Msg::Document(DocumentMsg::InsertText("a,b\n1,2\n".into())));
+    app.process_automation_msg(Msg::Csv(token::messages::CsvMsg::Toggle));
+    app.process_automation_msg(Msg::Csv(token::messages::CsvMsg::StartEditingWithChar('X')));
+    let before = app.model.document().buffer.to_string();
+    if let Some(cmd) = app.handle_event(&WindowEvent::Focused(false)) {
+        app.process_cmd(cmd);
+    }
+    assert!(!app.check_auto_save(Instant::now()));
+    assert!(!path.exists());
+    assert_eq!(app.model.document().buffer.to_string(), before);
+    app.process_automation_msg(Msg::Csv(token::messages::CsvMsg::ConfirmEdit));
+    let committed = app.model.document().buffer.to_string();
+    assert_ne!(committed, before);
+    assert!(app.check_auto_save(Instant::now()));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
+        .model
+        .ui
+        .is_saving));
+    assert_eq!(std::fs::read_to_string(path).unwrap(), committed);
+}
+
+#[test]
+fn editorconfig_runtime_open_reload_disable_and_failed_reload_preserve_buffer() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join(".editorconfig");
+    let path = dir.path().join("a.txt");
+    std::fs::write(
+        &config,
+        "root = true\n[*]\nindent_size = 2\ntab_width = 8\n",
+    )
+    .unwrap();
+    std::fs::write(&path, "\tfile\r\n").unwrap();
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.lsp.enabled = false;
+    app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(path.clone())));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| app
+        .model
+        .document()
+        .file_path
+        .as_ref()
+        == Some(&path)));
+    assert_eq!(app.model.document().text_settings.tabs.width(), 8);
+    assert_eq!(app.model.document().text_settings.indent_size, 2);
+    let before = app.model.document().buffer.clone();
+    std::fs::write(
+        &config,
+        "root = true\n[*]\nindent_size = 3\ntab_width = 3\n",
+    )
+    .unwrap();
+    app.process_automation_msg(Msg::App(AppMsg::FilesChanged(vec![config.clone()])));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| app
+        .model
+        .document()
+        .text_settings
+        .tabs
+        .width()
+        == 3));
+    std::fs::write(&config, [0xff]).unwrap();
+    app.process_automation_msg(Msg::App(AppMsg::FilesChanged(vec![config])));
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| app
+        .model
+        .document()
+        .file_policy
+        .resolved
+        .as_ref()
+        .is_some_and(|p| p.incomplete)));
+    assert_eq!(app.model.document().text_settings.tabs.width(), 3);
+    assert_eq!(app.model.document().buffer, before);
+    assert!(!app.model.document().is_modified);
+    app.model.config.editorconfig = false;
+    app.process_automation_msg(Msg::Document(DocumentMsg::Copy));
+    assert_eq!(app.model.document().text_settings.tabs.width(), 4);
+    assert!(app.model.document().file_policy.resolved.is_none());
+    assert!(!app.model.document().is_modified);
+}
+
+#[test]
+fn folding_runtime_close_reopen_restores_recent_metadata_after_worker_candidates() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("folds.txt");
+    let source = "header\n  body\n  nested\n    body\nend\n";
+    std::fs::write(&path, source).unwrap();
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.lsp.enabled = false;
+    app.model.config.session.save_on_exit = false;
+    let open = |app: &mut App| {
+        app.process_automation_msg(Msg::Layout(LayoutMsg::OpenFileInNewTab(path.clone())));
+        assert!(pump_until(app, Duration::from_secs(5), |app| app
+            .model
+            .document()
+            .file_path
+            .as_ref()
+            == Some(&path)));
+        let doc = app.model.document();
+        app.process_automation_msg(Msg::Syntax(SyntaxMsg::ParseReady {
+            document_id: doc.id.unwrap(),
+            revision: doc.revision,
+        }));
+        assert!(pump_until(app, Duration::from_secs(5), |app| app
+            .model
+            .document()
+            .folds
+            .is_some()));
+    };
+    open(&mut app);
+    app.process_automation_msg(Msg::Editor(token::messages::EditorMsg::Fold {
+        editor_id: None,
+        header: None,
+        action: token::folding::FoldAction::CollapseAll,
+    }));
+    assert_eq!(app.model.editor().folds.collapsed().len(), 2);
+    let original_tab = focused_tab_id(&app);
+    app.process_automation_msg(Msg::Layout(LayoutMsg::NewTab));
+    app.process_automation_msg(Msg::Layout(LayoutMsg::CloseTab(original_tab)));
+    let session = token::session::Session::capture(&app.model, directory.path());
+    let json = serde_json::to_string(&session).unwrap();
+    assert!(json.contains("recent_folds"));
+    assert!(!json.contains("nested"));
+    open(&mut app);
+    assert_eq!(app.model.editor().folds.collapsed().len(), 2);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), source);
+    app.process_cmd(Cmd::Quit);
+}
+
+#[test]
 fn wheel_easing_deadline_disappears_when_the_viewport_settles() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.document_mut().buffer = "line\n".repeat(100).into();
@@ -5891,7 +6092,6 @@ fn a_then_save_formatting_request_past_its_deadline_still_saves() {
     std::fs::write(&path, "fn main() {}\n").unwrap();
     app.model.document_mut().file_path = Some(path.clone());
     let doc_id = app.model.document().id.unwrap();
-    let revision = app.model.document().revision;
     let server_id = LspServerId::from("rust-analyzer");
     let root = dir.path().to_path_buf();
     install_open_document(&mut app, doc_id, &server_id, &root, lsp::path_to_uri(&path));
@@ -5904,13 +6104,8 @@ fn a_then_save_formatting_request_past_its_deadline_still_saves() {
         .servers
         .insert((server_id.clone(), root.clone()), handle);
 
-    app.request_lsp_formatting(
-        doc_id,
-        revision,
-        None,
-        lsp_types::FormattingOptions::default(),
-        true,
-    );
+    app.model.config.format_on_save = true;
+    app.process_automation_msg(Msg::App(AppMsg::SaveFile));
     let key = app.lsp.formatting.by_doc.get(&doc_id).cloned().unwrap();
     assert!(
         app.lsp.formatting.deadlines[&key] <= Instant::now() + FORMAT_ON_SAVE_TIMEOUT,

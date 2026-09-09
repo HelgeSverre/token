@@ -13,6 +13,7 @@ pub struct FileOpenRequest {
     pub source: FileOpenSource,
     pub known_documents: Vec<KnownFile>,
     pub policy: FileOpenPolicy,
+    pub editorconfig: bool,
     pub(crate) sequence: u64,
 }
 
@@ -181,6 +182,7 @@ impl FileOpenState {
 /// Identity and revision captured when a document starts a file operation.
 /// Obtain requests from update commands; only a matching pending token is valid.
 pub struct FileRequest {
+    pub file_policy: Option<std::sync::Arc<crate::editorconfig::ResolvedFilePolicy>>,
     /// The initiating document, independent of the subsequently focused tab.
     pub document_id: DocumentId,
     /// Content revision used to reject stale reads.

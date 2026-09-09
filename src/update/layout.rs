@@ -476,6 +476,7 @@ fn file_open_request(
         source,
         sequence,
         policy: model.editor_area.file_opens.pending[&sequence].policy,
+        editorconfig: model.config.editorconfig,
         known_documents: model
             .editor_area
             .documents
@@ -736,6 +737,7 @@ fn install_file_tab(
     editor.document_id = Some(document_id);
     editor.view_mode = view_mode;
     editor.tab_content = tab_content;
+    super::folding::offer_recent(model, &mut editor);
     if let ViewMode::Image(image) = &mut editor.view_mode {
         let group = model.editor_area.groups.get(&group_id)?;
         image.scale = crate::image::ImageState::compute_fit_scale(
@@ -784,6 +786,8 @@ fn split_group(model: &mut AppModel, group_id: GroupId, direction: SplitDirectio
         return;
     };
     let content = (source.view_mode.clone(), source.tab_content.clone());
+    let mut folds = source.folds.clone();
+    folds.pending = None;
     let new_group_id = model.editor_area.next_group_id();
     model.editor_area.groups.insert(
         new_group_id,
@@ -796,7 +800,11 @@ fn split_group(model: &mut AppModel, group_id: GroupId, direction: SplitDirectio
             tab_scroll: 0,
         },
     );
-    install_file_tab(model, new_group_id, document_id, Some(content), true);
+    if let Some((id, _)) = install_file_tab(model, new_group_id, document_id, Some(content), true) {
+        if let Some(editor) = model.editor_area.editors.get_mut(&id) {
+            editor.folds = folds;
+        }
+    }
     insert_split_in_layout(
         &mut model.editor_area.layout,
         group_id,
@@ -867,6 +875,7 @@ fn close_group(
     if let Some(group) = model.editor_area.groups.remove(&group_id) {
         let mut candidate_docs = Vec::new();
         for tab in group.tabs {
+            super::folding::remember_closed(model, tab.editor_id);
             if let Some(editor) = model.editor_area.editors.remove(&tab.editor_id) {
                 if let Some(doc_id) = editor.document_id {
                     candidate_docs.push(doc_id);
@@ -1092,6 +1101,7 @@ fn close_tab(model: &mut AppModel, tab_id: TabId) -> Vec<crate::model::editor_ar
     }
 
     // Remove the editor
+    super::folding::remember_closed(model, editor_id);
     model.editor_area.editors.remove(&editor_id);
 
     let mut released_documents = Vec::new();

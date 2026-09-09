@@ -112,6 +112,8 @@ fn test_config_path_returns_some() {
 #[test]
 fn test_config_serialize_deserialize() {
     let config = EditorConfig {
+        text: Default::default(),
+        editorconfig: true,
         session: Default::default(),
         theme: "fleet-dark".to_string(),
         editor_font: "Menlo".into(),
@@ -128,6 +130,7 @@ fn test_config_serialize_deserialize() {
         lsp: token::config::LspConfig::default(),
         completion: token::config::CompletionConfig::default(),
         format_on_save: false,
+        auto_save: Default::default(),
     };
     let yaml = serde_yaml::to_string(&config).unwrap();
     let parsed: EditorConfig = serde_yaml::from_str(&yaml).unwrap();

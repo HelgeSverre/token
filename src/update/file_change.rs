@@ -201,6 +201,16 @@ pub(super) fn show_focused(model: &mut AppModel, explicit: bool) -> Option<Cmd> 
 
 pub(super) fn resolve(model: &mut AppModel, state: crate::model::FileConflictState) -> Option<Cmd> {
     use crate::model::FileConflictAction;
+    if matches!(
+        state.actions().get(state.selected_index),
+        Some(FileConflictAction::Overwrite)
+    ) && super::file_policy::saving_is_blocked(model, state.document_id)
+    {
+        model
+            .ui
+            .set_status("Waiting for file settings before overwriting");
+        return Some(Cmd::Redraw);
+    }
     model.ui.close_modal();
     if has_pending_cell_edit(model, state.document_id) {
         model
@@ -240,13 +250,15 @@ pub(super) fn resolve(model: &mut AppModel, state: crate::model::FileConflictSta
                 DiskContent::Missing => None,
                 DiskContent::Unavailable(_) => return Some(Cmd::Redraw),
             };
+            let settings = doc.text_settings;
+            let cleanup = super::save_cleanup::apply(model, state.document_id, settings);
             let mut command = super::app::begin_save(model, state.document_id, state.path)?;
             if let Cmd::SaveFile { target, .. } = &mut command {
                 target.write_guard.saved = saved;
                 target.write_guard.queued = None;
                 target.write_guard.save_as = false;
             }
-            Some(command)
+            super::merge_cmds(cleanup, Some(command))
         }
         FileConflictAction::SaveAs => {
             let target = doc.begin_file_request(FileRequestKind::SaveDialog)?;

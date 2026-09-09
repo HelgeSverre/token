@@ -59,6 +59,7 @@ use winit::keyboard::ModifiersState;
 
 /// Request sent to syntax worker thread
 struct SyntaxParseRequest {
+    fold_policy: (u64, token::util::text::TabStops),
     document_id: token::model::editor_area::DocumentId,
     revision: u64,
     source: Arc<str>,
@@ -254,6 +255,7 @@ pub struct App {
     click_tracker: ClickTracker,
     /// Syntax highlight debounce deadlines: document_id → (deadline, revision)
     syntax_deadlines: HashMap<token::model::editor_area::DocumentId, (Instant, u64)>,
+    auto_save: super::auto_save::AutoSaveScheduler,
     /// File paths queued for background loading after startup
     /// Receiver for background PTY spawn completion. Spawned asynchronously
     /// because `portable_pty` startup can block on shell initialization.
@@ -568,12 +570,12 @@ impl PendingRequest for PendingPrepareRename {
 }
 
 /// What `LspManager` needs to turn a formatting response into
-/// `LspMsg::FormattingResolved`. `then_save` rides along so the gate /
+/// `LspMsg::FormattingResolved`. `save` rides along so the gate /
 /// timeout fallbacks still perform the `format_on_save` save.
 struct PendingFormatting {
     document_id: token::model::editor_area::DocumentId,
     revision: u64,
-    then_save: bool,
+    save: Option<token::model::SaveIntent>,
 }
 
 impl PendingRequest for PendingFormatting {
@@ -609,7 +611,7 @@ impl PendingFormatting {
             document_id: self.document_id,
             revision: self.revision,
             edits: None,
-            then_save: self.then_save,
+            save: self.save,
         }))
     }
 }
@@ -874,7 +876,7 @@ lsp_feature!(
 
 impl LspOutcomePolicy for PendingFormatting {
     /// Every failure resolves with `edits: None` — update-side that is a
-    /// status transient, and for `then_save` the unformatted save.
+    /// status transient, and for `save` the unformatted save.
     fn on_gate_error(self, _err: FeatureGateError) -> Option<Msg> {
         self.unavailable()
     }
@@ -1127,6 +1129,7 @@ impl App {
             webview_manager: WebviewManager::new(),
             click_tracker: ClickTracker::default(),
             syntax_deadlines: HashMap::new(),
+            auto_save: Default::default(),
             terminal_spawn_rx: None,
             automation_rx,
             #[cfg(any(target_os = "macos", test))]
@@ -1162,19 +1165,25 @@ impl App {
             .editor_area
             .documents
             .iter()
-            .filter(|(_, doc)| doc.language.has_highlighting())
             .map(|(&id, doc)| {
                 let source: Arc<str> = doc.buffer.to_string().into();
-                (id, doc.revision, source, doc.language)
+                (
+                    id,
+                    doc.revision,
+                    source,
+                    doc.language,
+                    (doc.text_policy_generation, doc.text_settings.tabs),
+                )
             })
             .collect();
 
         // Send parse requests for each document
-        for (doc_id, revision, source, language) in docs_to_parse {
+        for (doc_id, revision, source, language, fold_policy) in docs_to_parse {
             if let Err(e) = self
                 .syntax_tx
                 .send(SyntaxWorkerRequest::Parse(SyntaxParseRequest {
                     document_id: doc_id,
+                    fold_policy,
                     revision,
                     source,
                     language,
@@ -1461,8 +1470,33 @@ impl App {
         );
     }
 
+    fn check_auto_save(&mut self, now: Instant) -> bool {
+        let requests = self.auto_save.take_due(&self.model, now);
+        let mut redraw = false;
+        for request in requests {
+            if let Some(cmd) = update(&mut self.model, Msg::App(AppMsg::AutoSave(request))) {
+                redraw |= cmd.needs_redraw();
+                self.pending_damage.merge(cmd.damage());
+                self.process_cmd(cmd);
+            }
+        }
+        redraw
+    }
+
     fn handle_event(&mut self, event: &WindowEvent) -> Option<Cmd> {
         match event {
+            WindowEvent::Ime(winit::event::Ime::Preedit(text, _)) => {
+                self.auto_save.composition = (!text.is_empty())
+                    .then(|| self.model.editor_area.focused_document_id())
+                    .flatten();
+                None
+            }
+            WindowEvent::Ime(winit::event::Ime::Commit(_) | winit::event::Ime::Disabled) => {
+                // Observe composition lifetime only; committed keyboard text
+                // continues through the existing input/shortcut dispatcher.
+                self.auto_save.composition = None;
+                None
+            }
             WindowEvent::Resized(size) => update(
                 &mut self.model,
                 Msg::App(AppMsg::Resize(size.width, size.height)),
@@ -1472,6 +1506,8 @@ impl App {
                 Msg::App(AppMsg::ScaleFactorChanged(*scale_factor)),
             ),
             WindowEvent::Focused(focused) => {
+                self.auto_save
+                    .focus_changed(&self.model, *focused, Instant::now());
                 if *focused {
                     self.focused_at = std::time::SystemTime::now();
                 }
@@ -2481,6 +2517,14 @@ impl App {
                     tracing::error!("Failed to reinitialize renderer: {}", e);
                 }
             }
+            Cmd::ScheduleAutoSave {
+                document_id,
+                revision,
+            } => {
+                self.auto_save
+                    .edited(&self.model, document_id, revision, Instant::now());
+            }
+            Cmd::CancelAutoSave(document_id) => self.auto_save.cancel(document_id),
             Cmd::SaveFile {
                 target,
                 path,
@@ -2494,6 +2538,9 @@ impl App {
             }
             Cmd::LoadFile { target, path } => {
                 self.enqueue_file_job(super::file_io::FileJob::Read { target, path });
+            }
+            Cmd::ResolveFilePolicy(request) => {
+                self.enqueue_file_job(super::file_io::FileJob::Policy(request))
             }
             Cmd::ObserveFile(target) => {
                 self.enqueue_file_job(super::file_io::FileJob::Observe(target));
@@ -2807,6 +2854,7 @@ impl App {
 
             Cmd::RunSyntaxParse {
                 document_id,
+                fold_policy,
                 revision,
                 source,
                 language,
@@ -2822,6 +2870,7 @@ impl App {
                 let syntax_tx = self.syntax_tx.clone();
                 if let Err(e) = syntax_tx.send(SyntaxWorkerRequest::Parse(SyntaxParseRequest {
                     document_id,
+                    fold_policy,
                     revision,
                     source,
                     language,
@@ -3007,9 +3056,9 @@ impl App {
                 revision,
                 range,
                 options,
-                then_save,
+                save,
             } => {
-                self.request_lsp_formatting(document_id, revision, range, options, then_save);
+                self.request_lsp_formatting(document_id, revision, range, options, save);
             }
             Cmd::WorkspaceSymbols(request) => self.set_workspace_symbol_query(request),
             Cmd::LspRequestReferences {
@@ -3717,7 +3766,7 @@ impl App {
                     document_id: pending.document_id,
                     revision: pending.revision,
                     edits: Some(edits),
-                    then_save: pending.then_save,
+                    save: pending.save,
                 }))
             })
             .collect()
@@ -4039,9 +4088,24 @@ impl App {
         self.lsp.signature_help.clear_for_roots(server_id, roots);
         self.lsp.prepare_rename.clear_for_roots(server_id, roots);
         self.lsp.rename.clear_for_roots(server_id, roots);
+        // A stopped/restarted server cannot answer save preparation. Complete
+        // current save intents before dropping their slots and deadlines.
+        let formatting_keys: Vec<_> = self
+            .lsp
+            .formatting
+            .by_doc
+            .values()
+            .filter(|(id, root, _)| id == server_id && roots.contains(root))
+            .cloned()
+            .collect();
+        let formatting_outcomes: Vec<_> = formatting_keys
+            .iter()
+            .filter_map(|key| self.lsp.formatting.take_response(key))
+            .filter_map(PendingFormatting::unavailable)
+            .collect();
         self.lsp.formatting.clear_for_roots(server_id, roots);
         self.lsp.resolve.clear_for_roots(server_id, roots);
-        for message in reference_outcomes {
+        for message in reference_outcomes.into_iter().chain(formatting_outcomes) {
             self.emit_lsp_msg(message);
         }
     }
@@ -4752,7 +4816,7 @@ impl App {
     }
 
     /// `textDocument/formatting` (`range: None`) or `rangeFormatting`,
-    /// each behind its own capability gate. A `then_save` request gets
+    /// each behind its own capability gate. A `save` request gets
     /// the short `FORMAT_ON_SAVE_TIMEOUT` instead of the slot default.
     fn request_lsp_formatting(
         &mut self,
@@ -4760,7 +4824,7 @@ impl App {
         revision: u64,
         range: Option<lsp_types::Range>,
         options: lsp_types::FormattingOptions,
-        then_save: bool,
+        save: Option<token::model::SaveIntent>,
     ) {
         let mut params = serde_json::json!({ "options": options });
         let (method, supports): (&'static str, fn(&lsp_types::ServerCapabilities) -> bool) =
@@ -4774,6 +4838,7 @@ impl App {
                 }
                 None => ("textDocument/formatting", lsp::client::supports_formatting),
             };
+        let saving = save.is_some();
         self.gated_lsp_request_as::<PendingFormatting>(
             document_id,
             method,
@@ -4783,10 +4848,10 @@ impl App {
             |_| PendingFormatting {
                 document_id,
                 revision,
-                then_save,
+                save,
             },
         );
-        if then_save {
+        if saving {
             let slot = &mut self.lsp.formatting;
             if let Some(key) = slot.by_doc.get(&document_id).cloned() {
                 slot.deadlines
@@ -5159,7 +5224,7 @@ impl App {
     }
 
     /// Formatting abandonment sweep — resolves with `edits: None` so a
-    /// `then_save` request still saves.
+    /// `save` request still saves.
     fn check_lsp_formatting_deadlines(&mut self) {
         self.sweep_lsp_feature_deadlines::<PendingFormatting>();
     }
@@ -5583,6 +5648,7 @@ impl ApplicationHandler for App {
         self.check_lsp_signature_help_deadlines();
         self.check_lsp_rename_deadlines();
         self.check_lsp_formatting_deadlines();
+        needs_redraw |= self.check_auto_save(Instant::now());
         self.check_lsp_references_deadlines();
         self.check_lsp_code_action_deadlines();
         self.check_lsp_completion_debounces();
@@ -5676,6 +5742,9 @@ impl App {
                 next_wake.min(self.last_scroll_frame.unwrap_or(now) + Duration::from_millis(8));
         }
         if let Some(due) = self.file_change_due {
+            next_wake = next_wake.min(due);
+        }
+        if let Some(due) = self.auto_save.next_deadline(now) {
             next_wake = next_wake.min(due);
         }
         if let Some(deadline) = self.reference_previews.deadline() {
@@ -6206,6 +6275,14 @@ impl App {
     fn sync_document_watches(&mut self) {
         let mut paths = Vec::new();
         for document in self.model.editor_area.documents.values() {
+            if self.model.config.editorconfig {
+                if let Some(policy) = &document.file_policy.resolved {
+                    paths.extend(policy.dependencies.iter().cloned());
+                }
+                if let Some(policy) = document.pending_save_policy() {
+                    paths.extend(policy.dependencies.iter().cloned());
+                }
+            }
             if let Some(path) = &document.file_path {
                 paths.push(path.clone());
                 if let Some(identity) = document.file_identity() {
@@ -6315,6 +6392,17 @@ fn syntax_worker_loop(
                 .unwrap_or(full_highlights);
             let syntax_tree = parser_state.syntax_tree_snapshot(req.document_id, req.revision);
 
+            let folds = Some(Arc::new(token::syntax::folding::detect(
+                &req.source,
+                token::folding::FoldStamp {
+                    revision: req.revision,
+                    language: req.language,
+                    policy_generation: req.fold_policy.0,
+                },
+                req.fold_policy.1,
+                syntax_tree.as_ref(),
+            )));
+
             // Extract outline from the cached tree (just parsed above)
             let outline_started = Instant::now();
             let outline = req.extract_outline.then(|| {
@@ -6345,6 +6433,7 @@ fn syntax_worker_loop(
                 highlights,
                 syntax_tree,
                 outline,
+                folds,
                 timing: Box::new(token::messages::SyntaxWorkerTiming {
                     snapshot_ms: req.snapshot_ms,
                     queue_ms,

@@ -13,6 +13,7 @@ pub(crate) struct OverviewProjection {
     pub buffer: ropey::Rope,
     pub revision: u64,
     pub wrap_identity: Option<Arc<()>>,
+    pub fold_identity: Arc<()>,
     pub find: Option<Arc<FindResults>>,
     pub diagnostics: Vec<(lsp_types::Range, Mark)>,
     pub total_rows: usize,

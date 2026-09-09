@@ -216,6 +216,11 @@ pub enum Command {
     ToggleFindReplace,
     /// Toggle soft wrapping in the focused editor pane
     ToggleSoftWrap,
+    ToggleFold,
+    CollapseFold,
+    ExpandFold,
+    CollapseAllFolds,
+    ExpandAllFolds,
     /// Open recent files modal
     OpenRecentFiles,
 
@@ -519,6 +524,31 @@ impl Command {
             }
             ToggleGotoLine => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::GotoLine))],
             ToggleFindReplace => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::FindReplace))],
+            ToggleFold => vec![Msg::Editor(EditorMsg::Fold {
+                editor_id: None,
+                header: None,
+                action: crate::folding::FoldAction::Toggle,
+            })],
+            CollapseFold => vec![Msg::Editor(EditorMsg::Fold {
+                editor_id: None,
+                header: None,
+                action: crate::folding::FoldAction::Collapse,
+            })],
+            ExpandFold => vec![Msg::Editor(EditorMsg::Fold {
+                editor_id: None,
+                header: None,
+                action: crate::folding::FoldAction::Expand,
+            })],
+            CollapseAllFolds => vec![Msg::Editor(EditorMsg::Fold {
+                editor_id: None,
+                header: None,
+                action: crate::folding::FoldAction::CollapseAll,
+            })],
+            ExpandAllFolds => vec![Msg::Editor(EditorMsg::Fold {
+                editor_id: None,
+                header: None,
+                action: crate::folding::FoldAction::ExpandAll,
+            })],
             ToggleSoftWrap => vec![Msg::Editor(EditorMsg::ToggleSoftWrap)],
             OpenRecentFiles => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::RecentFiles))],
 
@@ -692,6 +722,11 @@ impl Command {
                 | Command::ToggleGotoLine
                 | Command::ToggleFindReplace
                 | Command::ToggleSoftWrap
+                | Command::ToggleFold
+                | Command::CollapseFold
+                | Command::ExpandFold
+                | Command::CollapseAllFolds
+                | Command::ExpandAllFolds
                 | Command::OpenRecentFiles
                 | Command::FuzzyFileFinder
                 | Command::ToggleFileExplorer
@@ -784,6 +819,11 @@ impl Command {
             ToggleCommandPalette => "Command Palette",
             ToggleGotoLine => "Go to Line",
             ToggleFindReplace => "Find and Replace",
+            ToggleFold => "View: Toggle Fold",
+            CollapseFold => "View: Collapse Fold",
+            ExpandFold => "View: Expand Fold",
+            CollapseAllFolds => "View: Collapse All Folds",
+            ExpandAllFolds => "View: Expand All Folds",
             ToggleSoftWrap => "View: Toggle Soft Wrap",
             OpenRecentFiles => "Open Recent Files",
 

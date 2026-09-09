@@ -12,6 +12,9 @@ fn model() -> AppModel {
     let mut model = common::test_model("abc", 0, 3);
     model.document_mut().file_path = Some("/fixture/original.txt".into());
     model.config.format_on_save = false;
+    // This suite isolates file-operation tokens; EditorConfig continuations have
+    // separate real-worker and policy-generation tests.
+    model.config.editorconfig = false;
     model
 }
 

@@ -578,12 +578,17 @@ fn trim_horizontal_whitespace(document: &Document, range: Range<usize>) -> Range
 }
 
 fn trim_trailing_line_ending(document: &Document, range: Range<usize>) -> Range<usize> {
-    if range.end <= range.start || document.buffer.get_byte(range.end - 1) != Some(b'\n') {
+    if range.end <= range.start
+        || !matches!(document.buffer.get_byte(range.end - 1), Some(b'\n' | b'\r'))
+    {
         return range;
     }
 
     let mut end = range.end - 1;
-    if end > range.start && document.buffer.get_byte(end - 1) == Some(b'\r') {
+    if document.buffer.get_byte(range.end - 1) == Some(b'\n')
+        && end > range.start
+        && document.buffer.get_byte(end - 1) == Some(b'\r')
+    {
         end -= 1;
     }
     range.start..end

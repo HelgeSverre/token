@@ -81,6 +81,7 @@ pub(super) fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd>
                 source,
                 language,
                 snapshot_ms,
+                fold_policy: (doc.text_policy_generation, doc.text_settings.tabs),
             })
         }
 
@@ -90,6 +91,7 @@ pub(super) fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd>
             highlights,
             syntax_tree,
             outline,
+            folds,
             timing: _,
             replace_line_ranges,
         } => {
@@ -112,7 +114,7 @@ pub(super) fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd>
             };
 
             // Skip if document has been edited since parse started
-            if doc.revision != revision {
+            if doc.revision != revision || doc.language != highlights.language {
                 tracing::debug!(
                     "Discarding stale parse results: doc revision {} != result revision {}",
                     doc.revision,
@@ -154,6 +156,12 @@ pub(super) fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd>
             }
             doc.syntax_tree = syntax_tree;
             doc.outline = outline;
+            let folds_changed = folds
+                .as_ref()
+                .is_some_and(|folds| folds.stamp.policy_generation == doc.text_policy_generation);
+            if folds_changed {
+                doc.folds = folds;
+            }
             tracing::debug!(
                 "Applied syntax highlights for document {:?}, revision {}",
                 document_id,
@@ -170,6 +178,9 @@ pub(super) fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd>
                 );
             }
 
+            if folds_changed {
+                super::folding::install(model, document_id);
+            }
             let completion = super::completion::refresh_after_syntax(model, document_id);
             Some(match completion {
                 Some(completion) => Cmd::Batch(vec![Cmd::redraw_editor(), completion]),
@@ -254,15 +265,14 @@ pub(crate) fn apply_language(
     doc.syntax_highlights = None;
     doc.syntax_tree = None;
     doc.outline = None;
+    doc.folds = None;
     let revision = doc.revision;
     let mut cmds = vec![Cmd::ClearSyntaxState { document_id }];
-    if language.has_highlighting() {
-        cmds.push(Cmd::DebouncedSyntaxParse {
-            document_id,
-            revision,
-            delay_ms: 0, // Immediate parse on language change
-        });
-    }
+    cmds.push(Cmd::DebouncedSyntaxParse {
+        document_id,
+        revision,
+        delay_ms: 0,
+    });
     Some(cmds)
 }
 
@@ -275,11 +285,6 @@ pub fn schedule_syntax_parse(
     document_id: crate::model::editor_area::DocumentId,
 ) -> Option<Cmd> {
     let doc = model.editor_area.documents.get(&document_id)?;
-
-    // Skip plain text documents
-    if !doc.language.has_highlighting() {
-        return None;
-    }
 
     let revision = doc.revision;
 
@@ -336,12 +341,15 @@ mod tests {
     }
 
     #[test]
-    fn test_schedule_syntax_parse_skips_plain_text() {
+    fn test_schedule_syntax_parse_includes_plain_text_folding() {
         let mut model = AppModel::new(800, 600, 1.0);
         let doc_id = model.document().id.expect("Document should have an ID");
         // Default is PlainText, so no parse should be scheduled
         let cmd = schedule_syntax_parse(&mut model, doc_id);
-        assert!(cmd.is_none(), "Should not schedule parse for plain text");
+        assert!(
+            matches!(cmd, Some(Cmd::DebouncedSyntaxParse { .. })),
+            "Plain text still needs indentation folding"
+        );
     }
 
     #[test]
@@ -430,6 +438,7 @@ mod tests {
                 highlights: highlights.clone(),
                 syntax_tree: None,
                 outline: None,
+                folds: None,
                 timing: Box::default(),
                 replace_line_ranges: None,
             },
@@ -466,6 +475,7 @@ mod tests {
                 highlights,
                 syntax_tree: None,
                 outline: None,
+                folds: None,
                 timing: Box::default(),
                 replace_line_ranges: None,
             },
@@ -527,6 +537,7 @@ mod tests {
                 highlights,
                 syntax_tree,
                 outline: None,
+                folds: None,
                 timing: Box::default(),
                 replace_line_ranges: None,
             },
@@ -654,6 +665,7 @@ mod tests {
                 highlights: new_highlights,
                 syntax_tree: None,
                 outline: None,
+                folds: None,
                 timing: Box::default(),
                 replace_line_ranges: None,
             },
@@ -673,7 +685,7 @@ mod tests {
     }
 
     #[test]
-    fn language_changed_clears_the_outline_and_skips_the_parse_for_plain_text() {
+    fn language_changed_clears_the_outline_and_requests_plain_text_folding() {
         let mut model = AppModel::new(800, 600, 1.0);
         let doc_id = model.document().id.unwrap();
         let doc = model.editor_area.documents.get_mut(&doc_id).unwrap();
@@ -696,10 +708,9 @@ mod tests {
             .iter()
             .any(|c| matches!(c, Cmd::ClearSyntaxState { document_id } if *document_id == doc_id)));
         assert!(
-            !cmds
-                .iter()
+            cmds.iter()
                 .any(|c| matches!(c, Cmd::DebouncedSyntaxParse { .. })),
-            "plain text has nothing to parse: {cmds:?}"
+            "plain text still needs indentation folding: {cmds:?}"
         );
     }
 }

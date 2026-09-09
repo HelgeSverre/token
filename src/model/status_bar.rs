@@ -29,6 +29,7 @@ pub enum SegmentId {
     LspServer,
     /// Inline provider request progress, hidden when no request is running.
     InlineSuggestion,
+    TextPolicy,
 }
 
 /// Position of a segment in the status bar
@@ -103,6 +104,7 @@ impl StatusSegment {
             | SegmentId::CaretCount
             | SegmentId::Diagnostics
             | SegmentId::InlineSuggestion
+            | SegmentId::TextPolicy
             | SegmentId::LspServer => SegmentPosition::Right,
         };
 
@@ -160,6 +162,7 @@ impl StatusBar {
                 StatusSegment::new(SegmentId::InlineSuggestion, SegmentContent::Empty)
                     .with_priority(66),
                 StatusSegment::new(SegmentId::CaretCount, SegmentContent::Empty).with_priority(45),
+                StatusSegment::new(SegmentId::TextPolicy, SegmentContent::Empty).with_priority(35),
                 StatusSegment::new(SegmentId::Selection, SegmentContent::Empty).with_priority(40),
                 StatusSegment::new(
                     SegmentId::CursorPosition,
@@ -387,6 +390,39 @@ use super::AppModel;
 
 /// Synchronize status bar segments with current document/editor state
 pub fn sync_status_bar(model: &mut AppModel) {
+    let text_policy = if model.editor().is_plain_text_mode() {
+        let document = model.document();
+        let settings = document.text_settings;
+        let style = match settings.indent_style {
+            super::IndentStyle::Tab => "Tabs",
+            super::IndentStyle::Space => "Spaces",
+        };
+        let ending = match document.line_ending() {
+            super::LineEnding::Lf => "LF",
+            super::LineEnding::Crlf => "CRLF",
+            super::LineEnding::Cr => "CR",
+        };
+        let diagnostic = if document
+            .file_policy
+            .resolved
+            .as_ref()
+            .is_some_and(|policy| !policy.diagnostics.is_empty())
+        {
+            " !"
+        } else {
+            ""
+        };
+        SegmentContent::Text(format!(
+            "{style}: {} {ending}{diagnostic}",
+            settings.indent_size
+        ))
+    } else {
+        SegmentContent::Empty
+    };
+    model
+        .ui
+        .status_bar
+        .update_segment(SegmentId::TextPolicy, text_policy);
     let inline_content = if model.ui.inline_in_flight
         && model
             .editor_area
@@ -467,7 +503,9 @@ pub fn sync_status_bar(model: &mut AppModel) {
         .update_segment(SegmentId::FileName, SegmentContent::Text(filename));
 
     // ModifiedIndicator segment
-    let modified = if model.document().is_modified {
+    let modified = if model.document().save_error.is_some() {
+        SegmentContent::Text("* Save failed".to_string())
+    } else if model.document().is_modified {
         SegmentContent::Text("*".to_string())
     } else {
         SegmentContent::Empty

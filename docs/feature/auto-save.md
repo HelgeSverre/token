@@ -2,6 +2,11 @@
 
 Automatic document saving with configurable triggers and modes
 
+> **Implementation plan updated 2026-09-09:** Use the
+> [coordinated save, EditorConfig, and folding plan](file-policy-and-folding-plan.md#auto-save).
+> The historical sketch below predates the ordered file worker and existing
+> event-loop deadlines; its timer and save pseudocode is superseded.
+
 > **Status:** Planned
 > **Priority:** P2
 > **Effort:** M
@@ -27,6 +32,7 @@ Automatic document saving with configurable triggers and modes
 ### Current State
 
 The editor currently:
+
 - Tracks dirty state via `Document.is_modified`
 - Saves on explicit `Cmd+S` (or `Ctrl+S` on Windows/Linux)
 - Shows modified indicator (`*`) in tab title
@@ -112,6 +118,7 @@ src/
 ### Message Flow
 
 1. **Focus Loss Trigger**:
+
    ```
    WindowEvent::Focused(false)
      → Msg::App(AppMsg::WindowFocusLost)

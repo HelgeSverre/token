@@ -1,0 +1,15 @@
+; test for path separator
+
+root=true
+
+[path/separator]
+key1=value1
+
+[/top/of/path]
+key2=value2
+
+[windows\separator]
+key3=value3
+
+[windows\\separator2]
+key4=value4

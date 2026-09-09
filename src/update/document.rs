@@ -279,23 +279,53 @@ fn indent_lines(model: &mut AppModel, unindent: bool) -> Option<Cmd> {
         .into_iter()
         .filter_map(|line| {
             let start = document.cursor_to_offset(line, 0);
-            if !unindent {
-                return Some(PlannedEdit {
-                    start,
-                    deleted: String::new(),
-                    inserted: "\t".into(),
-                });
-            }
             let text = document.buffer.line(line);
-            let count = if text.chars().next() == Some('\t') {
-                1
+            let settings = document.text_settings;
+            let leading: String = text
+                .chars()
+                .take_while(|ch| matches!(ch, ' ' | '\t'))
+                .collect();
+            let width = settings.tabs.visual_width(leading.chars());
+            let inserted = if settings.explicit_indent {
+                settings.indentation(
+                    0,
+                    if unindent {
+                        width.saturating_sub(settings.indent_size)
+                    } else {
+                        width + settings.indent_size
+                    },
+                )
+            } else if unindent {
+                let mut removed = 0;
+                let mut chars = leading.chars();
+                while removed < settings.indent_size {
+                    let Some(ch) = chars.next() else {
+                        break;
+                    };
+                    removed += if ch == '\t' {
+                        settings.tabs.advance(removed)
+                    } else {
+                        1
+                    };
+                }
+                // A tab can straddle the removed indentation step. Preserve its
+                // remainder as spaces, followed by the untouched suffix.
+                format!(
+                    "{}{}",
+                    " ".repeat(removed.saturating_sub(settings.indent_size)),
+                    chars.as_str()
+                )
+            } else if !leading.contains('\t')
+                || settings.indent_size.is_multiple_of(settings.tabs.width())
+            {
+                format!("{}{leading}", settings.indentation(0, settings.indent_size))
             } else {
-                text.chars().take(4).take_while(|&ch| ch == ' ').count()
+                settings.indentation(0, width + settings.indent_size)
             };
-            (count > 0).then(|| PlannedEdit {
+            (leading != inserted).then_some(PlannedEdit {
                 start,
-                deleted: text.chars().take(count).collect(),
-                inserted: String::new(),
+                deleted: leading,
+                inserted,
             })
         })
         .collect();
@@ -399,7 +429,11 @@ fn duplicate_at_cursors(model: &mut AppModel) -> Option<Cmd> {
             if cursor.line + 1 < document.line_count() {
                 (document.cursor_to_offset(cursor.line + 1, 0), text, column)
             } else {
-                (document.buffer.len_chars(), format!("\n{text}"), 1 + column)
+                (
+                    document.buffer.len_chars(),
+                    format!("{}{text}", document.line_ending().as_str()),
+                    document.line_ending().as_str().len() + column,
+                )
             }
         } else {
             let range = selection_range(document, selection);
@@ -481,17 +515,29 @@ fn insert_at_cursors(
     let indices = cursors_in_reverse_order(model);
     // Only enough lines to decide whether distribution is possible. Single
     // caret paste needs no line vector; excess clipboard lines use full paste.
-    let lines = (distribute_lines && indices.len() > 1)
-        .then(|| text.lines().take(indices.len() + 1).collect::<Vec<_>>());
+    let lines = (distribute_lines && indices.len() > 1).then(|| {
+        crate::util::text::lines_with_endings(text)
+            .map(crate::util::text::trim_line_ending)
+            .take(indices.len() + 1)
+            .collect::<Vec<_>>()
+    });
     let distributed = lines.as_ref().filter(|lines| lines.len() == indices.len());
     let document = model.document();
+    let mut line_carets = std::collections::HashMap::<usize, usize>::new();
+    if text == "\t" && !distribute_lines {
+        for &index in &indices {
+            *line_carets
+                .entry(model.editor().selections[index].start().line)
+                .or_default() += 1;
+        }
+    }
     let mut ends = vec![0; indices.len()];
     let mut planned = Vec::new();
     for (rank, &index) in indices.iter().enumerate() {
         let selection = model.editor().selections[index];
         let start = selection.start();
         let end = selection.end();
-        let start = document.cursor_to_offset(start.line, start.column);
+        let mut start = document.cursor_to_offset(start.line, start.column);
         let end = document.cursor_to_offset(end.line, end.column);
         ends[index] = end;
         if let Some(close) = close.filter(|_| start != end) {
@@ -507,6 +553,32 @@ fn insert_at_cursors(
             });
         } else {
             let inserted = distributed.map_or(text, |lines| lines[indices.len() - 1 - rank]);
+            // Clipboard tabs remain literal. A typed Tab advances each caret to
+            // its own indentation stop, including non-ASCII prefixes.
+            let tab;
+            let inserted = if !distribute_lines && inserted == "\t" {
+                let position = selection.start();
+                let line = document.get_line_cow(position.line).unwrap_or_default();
+                let column = document
+                    .text_settings
+                    .tabs
+                    .char_col_to_visual_col(&line, position.column);
+                let prefix: String = line.chars().take(position.column).collect();
+                tab = if line_carets.get(&position.line) == Some(&1)
+                    && prefix.chars().all(|ch| matches!(ch, ' ' | '\t'))
+                {
+                    start = document.cursor_to_offset(position.line, 0);
+                    let step = document.text_settings.indent_size;
+                    document
+                        .text_settings
+                        .indentation(0, column + step - column % step)
+                } else {
+                    document.text_settings.tab_insertion(column)
+                };
+                &tab
+            } else {
+                inserted
+            };
             if start != end || !inserted.is_empty() {
                 planned.push(PlannedEdit {
                     start,
@@ -543,7 +615,10 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
             insert_at_cursors(model, &ch.to_string(), close, false)
         }
 
-        DocumentMsg::InsertNewline => insert_at_cursors(model, "\n", None, false),
+        DocumentMsg::InsertNewline => {
+            let ending = model.document().line_ending().as_str();
+            insert_at_cursors(model, ending, None, false)
+        }
 
         DocumentMsg::DeleteBackward => delete_at_cursors(model, DeleteTarget::Backward),
         DocumentMsg::DeleteForward => delete_at_cursors(model, DeleteTarget::Forward),
@@ -710,7 +785,22 @@ fn apply_history_buffer(
     };
     let removed = deleted.chars().count();
     positions.transform(position, removed, inserted.chars().count());
+    let id = model.document().id;
+    if let Some(id) = id {
+        super::folding::before_edits(
+            model,
+            id,
+            &[super::text_edits::PlannedEdit {
+                start: position,
+                deleted: deleted.into(),
+                inserted: inserted.into(),
+            }],
+        );
+    }
     let doc = model.document_mut();
     doc.buffer.remove(position..position + removed);
     doc.buffer.insert(position, inserted);
+    if let Some(id) = id {
+        super::folding::after_edits(model, id);
+    }
 }

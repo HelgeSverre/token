@@ -616,13 +616,11 @@ impl<B: TextBuffer + TextBufferMut> EditableState<B> {
         // Insert character
         self.buffer.insert_char(offset, ch);
 
-        // Update cursor position
-        if ch == '\n' {
-            self.cursors[idx].line += 1;
-            self.cursors[idx].column = 0;
-        } else {
-            self.cursors[idx].column += 1;
-        }
+        // The buffer defines logical lines; literal LF counts cannot describe
+        // CR/CRLF input or a single-line field containing a literal separator.
+        let (line, column) = self.buffer.offset_to_position(offset + 1);
+        self.cursors[idx].line = line;
+        self.cursors[idx].column = column;
         self.cursors[idx].clear_desired_column();
         self.collapse_selection();
 
@@ -694,16 +692,11 @@ impl<B: TextBuffer + TextBufferMut> EditableState<B> {
         // Insert text
         self.buffer.insert(offset, text);
 
-        // Update cursor position
-        let lines_added = text.chars().filter(|c| *c == '\n').count();
-        if lines_added > 0 {
-            self.cursors[idx].line += lines_added;
-            // Find column after last newline
-            let last_newline = text.rfind('\n').unwrap();
-            self.cursors[idx].column = text[last_newline + 1..].chars().count();
-        } else {
-            self.cursors[idx].column += text.chars().count();
-        }
+        let (line, column) = self
+            .buffer
+            .offset_to_position(offset + text.chars().count());
+        self.cursors[idx].line = line;
+        self.cursors[idx].column = column;
         self.cursors[idx].clear_desired_column();
         self.collapse_selection();
 

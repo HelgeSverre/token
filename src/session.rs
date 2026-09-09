@@ -17,6 +17,8 @@ pub struct Session {
     version: u32,
     workspace: Option<PathBuf>,
     layout: Option<Node>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    recent_folds: Vec<crate::folding::persistence::RecentFolds>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +49,8 @@ struct SavedTab {
     soft_wrap: bool,
     had_unsaved_changes: bool,
     csv: Option<SavedCsv>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    folds: Option<crate::folding::persistence::SavedFolds>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +86,7 @@ impl Session {
             version: 1,
             layout: Node::capture(&model.editor_area.layout, model, cwd, workspace.as_deref()),
             workspace,
+            recent_folds: model.editor_area.recent_folds.clone(),
         }
     }
 
@@ -94,6 +99,11 @@ impl Session {
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.version != 1 {
             return Err("Unsupported session version");
+        }
+        let mut recent = self.recent_folds.clone();
+        crate::folding::persistence::prune_recent(&mut recent);
+        if recent.len() != self.recent_folds.len() {
+            return Err("Invalid recent fold metadata");
         }
         let mut invalid_path = false;
         self.visit_tabs(&mut |tab| {
@@ -139,6 +149,10 @@ impl Session {
     /// independent per-tab editors. Returns the number of restored tabs.
     pub fn install(&self, model: &mut AppModel) -> Result<usize, &'static str> {
         self.validate()?;
+        model
+            .editor_area
+            .recent_folds
+            .clone_from(&self.recent_folds);
         let old_editors = std::mem::take(&mut model.editor_area.editors);
         let old_groups = std::mem::take(&mut model.editor_area.groups);
         let mut count = 0;
@@ -280,6 +294,13 @@ impl Node {
                             editor.viewport.pixels.y.offset / editor.viewport.pixels.y.unit,
                         ),
                         soft_wrap: editor.soft_wrap,
+                        folds: editor.folds.saved.clone().or_else(|| {
+                            editor
+                                .folds
+                                .pending
+                                .as_ref()
+                                .map(|pending| pending.saved.clone())
+                        }),
                         had_unsaved_changes: doc.is_modified
                             || editor
                                 .view_mode
@@ -351,6 +372,9 @@ impl Node {
                     return Err("Session has too many panes or tabs");
                 }
                 for tab in tabs {
+                    if tab.folds.as_ref().is_some_and(|folds| !folds.valid()) {
+                        return Err("Invalid saved fold metadata");
+                    }
                     if tab.path.as_os_str().is_empty() || tab.selections.len() > 4096 {
                         return Err("Invalid session tab");
                     }
@@ -519,6 +543,14 @@ impl SavedTab {
             .collect();
         editor.active_cursor_index = self.active_cursor.min(editor.cursors.len() - 1);
         editor.soft_wrap = self.soft_wrap;
+        editor.folds = Default::default();
+        editor.folds.pending =
+            self.folds
+                .clone()
+                .map(|saved| crate::folding::persistence::PendingFolds {
+                    saved,
+                    top: Some(position(self.top_position)),
+                });
         // Resolve the saved logical anchor after split layout establishes each
         // pane's width. Saving a visual row would drift across wrapping/DPI changes.
         editor.viewport.top_line = 0;

@@ -31,6 +31,14 @@ pub(crate) enum Setting {
     HoverDelay,
     FormatOnSave,
     AutoReload,
+    AutoSave,
+    AutoSaveDelay,
+    AutoSaveFormatting,
+    IndentStyle,
+    IndentSize,
+    EditorConfig,
+    TabWidth,
+    LineEnding,
     SessionRestore,
     SessionSave,
     InlineStatistics,
@@ -48,6 +56,13 @@ const BOOL_LABELS: &[&str] = &["Off", "On"];
 const BLINK: &[u64] = &[0, 1000, 600, 300];
 const FONT: &[f32] = &[11.0, 12.0, 13.0];
 const HOVER_DELAY: &[u64] = &[150, 300, 600];
+const AUTO_SAVE_DELAY: &[u64] = &[500, 1000, 2000, 5000];
+const AUTO_SAVE_MODES: &[crate::config::AutoSaveMode] = &[
+    crate::config::AutoSaveMode::Off,
+    crate::config::AutoSaveMode::OnFocusLoss,
+    crate::config::AutoSaveMode::AfterDelay,
+    crate::config::AutoSaveMode::OnFocusLossAndDelay,
+];
 
 pub(crate) static DESCRIPTORS: &[Descriptor] = &[
     Descriptor {
@@ -105,6 +120,62 @@ pub(crate) static DESCRIPTORS: &[Descriptor] = &[
         name: "Hover delay",
         description: "hover_delay_ms · tooltip timing",
         labels: &["Fast", "Normal", "Slow"],
+    },
+    Descriptor {
+        setting: Setting::EditorConfig,
+        section: "Editor",
+        name: "EditorConfig",
+        description: "editorconfig · apply per-file rules from .editorconfig files",
+        labels: BOOL_LABELS,
+    },
+    Descriptor {
+        setting: Setting::IndentStyle,
+        section: "Editor",
+        name: "Indent using",
+        description: "text.indent_style · fallback when no EditorConfig rule applies",
+        labels: &["Default", "Tabs", "Spaces"],
+    },
+    Descriptor {
+        setting: Setting::IndentSize,
+        section: "Editor",
+        name: "Indent size",
+        description: "text.indent_size · columns per indentation step",
+        labels: &["Default", "2", "4", "8"],
+    },
+    Descriptor {
+        setting: Setting::TabWidth,
+        section: "Editor",
+        name: "Tab width",
+        description: "text.tab_width · display width of hard tabs",
+        labels: &["Default", "2", "4", "8"],
+    },
+    Descriptor {
+        setting: Setting::LineEnding,
+        section: "Editor",
+        name: "Line endings",
+        description: "text.end_of_line · detect or use a preferred ending",
+        labels: &["Detect", "LF", "CRLF", "CR"],
+    },
+    Descriptor {
+        setting: Setting::AutoSave,
+        section: "Editor",
+        name: "Auto-save",
+        description: "Save modified files when the window loses focus or after editing pauses",
+        labels: &["Off", "Focus loss", "Idle", "Both"],
+    },
+    Descriptor {
+        setting: Setting::AutoSaveDelay,
+        section: "Editor",
+        name: "Auto-save delay",
+        description: "Idle time since the last edit in each file",
+        labels: &["0.5 s", "1 s", "2 s", "5 s"],
+    },
+    Descriptor {
+        setting: Setting::AutoSaveFormatting,
+        section: "Editor",
+        name: "Format on auto-save",
+        description: "Apply language server formatting before automatic saves",
+        labels: BOOL_LABELS,
     },
     Descriptor {
         setting: Setting::AutoReload,
@@ -166,9 +237,42 @@ impl Descriptor {
             Setting::Brackets => usize::from(config.bracket_matching),
             Setting::Scrollbar => usize::from(config.show_scrollbar),
             Setting::IndentGuides => usize::from(config.indent_guides),
+            Setting::EditorConfig => usize::from(config.editorconfig),
             Setting::Hover => usize::from(config.hover_on_mouse),
             Setting::FormatOnSave => usize::from(config.format_on_save),
             Setting::AutoReload => usize::from(config.auto_reload),
+            Setting::AutoSave => {
+                return AUTO_SAVE_MODES
+                    .iter()
+                    .position(|&mode| mode == config.auto_save.mode)
+            }
+            Setting::AutoSaveDelay => {
+                return AUTO_SAVE_DELAY
+                    .iter()
+                    .position(|&delay| delay == config.auto_save.delay_ms)
+            }
+            Setting::AutoSaveFormatting => usize::from(config.auto_save.format_on_save),
+            Setting::IndentStyle => [
+                None,
+                Some(crate::model::IndentStyle::Tab),
+                Some(crate::model::IndentStyle::Space),
+            ]
+            .iter()
+            .position(|value| *value == config.text.indent_style)?,
+            Setting::IndentSize => [None, Some(2), Some(4), Some(8)]
+                .iter()
+                .position(|value| *value == config.text.indent_size)?,
+            Setting::TabWidth => [None, Some(2), Some(4), Some(8)]
+                .iter()
+                .position(|value| *value == config.text.tab_width)?,
+            Setting::LineEnding => [
+                None,
+                Some(crate::model::LineEnding::Lf),
+                Some(crate::model::LineEnding::Crlf),
+                Some(crate::model::LineEnding::Cr),
+            ]
+            .iter()
+            .position(|value| *value == config.text.end_of_line)?,
             Setting::SessionRestore => usize::from(config.session.restore),
             Setting::SessionSave => usize::from(config.session.save_on_exit),
             Setting::InlineStatistics => usize::from(config.completion.inline.statistics),
@@ -189,9 +293,32 @@ impl Descriptor {
             Setting::Brackets => config.bracket_matching = choice != 0,
             Setting::Scrollbar => config.show_scrollbar = choice != 0,
             Setting::IndentGuides => config.indent_guides = choice != 0,
+            Setting::EditorConfig => config.editorconfig = choice != 0,
             Setting::Hover => config.hover_on_mouse = choice != 0,
             Setting::FormatOnSave => config.format_on_save = choice != 0,
             Setting::AutoReload => config.auto_reload = choice != 0,
+            Setting::AutoSave => config.auto_save.mode = AUTO_SAVE_MODES[choice],
+            Setting::AutoSaveDelay => config.auto_save.delay_ms = AUTO_SAVE_DELAY[choice],
+            Setting::AutoSaveFormatting => config.auto_save.format_on_save = choice != 0,
+            Setting::IndentStyle => {
+                config.text.indent_style = [
+                    None,
+                    Some(crate::model::IndentStyle::Tab),
+                    Some(crate::model::IndentStyle::Space),
+                ][choice]
+            }
+            Setting::IndentSize => {
+                config.text.indent_size = [None, Some(2), Some(4), Some(8)][choice]
+            }
+            Setting::TabWidth => config.text.tab_width = [None, Some(2), Some(4), Some(8)][choice],
+            Setting::LineEnding => {
+                config.text.end_of_line = [
+                    None,
+                    Some(crate::model::LineEnding::Lf),
+                    Some(crate::model::LineEnding::Crlf),
+                    Some(crate::model::LineEnding::Cr),
+                ][choice]
+            }
             Setting::SessionRestore => config.session.restore = choice != 0,
             Setting::SessionSave => config.session.save_on_exit = choice != 0,
             Setting::InlineStatistics => config.completion.inline.statistics = choice != 0,

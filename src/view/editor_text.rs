@@ -4,12 +4,14 @@
 use std::time::{Duration, Instant};
 
 use crate::model::editor::Selection;
-use crate::model::{collect_line_marks, AppModel, Document, EditorState, Mark, TextViewportMap};
+use crate::model::{
+    collect_projected_line_marks, AppModel, Document, EditorState, Mark, TextViewportMap,
+};
 use crate::perf::{PerfStage, PerfStats};
 
 use super::frame::{Frame, TextPainter};
-use super::geometry::{self, expand_tabs_for_display};
-use crate::util::text::{char_col_to_visual_col, TABULATOR_WIDTH};
+use super::geometry;
+use crate::util::text::{TabStops, TABULATOR_WIDTH};
 
 /// Cursor width in pixels.
 const CURSOR_WIDTH: usize = 2;
@@ -96,6 +98,7 @@ impl EditorPalette {
 /// Shared layout-derived values for editor text rendering.
 struct EditorRenderContext<'a> {
     viewport: TextViewportMap<'a>,
+    tabs: TabStops,
     char_width: f32,
     line_height: usize,
     rect_x: usize,
@@ -139,6 +142,7 @@ impl<'a> EditorRenderContext<'a> {
 
         Self {
             viewport,
+            tabs: document.text_settings.tabs,
             char_width,
             line_height,
             rect_x: layout.rect_x(),
@@ -233,6 +237,7 @@ impl EditorTextBuffers {
 /// type rather than add more feature-local line iteration.
 #[derive(Clone)]
 struct VisibleTextLine<'a> {
+    tabs: TabStops,
     doc_line: usize,
     visual_line: usize,
     segment_start: usize,
@@ -264,7 +269,8 @@ impl VisibleTextLine<'_> {
                 return source.visual_column(text, column);
             }
         }
-        char_col_to_visual_col(text, column.saturating_sub(self.segment_start))
+        self.tabs
+            .char_col_to_visual_col(text, column.saturating_sub(self.segment_start))
     }
 
     /// Source-only fragments share row text and geometry. Splitting here keeps
@@ -296,11 +302,15 @@ struct TextEditorRenderer<'a> {
     palette: EditorPalette,
     text_buffers: EditorTextBuffers,
     indent_width: usize,
+    layout: &'a geometry::GroupLayout,
 }
 
 /// Prefer the most common small indentation increase, not alignment columns
 /// or the width of a tab. Sampling is bounded and independent of scroll position.
 fn document_indent_width(document: &Document) -> usize {
+    if document.text_settings.explicit_indent {
+        return document.text_settings.indent_size;
+    }
     let mut increases = [0usize; 9];
     let mut previous = 0;
     for line in document.buffer.lines().take(200) {
@@ -315,7 +325,10 @@ fn document_indent_width(document: &Document) -> usize {
         {
             continue;
         }
-        let width = crate::util::text::visual_width(line.chars().take(leading));
+        let width = document
+            .text_settings
+            .tabs
+            .visual_width(line.chars().take(leading));
         let increase = width.saturating_sub(previous);
         if (2..=8).contains(&increase) {
             increases[increase] += 1;
@@ -342,6 +355,7 @@ impl<'a> TextEditorRenderer<'a> {
         let text_buffers = EditorTextBuffers::new(ctx.visible_columns);
 
         Self {
+            layout,
             model,
             editor,
             document,
@@ -416,7 +430,9 @@ impl<'a> TextEditorRenderer<'a> {
         let left_visual_col = rect_sel.left_visual_col();
         let right_visual_col = rect_sel.right_visual_col();
 
-        let line_visual_len = char_col_to_visual_col(line_text, line_text.chars().count());
+        let line_visual_len = ctx
+            .tabs
+            .char_col_to_visual_col(line_text, line_text.chars().count());
 
         // A line has nothing to draw only when it's fully to the left of the
         // whole rectangle. Don't bail based on the live drag column (just
@@ -512,6 +528,7 @@ impl<'a> TextEditorRenderer<'a> {
         let height = self.ctx.line_height;
 
         Some(VisibleTextLine {
+            tabs: self.ctx.tabs,
             doc_line,
             visual_line: segment.visual_line,
             segment_start: segment.start_col,
@@ -571,7 +588,7 @@ impl<'a> TextEditorRenderer<'a> {
                 .take(viewport_left.saturating_add(ctx.visible_columns))
                 .take_while(|ch| matches!(ch, ' ' | '\t'))
                 .count();
-            char_col_to_visual_col(&line_text, leading)
+            self.ctx.tabs.char_col_to_visual_col(&line_text, leading)
         } else {
             0
         };
@@ -686,10 +703,15 @@ impl<'a> TextEditorRenderer<'a> {
 
         let max_chars = ctx.visible_columns;
         let segment_text = &line_text;
-        let expanded_text = expand_tabs_for_display(segment_text);
+        let expanded_text = self.ctx.tabs.expand(segment_text);
         let ghost_columns = line.projected.map(|row| {
-            char_col_to_visual_col(&row.text, row.ghost.start)
-                ..char_col_to_visual_col(&row.text, row.ghost.end)
+            self.ctx
+                .tabs
+                .char_col_to_visual_col(&row.text, row.ghost.start)
+                ..self
+                    .ctx
+                    .tabs
+                    .char_col_to_visual_col(&row.text, row.ghost.end)
         });
 
         text_buffers.display_text.clear();
@@ -780,16 +802,35 @@ impl<'a> TextEditorRenderer<'a> {
         };
         let text_width_px =
             (line_num_str.chars().count() as f32 * self.ctx.char_width).round() as usize;
-        let text_x = self
-            .ctx
-            .gutter_right_x
-            .saturating_sub(self.model.metrics.padding_medium + text_width_px);
+        let text_x = self.ctx.gutter_right_x.saturating_sub(
+            self.model.metrics.padding_medium + text_width_px + self.ctx.gutter.fold_w as usize,
+        );
         let line_color = if line.is_active_line {
             self.palette.active_line_number
         } else {
             self.palette.line_number
         };
         painter.draw(frame, text_x, line.y, &line_num_str, line_color);
+        if !line.is_continuation
+            && self.ctx.gutter.fold_w > 0
+            && self.document.folds.as_ref().is_some_and(|folds| {
+                folds
+                    .regions
+                    .binary_search_by_key(&line.doc_line, |r| r.header)
+                    .is_ok()
+            })
+        {
+            let x = self
+                .ctx
+                .gutter_right_x
+                .saturating_sub(self.ctx.gutter.fold_w as usize);
+            let glyph = if self.editor.folds.is_collapsed(line.doc_line) {
+                "▸"
+            } else {
+                "▾"
+            };
+            painter.draw(frame, x, line.y, glyph, line_color);
+        }
     }
 
     /// Marks-lane glyph for a visible gutter line, if the marks lane is
@@ -804,7 +845,9 @@ impl<'a> TextEditorRenderer<'a> {
         if marks_w == 0 {
             return;
         }
-        let Some(mark) = collect_line_marks(self.document, line.doc_line).mark else {
+        let Some(mark) =
+            collect_projected_line_marks(self.document, &self.ctx.viewport, line.doc_line).mark
+        else {
             return;
         };
 
@@ -1037,8 +1080,44 @@ impl<'a> TextEditorRenderer<'a> {
     ) {
         self.collect_line_decorations(line);
         self.render_line_decoration_stage(frame, line);
+        self.render_line_glyph_stages(frame, painter, line);
+    }
+
+    fn render_line_glyph_stages(
+        &mut self,
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        line: &VisibleTextLine,
+    ) {
         self.render_line_text_stage(frame, painter, line);
         self.render_ghost_text_stage(frame, painter, line);
+        if line.segment_end >= self.document.line_length(line.doc_line) {
+            if let Some(rect) = geometry::fold_badge_rect(
+                self.editor,
+                self.document,
+                self.layout,
+                line.doc_line,
+                self.ctx.char_width,
+                self.ctx.line_height,
+            ) {
+                if rect.y.round() as usize == line.y {
+                    let index = self
+                        .editor
+                        .folds
+                        .collapsed()
+                        .binary_search_by_key(&line.doc_line, |r| r.header)
+                        .expect("badge has a collapsed region");
+                    let region = &self.editor.folds.collapsed()[index];
+                    painter.draw(
+                        frame,
+                        rect.x.round() as usize,
+                        line.y,
+                        &format!("… {}", region.end - region.header - 1),
+                        self.palette.line_number,
+                    );
+                }
+            }
+        }
     }
 
     /// Ghost glyphs occupy the shared projected rows. The suffix is already
@@ -1053,11 +1132,18 @@ impl<'a> TextEditorRenderer<'a> {
             return;
         };
         let viewport_left = self.viewport_left();
-        let start = char_col_to_visual_col(&row.text, row.ghost.start).max(viewport_left);
-        let end = char_col_to_visual_col(&row.text, row.ghost.end)
+        let start = self
+            .ctx
+            .tabs
+            .char_col_to_visual_col(&row.text, row.ghost.start)
+            .max(viewport_left);
+        let end = self
+            .ctx
+            .tabs
+            .char_col_to_visual_col(&row.text, row.ghost.end)
             .min(viewport_left.saturating_add(self.ctx.visible_columns));
         if start < end {
-            let expanded = expand_tabs_for_display(&row.text);
+            let expanded = self.ctx.tabs.expand(&row.text);
             let text: String = expanded.chars().skip(start).take(end - start).collect();
             painter.draw(
                 frame,
@@ -1078,7 +1164,10 @@ impl<'a> TextEditorRenderer<'a> {
         {
             if let Some(state) = crate::update::inline::visible(self.model) {
                 let (position, count) = state.choice_position();
-                let column = char_col_to_visual_col(&row.text, row.text.chars().count());
+                let column = self
+                    .ctx
+                    .tabs
+                    .char_col_to_visual_col(&row.text, row.text.chars().count());
                 if count > 1 && self.ctx.contains_visual_col(column, viewport_left) {
                     let room = self
                         .ctx
@@ -1184,8 +1273,7 @@ impl<'a> TextEditorRenderer<'a> {
                 decoration_time += start.elapsed();
 
                 let start = Instant::now();
-                self.render_line_text_stage(frame, painter, &line);
-                self.render_ghost_text_stage(frame, painter, &line);
+                self.render_line_glyph_stages(frame, painter, &line);
                 glyph_time += start.elapsed();
             }
             #[cfg(not(debug_assertions))]
@@ -1713,6 +1801,7 @@ mod tests {
 
     fn unwrapped_line(doc_line: usize) -> VisibleTextLine<'static> {
         VisibleTextLine {
+            tabs: crate::util::text::TabStops::default(),
             doc_line,
             visual_line: doc_line,
             segment_start: 0,
@@ -2164,6 +2253,55 @@ mod tests {
                 diffs.len(),
                 diffs.first()
             );
+        }
+    }
+
+    #[test]
+    fn folding_chevrons_badges_and_cursor_repaints_match_full_frames_with_wrap_and_ghost() {
+        for wrapped in [false, true] {
+            for ghost in [false, true] {
+                let mut model = make_text_model();
+                let (_, _, _, char_width, line_height) = load_test_font();
+                model.char_width = char_width;
+                model.line_height = line_height;
+                let source = "header long enough to wrap across narrow panes\n  hidden\n  another hidden\ntail\n";
+                let doc = model.document_mut();
+                doc.buffer = Rope::from_str(source);
+                doc.diagnostics.clear();
+                doc.folds = Some(std::sync::Arc::new(crate::syntax::folding::detect(
+                    source,
+                    crate::folding::FoldStamp {
+                        revision: doc.revision,
+                        language: doc.language,
+                        policy_generation: doc.text_policy_generation,
+                    },
+                    doc.text_settings.tabs,
+                    None,
+                )));
+                model.editor_mut().cursors = vec![Cursor::at(0, 0)];
+                model.editor_mut().clear_selection();
+                model.editor_mut().soft_wrap = wrapped;
+                model.resize(240, 240);
+                let (doc, editor) = model.editor_area.focused_document_and_editor_mut().unwrap();
+                editor.fold(doc, crate::folding::FoldAction::Collapse, Some(0));
+                if ghost {
+                    let projection = crate::model::GhostProjection::new(
+                        doc,
+                        Position::new(3, 2),
+                        " virtual\nextra",
+                        wrapped.then_some(editor.viewport.visible_columns),
+                    )
+                    .unwrap();
+                    editor.set_ghost_text(doc, Some(std::sync::Arc::new(projection)));
+                }
+                model.ui.cursor_visible = true;
+                let mut incremental = render_full_editor_group(&model);
+                model.ui.cursor_visible = false;
+                rerender_cursor_lines(&model, &mut incremental, &[0]);
+                let full = render_full_editor_group(&model);
+                let mismatch = incremental.iter().zip(&full).position(|(a, b)| a != b);
+                assert_eq!(mismatch, None, "wrap {wrapped}, ghost {ghost}");
+            }
         }
     }
 

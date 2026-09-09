@@ -97,6 +97,18 @@ pub struct Document {
     saved_path: Option<PathBuf>,
     pub(crate) file_io: super::FileIoState,
     pub external_change: Option<super::ExternalFileChange>,
+    /// Current formatter/policy continuation, consumed before queuing a write.
+    pub(crate) pending_save: Option<super::SaveIntent>,
+    /// The revision whose last write failed; automatic retries wait for new edits.
+    pub save_error: Option<(u64, String)>,
+    pub(crate) auto_save_notified_revision: Option<u64>,
+    pub text_settings: super::DocumentTextSettings,
+    pub file_text_preferences: super::TextPreferences,
+    pub text_policy_generation: u64,
+    pub detected_line_ending: super::LineEnding,
+    pub file_policy: crate::editorconfig::FilePolicyState,
+    pub folds: Option<std::sync::Arc<crate::folding::FoldCandidates>>,
+    pub(crate) fold_policy_generation: u64,
 
     // === Syntax Highlighting ===
     /// Detected language for syntax highlighting
@@ -142,6 +154,16 @@ impl Document {
             saved_path: None,
             file_io: Default::default(),
             external_change: None,
+            pending_save: None,
+            save_error: None,
+            auto_save_notified_revision: None,
+            text_settings: Default::default(),
+            file_text_preferences: Default::default(),
+            text_policy_generation: 0,
+            detected_line_ending: Default::default(),
+            file_policy: Default::default(),
+            folds: None,
+            fold_policy_generation: 0,
             language: LanguageId::PlainText,
             language_pinned: false,
             syntax_highlights: None,
@@ -157,9 +179,39 @@ impl Document {
         let buffer = Rope::from(text);
         Self {
             saved_buffer: Some(buffer.clone()),
+            detected_line_ending: super::LineEnding::detect(text),
             buffer,
             ..Self::new()
         }
+    }
+
+    pub fn line_ending(&self) -> super::LineEnding {
+        self.text_settings
+            .end_of_line
+            .unwrap_or(self.detected_line_ending)
+    }
+
+    pub fn pending_save_policy(&self) -> Option<&crate::editorconfig::ResolvedFilePolicy> {
+        self.pending_save.as_ref()?.destination_policy.as_deref()
+    }
+
+    pub fn resolve_text_settings(&mut self, user: super::TextPreferences) -> bool {
+        let mut next = super::DocumentTextSettings::resolve(user, self.file_text_preferences);
+        if self
+            .file_policy
+            .resolved
+            .as_ref()
+            .is_some_and(|p| p.indent_uses_tab_width)
+        {
+            next.indent_size = next.tabs.width();
+            next.explicit_indent = true;
+        }
+        if self.text_settings == next {
+            return false;
+        }
+        self.text_settings = next;
+        self.text_policy_generation = self.text_policy_generation.wrapping_add(1);
+        true
     }
 
     /// Load a document from a file path
@@ -223,12 +275,17 @@ impl Document {
         &mut self,
         kind: super::FileRequestKind,
     ) -> Option<super::FileRequest> {
+        // A read, dialog, or direct write supersedes any formatter continuation.
+        if !matches!(kind, super::FileRequestKind::Observe) {
+            self.pending_save = None;
+        }
         Some(super::FileRequest {
             document_id: self.id?,
             revision: self.revision,
             source_path: self.file_path.clone(),
             source_identity: self.file_identity().cloned(),
             external_reload: false,
+            file_policy: None,
             write_guard: super::FileWriteGuard {
                 saved: self.saved_disk_content().cloned(),
                 queued: self
@@ -242,10 +299,23 @@ impl Document {
     }
 
     pub(crate) fn record_saved_buffer(&mut self, buffer: Rope) {
+        self.save_error = None;
         self.saved_buffer = Some(buffer);
         self.saved_path = self.file_path.clone();
         self.external_change = None;
         self.refresh_modified();
+    }
+
+    /// Whether an automatic save must wait for an earlier file operation.
+    pub fn save_busy(&self) -> bool {
+        self.pending_save.is_some()
+            || [
+                super::FileRequestKind::Write,
+                super::FileRequestKind::Read,
+                super::FileRequestKind::SaveDialog,
+            ]
+            .into_iter()
+            .any(|kind| self.file_io.pending(kind))
     }
 
     pub(crate) fn saved_disk_content(&self) -> Option<&Rope> {
@@ -323,16 +393,7 @@ impl Document {
         let line = self.buffer.line(line_idx);
         let len = line.len_chars();
 
-        // Calculate trim length (remove trailing newline)
-        let trim_len = if len > 0 && line.char(len - 1) == '\n' {
-            if len > 1 && line.char(len - 2) == '\r' {
-                2 // CRLF
-            } else {
-                1 // LF
-            }
-        } else {
-            0
-        };
+        let trim_len = crate::util::text::line_ending_chars(line);
 
         let trimmed = line.slice(..len - trim_len);
 
@@ -355,15 +416,7 @@ impl Document {
         if line_idx < self.buffer.len_lines() {
             let line = self.buffer.line(line_idx);
             let len = line.len_chars();
-            let trim_len = if len > 0 && line.char(len - 1) == '\n' {
-                if len > 1 && line.char(len - 2) == '\r' {
-                    2
-                } else {
-                    1
-                }
-            } else {
-                0
-            };
+            let trim_len = crate::util::text::line_ending_chars(line);
             len - trim_len
         } else {
             0

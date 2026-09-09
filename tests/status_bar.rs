@@ -186,7 +186,7 @@ fn test_all_segments_iteration() {
     let bar = StatusBar::new();
     let all: Vec<_> = bar.all_segments().collect();
 
-    assert_eq!(all.len(), 10);
+    assert_eq!(all.len(), 11);
     assert!(all
         .iter()
         .any(|segment| segment.id == SegmentId::InlineSuggestion));

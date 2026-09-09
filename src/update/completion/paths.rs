@@ -435,6 +435,7 @@ mod tests {
                 highlights,
                 syntax_tree: None,
                 outline: None,
+                folds: None,
                 timing: Box::default(),
                 replace_line_ranges: None,
             }),
