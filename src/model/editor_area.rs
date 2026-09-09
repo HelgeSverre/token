@@ -738,6 +738,7 @@ impl EditorArea {
         line_height: usize,
         char_width: f32,
         metrics: &crate::model::ScaledMetrics,
+        content_inset: Option<(EditorId, usize)>,
     ) {
         // Collect group rects and their editor IDs.
         let group_info: Vec<(Vec<EditorId>, u32, u32, u32)> = self
@@ -761,14 +762,12 @@ impl EditorArea {
                 continue;
             }
 
-            // Subtract tab bar height because group rect includes the tab bar area,
-            // but visible_lines should only count the text content area.
-            let visible_lines = (height as usize)
-                .saturating_sub(metrics.tab_bar_height)
-                .checked_div(line_height)
-                .unwrap_or(0);
-
             for editor_id in editor_ids {
+                let inset = content_inset
+                    .filter(|(id, _)| *id == editor_id)
+                    .map_or(0, |(_, height)| height);
+                let content_height = (content_height as usize).saturating_sub(inset);
+                let visible_lines = content_height.checked_div(line_height).unwrap_or(0);
                 if let Some(editor) = self.editors.get_mut(&editor_id) {
                     let doc = editor.document_id.and_then(|id| self.documents.get(&id));
                     let line_count = doc.map(|d| d.line_count()).unwrap_or(1);
@@ -813,15 +812,12 @@ impl EditorArea {
                                 image.width,
                                 image.height,
                                 width,
-                                content_height,
+                                content_height as u32,
                             );
                         }
                     }
                     if let Some(csv) = editor.view_mode.as_csv_mut() {
-                        let rows = crate::csv::rows_for_content_height(
-                            content_height as usize,
-                            line_height,
-                        );
+                        let rows = crate::csv::rows_for_content_height(content_height, line_height);
                         csv.set_viewport_size(rows, csv.viewport.visible_cols);
                     }
                 }

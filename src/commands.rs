@@ -61,6 +61,7 @@ pub enum CommandId {
 
     // Find/Replace
     Find,
+    Replace,
 
     // UI
     ShowCommandPalette,
@@ -387,7 +388,13 @@ pub static COMMANDS: &[CommandDef] = &[
         id: CommandId::Find,
         action: Some(KeymapCommand::ToggleFindReplace),
         category: CommandCategory::Nav,
-        label: "Find...",
+        label: "Find",
+    },
+    CommandDef {
+        id: CommandId::Replace,
+        action: Some(KeymapCommand::OpenReplace),
+        category: CommandCategory::Nav,
+        label: "Replace",
     },
     CommandDef {
         id: CommandId::ShowCommandPalette,

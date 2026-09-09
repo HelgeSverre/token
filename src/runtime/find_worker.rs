@@ -49,7 +49,7 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     use std::time::Duration;
-    use token::model::{AppModel, FindReplaceState, ModalState};
+    use token::model::{AppModel, FindReplaceState};
     use token::Cmd;
 
     fn request(pattern: &str) -> Arc<FindSearchRequest> {
@@ -64,7 +64,7 @@ mod tests {
         model.document_mut().buffer = "foo ".repeat(70_000).into();
         let mut state = FindReplaceState::default();
         state.set_query(pattern);
-        model.ui.open_modal(ModalState::FindReplace(state));
+        model.ui.open_find(state);
         extract(token::update::update(&mut model, Msg::Ui(UiMsg::BlinkCursor)).unwrap()).unwrap()
     }
 

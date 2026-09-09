@@ -7,6 +7,7 @@ pub mod caret;
 pub mod editor_scrollbars;
 pub mod editor_special_tabs;
 pub mod editor_text;
+pub mod find_bar;
 mod fonts;
 pub mod frame;
 pub mod geometry;
@@ -332,7 +333,7 @@ fn active_find_matches(
     model: &AppModel,
     document: &crate::model::Document,
 ) -> std::sync::Arc<[crate::search::Match]> {
-    let Some(crate::model::ModalState::FindReplace(state)) = &model.ui.active_modal else {
+    let Some(state) = &model.ui.find_bar else {
         return Default::default();
     };
     // `matches` is empty on a regex error too (`find_all` yields nothing
@@ -560,6 +561,11 @@ impl<'a> EditorGroupScene<'a> {
             Renderer::render_tab_bar(frame, painter, model, self.group, &self.tab_bar);
         });
         self.render_content(frame, painter, model, perf);
+        if self.is_focused {
+            perf.measure_stage(crate::perf::PerfStage::FindBar, || {
+                find_bar::render(frame, painter, model)
+            });
+        }
         painter.use_ui_font(ui);
 
         if self.should_render_scrollbars(model) {
@@ -1005,9 +1011,10 @@ impl Renderer {
         let splitters = model
             .editor_area
             .compute_layout_scaled(editor_area_rect, model.metrics.splitter_width);
+        let inset = model.find_bar_inset();
         model
             .editor_area
-            .sync_all_viewports(line_height, char_width, &model.metrics);
+            .sync_all_viewports(line_height, char_width, &model.metrics, inset);
 
         let effective_damage = self.compute_effective_damage(damage, model, show_perf_overlay);
         let render_editor = effective_damage.is_full()
@@ -2028,9 +2035,13 @@ impl Renderer {
                 ascent,
                 char_width,
                 line_height,
-            );
+            )
+            .with_ui_font(&self.ui_font, &mut self.ui_glyph_cache);
             perf.measure_stage(crate::perf::PerfStage::CursorFastPath, || {
                 editor_text::render_cursor_lines_only(&mut frame, &mut painter, model, dirty_lines);
+            });
+            perf.measure_stage(crate::perf::PerfStage::FindBar, || {
+                find_bar::render(&mut frame, &mut painter, model);
             });
             // Cursor-lines-only redraw fills each dirty line's background and
             // text across the full group width, which overlaps the vertical
@@ -2653,7 +2664,7 @@ mod cursor_fast_path_scrollbar_tests {
 #[cfg(test)]
 mod find_match_decoration_tests {
     use super::*;
-    use crate::model::{FindReplaceState, ModalState, Position, Selection};
+    use crate::model::{FindReplaceState, Position, Selection};
 
     fn model_with_text(text: &str) -> AppModel {
         let mut model = AppModel::new(400, 300, 1.0);
@@ -2666,7 +2677,7 @@ mod find_match_decoration_tests {
         state.set_query(query);
         state.whole_word = whole_word;
         state.use_regex = use_regex;
-        model.ui.open_modal(ModalState::FindReplace(state));
+        model.ui.open_find(state);
     }
 
     #[test]
@@ -2700,7 +2711,7 @@ mod find_match_decoration_tests {
         let mut state = FindReplaceState::default();
         state.set_query("foo");
         state.whole_word = true;
-        model.ui.open_modal(ModalState::FindReplace(state));
+        model.ui.open_find(state);
 
         let matches = active_find_matches(&model, model.document());
 
@@ -2723,7 +2734,7 @@ mod find_match_decoration_tests {
         let mut state = FindReplaceState::default();
         state.set_query("foo");
         state.case_sensitive = true;
-        model.ui.open_modal(ModalState::FindReplace(state));
+        model.ui.open_find(state);
 
         let matches = active_find_matches(&model, model.document());
 
@@ -2737,7 +2748,7 @@ mod find_match_decoration_tests {
     fn active_find_matches_respect_the_selection_scope() {
         let mut model = model_with_text("foo\nfoo\nfoo\n");
         open_find(&mut model, "foo", false, false);
-        if let Some(crate::model::ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+        if let Some(state) = &mut model.ui.find_bar {
             state.selection_only = true;
             state.scope = Some((4, 8));
         }
@@ -2809,7 +2820,7 @@ mod find_match_decoration_tests {
     fn find_match_ticks_map_matches_to_their_starting_line() {
         let mut model = model_with_text("foo\nbar\nfoo\n");
         open_find(&mut model, "foo", false, false);
-        let Some(crate::model::ModalState::FindReplace(state)) = &model.ui.active_modal else {
+        let Some(state) = &model.ui.find_bar else {
             panic!("Find must be open");
         };
         assert_eq!(state.results(model.document()).lines(), &[0, 2]);

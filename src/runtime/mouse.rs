@@ -79,6 +79,10 @@ pub(super) fn update_terminal_link_hover(
 /// Track pointer rows using the same flat indices as painting and activation.
 /// Returns whether row highlights changed, so idle popup hover requests repaint.
 pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarget>) -> bool {
+    let previous_find = match model.ui.hover {
+        token::model::HoverRegion::FindBar(control) => control,
+        _ => None,
+    };
     let previous_modal = model.ui.modal_hover_row;
     let previous_terminal = model.terminal.hovered_tab;
     model.terminal.hovered_tab = match target {
@@ -102,7 +106,12 @@ pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarge
             _ => None,
         };
     }
-    previous_terminal != model.terminal.hovered_tab
+    previous_find
+        != match model.ui.hover {
+            token::model::HoverRegion::FindBar(control) => control,
+            _ => None,
+        }
+        || previous_terminal != model.terminal.hovered_tab
         || previous_modal != model.ui.modal_hover_row
         || previous_popup
             != model
@@ -115,6 +124,7 @@ pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarge
 /// (e.g. a sidebar row then an editor line) never count as double-clicks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClickRegion {
+    FindField(token::model::FindReplaceField),
     Terminal {
         session: usize,
         point: alacritty_terminal::index::Point,
@@ -1581,6 +1591,9 @@ pub fn handle_mouse_press(
             token::model::FocusTarget::Editor => model.ui.focus_editor(),
             token::model::FocusTarget::Dock(pos) => model.ui.focus_dock(*pos),
             token::model::FocusTarget::Modal => {}
+            token::model::FocusTarget::FindBar => {
+                model.ui.focus = token::model::FocusTarget::FindBar
+            }
         }
     }
 
@@ -1619,6 +1632,9 @@ fn arms_content_drag(target: &HitTarget) -> bool {
     matches!(
         target,
         HitTarget::EditorContent { .. }
+            | HitTarget::FindBar {
+                control: Some(token::view::find_bar::Control::Field(_))
+            }
             | HitTarget::ImageContent { .. }
             | HitTarget::DockContent {
                 active_panel_id: token::panel::PanelId::Terminal,
@@ -1761,6 +1777,33 @@ fn handle_left_click(
     use token::model::FocusTarget;
 
     match target {
+        HitTarget::FindBar { control } => {
+            let clicks = if let Some(token::view::find_bar::Control::Field(field)) = control {
+                click_tracker.track_click(ClickRegion::FindField(*field))
+            } else {
+                0
+            };
+            let cmd = if let Some(token::view::find_bar::Control::Field(field)) = control {
+                token::view::find_bar::column_at(model, *field, event.pos.x).and_then(|column| {
+                    update(
+                        model,
+                        Msg::Ui(UiMsg::FindFieldPointer {
+                            field: *field,
+                            column,
+                            extend: event.shift(),
+                            clicks,
+                        }),
+                    )
+                })
+            } else {
+                control.and_then(|control| update(model, Msg::Ui(control.message())))
+            };
+            EventResult::Consumed {
+                redraw: true,
+                focus: None,
+                cmd,
+            }
+        }
         // Modal handling
         HitTarget::ModalScrollbar { geometry } => modal_scrollbar_press(model, geometry, event),
         HitTarget::Modal { inside } => {
@@ -2521,7 +2564,8 @@ fn handle_middle_click(
         HitTarget::CsvCell { .. } => EventResult::consumed_no_redraw(),
 
         // Modal - consume, no action
-        HitTarget::Modal { .. }
+        HitTarget::FindBar { .. }
+        | HitTarget::Modal { .. }
         | HitTarget::ModalScrollbar { .. }
         | HitTarget::ModalRow { .. }
         | HitTarget::ModalChoice { .. }
@@ -2932,6 +2976,7 @@ fn scroll_hovered_region(
 
         // StatusBar/Splitter/DockResize/Button: ignore scroll
         HoverRegion::StatusBar
+        | HoverRegion::FindBar(_)
         | HoverRegion::Splitter
         | HoverRegion::SidebarResize
         | HoverRegion::DockResize(_)

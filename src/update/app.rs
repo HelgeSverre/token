@@ -288,7 +288,9 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
         }
 
         AppMsg::PasteFromClipboard(text) => {
-            if model.ui.active_modal.is_some() {
+            if model.ui.active_modal.is_some()
+                || model.ui.focus == crate::model::FocusTarget::FindBar
+            {
                 return super::ui::update_ui(
                     model,
                     crate::messages::UiMsg::Modal(crate::messages::ModalMsg::PasteText(text)),

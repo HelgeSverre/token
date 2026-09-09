@@ -91,6 +91,9 @@ impl MouseEvent {
 /// future use (e.g., context menus, detailed click handling).
 #[derive(Clone, Debug)]
 pub enum HitTarget {
+    FindBar {
+        control: Option<super::find_bar::Control>,
+    },
     ModalScrollbar {
         geometry: super::scrollbar::ScrollbarGeometry,
     },
@@ -294,6 +297,10 @@ impl HitTarget {
         use winit::window::CursorIcon;
 
         match self {
+            HitTarget::FindBar {
+                control: Some(super::find_bar::Control::Field(_)),
+            } => CursorIcon::Text,
+            HitTarget::FindBar { control: Some(_) } => CursorIcon::Pointer,
             HitTarget::EditorContent { .. } | HitTarget::CsvCell { .. } => CursorIcon::Text,
             HitTarget::DockContent {
                 active_panel_id: crate::panel::PanelId::Terminal,
@@ -321,6 +328,7 @@ impl HitTarget {
         use crate::model::HoverRegion;
 
         match self {
+            HitTarget::FindBar { control } => HoverRegion::FindBar(*control),
             HitTarget::Modal { .. }
             | HitTarget::ModalScrollbar { .. }
             | HitTarget::ModalRow { .. }
@@ -646,6 +654,16 @@ pub fn hit_test_groups(model: &AppModel, pt: Point, char_width: f32) -> Option<H
     // branch and the gutter/content branch below (mirrors the render path's
     // use of GroupLayout in `EditorRenderContext`).
     let layout = super::geometry::GroupLayout::new(group, model, char_width);
+
+    if group.id == model.editor_area.focused_group_id {
+        if let Some(bar) = super::find_bar::FindBarLayout::new(model) {
+            if bar.rect.contains(pt.x as f32, pt.y as f32) {
+                return Some(HitTarget::FindBar {
+                    control: bar.hit(pt.x, pt.y),
+                });
+            }
+        }
+    }
 
     // Check if in tab bar
     if tab_bar.contains(pt.x, pt.y) {

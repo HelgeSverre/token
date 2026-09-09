@@ -20,7 +20,7 @@ use token::messages::{
     CompletionMsg, CsvMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, ModalMsg, Msg, OutlineMsg,
     ProblemsMsg, TerminalMsg, UiMsg, WorkspaceMsg,
 };
-use token::model::{AppModel, ModalState};
+use token::model::{AppModel, FocusTarget, ModalState};
 use token::panel::{DockPosition, PanelId};
 use token::terminal::{translate_key, TerminalKeyModifiers};
 use token::update::update;
@@ -158,6 +158,9 @@ pub fn handle_key(
     if model.ui.has_modal() {
         return handle_modal_key(model, key, physical_key, modifiers);
     }
+    if model.ui.focus == FocusTarget::FindBar {
+        return handle_find_key(model, key, physical_key, modifiers);
+    }
 
     // Cursor-anchored popups are not modals — they consume exactly
     // Up/Down/Enter/Esc/Tab and pass every other key through to the editor
@@ -172,6 +175,10 @@ pub fn handle_key(
         // open — the completion menu keeps priority (it closes first).
         model.ui.signature_help = None;
         return Some(Cmd::Redraw);
+    }
+
+    if let Some(action) = find_editor_key(model, &key, modifiers) {
+        return update(model, Msg::Ui(action));
     }
 
     if is_usages_dock_focused(model) {
@@ -820,24 +827,57 @@ fn dispatch_csv_text_edit(model: &mut AppModel, action: TextEditingKeyAction) ->
     }
 }
 
-/// Handle keyboard input when a modal is active.
-///
-/// This captures focus and routes keys to the modal instead of the editor.
-fn handle_modal_key(
+/// Find navigation precedes ordinary editor bindings, but not popup dismissal.
+pub(super) fn find_editor_key(
+    model: &AppModel,
+    key: &Key,
+    modifiers: KeyModifiers,
+) -> Option<UiMsg> {
+    if model.ui.has_modal()
+        || model.ui.focus != FocusTarget::Editor
+        || model.find_bar_inset().is_none()
+    {
+        return None;
+    }
+    match key {
+        Key::Named(NamedKey::Escape)
+            if model.ui.signature_help.is_none()
+                && token::update::inline::visible(model).is_none() =>
+        {
+            Some(UiMsg::CloseFind)
+        }
+        Key::Named(NamedKey::F3) => Some(UiMsg::Modal(if modifiers.shift {
+            ModalMsg::FindPrevious
+        } else {
+            ModalMsg::FindNext
+        })),
+        _ => None,
+    }
+}
+
+/// Find fields capture text input, but never turn the editor into a modal.
+fn handle_find_key(
     model: &mut AppModel,
     key: Key,
     physical_key: winit::keyboard::PhysicalKey,
     modifiers: KeyModifiers,
 ) -> Option<Cmd> {
     let KeyModifiers {
-        shift, alt, logo, ..
+        shift,
+        alt,
+        ctrl,
+        logo,
     } = modifiers;
-
+    let primary = if cfg!(target_os = "macos") {
+        logo
+    } else {
+        ctrl
+    };
     // Find/Replace option toggles (find-enhancements.md Phase 5): ⌥⌘C
     // case, ⌥⌘W whole word, ⌥⌘R regex, ⌥⌘L selection scope. Matched on
     // the physical key because Option composes the logical character
     // on macOS ("ç", "∑", "®", "¬").
-    if logo && alt && matches!(model.ui.active_modal, Some(ModalState::FindReplace(_))) {
+    if primary && alt {
         use winit::keyboard::{KeyCode, PhysicalKey};
         let toggle = match physical_key {
             PhysicalKey::Code(KeyCode::KeyC) => Some(ModalMsg::ToggleFindReplaceCaseSensitive),
@@ -851,6 +891,55 @@ fn handle_modal_key(
         }
     }
 
+    let msg = match key {
+        Key::Named(NamedKey::Escape) => return update(model, Msg::Ui(UiMsg::CloseFind)),
+        Key::Named(NamedKey::Enter)
+            if primary && model.ui.find_bar.as_ref().is_some_and(|s| s.replace_mode) =>
+        {
+            ModalMsg::ReplaceAll
+        }
+        Key::Named(NamedKey::Enter) if shift => ModalMsg::FindPrevious,
+        Key::Named(NamedKey::Enter) => {
+            if model.ui.find_bar.as_ref().is_some_and(|s| {
+                s.replace_mode && s.focused_field == token::model::FindReplaceField::Replace
+            }) {
+                ModalMsg::ReplaceAndFindNext
+            } else {
+                ModalMsg::FindNext
+            }
+        }
+        Key::Named(NamedKey::F3) if shift => ModalMsg::FindPrevious,
+        Key::Named(NamedKey::F3) => ModalMsg::FindNext,
+        Key::Named(NamedKey::Tab) => {
+            if model.ui.find_bar.as_ref().is_some_and(|s| s.replace_mode) {
+                ModalMsg::ToggleFindReplaceField
+            } else {
+                model.ui.focus_editor();
+                return Some(Cmd::Redraw);
+            }
+        }
+        _ => {
+            return classify_text_editing_key(&key, modifiers)
+                .and_then(|action| dispatch_modal_text_edit(model, action))
+                .or(Some(Cmd::Redraw))
+        }
+    };
+    update(model, Msg::Ui(UiMsg::Modal(msg)))
+}
+
+/// Handle keyboard input when a modal is active.
+///
+/// This captures focus and routes keys to the modal instead of the editor.
+fn handle_modal_key(
+    model: &mut AppModel,
+    key: Key,
+    _physical_key: winit::keyboard::PhysicalKey,
+    modifiers: KeyModifiers,
+) -> Option<Cmd> {
+    let KeyModifiers {
+        shift, alt, logo, ..
+    } = modifiers;
+
     match key {
         // Escape: close modal
         Key::Named(NamedKey::Escape) => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Close))),
@@ -859,15 +948,6 @@ fn handle_modal_key(
         // ModalMsg::TogglePin is a no-op for every other modal).
         Key::Character(ref s) if logo && s.as_str() == "." => {
             update(model, Msg::Ui(UiMsg::Modal(ModalMsg::TogglePin)))
-        }
-
-        // Shift+Enter: find previous, but only in Find/Replace — everywhere
-        // else Shift+Enter still confirms (e.g. a capital letter typed just
-        // before Enter must not turn Enter into a dead key).
-        Key::Named(NamedKey::Enter)
-            if shift && matches!(model.ui.active_modal, Some(ModalState::FindReplace(_))) =>
-        {
-            update(model, Msg::Ui(UiMsg::Modal(ModalMsg::FindPrevious)))
         }
 
         // Enter: confirm modal action
@@ -884,10 +964,7 @@ fn handle_modal_key(
             ) {
                 update(model, Msg::Ui(UiMsg::Modal(ModalMsg::NextTab)))
             } else {
-                update(
-                    model,
-                    Msg::Ui(UiMsg::Modal(ModalMsg::ToggleFindReplaceField)),
-                )
+                Some(Cmd::Redraw)
             }
         }
         Key::Named(NamedKey::Tab) if shift => {
@@ -1446,43 +1523,42 @@ mod tests {
     }
 
     #[test]
-    fn option_command_letters_toggle_find_options_in_the_modal() {
-        use token::model::{FindReplaceState, ModalState};
+    fn option_command_letters_toggle_find_options_in_the_bar() {
+        use token::model::FindReplaceState;
         let mut model = AppModel::new(800, 600, 1.0);
-        model
-            .ui
-            .open_modal(ModalState::FindReplace(FindReplaceState::default()));
+        model.ui.open_find(FindReplaceState::default());
         let mods = KeyModifiers {
-            ctrl: false,
+            ctrl: !cfg!(target_os = "macos"),
             shift: false,
             alt: true,
-            logo: true,
+            logo: cfg!(target_os = "macos"),
         };
         let press = |model: &mut AppModel, logical: &str, code: KeyCode| {
-            handle_modal_key(
+            handle_key(
                 model,
                 Key::Character(logical.into()),
                 PhysicalKey::Code(code),
                 mods,
+                false,
             );
         };
         // Option composes the logical character on macOS; the physical key decides.
         press(&mut model, "ç", KeyCode::KeyC);
         press(&mut model, "∑", KeyCode::KeyW);
         press(&mut model, "®", KeyCode::KeyR);
-        let Some(ModalState::FindReplace(state)) = &model.ui.active_modal else {
-            panic!("modal should stay open");
+        let Some(state) = &model.ui.find_bar else {
+            panic!("Find bar should stay open");
         };
         assert!(state.case_sensitive && state.whole_word && state.use_regex);
         assert!(!state.selection_only, "no selection: ⌥⌘L leaves scope off");
 
         press(&mut model, "ç", KeyCode::KeyC);
-        let Some(ModalState::FindReplace(state)) = &model.ui.active_modal else {
-            panic!("modal should stay open");
+        let Some(state) = &model.ui.find_bar else {
+            panic!("Find bar should stay open");
         };
         assert!(!state.case_sensitive, "second press toggles back");
         // A plain letter still types into the query.
-        handle_modal_key(
+        handle_key(
             &mut model,
             Key::Character("x".into()),
             PhysicalKey::Code(KeyCode::KeyX),
@@ -1492,9 +1568,10 @@ mod tests {
                 alt: false,
                 logo: false,
             },
+            false,
         );
-        let Some(ModalState::FindReplace(state)) = &model.ui.active_modal else {
-            panic!("modal should stay open");
+        let Some(state) = &model.ui.find_bar else {
+            panic!("Find bar should stay open");
         };
         assert_eq!(state.query(), "x");
     }

@@ -959,7 +959,9 @@ impl<'a> TextEditorRenderer<'a> {
     }
 
     fn render_dirty_line_cursors(&self, frame: &mut Frame, line: &VisibleTextLine) {
-        if !self.model.ui.cursor_visible {
+        if !self.model.ui.cursor_visible
+            || self.model.ui.focus == crate::model::FocusTarget::FindBar
+        {
             return;
         }
 
@@ -978,7 +980,9 @@ impl<'a> TextEditorRenderer<'a> {
     }
 
     fn render_visible_cursors(&self, frame: &mut Frame) {
-        if !self.model.ui.cursor_visible {
+        if !self.model.ui.cursor_visible
+            || self.model.ui.focus == crate::model::FocusTarget::FindBar
+        {
             return;
         }
 
@@ -1327,7 +1331,11 @@ pub fn render_cursor_lines_only(
         width: clip_w as f32,
         height: layout.content_h() as f32,
     });
+    // Mixed UI painters start in the UI role. Cursor-only redraws must select
+    // the same code font as full editor-group rendering, then restore the caller.
+    let ui = painter.use_ui_font(false);
     renderer.render_cursor_lines_only(frame, painter, dirty_lines, &decorations);
+    painter.use_ui_font(ui);
     frame.clear_clip();
 }
 
@@ -1901,6 +1909,12 @@ mod tests {
         let mut frame = Frame::new(buffer, width, height);
         let (font, font_size, ascent, char_width, line_height) = load_test_font();
         let mut glyph_cache = GlyphCache::default();
+        let ui_font = Font::from_bytes(
+            include_bytes!("../../assets/Inter-Regular.ttf") as &[u8],
+            FontSettings::default(),
+        )
+        .unwrap();
+        let mut ui_cache = GlyphCache::default();
         let mut painter = TextPainter::new(
             &font,
             &mut glyph_cache,
@@ -1908,14 +1922,15 @@ mod tests {
             ascent,
             char_width,
             line_height,
-        );
+        )
+        .with_ui_font(&ui_font, &mut ui_cache);
 
         render_cursor_lines_only(&mut frame, &mut painter, model, dirty_lines);
     }
 
     #[test]
     fn pixel_scrolled_text_gutter_hits_and_cursor_redraw_share_geometry() {
-        for wrapped in [false, true] {
+        for (wrapped, find_open) in [(false, false), (true, false), (false, true), (true, true)] {
             let mut model = make_text_model();
             model.document_mut().buffer =
                 Rope::from_str(&"    alpha\tbeta gamma delta epsilon\n".repeat(30));
@@ -1936,7 +1951,14 @@ mod tests {
             model.editor_mut().soft_wrap = wrapped;
             model.editor_mut().cursors = vec![Cursor::at(1, 6)];
             model.editor_mut().clear_selection();
-            model.resize(220, 140);
+            if find_open {
+                let mut find = crate::model::FindReplaceState::default();
+                find.set_query("alpha");
+                model.ui.open_find(find);
+                model.resize(220, 480);
+            } else {
+                model.resize(220, 140);
+            }
             let normal = render_full_editor_group(&model);
             let id = model.editor_area.focused_editor_id().unwrap();
             let doc_id = model.editor_area.focused_document_id().unwrap();

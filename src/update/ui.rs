@@ -26,10 +26,70 @@ use super::app::execute_command;
 /// Handle UI messages (status bar, cursor blink, modals)
 pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
     match msg {
+        UiMsg::OpenFind { replace } => open_find(model, replace),
+        UiMsg::CloseFind => {
+            if let Some(state) = model.ui.find_bar.take() {
+                model.ui.last_find_replace = Some(state);
+            }
+            model.ui.find_selection_drag = None;
+            if model.ui.focus == crate::model::FocusTarget::FindBar {
+                model.ui.focus = crate::model::FocusTarget::Editor;
+            }
+            model.resync_viewports();
+            Some(Cmd::Redraw)
+        }
+        UiMsg::ToggleFindReplaceMode => {
+            model.ui.find_selection_drag = None;
+            let state = model.ui.find_bar.as_mut()?;
+            state.replace_mode = !state.replace_mode;
+            state.focused_field = crate::model::FindReplaceField::Query;
+            model.resync_viewports();
+            Some(Cmd::Redraw)
+        }
+        UiMsg::FocusFindField(field) => {
+            let state = model.ui.find_bar.as_mut()?;
+            if field == crate::model::FindReplaceField::Replace && !state.replace_mode {
+                return None;
+            }
+            state.focused_field = field;
+            model.ui.focus = crate::model::FocusTarget::FindBar;
+            model.ui.reset_cursor_blink();
+            Some(Cmd::Redraw)
+        }
+        UiMsg::FindFieldPointer {
+            field,
+            column,
+            extend,
+            clicks,
+        } => {
+            if model.ui.has_modal() || model.find_bar_inset().is_none() {
+                return None;
+            }
+            let state = model.ui.find_bar.as_mut()?;
+            if field == crate::model::FindReplaceField::Replace && !state.replace_mode {
+                return None;
+            }
+            state.focused_field = field;
+            let input = state.focused_editable_mut();
+            input.set_cursor_column(column, extend);
+            match clicks {
+                2 => input.select_word(),
+                3.. => input.select_all(),
+                _ => {}
+            }
+            model.ui.find_selection_drag = Some(field);
+            model.ui.focus = crate::model::FocusTarget::FindBar;
+            model.ui.reset_cursor_blink();
+            Some(Cmd::Redraw)
+        }
+        UiMsg::EndFindSelection => {
+            model.ui.find_selection_drag = None;
+            None
+        }
         UiMsg::FindSearchCompleted { request, result } => {
             let document_id = model.editor_area.focused_document_id()?;
             let document = model.editor_area.documents.get(&document_id)?;
-            let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal else {
+            let Some(state) = &mut model.ui.find_bar else {
                 return None;
             };
             state
@@ -125,7 +185,6 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                 ModalId::RenameSymbol => {
                     return super::lsp::update_lsp(model, crate::messages::LspMsg::RenameSymbol)
                 }
-                ModalId::FindReplace => ModalState::FindReplace(reopened_find_replace(model)),
                 ModalId::ThemePicker => {
                     ModalState::ThemePicker(ThemePickerState::new(model.config.theme.clone()))
                 }
@@ -264,7 +323,6 @@ fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<Strin
         ModalState::CommandPalette(state) => Some(&mut state.editable),
         ModalState::GotoLine(state) => Some(&mut state.editable),
         ModalState::RenameSymbol(state) => Some(&mut state.editable),
-        ModalState::FindReplace(state) => Some(state.focused_editable_mut()),
         ModalState::ThemePicker(_) => None,
         ModalState::FileFinder(state) => Some(&mut state.editable),
         ModalState::RecentFiles(state) => Some(&mut state.editable),
@@ -297,7 +355,6 @@ fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
         ModalState::RecentFiles(state) => resolve_recent_rows(state),
         ModalState::GotoLine(_)
         | ModalState::RenameSymbol(_)
-        | ModalState::FindReplace(_)
         | ModalState::ThemePicker(_)
         | ModalState::LspServers(_)
         | ModalState::LanguagePicker(_)
@@ -305,7 +362,103 @@ fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
     }
 }
 
-/// Handle modal-specific messages
+/// Shared editing path for modal inputs and the non-modal find fields.
+fn edit_ui_input(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
+    if let Some(ModalState::CommandPalette(state)) = &mut model.ui.active_modal {
+        if state.input().is_empty() {
+            match &msg {
+                ModalMsg::InsertChar(ch) => {
+                    if let Some(tab) =
+                        search_tab_for_prefix(*ch).filter(|tab| state.tab_available(*tab))
+                    {
+                        state.active_tab = tab;
+                        return Some(Cmd::Redraw);
+                    }
+                }
+                ModalMsg::DeleteBackward => state.active_tab = SearchTab::All,
+                _ => {}
+            }
+        }
+    }
+    let editing = matches!(
+        msg,
+        ModalMsg::SetInput(_)
+            | ModalMsg::InsertChar(_)
+            | ModalMsg::DeleteBackward
+            | ModalMsg::DeleteForward
+            | ModalMsg::DeleteWordBackward
+            | ModalMsg::Cut
+            | ModalMsg::PasteText(_)
+    );
+    let goto = matches!(model.ui.active_modal, Some(ModalState::GotoLine(_)));
+    let input = if let Some(modal) = model.ui.active_modal.as_mut() {
+        modal_editable_mut(modal)
+    } else if model.ui.focus == crate::model::FocusTarget::FindBar {
+        model
+            .ui
+            .find_bar
+            .as_mut()
+            .map(FindReplaceState::focused_editable_mut)
+    } else {
+        None
+    }?;
+    let mut effect = None;
+    match msg {
+        ModalMsg::SetInput(text) => input.set_content(&text),
+        ModalMsg::InsertChar(ch) => {
+            input.insert_char(ch);
+        }
+        ModalMsg::DeleteBackward => {
+            input.delete_backward();
+        }
+        ModalMsg::DeleteForward => {
+            input.delete_forward();
+        }
+        ModalMsg::DeleteWordBackward => {
+            input.delete_word_backward();
+        }
+        ModalMsg::MoveCursorLeft => input.move_left(false),
+        ModalMsg::MoveCursorRight => input.move_right(false),
+        ModalMsg::MoveCursorHome => input.move_line_start(false),
+        ModalMsg::MoveCursorEnd => input.move_line_end(false),
+        ModalMsg::MoveCursorWordLeft => input.move_word_left(false),
+        ModalMsg::MoveCursorWordRight => input.move_word_right(false),
+        ModalMsg::MoveCursorLeftWithSelection => input.move_left(true),
+        ModalMsg::MoveCursorRightWithSelection => input.move_right(true),
+        ModalMsg::MoveCursorHomeWithSelection => input.move_line_start(true),
+        ModalMsg::MoveCursorEndWithSelection => input.move_line_end(true),
+        ModalMsg::MoveCursorWordLeftWithSelection => input.move_word_left(true),
+        ModalMsg::MoveCursorWordRightWithSelection => input.move_word_right(true),
+        ModalMsg::SelectAll => input.select_all(),
+        ModalMsg::Copy | ModalMsg::Cut => {
+            let text = input.selected_text();
+            if !text.is_empty() {
+                if editing {
+                    input.delete_backward();
+                }
+                effect = Some(Cmd::CopyToClipboard(text));
+            }
+        }
+        ModalMsg::Paste => effect = Some(Cmd::RequestClipboardPaste),
+        ModalMsg::PasteText(text) => {
+            let filtered: String = text
+                .chars()
+                .filter(|c| *c != '\n' && *c != '\r' && (!goto || c.is_ascii_digit()))
+                .collect();
+            input.insert_text(&filtered);
+        }
+        _ => return None,
+    }
+    if editing {
+        if let Some(modal) = &mut model.ui.active_modal {
+            on_modal_input_changed(modal, &model.command_history);
+        }
+    }
+    model.ui.reset_cursor_blink();
+    super::merge_cmds(Some(Cmd::Redraw), effect)
+}
+
+/// Handle dialog and docked-find input messages.
 fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
     // Changing the modal's query/category/selection invalidates captured geometry.
     model.ui.scrollbar_drag = None;
@@ -338,13 +491,12 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
-        ModalMsg::OpenFindReplace => {
-            let state = reopened_find_replace(model);
-            model.ui.open_modal(ModalState::FindReplace(state));
-            Some(Cmd::Redraw)
-        }
+        ModalMsg::OpenFindReplace => open_find(model, true),
 
         ModalMsg::Close => {
+            if model.ui.focus == crate::model::FocusTarget::FindBar {
+                return update_ui(model, UiMsg::CloseFind);
+            }
             // Restore original theme if closing theme picker without confirming
             if let Some(ModalState::ThemePicker(state)) = &model.ui.active_modal {
                 let id = state.original_theme_id.clone();
@@ -358,273 +510,38 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
-        ModalMsg::SetInput(text) => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                match modal {
-                    ModalState::CommandPalette(state) => state.set_input(&text),
-                    ModalState::Settings(state) => state.editable.set_content(&text),
-                    ModalState::GotoLine(state) => state.set_input(&text),
-                    ModalState::RenameSymbol(state) => state.editable.set_content(&text),
-                    ModalState::FindReplace(state) => state.set_query(&text),
-                    ModalState::ThemePicker(_) => {} // No text input for theme picker
-                    ModalState::FileFinder(state) => state.set_input(&text),
-                    ModalState::RecentFiles(state) => state.editable.set_content(&text),
-                    ModalState::LspServers(_) => {} // No text input for the servers picker
-                    ModalState::LanguagePicker(_) | ModalState::FileConflict(_) => {}
-                }
-                on_modal_input_changed(modal, &model.command_history);
-                Some(Cmd::Redraw)
-            } else {
-                None
-            }
+        ModalMsg::MoveCursorLeft
+            if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) =>
+        {
+            change_setting(model, None, -1)
         }
-
-        ModalMsg::InsertChar(ch) => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                // Prefix routing (overlay-surface.md Phase 4): `>`/`@` as
-                // char 0 of a *previously empty* query pins the Commands/
-                // Symbols tab and is consumed, not inserted.
-                if let ModalState::CommandPalette(state) = modal {
-                    if state.input().is_empty() {
-                        if let Some(tab) = search_tab_for_prefix(ch) {
-                            // Mirror `activate_search_tab`/`cycle_search_tab`:
-                            // never park on an `Unavailable` tab — fall
-                            // through to inserting the char instead.
-                            if state.tab_available(tab) {
-                                state.active_tab = tab;
-                                return Some(Cmd::Redraw);
-                            }
-                        }
-                    }
-                }
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.insert_char(ch);
-                }
-                on_modal_input_changed(modal, &model.command_history);
-                Some(Cmd::Redraw)
-            } else {
-                None
-            }
+        ModalMsg::MoveCursorRight
+            if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) =>
+        {
+            change_setting(model, None, 1)
         }
-
-        ModalMsg::DeleteBackward => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                // Backspace on an already-empty query returns to the All
-                // tab — the mirror of prefix routing above.
-                if let ModalState::CommandPalette(state) = modal {
-                    if state.input().is_empty() {
-                        state.active_tab = SearchTab::All;
-                    }
-                }
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.delete_backward();
-                }
-                on_modal_input_changed(modal, &model.command_history);
-                Some(Cmd::Redraw)
-            } else {
-                None
-            }
-        }
-
-        ModalMsg::DeleteWordBackward => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.delete_word_backward();
-                }
-                on_modal_input_changed(modal, &model.command_history);
-                Some(Cmd::Redraw)
-            } else {
-                None
-            }
-        }
-
-        ModalMsg::MoveCursorWordLeft => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.move_word_left(false);
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::MoveCursorWordRight => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.move_word_right(false);
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::MoveCursorLeft => {
-            if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) {
-                return change_setting(model, None, -1);
-            }
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.move_left(false);
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::MoveCursorRight => {
-            if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) {
-                return change_setting(model, None, 1);
-            }
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.move_right(false);
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::MoveCursorHome => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.move_line_start(false);
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::MoveCursorEnd => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.move_line_end(false);
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::MoveCursorLeftWithSelection => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.move_left(true);
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::MoveCursorRightWithSelection => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.move_right(true);
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::MoveCursorHomeWithSelection => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.move_line_start(true);
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::MoveCursorEndWithSelection => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.move_line_end(true);
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::MoveCursorWordLeftWithSelection => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.move_word_left(true);
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::MoveCursorWordRightWithSelection => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.move_word_right(true);
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::SelectAll => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.select_all();
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::Copy => {
-            let mut cmd = Cmd::Redraw;
-            if let Some(ref mut modal) = model.ui.active_modal {
-                let text = modal_editable_mut(modal)
-                    .map(|editable| editable.selected_text())
-                    .unwrap_or_default();
-                if !text.is_empty() {
-                    cmd = Cmd::Batch(vec![cmd, Cmd::CopyToClipboard(text)]);
-                }
-            }
-            Some(cmd)
-        }
-
-        ModalMsg::Cut => {
-            let mut cmd = Cmd::Redraw;
-            if let Some(ref mut modal) = model.ui.active_modal {
-                let text = modal_editable_mut(modal)
-                    .map(|editable| editable.selected_text())
-                    .unwrap_or_default();
-                if !text.is_empty() {
-                    if let Some(editable) = modal_editable_mut(modal) {
-                        editable.delete_backward();
-                    }
-                    on_modal_input_changed(modal, &model.command_history);
-                    cmd = Cmd::Batch(vec![cmd, Cmd::CopyToClipboard(text)]);
-                }
-            }
-            Some(cmd)
-        }
-
-        ModalMsg::Paste => Some(Cmd::RequestClipboardPaste),
-
-        ModalMsg::PasteText(text) => {
-            // Filter out newlines for single-line modal inputs
-            let filtered: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
-            if !filtered.is_empty() {
-                if let Some(ref mut modal) = model.ui.active_modal {
-                    if let ModalState::GotoLine(state) = modal {
-                        // Filter to only digits for goto line
-                        let digits: String =
-                            filtered.chars().filter(|c| c.is_ascii_digit()).collect();
-                        state.editable.insert_text(&digits);
-                    } else {
-                        if let Some(editable) = modal_editable_mut(modal) {
-                            editable.insert_text(&filtered);
-                        }
-                        on_modal_input_changed(modal, &model.command_history);
-                    }
-                }
-            }
-            Some(Cmd::Redraw)
-        }
-
-        ModalMsg::DeleteForward => {
-            if let Some(ref mut modal) = model.ui.active_modal {
-                if let Some(editable) = modal_editable_mut(modal) {
-                    editable.delete_forward();
-                }
-                on_modal_input_changed(modal, &model.command_history);
-                Some(Cmd::Redraw)
-            } else {
-                None
-            }
-        }
+        input @ (ModalMsg::SetInput(_)
+        | ModalMsg::InsertChar(_)
+        | ModalMsg::DeleteBackward
+        | ModalMsg::DeleteForward
+        | ModalMsg::DeleteWordBackward
+        | ModalMsg::MoveCursorLeft
+        | ModalMsg::MoveCursorRight
+        | ModalMsg::MoveCursorHome
+        | ModalMsg::MoveCursorEnd
+        | ModalMsg::MoveCursorWordLeft
+        | ModalMsg::MoveCursorWordRight
+        | ModalMsg::MoveCursorLeftWithSelection
+        | ModalMsg::MoveCursorRightWithSelection
+        | ModalMsg::MoveCursorHomeWithSelection
+        | ModalMsg::MoveCursorEndWithSelection
+        | ModalMsg::MoveCursorWordLeftWithSelection
+        | ModalMsg::MoveCursorWordRightWithSelection
+        | ModalMsg::SelectAll
+        | ModalMsg::Copy
+        | ModalMsg::Cut
+        | ModalMsg::Paste
+        | ModalMsg::PasteText(_)) => edit_ui_input(model, input),
 
         ModalMsg::SelectPrevious => modal_select(model, -1),
 
@@ -743,11 +660,18 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
         ModalMsg::ActivateTab(index) => activate_search_tab(model, index),
 
+        ModalMsg::Confirm if model.ui.focus == crate::model::FocusTarget::FindBar => {
+            update_modal(model, ModalMsg::FindNext)
+        }
         ModalMsg::Confirm => confirm_active_modal(model),
 
         ModalMsg::ToggleFindReplaceField => {
-            if let Some(ModalState::FindReplace(ref mut state)) = model.ui.active_modal {
+            if let Some(ref mut state) = model.ui.find_bar {
+                if !state.replace_mode {
+                    return None;
+                }
                 state.toggle_field();
+                model.ui.reset_cursor_blink();
                 Some(Cmd::Redraw)
             } else {
                 None
@@ -755,7 +679,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::ToggleFindReplaceCaseSensitive => {
-            if let Some(ModalState::FindReplace(ref mut state)) = model.ui.active_modal {
+            if let Some(ref mut state) = model.ui.find_bar {
                 state.case_sensitive = !state.case_sensitive;
                 Some(Cmd::Redraw)
             } else {
@@ -764,7 +688,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::ToggleFindReplaceWholeWord => {
-            if let Some(ModalState::FindReplace(ref mut state)) = model.ui.active_modal {
+            if let Some(ref mut state) = model.ui.find_bar {
                 state.whole_word = !state.whole_word;
                 Some(Cmd::Redraw)
             } else {
@@ -773,7 +697,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::ToggleFindReplaceRegex => {
-            if let Some(ModalState::FindReplace(ref mut state)) = model.ui.active_modal {
+            if let Some(ref mut state) = model.ui.find_bar {
                 state.use_regex = !state.use_regex;
                 Some(Cmd::Redraw)
             } else {
@@ -783,17 +707,15 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::ToggleFindReplaceSelectionOnly => {
             let selection = model.editor().selections[0];
-            let Some(ModalState::FindReplace(mut state)) = model.ui.active_modal.take() else {
-                return None;
-            };
+            let mut state = model.ui.find_bar.take()?;
             let on = !state.selection_only;
             state.set_selection_only(on, model.document(), &selection);
-            model.ui.active_modal = Some(ModalState::FindReplace(state));
+            model.ui.find_bar = Some(state);
             Some(Cmd::Redraw)
         }
 
         ModalMsg::FindNext => {
-            if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
+            if let Some(ref state) = model.ui.find_bar {
                 if !state.query().is_empty() {
                     let state = state.clone();
                     model.ui.last_find_replace = Some(state.clone());
@@ -804,7 +726,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::FindPrevious => {
-            if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
+            if let Some(ref state) = model.ui.find_bar {
                 if !state.query().is_empty() {
                     let state = state.clone();
                     model.ui.last_find_replace = Some(state.clone());
@@ -815,7 +737,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::ReplaceAndFindNext => {
-            if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
+            if let Some(ref state) = model.ui.find_bar {
                 if !state.query().is_empty() {
                     let state = state.clone();
                     let replacement = state.replacement();
@@ -827,7 +749,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::ReplaceAll => {
-            if let Some(ModalState::FindReplace(ref state)) = model.ui.active_modal {
+            if let Some(ref state) = model.ui.find_bar {
                 if !state.query().is_empty() {
                     let state = state.clone();
                     let replacement = state.replacement();
@@ -946,7 +868,7 @@ fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
         ModalState::LanguagePicker(state) => {
             state.selected_index = row.min(LanguageId::all().count())
         }
-        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) | ModalState::FindReplace(_) => {}
+        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) => {}
     }
 }
 
@@ -1020,15 +942,6 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
                 editor.clear_selection();
                 model.ui.close_modal();
                 model.ensure_cursor_visible();
-                Some(Cmd::Redraw)
-            }
-            ModalState::FindReplace(state) => {
-                // For Confirm, treat it as FindNext
-                if !state.query().is_empty() {
-                    model.ui.last_find_replace = Some(state.clone());
-                    return find_next_in_document(model, &state);
-                }
-                model.ui.close_modal();
                 Some(Cmd::Redraw)
             }
             ModalState::ThemePicker(state) => {
@@ -1585,7 +1498,7 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
                 offset_selection(state.selected_index, state.actions().len(), delta);
             None
         }
-        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) | ModalState::FindReplace(_) => None,
+        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) => None,
     };
     if let Some(theme_id) = preview_theme_id {
         return Some(Cmd::Batch(vec![
@@ -1719,7 +1632,7 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
                 0
             };
         }
-        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) | ModalState::FindReplace(_) => {}
+        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) => {}
     }
     Some(Cmd::Redraw)
 }
@@ -1781,9 +1694,7 @@ fn modal_scroll_to(model: &mut AppModel, position: Option<usize>, delta: isize) 
         ModalState::LanguagePicker(state) => {
             (&mut state.scroll_offset, language_picker_shapes().to_vec())
         }
-        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) | ModalState::FindReplace(_) => {
-            return None
-        }
+        ModalState::GotoLine(_) | ModalState::RenameSymbol(_) => return None,
     };
     let total: usize = shapes.iter().map(|s| s.len).sum();
     if total == 0 {
@@ -1808,11 +1719,56 @@ fn modal_scroll_to(model: &mut AppModel, position: Option<usize>, delta: isize) 
 fn reopened_find_replace(model: &AppModel) -> FindReplaceState {
     let mut state = model.ui.last_find_replace.clone().unwrap_or_default();
     state.reset_search_session();
+    state.document_id = model.editor_area.focused_document_id();
     if state.selection_only {
         let selection = model.editor().selections[0];
         state.set_selection_only(true, model.document(), &selection);
     }
     state
+}
+
+fn open_find(model: &mut AppModel, replace: bool) -> Option<Cmd> {
+    if !model.editor_area.focused_editor()?.is_plain_text_mode() {
+        return None;
+    }
+    let selection = model.editor().selections[0];
+    let mut state = model
+        .ui
+        .find_bar
+        .take()
+        .unwrap_or_else(|| reopened_find_replace(model));
+    bind_find_document(&mut state, model.editor_area.focused_document_id());
+    state.replace_mode = replace;
+    state.focused_field = crate::model::FindReplaceField::Query;
+    if !selection.is_empty() && !state.selection_only {
+        let start = selection.start();
+        let end = selection.end();
+        if start.line == end.line {
+            let doc = model.document();
+            let text = doc
+                .buffer
+                .slice(
+                    doc.cursor_to_offset(start.line, start.column)
+                        ..doc.cursor_to_offset(end.line, end.column),
+                )
+                .to_string();
+            state.set_query(&text);
+        }
+    }
+    state.query_editable.select_all();
+    model.ui.open_find(state);
+    model.cancel_scroll_animations();
+    model.resync_viewports();
+    Some(Cmd::Redraw)
+}
+
+fn bind_find_document(state: &mut FindReplaceState, document_id: Option<crate::model::DocumentId>) {
+    if state.document_id.is_some() && state.document_id != document_id {
+        state.scope = None;
+        state.selection_only = false;
+        state.reset_search_session();
+    }
+    state.document_id = document_id;
 }
 
 /// Schedule once after any update, including edits and focus/tab changes. Display
@@ -1823,9 +1779,10 @@ pub(super) fn schedule_find_search(model: &mut AppModel) -> Option<Cmd> {
         return None;
     }
     let document = model.editor_area.documents.get(&editor.document_id?)?;
-    let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal else {
+    let Some(state) = &mut model.ui.find_bar else {
         return None;
     };
+    bind_find_document(state, document.id);
     state.prepare_search(document).map(Cmd::RunFindSearch)
 }
 
@@ -1994,7 +1951,7 @@ fn replace_and_find_next(
     // The shared mapper has updated the active scope. Do not search the stale
     // clone captured before a length-changing replacement.
     let mut next_state = state.clone();
-    if let Some(ModalState::FindReplace(active)) = &model.ui.active_modal {
+    if let Some(active) = &model.ui.find_bar {
         next_state.scope = active.scope;
     }
     let next_cmd = find_next_from(model, &next_state, new_offset, true);

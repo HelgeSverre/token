@@ -175,26 +175,16 @@ pub fn pixel_to_line_and_visual_column_in_group(
     document: &Document,
 ) -> (usize, usize) {
     let viewport = editor.viewport_map(document);
-    let local_x = x - group_rect.x as f64;
-    let local_y = y - group_rect.y as f64;
-
-    let text_x = crate::model::text_start_x_scaled(
-        char_width,
-        &model.metrics,
-        document.line_count(),
-        !document.diagnostics.is_empty(),
-    )
-    .round() as f64;
-
-    let text_start_y = model.metrics.tab_bar_height as f64;
-    let adjusted_y = (local_y - text_start_y).max(0.0);
+    let layout =
+        GroupLayout::for_content(*group_rect, editor.id, Some(document), model, char_width);
+    let adjusted_y = (y - layout.content_y() as f64).max(0.0);
     let visible_row = viewport.visible_row_at_pixel(adjusted_y, line_height);
     let line = viewport
         .top_line()
         .saturating_add(visible_row)
         .min(viewport.last_line());
 
-    let x_offset = local_x - text_x;
+    let x_offset = x - layout.text_start_x as f64;
     let visual_column = viewport.visual_column_for_x_offset(x_offset, char_width);
 
     (line, visual_column)
@@ -217,19 +207,10 @@ pub fn pixel_to_cursor_in_group(
     document: &Document,
 ) -> (usize, usize) {
     let viewport = editor.viewport_map(document);
-    let local_x = x - group_rect.x as f64;
-    let local_y = y - group_rect.y as f64;
-
-    let text_x = crate::model::text_start_x_scaled(
-        char_width,
-        &model.metrics,
-        document.line_count(),
-        !document.diagnostics.is_empty(),
-    )
-    .round() as f64;
-    let text_start_y = model.metrics.tab_bar_height as f64;
-    let adjusted_y = (local_y - text_start_y).max(0.0);
-    let x_offset = local_x - text_x;
+    let layout =
+        GroupLayout::for_content(*group_rect, editor.id, Some(document), model, char_width);
+    let adjusted_y = (y - layout.content_y() as f64).max(0.0);
+    let x_offset = x - layout.text_start_x as f64;
     let position =
         viewport.position_for_pixel(document, x_offset, adjusted_y, char_width, line_height);
     (position.line, position.column)
@@ -378,18 +359,38 @@ impl GroupLayout {
     /// ensuring DPI-correct rendering on all displays. Gutter width is derived
     /// from the group's active document line count.
     pub fn new(group: &EditorGroup, model: &AppModel, char_width: f32) -> Self {
-        let group_rect = group.rect;
+        Self::for_content(
+            group.rect,
+            group.active_editor_id(),
+            model.editor_area.document_for_group(group),
+            model,
+            char_width,
+        )
+    }
+
+    /// Painting and pointer conversion resolve the same content origin.
+    fn for_content(
+        group_rect: Rect,
+        editor_id: Option<crate::model::EditorId>,
+        document: Option<&Document>,
+        model: &AppModel,
+        char_width: f32,
+    ) -> Self {
         let metrics = &model.metrics;
 
         let tab_bar_height = metrics.tab_bar_height;
+        let find_height = model
+            .find_bar_inset()
+            .filter(|(id, _)| Some(*id) == editor_id)
+            .map_or(0, |(_, height)| height);
+        let top_inset = tab_bar_height.saturating_add(find_height);
         let content_rect = Rect::new(
             group_rect.x,
-            group_rect.y + tab_bar_height as f32,
+            group_rect.y + top_inset as f32,
             group_rect.width,
-            (group_rect.height - tab_bar_height as f32).max(0.0),
+            (group_rect.height - top_inset as f32).max(0.0),
         );
 
-        let document = model.editor_area.document_for_group(group);
         let line_count = document.map(|doc| doc.line_count()).unwrap_or(1);
         let has_marks = document.is_some_and(|doc| !doc.diagnostics.is_empty());
 

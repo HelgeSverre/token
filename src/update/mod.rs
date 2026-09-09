@@ -110,6 +110,7 @@ pub(crate) fn finish_test_file_opens(model: &mut AppModel, cmd: Option<Cmd>) -> 
 /// In release builds, it's a direct dispatch with zero overhead.
 #[inline]
 pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
+    let find_inset = model.find_bar_inset();
     match &msg {
         Msg::Editor(crate::messages::EditorMsg::ScrollPixels { .. }) => {}
         Msg::Editor(_) | Msg::Document(_) | Msg::Layout(_) => model.cancel_scroll_animations(),
@@ -123,6 +124,15 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let result = update_inner(model, msg);
     let result = merge_cmds(result, usages::reconcile(model));
     let result = merge_cmds(result, file_change::reconcile(model));
+    if model.ui.focus == crate::model::FocusTarget::FindBar && model.find_bar_inset().is_none() {
+        model.ui.focus_editor();
+    }
+    let result = if find_inset != model.find_bar_inset() {
+        model.resync_viewports();
+        merge_cmds(result, Some(Cmd::Redraw))
+    } else {
+        result
+    };
     if model.ui.has_modal() || model.ui.context_menu.is_some() {
         model.cancel_scroll_animations();
     }

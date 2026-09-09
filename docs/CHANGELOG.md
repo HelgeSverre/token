@@ -6,6 +6,17 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Docked Find and Replace
+
+- Find and Replace now open beneath the active editor pane's tabs instead of
+  in a modal. The editor remains available for clicking, editing and scrolling.
+- Cmd+F focuses Find; Cmd+R opens Replace (Ctrl on Windows/Linux). The bar has
+  match counts, previous/next navigation, search-option toggles and replacement
+  actions, with a stacked layout in narrow panes. Escape closes it.
+- Search inputs share the existing text-editing and caret primitives, including
+  selection, clipboard shortcuts and pointer selection. Queries are remembered
+  when closing; captured selection scopes reset when switching documents.
+
 ### Pixel scrolling
 
 - Plain-text panes scroll vertically and horizontally by pixels, including

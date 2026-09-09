@@ -10,9 +10,7 @@
 //! hit-test (overlay-surface.md "Hit-testing": one layout, two consumers).
 
 use crate::completion::menu::MenuItemKind;
-use crate::model::ui::{
-    FindReplaceField, LanguagePickerState, LspServersState, RecentFilesState, ThemePickerState,
-};
+use crate::model::ui::{LanguagePickerState, LspServersState, RecentFilesState, ThemePickerState};
 use crate::model::AppModel;
 use crate::theme::ThemeInfo;
 
@@ -1307,134 +1305,6 @@ fn render_single_field_modal(
     }
 }
 
-/// The footer's toggle legend: each option with its Opt+Cmd key, a check
-/// mark after the ones that are on (find-enhancements.md Phase 5).
-pub(crate) fn find_options_legend(state: &crate::model::ui::FindReplaceState) -> String {
-    let item = |glyph: &str, key: &str, on: bool| {
-        if on {
-            format!("{glyph} {key} \u{2713}")
-        } else {
-            format!("{glyph} {key}")
-        }
-    };
-    [
-        item("Aa", "\u{2325}\u{2318}C", state.case_sensitive),
-        item("W", "\u{2325}\u{2318}W", state.whole_word),
-        item(".*", "\u{2325}\u{2318}R", state.use_regex),
-        item("=", "\u{2325}\u{2318}L", state.selection_only),
-    ]
-    .join("  \u{00b7}  ")
-}
-
-fn render_find_replace_modal(
-    frame: &mut Frame,
-    painter: &mut TextPainter,
-    model: &AppModel,
-    state: &crate::model::ui::FindReplaceState,
-    ctx: &ModalRenderCtx,
-    mask_cache: &mut RoundedRectMaskCache,
-) {
-    // "3 of 42" / "No matches" / "Invalid regex: …" on the Find label row.
-    let status = state.status(model.document(), &model.editor().selections[0]);
-    let status_label = status.as_ref().map(|s| s.label());
-    let find_field = Field {
-        label: "Find:",
-        trailing: status_label.as_deref(),
-        trailing_is_error: status.as_ref().is_some_and(|s| s.is_error()),
-    };
-    let fields = if state.replace_mode {
-        vec![find_field, Field::labeled("Replace:")]
-    } else {
-        vec![find_field]
-    };
-    let focused = match state.focused_field {
-        FindReplaceField::Query => 0,
-        FindReplaceField::Replace => 1,
-    };
-    let legend = find_options_legend(state);
-
-    let spec = OverlaySpec {
-        tabs: None,
-        anchor: Anchor::Centered {
-            width: width_rule(SMALL_MODAL_WIDTH),
-            dim_alpha: MODAL_DIM_ALPHA,
-        },
-        header: None,
-        body: Body::Fields {
-            fields: &fields,
-            focused,
-        },
-        // The legend fills the small modal's footer; only replace mode
-        // has a hint worth the remaining room.
-        footer: Some(Footer {
-            leading: &legend,
-            trailing: if state.replace_mode {
-                "\u{2318}\u{21b5} replace all"
-            } else {
-                ""
-            },
-        }),
-        hover_row: None,
-        docs: None,
-    };
-
-    overlay_surface::render(
-        frame,
-        painter,
-        mask_cache,
-        &model.theme,
-        &spec,
-        ctx.window_width,
-        ctx.window_height,
-        ctx.scale_factor,
-        model.ui.cursor_visible,
-    );
-
-    let l = overlay_surface::layout(&spec, ctx.window_width, ctx.window_height, ctx.scale_factor);
-    let highlight = model.theme.overlay.highlight.to_argb_u32();
-    let selection_bg = model.theme.overlay.selection_background.to_argb_u32();
-
-    if let Some(find_field) = l.fields.first() {
-        let cursor_visible =
-            model.ui.cursor_visible && matches!(state.focused_field, FindReplaceField::Query);
-        TextFieldRenderer::render_modal_input(
-            frame,
-            painter,
-            &state.query_editable,
-            &find_field.input,
-            ctx.line_height,
-            ctx.char_width,
-            ctx.colors.input_bg,
-            ctx.colors.fg,
-            highlight,
-            selection_bg,
-            cursor_visible,
-            ctx.scale_factor,
-        );
-    }
-
-    if state.replace_mode {
-        if let Some(replace_field) = l.fields.get(1) {
-            let cursor_visible =
-                model.ui.cursor_visible && matches!(state.focused_field, FindReplaceField::Replace);
-            TextFieldRenderer::render_modal_input(
-                frame,
-                painter,
-                &state.replace_editable,
-                &replace_field.input,
-                ctx.line_height,
-                ctx.char_width,
-                ctx.colors.input_bg,
-                ctx.colors.fg,
-                highlight,
-                selection_bg,
-                cursor_visible,
-                ctx.scale_factor,
-            );
-        }
-    }
-}
-
 // ============================================================================
 // Shape-only layouts (hit-testing, caret placement)
 // ============================================================================
@@ -1686,37 +1556,6 @@ pub(crate) fn with_modal_overlay_layout<R>(
             let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
             Some(f(&spec, &l))
         }
-        ModalState::FindReplace(state) => {
-            let fields = if state.replace_mode {
-                vec![Field::labeled(""), Field::labeled("")]
-            } else {
-                vec![Field::labeled("")]
-            };
-            let focused = match state.focused_field {
-                FindReplaceField::Query => 0,
-                FindReplaceField::Replace => 1,
-            };
-            let spec = OverlaySpec {
-                tabs: None,
-                anchor: Anchor::Centered {
-                    width: width_rule(SMALL_MODAL_WIDTH),
-                    dim_alpha: MODAL_DIM_ALPHA,
-                },
-                header: None,
-                body: Body::Fields {
-                    fields: &fields,
-                    focused,
-                },
-                footer: Some(Footer {
-                    leading: "",
-                    trailing: "",
-                }),
-                hover_row: None,
-                docs: None,
-            };
-            let l = overlay_surface::layout(&spec, window_width, window_height, scale_factor);
-            Some(f(&spec, &l))
-        }
     }
 }
 
@@ -1955,9 +1794,6 @@ pub fn render_modals(
             &ctx,
             overlay_mask_cache,
         ),
-        ModalState::FindReplace(state) => {
-            render_find_replace_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
-        }
         ModalState::FileFinder(state) => {
             render_file_finder_modal(frame, painter, model, state, &ctx, overlay_mask_cache)
         }
@@ -2994,18 +2830,6 @@ mod tests {
         assert!(matches!(accessories[index], PaletteAccessory::None));
     }
 
-    #[test]
-    fn legend_marks_only_the_active_options() {
-        let mut state = crate::model::ui::FindReplaceState::default();
-        let off = find_options_legend(&state);
-        assert!(!off.contains('\u{2713}'));
-        assert!(off.contains("Aa \u{2325}\u{2318}C") && off.contains("= \u{2325}\u{2318}L"));
-        state.use_regex = true;
-        state.selection_only = true;
-        let on = find_options_legend(&state);
-        assert_eq!(on.matches('\u{2713}').count(), 2);
-        assert!(on.contains(".* \u{2325}\u{2318}R \u{2713}"));
-    }
     use crate::update::update;
 
     use crate::view::hit_test::{hit_test_modal, HitTarget, Point};

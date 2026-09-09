@@ -4,7 +4,7 @@ use crate::common;
 use std::sync::Arc;
 use token::messages::{DocumentMsg, ModalMsg, Msg, UiMsg};
 use token::model::ui::{FindSearchRequest, FindStatus};
-use token::model::{AppModel, FindReplaceState, ModalState};
+use token::model::{AppModel, FindReplaceState};
 use token::update::update;
 use token::Cmd;
 
@@ -21,17 +21,14 @@ fn fixture() -> (AppModel, Arc<FindSearchRequest>) {
     let mut state = FindReplaceState::default();
     state.set_query("foo");
     state.case_sensitive = true;
-    model.ui.open_modal(ModalState::FindReplace(state));
+    model.ui.open_find(state);
     let cmd = update(&mut model, Msg::Ui(UiMsg::BlinkCursor)).unwrap();
     let request = request(&cmd).expect("large-file search effect");
     (model, request)
 }
 
 fn state(model: &AppModel) -> &FindReplaceState {
-    match model.ui.active_modal.as_ref().unwrap() {
-        ModalState::FindReplace(state) => state,
-        _ => panic!("expected Find modal"),
-    }
+    model.ui.find_bar.as_ref().expect("Find bar")
 }
 
 fn complete(model: &mut AppModel, request: Arc<FindSearchRequest>) {
@@ -70,7 +67,7 @@ fn find_async_rejects_old_query_edit_and_same_revision_buffer_replies() {
         let (mut model, old) = fixture();
         match change {
             0 => {
-                if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+                if let Some(state) = &mut model.ui.find_bar {
                     state.set_query("bar");
                 }
             }
@@ -98,11 +95,11 @@ fn find_async_rejects_old_query_edit_and_same_revision_buffer_replies() {
 #[test]
 fn find_async_close_reopen_gives_the_new_session_its_own_request() {
     let (mut model, old) = fixture();
-    // Find actions remember the query; a bare Close has never persisted it.
+    // Closing remembers the query, but a reopened bar owns a fresh pending request.
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::FindNext)));
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Close)));
     complete(&mut model, Arc::clone(&old));
-    assert!(model.ui.active_modal.is_none());
+    assert!(model.ui.find_bar.is_none());
     let cmd = update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::OpenFindReplace))).unwrap();
     let fresh = request(&cmd).unwrap();
     assert!(!Arc::ptr_eq(&old, &fresh));
@@ -154,7 +151,7 @@ fn find_async_rejects_mismatched_result_ownership_and_reports_worker_failure() {
 #[test]
 fn find_async_explicit_replace_uses_fresh_matches_while_display_is_pending() {
     let (mut model, stale) = fixture();
-    if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+    if let Some(state) = &mut model.ui.find_bar {
         state.set_query("absent");
         state.set_replacement("oops");
     }
@@ -168,7 +165,7 @@ fn find_async_explicit_replace_uses_fresh_matches_while_display_is_pending() {
 fn find_async_options_and_selection_scope_invalidate_pending_results() {
     for change in 0..4 {
         let (mut model, old) = fixture();
-        if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+        if let Some(state) = &mut model.ui.find_bar {
             match change {
                 0 => state.case_sensitive = false,
                 1 => state.whole_word = true,
@@ -202,7 +199,7 @@ fn find_async_options_and_selection_scope_invalidate_pending_results() {
 #[test]
 fn find_async_regex_errors_are_distinct_from_pending_and_small_files_stay_immediate() {
     let (mut model, _) = fixture();
-    if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+    if let Some(state) = &mut model.ui.find_bar {
         state.use_regex = true;
         state.set_query("[");
     }
@@ -214,7 +211,7 @@ fn find_async_regex_errors_are_distinct_from_pending_and_small_files_stay_immedi
     ));
 
     model.document_mut().buffer = "foo foo".into();
-    if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+    if let Some(state) = &mut model.ui.find_bar {
         state.use_regex = false;
         state.set_query("foo");
     }

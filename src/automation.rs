@@ -486,6 +486,31 @@ pub(crate) struct OverlayRowSnapshot {
     pub section: Option<String>,
 }
 
+fn find_bar_snapshot(model: &AppModel) -> Option<OverlaySnapshot> {
+    model.find_bar_inset()?;
+    let state = model.ui.find_bar.as_ref()?;
+    Some(OverlaySnapshot {
+        context: "find_replace".to_owned(),
+        query: state.query(),
+        active_tab: None,
+        rows: Vec::new(),
+        selected: 0,
+        status: state
+            .status(model.document(), &model.editor().selections[0])
+            .map(|status| status.label()),
+        options: [
+            ("case", state.case_sensitive),
+            ("word", state.whole_word),
+            ("regex", state.use_regex),
+            ("selection", state.selection_only),
+        ]
+        .into_iter()
+        .filter(|&(_, on)| on)
+        .map(|(name, _)| name.to_owned())
+        .collect(),
+    })
+}
+
 fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot> {
     match modal {
         token::model::ModalState::FileConflict(state) => Some(OverlaySnapshot {
@@ -664,24 +689,6 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
             status: None,
             options: Vec::new(),
         }),
-        token::model::ModalState::FindReplace(state) => Some(OverlaySnapshot {
-            context: "find_replace".to_owned(),
-            query: state.query(),
-            active_tab: None,
-            rows: Vec::new(),
-            selected: 0,
-            status: None,
-            options: [
-                ("case", state.case_sensitive),
-                ("word", state.whole_word),
-                ("regex", state.use_regex),
-                ("selection", state.selection_only),
-            ]
-            .into_iter()
-            .filter(|&(_, on)| on)
-            .map(|(name, _)| name.to_owned())
-            .collect(),
-        }),
         token::model::ModalState::ThemePicker(state) => Some(OverlaySnapshot {
             context: "theme_picker".to_owned(),
             query: String::new(),
@@ -830,15 +837,12 @@ impl EditorSnapshot {
             viewport_left_column: viewport.left_column,
             soft_wrap: model.editor().soft_wrap,
             visual_row_count: model.editor().viewport_map(document).row_count(),
-            overlay: model.ui.active_modal.as_ref().and_then(|modal| {
-                let mut overlay = overlay_snapshot(modal)?;
-                if let token::model::ModalState::FindReplace(state) = modal {
-                    overlay.status = state
-                        .status(model.document(), &model.editor().selections[0])
-                        .map(|status| status.label());
-                }
-                Some(overlay)
-            }),
+            overlay: model
+                .ui
+                .active_modal
+                .as_ref()
+                .and_then(overlay_snapshot)
+                .or_else(|| find_bar_snapshot(model)),
             gutter_marks: gutter_marks_snapshot(document, model.editor()),
             completion: completion_snapshot(model),
             inline_suggestion: token::update::inline::visible(model)
@@ -1526,9 +1530,9 @@ fn parse_arg<T: std::str::FromStr>(value: Option<String>, name: &str) -> Result<
 #[cfg(test)]
 mod tests {
     use super::{
-        document_size_error, overlay_snapshot, parse_cli, pick, resolve, AutomationRequest,
-        CliCommand, EditorSnapshot, Instance, InstanceInfo, OpenPath, RequestError, Target,
-        MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE,
+        document_size_error, find_bar_snapshot, overlay_snapshot, parse_cli, pick, resolve,
+        AutomationRequest, CliCommand, EditorSnapshot, Instance, InstanceInfo, OpenPath,
+        RequestError, Target, MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE,
     };
     use token::lsp::{LspServerId, ServerState};
     use token::model::ui::{FindReplaceState, GotoLineState, RecentFilesState, ThemePickerState};
@@ -1743,8 +1747,9 @@ mod tests {
     fn find_replace_overlay_snapshot_reports_the_query() {
         let mut state = FindReplaceState::default();
         state.set_query("needle");
-        let modal = ModalState::FindReplace(state);
-        let snapshot = overlay_snapshot(&modal).expect("Find/Replace must report an overlay");
+        let mut model = AppModel::new(800, 600, 1.0);
+        model.ui.open_find(state);
+        let snapshot = find_bar_snapshot(&model).expect("Find bar must report its state");
         assert_eq!(snapshot.context, "find_replace");
         assert_eq!(snapshot.query, "needle");
         assert!(snapshot.options.is_empty());
@@ -1754,7 +1759,7 @@ mod tests {
         let mut state = FindReplaceState::default();
         state.set_query("needle");
         state.whole_word = true;
-        model.ui.open_modal(ModalState::FindReplace(state));
+        model.ui.open_find(state);
         let overlay = EditorSnapshot::from_model(&model)
             .overlay
             .expect("open modal");

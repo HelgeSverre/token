@@ -212,8 +212,10 @@ pub enum Command {
     OpenSettings,
     /// Toggle goto line dialog
     ToggleGotoLine,
-    /// Toggle find/replace dialog
+    /// Open/focus docked Find (legacy binding name retained).
     ToggleFindReplace,
+    /// Open/focus docked Replace.
+    OpenReplace,
     /// Toggle soft wrapping in the focused editor pane
     ToggleSoftWrap,
     /// Open recent files modal
@@ -518,7 +520,8 @@ impl Command {
                 vec![Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette))]
             }
             ToggleGotoLine => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::GotoLine))],
-            ToggleFindReplace => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::FindReplace))],
+            ToggleFindReplace => vec![Msg::Ui(UiMsg::OpenFind { replace: false })],
+            OpenReplace => vec![Msg::Ui(UiMsg::OpenFind { replace: true })],
             ToggleSoftWrap => vec![Msg::Editor(EditorMsg::ToggleSoftWrap)],
             OpenRecentFiles => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::RecentFiles))],
 
@@ -691,6 +694,7 @@ impl Command {
                 | Command::OpenSettings
                 | Command::ToggleGotoLine
                 | Command::ToggleFindReplace
+                | Command::OpenReplace
                 | Command::ToggleSoftWrap
                 | Command::OpenRecentFiles
                 | Command::FuzzyFileFinder
@@ -783,7 +787,8 @@ impl Command {
 
             ToggleCommandPalette => "Command Palette",
             ToggleGotoLine => "Go to Line",
-            ToggleFindReplace => "Find and Replace",
+            ToggleFindReplace => "Find",
+            OpenReplace => "Replace",
             ToggleSoftWrap => "View: Toggle Soft Wrap",
             OpenRecentFiles => "Open Recent Files",
 

@@ -2,9 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::model::{
-    ui::FindResults, AppModel, Document, EditorState, Mark, ModalState, OverviewProjection,
-};
+use crate::model::{ui::FindResults, AppModel, Document, EditorState, Mark, OverviewProjection};
 
 use super::frame::Frame;
 use super::geometry;
@@ -168,10 +166,8 @@ pub fn render_editor_scrollbars(
         // Overview marks must not appear on documents that fit the
         // viewport — same needs_scroll guard the horizontal bar already has.
         if v_state.needs_scroll() {
-            let find = match &model.ui.active_modal {
-                Some(ModalState::FindReplace(state)) if is_focused => {
-                    state.display_results(document)
-                }
+            let find = match &model.ui.find_bar {
+                Some(state) if is_focused => state.display_results(document),
                 _ => None,
             };
             let rows = overview_rows(editor, document, find, v_track.height);

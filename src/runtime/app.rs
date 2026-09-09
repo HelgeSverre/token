@@ -87,6 +87,7 @@ fn should_skip_non_global_keymap(
         token::model::FocusTarget::Dock(token::panel::DockPosition::Left)
     );
     model.ui.has_modal()
+        || model.ui.focus == token::model::FocusTarget::FindBar
         || (option_double_tapped && alt_pressed)
         || sidebar_focused
         || is_outline_dock_focused(model)
@@ -1304,11 +1305,13 @@ impl App {
     }
 
     fn try_auto_scroll_for_drag(&mut self, y: f64) -> Option<Cmd> {
-        let line_height = self.model.line_height as f64;
-        let window_height = self.model.window_size.1 as f64;
-        let status_bar_top = window_height - line_height;
-
-        let direction = self.drag.try_auto_scroll(y, status_bar_top)?;
+        let group = self.model.editor_area.focused_group()?;
+        let content =
+            token::view::geometry::GroupLayout::new(group, &self.model, self.model.char_width)
+                .content_rect;
+        let direction = self
+            .drag
+            .try_auto_scroll(y - content.y as f64, content.height as f64)?;
         update(&mut self.model, Msg::Editor(EditorMsg::Scroll(direction)))
     }
 
@@ -1483,6 +1486,7 @@ impl App {
                 if !focused {
                     self.model.cancel_scroll_animations();
                     self.drag.end();
+                    self.model.ui.find_selection_drag = None;
                     self.model.terminal.selection_drag = None;
                     self.model.terminal.hovered_link = None;
                     self.modifiers = ModifiersState::empty();
@@ -1629,6 +1633,12 @@ impl App {
                         }
                     }
 
+                    if let Some(action) =
+                        super::input::find_editor_key(&self.model, &event.logical_key, modifiers)
+                    {
+                        return update(&mut self.model, Msg::Ui(action));
+                    }
+
                     if keystroke.is_some() || fallback.is_some() {
                         match self.resolve_keymap_action(keystroke.into_iter().chain(fallback), alt)
                         {
@@ -1735,6 +1745,25 @@ impl App {
 
                 // Terminal selection uses the same drag threshold/scroll throttle
                 // as the editor, but keeps its own grid coordinates and owner.
+                if let Some(field) = self.model.ui.find_selection_drag {
+                    self.drag.check_threshold(position.x, position.y);
+                    if self.drag.is_active() {
+                        if let Some(column) =
+                            token::view::find_bar::column_at(&self.model, field, position.x)
+                        {
+                            return update(
+                                &mut self.model,
+                                Msg::Ui(UiMsg::FindFieldPointer {
+                                    field,
+                                    column,
+                                    extend: true,
+                                    clicks: 0,
+                                }),
+                            );
+                        }
+                    }
+                    return hover_changed.then_some(Cmd::Redraw);
+                }
                 if self.model.terminal.selection_drag.is_some() {
                     self.drag.check_threshold(position.x, position.y);
                     if self.drag.is_active() {
@@ -1897,6 +1926,7 @@ impl App {
                 ..
             } => {
                 self.drag.end();
+                update(&mut self.model, Msg::Ui(UiMsg::EndFindSelection));
                 update(
                     &mut self.model,
                     Msg::Terminal(token::messages::TerminalMsg::SelectionEnd),
@@ -5893,7 +5923,9 @@ impl App {
                     redraw = true;
                 }
                 AutomationRequest::SetOverlayInput { text } => {
-                    if self.model.ui.active_modal.is_some() {
+                    if self.model.ui.active_modal.is_some()
+                        || self.model.ui.focus == token::model::FocusTarget::FindBar
+                    {
                         self.process_automation_msg(Msg::Ui(UiMsg::Modal(ModalMsg::SetInput(
                             text,
                         ))));
