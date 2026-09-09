@@ -7,7 +7,7 @@ Automatic document saving with configurable triggers and modes
 > The historical sketch below predates the ordered file worker and existing
 > event-loop deadlines; its timer and save pseudocode is superseded.
 
-> **Status:** Planned
+> **Status:** Superseded by the implemented coordinated plan; historical ideas below may include deferred scope.
 > **Priority:** P2
 > **Effort:** M
 > **Created:** 2025-12-19

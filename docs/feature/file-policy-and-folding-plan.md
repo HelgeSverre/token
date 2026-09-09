@@ -1,7 +1,8 @@
 # Auto-save, EditorConfig, and code folding
 
-> **Status:** Investigated; implementation proposed, not started.
-> **Reviewed:** 2026-09-09 against `6948f3f` (`main`).
+> **Status:** Implemented and reviewed; repository and native automation checks passed, with manual GUI gaps recorded below.
+> **Baseline investigated:** 2026-09-09 at `6948f3f`.
+> **Integration reviewed:** 2026-09-09 with `6699cde` (`main`).
 > **Branch:** `plan/autosave-editorconfig-folding`.
 > **Worktree:** `/Users/helge/code/token-editor-feature-plan`.
 
@@ -17,7 +18,7 @@ per-document text settings and EditorConfig, then folding through the shared
 viewport. Auto-save can ship independently. Folding should follow configurable
 tab geometry so indentation detection and displayed columns agree.
 
-## Evidence from the current code
+## Evidence from the pre-implementation baseline
 
 | Area                              | Existing source and behavior                                                                                                                                                                                  | Consequence for implementation                                                                                                                                                              |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -39,8 +40,8 @@ tab geometry so indentation detection and displayed columns agree.
 
 ## Scope and recommended defaults
 
-These are proposed product choices that make the implementation concrete. They
-are not claims about shipped settings.
+These product choices were used for the implementation. The user guides describe
+the resulting settings and behavior.
 
 | Choice              | Recommendation                                                                                                                                                                                                                                        |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -508,19 +509,19 @@ fractional scroll, a changed file, and an inline suggestion after restore.
 ## Build sequence and completion gates
 
 Each row is a reviewable implementation slice. Size is relative and does not
-promise elapsed delivery time. All implementation boxes are intentionally open.
+promise elapsed delivery time. All nine slices are implemented. Final gate results are recorded below.
 
-| Slice                              | Size | Dependencies                 | Deliverable and exit gate                                                                                                                         |
-| ---------------------------------- | ---- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [ ] S1: document-targeted saves    | M    | None                         | Save intent and formatter continuations survive focus changes; existing file identity/conflict/ordering tests remain green.                       |
-| [ ] S2: auto-save                  | M    | S1                           | Both triggers, Settings, all-document scheduling, coalescing, errors, composition/CSV handling, and native focus-loss verification pass.          |
-| [ ] E1: per-document text geometry | L    | None; deliver before folding | Typed defaults, configurable indentation and all tab-width consumers; wrapped/unwrapped rendering, hit testing, ghost, and LSP agreement.         |
-| [ ] E2: EditorConfig resolution    | M    | E1                           | Dependency spike completed, supported properties/provenance, all open paths, Save As staging, live invalidation, and compatibility fixtures pass. |
-| [ ] E3: save-time text rules       | M–L  | S1, E2; integrate S2         | Newline insertion and LF/CRLF/CR conversion, trim/EOF policy, one cleanup undo batch, exact disk/snapshot/notification agreement.                 |
-| [ ] F1: fold model and projection  | L    | E1                           | Candidate forest and pane collapse state; shared viewport composition and reference-mapping tests before UI activation.                           |
-| [ ] F2: basic folding UI           | L    | F1                           | Indentation provider, commands/gutter/badge, selection/navigation/scroll/overview integration and native verification.                            |
-| [ ] F3: syntax-aware folding       | M–L  | F2                           | Registry profiles, language matrix, injections, malformed/stale result handling and reconciliation tests.                                         |
-| [ ] F4: persistence                | M    | F3                           | Session migration, per-pane and close/reopen state, safe anchor matching and native restart verification.                                         |
+| Slice                              | Size | Dependencies                 | Deliverable and exit gate                                                                                                                                                |
+| ---------------------------------- | ---- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [x] S1: document-targeted saves    | M    | None                         | Save intent and formatter continuations survive focus changes; existing file identity/conflict/ordering tests remain green.                                              |
+| [x] S2: auto-save                  | M    | S1                           | Both triggers, Settings, all-document scheduling, coalescing, errors, composition/CSV handling, and runtime focus-loss coverage; native GUI switching remains unchecked. |
+| [x] E1: per-document text geometry | L    | None; deliver before folding | Typed defaults, configurable indentation and all tab-width consumers; wrapped/unwrapped rendering, hit testing, ghost, and LSP agreement.                                |
+| [x] E2: EditorConfig resolution    | M    | E1                           | Dependency spike completed, supported properties/provenance, all open paths, Save As staging, live invalidation, and compatibility fixtures pass.                        |
+| [x] E3: save-time text rules       | M–L  | S1, E2; integrate S2         | Newline insertion and LF/CRLF/CR conversion, trim/EOF policy, one cleanup undo batch, exact disk/snapshot/notification agreement.                                        |
+| [x] F1: fold model and projection  | L    | E1                           | Candidate forest and pane collapse state; shared viewport composition and reference-mapping tests before UI activation.                                                  |
+| [x] F2: basic folding UI           | L    | F1                           | Indentation provider, commands/gutter/badge, selection/navigation/scroll/overview integration; automated hit/repaint and native command checks.                          |
+| [x] F3: syntax-aware folding       | M–L  | F2                           | Registry profiles, language matrix, injections, malformed/stale result handling and reconciliation tests.                                                                |
+| [x] F4: persistence                | M    | F3                           | Session migration, per-pane and close/reopen state, safe anchor matching and native restart verification.                                                                |
 
 Suggested serial order: **S1 → S2 → E1 → E2 → E3 → F1 → F2 → F3 → F4**.
 The E1 work is independent of S1/S2, but E3 must verify integration with auto-save.
@@ -549,15 +550,53 @@ existing checked writer's non-atomic truncation, lack of dirty-close prompts, an
 absence of unsaved-text recovery are separately identified lifecycle limitations;
 none is solved merely by adding a timer.
 
-## Investigation verification
+## Implementation verification
 
-This planning change adds documentation only. No runtime feature, dependency,
-test, or changelog entry is added. Source paths and named integration boundaries
-were inspected at the revision above, and external EditorConfig claims were
-checked against the linked primary sources. The implementation gates above are
-future work, not test results from this investigation.
+The implementation includes all nine slices above. Automated coverage exercises
+multi-document saves and formatter supersession, EditorConfig reload and Save As,
+198 pinned upstream compatibility cases, mixed newline cleanup and undo, reference
+fold/wrap/tab projection, gutter and badge hit testing, repaint equivalence,
+language providers, split independence, and session and recent-fold restoration.
 
-Planning checks: `just fmt-check` passed; the new plan passed an explicit Prettier
-check (the repository recipe checks only root Markdown); 47 local source/document
-links and the feature-entry anchors resolved; `git diff --check` passed. Runtime
-tests were not run for this documentation-only change.
+The merge review found and fixed the following issues:
+
+| Severity | File                                                          | Finding                                                                                    | Resolution                                                                                                           |
+| -------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Medium   | [editor_text.rs](../../src/view/editor_text.rs), glyph stages | Debug full frames omitted a folded-header badge drawn by cursor repaints.                  | Full and incremental frames share the glyph stages; wrapped/ghost repaint comparison passes.                         |
+| Medium   | [app.rs](../../src/update/app.rs), `prepare_resolved_save`    | A policy reload could resume an idle save after a newer edit when formatting was disabled. | Recheck the automatic request's revision and policy before resuming.                                                 |
+| Medium   | [editor.rs](../../src/model/editor.rs), `fold`                | Collapse All repeatedly scanned the growing collapsed-region list.                         | Index existing headers while building the new state; release benchmarks cover 100,000 lines.                         |
+| Medium   | [text_edits.rs](../../src/update/text_edits.rs), `map_left`   | Text inserted after a fold could extend its hidden boundary.                               | Map the exclusive end with left affinity; regression coverage verifies the inserted line stays visible through undo. |
+
+Native macOS checks used an isolated config/session directory and the real
+application automation endpoint. They passed for nested collapse and explicit
+navigation, independent split metadata, soft wrap, changed-file restart (87
+logical lines restored to 27 visible rows), close/reopen, independent idle saves
+of background files, live EditorConfig reload, and exact CRLF/CR disk cleanup.
+The computer-use tool could not obtain macOS Accessibility/Screen Recording
+permissions, so physical gutter clicks, drag/trackpad behavior and native focus-loss
+switching remain manual verification gaps. Automated hit-testing, repaint, pixel
+scrolling and runtime focus-loss tests cover those code paths.
+
+`just bench-wrap` ran with release optimization on this machine. Median timings:
+
+| Workload                                       | 10,000 lines | 100,000 lines |
+| ---------------------------------------------- | -----------: | ------------: |
+| Fold detection (nested indentation fixture)    |      3.72 ms |      40.51 ms |
+| Collapse All (same fixture)                    |      0.36 ms |       4.07 ms |
+| Full wrap layout (long-line baseline workload) |      8.85 ms |      88.96 ms |
+| Incremental middle-line wrap update            |     20.37 µs |        160 µs |
+
+Indexed folded row lookup was 16.79 ns; ordinary wrap lookup was 1.74 ns.
+These are workload measurements, not release frame-rate or allocation claims.
+A release-only unused-variable warning found by this run was corrected.
+
+Final checks: `just test '--test-threads 2 --retries 1 --no-fail-fast'` passed
+all 2,673 tests without retries, with five pre-existing skips. Both doctests passed
+(six ignored). `just lint`, `just fmt-check`, the explicit documentation Prettier
+check and `git diff --check` passed. The reduced test concurrency followed a run
+with fake-server startup timeouts under parallel load; no timeout thresholds or
+production behavior were weakened. The release build is being checked separately.
+
+**Review verdict: Approve.** The identified issues are fixed and covered. No
+outstanding critical or high-severity finding remains. Manual GUI verification
+limitations are listed above and do not change the automated checks' scope.

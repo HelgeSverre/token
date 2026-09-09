@@ -7,7 +7,7 @@
 
 Collapse and expand code regions based on indentation levels
 
-> **Status:** 📋 Planned
+> **Status:** Superseded by the implemented coordinated plan; historical ideas below may include deferred scope.
 > **Priority:** P2 (Important)
 > **Effort:** M (3-5 days)
 > **Created:** 2025-12-20

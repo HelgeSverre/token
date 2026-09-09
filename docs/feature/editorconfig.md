@@ -7,7 +7,7 @@ Automatic editor settings from `.editorconfig` files
 > The historical sketch below is superseded by the current per-document policy,
 > shared tab geometry, resolver evaluation, and save-pipeline design.
 
-> **Status:** Planned
+> **Status:** Superseded by the implemented coordinated plan; historical ideas below may include deferred scope.
 > **Priority:** P2
 > **Effort:** M
 > **Created:** 2025-12-20

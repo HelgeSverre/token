@@ -7,7 +7,7 @@
 
 Syntax-aware folding, region markers, and fold persistence
 
-> **Status:** 📋 Planned (Future)
+> **Status:** Superseded by the implemented coordinated plan; historical ideas below may include deferred scope.
 > **Priority:** P3 (Nice-to-have)
 > **Effort:** L (1-2 weeks)
 > **Created:** 2025-12-20

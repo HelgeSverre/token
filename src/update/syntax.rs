@@ -203,7 +203,7 @@ pub(super) fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd>
             doc.diagnostics.clear();
             let file_path = doc.file_path.clone();
 
-            // Trigger a new parse
+            #[cfg(debug_assertions)]
             let revision = doc.revision;
 
             // Marks-lane activation changes gutter width — see

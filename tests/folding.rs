@@ -428,3 +428,43 @@ fn folding_insert_at_end_boundary_keeps_new_visible_text_outside_the_fold() {
     assert!(model.editor().folds.is_collapsed(0));
     assert_eq!(model.editor().folds.collapsed()[0].end, 6);
 }
+
+#[test]
+fn folding_changed_files_expand_ambiguous_and_deleted_saved_regions() {
+    let source = "start\n  body\nend\n";
+    let mut original = restore_source(source);
+    detect(original.document_mut(), false);
+    fold(&mut original, FoldAction::Collapse, Some(0));
+    let session = token::session::Session::capture(&original, std::path::Path::new("/project"));
+    for changed in [format!("{source}{source}"), "end\n".into()] {
+        let mut restored = restore_source(&changed);
+        session.install(&mut restored).unwrap();
+        complete_candidates(&mut restored);
+        assert!(restored.editor().folds.collapsed().is_empty());
+    }
+}
+
+#[test]
+fn folding_gutter_hit_tracks_the_docked_find_bar_content_inset() {
+    let mut model = model();
+    model.resize(800, 600);
+    update(
+        &mut model,
+        Msg::Ui(token::messages::UiMsg::OpenFind { replace: true }),
+    );
+    let group = model.editor_area.focused_group().unwrap();
+    let layout = token::view::geometry::GroupLayout::new(group, &model, model.char_width);
+    assert!(layout.find_bar_rect.height > 0.0);
+    let point = token::view::hit_test::Point::new(
+        (layout.gutter_right_x - layout.gutter.fold_w as usize / 2) as f64,
+        layout.content_y() as f64 + model.line_height as f64 / 2.0,
+    );
+    assert!(matches!(
+        token::view::hit_test::hit_test_groups(&model, point, model.char_width),
+        Some(token::view::hit_test::HitTarget::EditorGutter {
+            line: 0,
+            lane: Some(token::view::geometry::LaneId::Fold),
+            ..
+        })
+    ));
+}
