@@ -13,9 +13,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
-#[cfg(debug_assertions)]
-use winit::keyboard::{Key, NamedKey};
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 #[cfg(not(target_os = "macos"))]
 use winit::window::Icon;
 use winit::window::{CursorIcon, Window};

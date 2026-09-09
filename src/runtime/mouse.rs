@@ -2066,7 +2066,7 @@ fn handle_left_click(
                     }),
                 ));
                 EventResult::consumed_with_cmd(
-                    token::commands::Cmd::Batch(commands),
+                    Some(token::commands::Cmd::Batch(commands)),
                     FocusTarget::Editor,
                 )
             } else {

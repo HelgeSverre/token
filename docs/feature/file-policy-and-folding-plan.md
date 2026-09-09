@@ -560,14 +560,15 @@ language providers, split independence, and session and recent-fold restoration.
 
 The merge review found and fixed the following issues:
 
-| Severity | File                                                          | Finding                                                                                    | Resolution                                                                                                           |
-| -------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| Medium   | [editor_text.rs](../../src/view/editor_text.rs), glyph stages | Debug full frames omitted a folded-header badge drawn by cursor repaints.                  | Full and incremental frames share the glyph stages; wrapped/ghost repaint comparison passes.                         |
-| Medium   | [app.rs](../../src/update/app.rs), `prepare_resolved_save`    | A policy reload could resume an idle save after a newer edit when formatting was disabled. | Recheck the automatic request's revision and policy before resuming.                                                 |
-| Medium   | [editor.rs](../../src/model/editor.rs), `fold`                | Collapse All repeatedly scanned the growing collapsed-region list.                         | Index existing headers while building the new state; release benchmarks cover 100,000 lines.                         |
-| Medium   | [text_edits.rs](../../src/update/text_edits.rs), `map_left`   | Text inserted after a fold could extend its hidden boundary.                               | Map the exclusive end with left affinity; regression coverage verifies the inserted line stays visible through undo. |
-| Medium   | [text.rs](../../src/util/text.rs), `expanded_chars`           | Wide tabs could allocate a large expanded line to paint a small viewport.                  | Expand lazily through the visible edge; a regression test verifies bounded source traversal.                         |
-| Medium   | [folding.rs](../../src/update/folding.rs), `action`           | A hover request could survive when folding hid its target without moving the caret.        | Dismiss hover intent and forward gutter-click effects to the runtime.                                                |
+| Severity | File                                                          | Finding                                                                                                                | Resolution                                                                                                           |
+| -------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Medium   | [editor_text.rs](../../src/view/editor_text.rs), glyph stages | Debug full frames omitted a folded-header badge drawn by cursor repaints.                                              | Full and incremental frames share the glyph stages; wrapped/ghost repaint comparison passes.                         |
+| Medium   | [app.rs](../../src/update/app.rs), `prepare_resolved_save`    | A policy reload could resume an idle save after a newer edit when formatting was disabled.                             | Recheck the automatic request's revision and policy before resuming.                                                 |
+| Medium   | [editor.rs](../../src/model/editor.rs), `fold`                | Collapse All repeatedly scanned the growing collapsed-region list.                                                     | Index existing headers while building the new state; release benchmarks cover 100,000 lines.                         |
+| Medium   | [text_edits.rs](../../src/update/text_edits.rs), `map_left`   | Text inserted after a fold could extend its hidden boundary.                                                           | Map the exclusive end with left affinity; regression coverage verifies the inserted line stays visible through undo. |
+| Medium   | [text.rs](../../src/util/text.rs), `expanded_chars`           | Wide tabs could allocate a large expanded line to paint a small viewport.                                              | Expand lazily through the visible edge; a regression test verifies bounded source traversal.                         |
+| Medium   | [folding.rs](../../src/update/folding.rs), `action`           | A hover request could survive when folding hid its target without moving the caret.                                    | Dismiss hover intent and forward gutter-click effects to the runtime.                                                |
+| High     | [runtime/app.rs](../../src/runtime/app.rs), keyboard imports  | The integrated hover Escape handler used keyboard types imported only in debug builds, preventing release compilation. | Make those imports available in both build modes and verify the release build.                                       |
 
 Native macOS checks used an isolated config/session directory and the real
 application automation endpoint. They passed for nested collapse and explicit
@@ -593,11 +594,13 @@ These are workload measurements, not release frame-rate or allocation claims.
 A release-only unused-variable warning found by this run was corrected.
 
 Final checks: `just test '--test-threads 2 --retries 1 --no-fail-fast'` passed
-all 2,673 tests without retries before the final hover integration, with five pre-existing skips. Both doctests passed
+all 2,674 tests without retries, with five pre-existing skips. Both doctests passed
 (six ignored). `just lint`, `just fmt-check`, the explicit documentation Prettier
-check and `git diff --check` passed. The reduced test concurrency followed a run
-with fake-server startup timeouts under parallel load; no timeout thresholds or
-production behavior were weakened. The release build passed. The combined result is receiving a final test and build pass after the integration fixes.
+check, and the source diff whitespace check passed; 136 local documentation links
+resolved. `just release` passed without warnings. The reduced test concurrency
+followed a run with fake-server startup timeouts under parallel load; no timeout
+thresholds or production behavior were weakened. All checks include the final
+folding/hover integration and bounded tab rendering fixes.
 
 **Review verdict: Approve.** The identified issues are fixed and covered. No
 outstanding critical or high-severity finding remains. Manual GUI verification
