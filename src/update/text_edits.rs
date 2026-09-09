@@ -256,8 +256,11 @@ impl EditPositions {
                 })
                 .collect(),
             find_scope: if model.editor_area.focused_document_id() == Some(document_id) {
-                match &model.ui.active_modal {
-                    Some(crate::model::ModalState::FindReplace(state)) if state.selection_only => {
+                match &model.ui.find_bar {
+                    Some(state)
+                        if state.selection_only
+                            && state.document_id.is_none_or(|id| id == document_id) =>
+                    {
                         state.scope
                     }
                     _ => None,
@@ -329,7 +332,7 @@ impl EditPositions {
             return;
         }
         if let Some(scope) = self.find_scope {
-            if let Some(crate::model::ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+            if let Some(state) = &mut model.ui.find_bar {
                 state.scope = Some(scope);
             }
         }
@@ -976,9 +979,7 @@ mod tests {
                 crate::model::Position::new(0, 3),
             ),
         );
-        model
-            .ui
-            .open_modal(crate::model::ModalState::FindReplace(find));
+        model.ui.open_find(find);
         assert_eq!(
             EditPositions::capture(&model, document_id, |_| true)
                 .editors
@@ -991,7 +992,7 @@ mod tests {
         positions.transform(0, 3, 0);
         model.document_mut().buffer.remove(0..3);
         positions.restore(&mut model, document_id);
-        let Some(crate::model::ModalState::FindReplace(find)) = &model.ui.active_modal else {
+        let Some(find) = &model.ui.find_bar else {
             panic!("Find scope must survive history mapping");
         };
         assert_eq!(find.scope, Some((0, 0)));

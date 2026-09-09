@@ -122,6 +122,7 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     }
     let policy_commands = file_policy::reconcile(model);
     let policy_damage = resolve_text_settings(model);
+    let find_inset = model.find_bar_inset();
     match &msg {
         Msg::Editor(crate::messages::EditorMsg::ScrollPixels { .. }) => {}
         Msg::Editor(_) | Msg::Document(_) | Msg::Layout(_) => model.cancel_scroll_animations(),
@@ -144,6 +145,15 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
             merge_cmds(policy_damage, resolve_text_settings(model)),
         ),
     );
+    if model.ui.focus == crate::model::FocusTarget::FindBar && model.find_bar_inset().is_none() {
+        model.ui.focus_editor();
+    }
+    let result = if find_inset != model.find_bar_inset() {
+        model.resync_viewports();
+        merge_cmds(result, Some(Cmd::Redraw))
+    } else {
+        result
+    };
     if model.ui.has_modal() || model.ui.context_menu.is_some() {
         model.cancel_scroll_animations();
     }

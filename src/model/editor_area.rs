@@ -740,96 +740,71 @@ impl EditorArea {
         line_height: usize,
         char_width: f32,
         metrics: &crate::model::ScaledMetrics,
+        content_inset: Option<(EditorId, usize)>,
     ) {
-        // Collect group rects and their editor IDs.
-        let group_info: Vec<(Vec<EditorId>, u32, u32, u32)> = self
-            .groups
-            .values()
-            .map(|group| {
-                let editor_ids: Vec<EditorId> = group.tabs.iter().map(|t| t.editor_id).collect();
-                let width = group.rect.width as u32;
-                let height = group.rect.height as u32;
-                let content_height =
-                    (height as usize).saturating_sub(metrics.tab_bar_height) as u32;
-                (editor_ids, width, height, content_height)
-            })
-            .collect();
-
         // Update each editor's viewport based on its group's dimensions. Gutter
         // width (and thus visible_columns) depends on each editor's own
         // document line count, so it's computed per editor, not per group.
-        for (editor_ids, width, height, content_height) in group_info {
-            if width == 0 || height == 0 {
+        for group in self.groups.values() {
+            if group.rect.width <= 0.0 || group.rect.height <= 0.0 {
                 continue;
             }
 
-            // Subtract tab bar height because group rect includes the tab bar area,
-            // but visible_lines should only count the text content area.
-            let visible_lines = (height as usize)
-                .saturating_sub(metrics.tab_bar_height)
-                .checked_div(line_height)
-                .unwrap_or(0);
-
-            for editor_id in editor_ids {
-                if let Some(editor) = self.editors.get_mut(&editor_id) {
-                    let doc = editor.document_id.and_then(|id| self.documents.get(&id));
-                    let line_count = doc.map(|d| d.line_count()).unwrap_or(1);
-                    let has_marks = doc.is_some_and(|d| !d.diagnostics.is_empty());
-                    let text_x = crate::model::text_start_x_scaled(
-                        char_width,
-                        metrics,
-                        line_count,
-                        has_marks,
-                        editor.is_plain_text_mode(),
-                    )
-                    .round();
-                    let visible_columns = crate::model::text_viewport_columns(
-                        width as f32,
-                        text_x,
-                        char_width,
-                        editor.soft_wrap,
-                        metrics.scrollbar_width,
-                    );
-                    let previous_pixels = editor.viewport.pixels;
-                    editor.resize_viewport(visible_lines, visible_columns);
-                    editor
-                        .viewport
-                        .pixels
-                        .x
-                        .resize(char_width as f64, (width as f64 - text_x as f64).max(0.0));
-                    editor
-                        .viewport
-                        .pixels
-                        .y
-                        .resize(line_height as f64, content_height as f64);
+            for tab in &group.tabs {
+                let Some(editor) = self.editors.get_mut(&tab.editor_id) else {
+                    continue;
+                };
+                let inset = content_inset
+                    .filter(|(id, _)| *id == tab.editor_id)
+                    .map_or(0, |(_, height)| height);
+                let doc = editor.document_id.and_then(|id| self.documents.get(&id));
+                let layout = crate::view::geometry::GroupLayout::from_rect(
+                    group.rect,
+                    doc,
+                    metrics,
+                    char_width,
+                    inset,
+                    editor.is_plain_text_mode(),
+                );
+                let content_height = layout.content_h();
+                let visible_columns =
+                    layout.visible_columns(char_width, editor.soft_wrap, metrics.scrollbar_width);
+                let previous_pixels = editor.viewport.pixels;
+                editor.resize_viewport(layout.visible_lines(line_height), visible_columns);
+                editor
+                    .viewport
+                    .pixels
+                    .x
+                    .resize(char_width as f64, layout.text_width() as f64);
+                editor
+                    .viewport
+                    .pixels
+                    .y
+                    .resize(line_height as f64, content_height as f64);
+                if editor.viewport.pixels != previous_pixels {
+                    editor.viewport.animation = None;
+                }
+                if let Some(doc) = doc {
+                    editor.ensure_wrap_cache(doc);
                     if editor.viewport.pixels != previous_pixels {
-                        editor.viewport.animation = None;
+                        let (x, y) = editor.pixel_scroll_position();
+                        editor.set_pixel_scroll(doc, x, y);
                     }
-                    if let Some(doc) = doc {
-                        editor.ensure_wrap_cache(doc);
-                        if editor.viewport.pixels != previous_pixels {
-                            let (x, y) = editor.pixel_scroll_position();
-                            editor.set_pixel_scroll(doc, x, y);
-                        }
-                    }
+                }
 
-                    if let Some(image) = editor.view_mode.as_image_mut() {
-                        if !image.user_zoomed {
-                            image.scale = crate::image::ImageState::compute_fit_scale(
-                                image.width,
-                                image.height,
-                                width,
-                                content_height,
-                            );
-                        }
-                    }
-                    if let Some(csv) = editor.view_mode.as_csv_mut() {
-                        let rows = crate::csv::rows_for_content_height(
-                            content_height as usize,
-                            line_height,
+                if let Some(image) = editor.view_mode.as_image_mut() {
+                    if !image.user_zoomed {
+                        image.scale = crate::image::ImageState::compute_fit_scale(
+                            image.width,
+                            image.height,
+                            layout.rect_w() as u32,
+                            content_height as u32,
                         );
-                        csv.set_viewport_size(rows, csv.viewport.visible_cols);
                     }
+                }
+                if let Some(csv) = editor.view_mode.as_csv_mut() {
+                    let rows = crate::csv::rows_for_content_height(content_height, line_height);
+                    csv.set_viewport_size(rows, csv.viewport.visible_cols);
                 }
             }
         }

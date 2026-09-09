@@ -827,6 +827,13 @@ pub struct CacheStats {
     pub misses: usize,
 }
 
+/// Which configured font a surface uses. Editable text always uses `Code`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontRole {
+    Code,
+    Ui,
+}
+
 /// Text rendering context wrapping font and glyph cache.
 ///
 /// Provides methods for drawing text with proper font metrics and glyph caching.
@@ -837,11 +844,39 @@ pub struct TextPainter<'a> {
     ascent: f32,
     char_width: f32,
     line_height: usize,
-    alternate: Option<(&'a Font, &'a mut GlyphCache)>,
-    ui_font_active: bool,
+    alternate: Option<(&'a Font, &'a mut GlyphCache, f32)>,
+    font_role: FontRole,
     fallback_font: Option<&'a Font>,
     #[cfg(debug_assertions)]
     cache_stats: CacheStats,
+}
+
+/// A borrowed painter whose font role is restored when the scope ends.
+/// Nested overrides and early returns cannot leak a font into the next surface.
+#[must_use]
+pub struct ScopedFont<'painter, 'font> {
+    painter: &'painter mut TextPainter<'font>,
+    previous: FontRole,
+}
+
+impl<'font> std::ops::Deref for ScopedFont<'_, 'font> {
+    type Target = TextPainter<'font>;
+
+    fn deref(&self) -> &Self::Target {
+        self.painter
+    }
+}
+
+impl std::ops::DerefMut for ScopedFont<'_, '_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.painter
+    }
+}
+
+impl Drop for ScopedFont<'_, '_> {
+    fn drop(&mut self) {
+        self.painter.set_font_role(self.previous);
+    }
 }
 
 impl<'a> TextPainter<'a> {
@@ -862,37 +897,57 @@ impl<'a> TextPainter<'a> {
             char_width,
             line_height,
             alternate: None,
-            ui_font_active: false,
+            font_role: FontRole::Code,
             fallback_font: None,
             #[cfg(debug_assertions)]
             cache_stats: CacheStats::default(),
         }
     }
 
-    /// UI and code use the same painter implementation but separate caches.
-    /// Grid metrics always describe the editor; UI text uses measured advances.
-    pub fn with_ui_font(mut self, font: &'a Font, cache: &'a mut GlyphCache) -> Self {
+    /// Attach the UI font and explicitly choose the initial role.
+    /// Fonts retain separate caches and ascents; grid metrics always describe
+    /// the editor. Use `with_font` for scoped overrides while painting.
+    pub fn with_ui_font(
+        mut self,
+        font: &'a Font,
+        cache: &'a mut GlyphCache,
+        initial_role: FontRole,
+    ) -> Self {
+        self.set_font_role(FontRole::Code);
+        let ascent = font
+            .horizontal_line_metrics(self.font_size)
+            .map_or(self.ascent, |metrics| metrics.ascent);
         self.fallback_font = Some(self.font);
-        self.alternate = Some((font, cache));
-        self.use_ui_font(true);
+        self.alternate = Some((font, cache, ascent));
+        self.set_font_role(initial_role);
         self
     }
 
-    /// Returns the previous role so mixed surfaces can restore their caller.
-    pub fn use_ui_font(&mut self, ui: bool) -> bool {
-        let previous = self.ui_font_active;
-        if previous != ui {
-            if let Some((font, cache)) = &mut self.alternate {
+    /// The role currently used for both measurement and drawing.
+    pub fn font_role(&self) -> FontRole {
+        self.font_role
+    }
+
+    /// Borrow this painter in a font role, restoring the caller automatically.
+    /// A code-only painter stays in `Code` when no UI font is attached.
+    pub fn with_font(&mut self, role: FontRole) -> ScopedFont<'_, 'a> {
+        let previous = self.font_role;
+        self.set_font_role(role);
+        ScopedFont {
+            painter: self,
+            previous,
+        }
+    }
+
+    fn set_font_role(&mut self, role: FontRole) {
+        if self.font_role != role {
+            if let Some((font, cache, ascent)) = &mut self.alternate {
                 std::mem::swap(&mut self.font, font);
                 std::mem::swap(&mut self.glyph_cache, cache);
-                self.ascent = self
-                    .font
-                    .horizontal_line_metrics(self.font_size)
-                    .map_or(self.ascent, |metrics| metrics.ascent);
-                self.ui_font_active = ui;
+                std::mem::swap(&mut self.ascent, ascent);
+                self.font_role = role;
             }
         }
-        previous
     }
 
     /// Get the cache statistics (hits and misses)

@@ -647,7 +647,9 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
             state.case_sensitive = config.case_sensitive;
             state.whole_word = config.whole_word;
             state.use_regex = config.use_regex;
-            ModalState::FindReplace(state)
+            model.ui.open_find(state);
+            model.resync_viewports();
+            return;
         }
         ModalId::ThemePicker => {
             let current_id = model.config.theme.clone();
@@ -813,11 +815,7 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
         .compute_layout_scaled(available_rect, model.metrics.splitter_width);
 
     // Sync viewports to actual group rects (critical for splits/previews)
-    model.editor_area.sync_all_viewports(
-        font_info.line_height,
-        font_info.char_width,
-        &model.metrics,
-    );
+    model.resync_viewports();
 
     {
         let mut frame = Frame::new(&mut buffer, width, height);
@@ -829,7 +827,7 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
             font_info.char_width,
             font_info.line_height,
         )
-        .with_ui_font(&ui_font, &mut ui_cache);
+        .with_ui_font(&ui_font, &mut ui_cache, token::view::FontRole::Ui);
         let mut perf = token::perf::PerfStats::default();
 
         // 1. Editor area + splitters (render_editor_area_with_preview_mode includes splitters)

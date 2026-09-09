@@ -14,7 +14,8 @@ use common::test_model_with_selection;
 use token::messages::{ModalMsg, Msg, UiMsg};
 use token::model::ui::FindStatus;
 use token::model::{
-    CommandPaletteState, FindReplaceState, GotoLineState, ModalId, ModalState, ThemePickerState,
+    CommandPaletteState, FindReplaceState, FocusTarget, GotoLineState, ModalId, ModalState,
+    ThemePickerState,
 };
 use token::update::update;
 
@@ -421,14 +422,12 @@ fn test_goto_line_empty_input_goes_to_line_1() {
 #[test]
 fn test_find_replace_insert_char() {
     let mut model = test_model("hello\n", 0, 0);
-    model
-        .ui
-        .open_modal(ModalState::FindReplace(FindReplaceState::default()));
+    model.ui.open_find(FindReplaceState::default());
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar('h'))));
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::InsertChar('i'))));
 
-    if let Some(ModalState::FindReplace(state)) = &model.ui.active_modal {
+    if let Some(state) = &model.ui.find_bar {
         assert_eq!(state.query(), "hi");
     } else {
         panic!("Expected find/replace modal");
@@ -438,13 +437,11 @@ fn test_find_replace_insert_char() {
 #[test]
 fn test_find_replace_delete_backward() {
     let mut model = test_model("hello\n", 0, 0);
-    model
-        .ui
-        .open_modal(ModalState::FindReplace(find_replace_with_query("search")));
+    model.ui.open_find(find_replace_with_query("search"));
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::DeleteBackward)));
 
-    if let Some(ModalState::FindReplace(state)) = &model.ui.active_modal {
+    if let Some(state) = &model.ui.find_bar {
         assert_eq!(state.query(), "searc");
     } else {
         panic!("Expected find/replace modal");
@@ -591,16 +588,14 @@ fn test_set_input_goto_line() {
 #[test]
 fn test_set_input_find_replace() {
     let mut model = test_model("hello\n", 0, 0);
-    model
-        .ui
-        .open_modal(ModalState::FindReplace(FindReplaceState::default()));
+    model.ui.open_find(FindReplaceState::default());
 
     update(
         &mut model,
         Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("search term".to_string()))),
     );
 
-    if let Some(ModalState::FindReplace(state)) = &model.ui.active_modal {
+    if let Some(state) = &model.ui.find_bar {
         assert_eq!(state.query(), "search term");
     } else {
         panic!("Expected find/replace modal");
@@ -688,11 +683,9 @@ fn test_open_find_replace_message() {
 
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::OpenFindReplace)));
 
-    assert!(model.ui.active_modal.is_some());
-    assert_eq!(
-        model.ui.active_modal.as_ref().unwrap().id(),
-        ModalId::FindReplace
-    );
+    assert!(model.ui.active_modal.is_none());
+    assert!(model.ui.find_bar.as_ref().unwrap().replace_mode);
+    assert_eq!(model.ui.focus, FocusTarget::FindBar);
 }
 
 // ========================================================================
@@ -769,10 +762,7 @@ fn test_toggle_pin_moves_entry_into_pinned_section_and_persists() {
 // ========================================================================
 
 fn find_state(model: &token::model::AppModel) -> &FindReplaceState {
-    match &model.ui.active_modal {
-        Some(ModalState::FindReplace(state)) => state,
-        _ => panic!("expected the find/replace modal"),
-    }
+    model.ui.find_bar.as_ref().expect("Find bar")
 }
 
 fn selected_text(model: &token::model::AppModel) -> String {
@@ -792,9 +782,7 @@ fn selected_text(model: &token::model::AppModel) -> String {
 fn toggle_selection_only_captures_the_selection_and_scopes_matches() {
     // Lines 1-2 selected (anchor (1,0) → head (3,0)); "foo" appears on every line.
     let mut model = test_model_with_selection("foo\nfoo\nfoo\nfoo\n", 1, 0, 3, 0);
-    model
-        .ui
-        .open_modal(ModalState::FindReplace(find_replace_with_query("foo")));
+    model.ui.open_find(find_replace_with_query("foo"));
     assert_eq!(find_state(&model).matches(model.document()).len(), 4);
 
     update(
@@ -822,9 +810,7 @@ fn toggle_selection_only_captures_the_selection_and_scopes_matches() {
 #[test]
 fn selection_only_with_an_empty_selection_stays_off() {
     let mut model = test_model("foo foo\n", 0, 0);
-    model
-        .ui
-        .open_modal(ModalState::FindReplace(find_replace_with_query("foo")));
+    model.ui.open_find(find_replace_with_query("foo"));
     update(
         &mut model,
         Msg::Ui(UiMsg::Modal(ModalMsg::ToggleFindReplaceSelectionOnly)),
@@ -835,9 +821,7 @@ fn selection_only_with_an_empty_selection_stays_off() {
 #[test]
 fn find_next_and_replace_all_stay_inside_the_scope() {
     let mut model = test_model_with_selection("foo\nfoo\nfoo\nfoo\n", 1, 0, 3, 0);
-    model
-        .ui
-        .open_modal(ModalState::FindReplace(find_replace_with_query("foo")));
+    model.ui.open_find(find_replace_with_query("foo"));
     update(
         &mut model,
         Msg::Ui(UiMsg::Modal(ModalMsg::ToggleFindReplaceSelectionOnly)),
@@ -856,7 +840,7 @@ fn find_next_and_replace_all_stay_inside_the_scope() {
     );
     assert_eq!(selected_text(&model), "foo");
 
-    if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+    if let Some(state) = &mut model.ui.find_bar {
         state.set_replacement("bar");
     }
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::ReplaceAll)));
@@ -866,9 +850,7 @@ fn find_next_and_replace_all_stay_inside_the_scope() {
 #[test]
 fn reopening_recaptures_the_scope_from_the_live_selection() {
     let mut model = test_model_with_selection("foo\nfoo\nfoo\nfoo\n", 1, 0, 3, 0);
-    model
-        .ui
-        .open_modal(ModalState::FindReplace(find_replace_with_query("foo")));
+    model.ui.open_find(find_replace_with_query("foo"));
     update(
         &mut model,
         Msg::Ui(UiMsg::Modal(ModalMsg::ToggleFindReplaceSelectionOnly)),
@@ -892,9 +874,7 @@ fn reopening_recaptures_the_scope_from_the_live_selection() {
 #[test]
 fn find_status_reports_count_ordinal_and_regex_errors() {
     let mut model = test_model("foo foo foo\n", 0, 0);
-    model
-        .ui
-        .open_modal(ModalState::FindReplace(find_replace_with_query("foo")));
+    model.ui.open_find(find_replace_with_query("foo"));
     let selection = model.editor().selections[0];
     assert_eq!(
         find_state(&model).status(model.document(), &selection),
@@ -931,7 +911,7 @@ fn find_status_reports_count_ordinal_and_regex_errors() {
         "3 of 3"
     );
 
-    if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+    if let Some(state) = &mut model.ui.find_bar {
         state.set_query("nothing");
     }
     assert_eq!(
@@ -942,7 +922,7 @@ fn find_status_reports_count_ordinal_and_regex_errors() {
         "No matches"
     );
 
-    if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+    if let Some(state) = &mut model.ui.find_bar {
         state.set_query("(");
         state.use_regex = true;
     }
@@ -956,7 +936,7 @@ fn find_status_reports_count_ordinal_and_regex_errors() {
         status.label()
     );
 
-    if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+    if let Some(state) = &mut model.ui.find_bar {
         state.set_query("");
     }
     assert_eq!(

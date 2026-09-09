@@ -10,7 +10,7 @@ use crate::editable::{Cursor, EditableState, Selection, StringBuffer};
 
 use super::frame::Frame;
 use super::geometry::{ModalSpacing, WidgetRect};
-use super::TextPainter;
+use super::{FontRole, TextPainter};
 
 /// Options for rendering a text field.
 #[derive(Debug, Clone)]
@@ -173,7 +173,7 @@ impl TextFieldRenderer {
         opts: &TextFieldOptions,
     ) {
         // All editable fields share the editor font and grid geometry.
-        let ui = painter.use_ui_font(false);
+        let mut painter = painter.with_font(FontRole::Code);
         let text = content.text();
 
         // 1. Render selection backgrounds
@@ -242,7 +242,6 @@ impl TextFieldRenderer {
                 }
             }
         }
-        painter.use_ui_font(ui);
     }
 
     #[allow(clippy::too_many_arguments)]

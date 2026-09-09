@@ -31,6 +31,7 @@ pub enum PerfStage {
     Clear,
     CursorFastPath,
     TabBar,
+    FindBar,
     TextBackground,
     TextDecorations,
     TextGlyphs,
@@ -89,6 +90,7 @@ impl PerfStage {
             Self::Clear => "clear",
             Self::CursorFastPath => "cursor_fast_path",
             Self::TabBar => "tab_bar",
+            Self::FindBar => "find_bar",
             Self::TextBackground => "text_background",
             Self::TextDecorations => "text_decorations",
             Self::TextGlyphs => "text_glyphs",
@@ -118,12 +120,13 @@ impl PerfStage {
 }
 
 impl PerfStage {
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 30] = [
         Self::BuildPlan,
         Self::Layout,
         Self::Clear,
         Self::CursorFastPath,
         Self::TabBar,
+        Self::FindBar,
         Self::TextBackground,
         Self::TextDecorations,
         Self::TextGlyphs,
@@ -161,6 +164,11 @@ impl PerfStage {
     #[cfg(debug_assertions)]
     const fn spec(self) -> PerfStageSpec {
         match self {
+            Self::FindBar => PerfStageSpec {
+                label: "Find Bar",
+                short_label: "Find",
+                color: 0xFF73DACA,
+            },
             Self::BuildPlan => PerfStageSpec {
                 label: "Build Plan",
                 short_label: "Plan",

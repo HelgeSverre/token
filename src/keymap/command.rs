@@ -212,8 +212,10 @@ pub enum Command {
     OpenSettings,
     /// Toggle goto line dialog
     ToggleGotoLine,
-    /// Toggle find/replace dialog
+    /// Open/focus docked Find (legacy binding name retained).
     ToggleFindReplace,
+    /// Open/focus docked Replace.
+    OpenReplace,
     /// Toggle soft wrapping in the focused editor pane
     ToggleSoftWrap,
     ToggleFold,
@@ -523,7 +525,8 @@ impl Command {
                 vec![Msg::Ui(UiMsg::ToggleModal(ModalId::CommandPalette))]
             }
             ToggleGotoLine => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::GotoLine))],
-            ToggleFindReplace => vec![Msg::Ui(UiMsg::ToggleModal(ModalId::FindReplace))],
+            ToggleFindReplace => vec![Msg::Ui(UiMsg::OpenFind { replace: false })],
+            OpenReplace => vec![Msg::Ui(UiMsg::OpenFind { replace: true })],
             ToggleFold => vec![Msg::Editor(EditorMsg::Fold {
                 editor_id: None,
                 header: None,
@@ -721,6 +724,7 @@ impl Command {
                 | Command::OpenSettings
                 | Command::ToggleGotoLine
                 | Command::ToggleFindReplace
+                | Command::OpenReplace
                 | Command::ToggleSoftWrap
                 | Command::ToggleFold
                 | Command::CollapseFold
@@ -818,7 +822,8 @@ impl Command {
 
             ToggleCommandPalette => "Command Palette",
             ToggleGotoLine => "Go to Line",
-            ToggleFindReplace => "Find and Replace",
+            ToggleFindReplace => "Find",
+            OpenReplace => "Replace",
             ToggleFold => "View: Toggle Fold",
             CollapseFold => "View: Collapse Fold",
             ExpandFold => "View: Expand Fold",

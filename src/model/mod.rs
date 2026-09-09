@@ -466,8 +466,31 @@ impl AppModel {
     pub fn resync_viewports(&mut self) {
         let line_height = self.line_height;
         let char_width = self.char_width;
+        let inset = self.find_bar_inset();
         self.editor_area
-            .sync_all_viewports(line_height, char_width, &self.metrics);
+            .sync_all_viewports(line_height, char_width, &self.metrics, inset);
+    }
+
+    /// The same reserved editor space is used by viewport sizing and painting.
+    pub fn find_bar_inset(&self) -> Option<(EditorId, usize)> {
+        let state = self.ui.find_bar.as_ref()?;
+        let group = self.editor_area.focused_group()?;
+        let editor_id = group.active_editor_id()?;
+        let editor = self.editor_area.editors.get(&editor_id)?;
+        editor.is_plain_text_mode().then(|| {
+            let available =
+                (group.rect.height as usize).saturating_sub(self.metrics.tab_bar_height);
+            (
+                editor_id,
+                crate::view::find_bar::height(
+                    self.line_height,
+                    &self.metrics,
+                    group.rect.width,
+                    state.replace_mode,
+                )
+                .min(available),
+            )
+        })
     }
 
     /// Create an empty model with deterministic defaults, without filesystem I/O.
@@ -1195,15 +1218,21 @@ mod tests {
         model
             .editor_area
             .compute_layout(crate::model::editor_area::Rect::new(0.0, 0.0, 400.0, 200.0));
-        model
-            .editor_area
-            .sync_all_viewports(model.line_height, model.char_width, &model.metrics);
+        model.editor_area.sync_all_viewports(
+            model.line_height,
+            model.char_width,
+            &model.metrics,
+            None,
+        );
         let small_columns = model.editor().viewport.visible_columns;
 
         model.document_mut().buffer = Rope::from("\n".repeat(100_000));
-        model
-            .editor_area
-            .sync_all_viewports(model.line_height, model.char_width, &model.metrics);
+        model.editor_area.sync_all_viewports(
+            model.line_height,
+            model.char_width,
+            &model.metrics,
+            None,
+        );
         let large_columns = model.editor().viewport.visible_columns;
 
         assert!(large_columns < small_columns);

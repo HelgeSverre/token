@@ -268,7 +268,26 @@ pub(super) fn show_details(model: &mut AppModel) -> Option<Cmd> {
     let document = model.document();
     let settings = document.text_settings;
     let name = document.display_name();
-    let mut text = format!("Text settings for {name}\n\nIndent using: {:?}\nIndent step: {} columns\nTab width: {} columns\nLine ending: {:?}\nTrim trailing whitespace: {:?}\nFinal newline: {:?}\nEditorConfig enabled: {}\n\n", settings.indent_style, settings.indent_size, settings.tabs.width(), document.line_ending(), settings.trim_trailing_whitespace, settings.insert_final_newline, model.config.editorconfig);
+    let indent = match settings.indent_style {
+        crate::model::IndentStyle::Tab => "tabs",
+        crate::model::IndentStyle::Space => "spaces",
+    };
+    let ending = match document.line_ending() {
+        crate::model::LineEnding::Lf => "LF",
+        crate::model::LineEnding::Crlf => "CRLF",
+        crate::model::LineEnding::Cr => "CR",
+    };
+    let trim = if settings.trim_trailing_whitespace == Some(true) {
+        "remove"
+    } else {
+        "preserve"
+    };
+    let final_newline = match settings.insert_final_newline {
+        Some(true) => "ensure",
+        Some(false) => "remove",
+        None => "preserve",
+    };
+    let mut text = format!("Text settings for {name}\n\nIndent using: {indent}\nIndent step: {} columns\nTab width: {} columns\nLine ending: {ending}\nTrailing whitespace: {trim}\nFinal newline: {final_newline}\nEditorConfig enabled: {}\n\n", settings.indent_size, settings.tabs.width(), model.config.editorconfig);
     if let Some(policy) = &document.file_policy.resolved {
         text.push_str(&format!(
             "Rules resolved for: {}\n\n",

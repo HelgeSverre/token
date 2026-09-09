@@ -24,7 +24,9 @@ pub enum FocusTarget {
     Editor,
     /// A dock panel, including the file explorer in the left dock
     Dock(DockPosition),
-    /// Modal dialog (command palette, goto line, find/replace, etc.)
+    /// Docked find/replace text field.
+    FindBar,
+    /// Modal dialog (command palette, goto line, etc.)
     Modal,
 }
 
@@ -45,6 +47,7 @@ pub enum HoverRegion {
     SidebarResize,
     /// Hovering over the editor text area
     EditorText,
+    FindBar(Option<crate::view::find_bar::Control>),
     /// Hovering over the editor tab bar
     EditorTabBar,
     /// Hovering over the status bar
@@ -83,8 +86,6 @@ pub enum ModalId {
     CommandPalette,
     /// Go to line dialog (Cmd+L)
     GotoLine,
-    /// Find/Replace dialog (Cmd+F)
-    FindReplace,
     /// Theme picker
     ThemePicker,
     /// File finder (Shift+Cmd+O) - fuzzy search files in workspace
@@ -334,9 +335,11 @@ pub enum FindReplaceField {
     Replace,
 }
 
-/// State for the find/replace modal
+/// Search session displayed in the active editor's docked find bar.
 #[derive(Debug, Clone)]
 pub struct FindReplaceState {
+    /// Scope belongs to this document, never whichever tab happens to open next.
+    pub(crate) document_id: Option<crate::model::DocumentId>,
     /// Editable state for the query field
     pub query_editable: EditableState<StringBuffer>,
     /// Editable state for the replacement field
@@ -548,6 +551,7 @@ impl FindStatus {
 impl Default for FindReplaceState {
     fn default() -> Self {
         Self {
+            document_id: None,
             query_editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
             replace_editable: EditableState::new(
                 StringBuffer::new(),
@@ -1038,7 +1042,6 @@ pub enum ModalState {
     Settings(crate::settings::SettingsState),
     CommandPalette(CommandPaletteState),
     GotoLine(GotoLineState),
-    FindReplace(FindReplaceState),
     ThemePicker(ThemePickerState),
     FileFinder(FileFinderState),
     RecentFiles(RecentFilesState),
@@ -1055,7 +1058,6 @@ impl ModalState {
             ModalState::Settings(_) => ModalId::Settings,
             ModalState::CommandPalette(_) => ModalId::CommandPalette,
             ModalState::GotoLine(_) => ModalId::GotoLine,
-            ModalState::FindReplace(_) => ModalId::FindReplace,
             ModalState::ThemePicker(_) => ModalId::ThemePicker,
             ModalState::FileFinder(_) => ModalId::FileFinder,
             ModalState::RecentFiles(_) => ModalId::RecentFiles,
@@ -1463,6 +1465,10 @@ pub struct UiState {
     pub is_saving: bool,
     /// Currently active modal (if any)
     pub active_modal: Option<ModalState>,
+    /// Non-modal search UI for the active text pane; retained while editing.
+    pub find_bar: Option<FindReplaceState>,
+    /// Captured input field during a pointer selection.
+    pub find_selection_drag: Option<FindReplaceField>,
     /// Last command palette state (persisted for quick re-execution)
     pub last_command_palette: Option<CommandPaletteState>,
     /// Last find/replace state (persisted for quick re-use)
@@ -1572,6 +1578,8 @@ impl UiState {
             is_loading: false,
             is_saving: false,
             active_modal: None,
+            find_bar: None,
+            find_selection_drag: None,
             last_command_palette: None,
             last_find_replace: None,
             drop_state: DropState::default(),
@@ -1620,8 +1628,16 @@ impl UiState {
         self.active_modal.is_some()
     }
 
+    pub fn open_find(&mut self, state: FindReplaceState) {
+        self.close_modal();
+        self.find_bar = Some(state);
+        self.focus = FocusTarget::FindBar;
+        self.reset_cursor_blink();
+    }
+
     /// Open a modal (also sets focus to Modal)
     pub fn open_modal(&mut self, state: ModalState) {
+        self.find_selection_drag = None;
         self.scrollbar_drag = None;
         self.active_modal = Some(state);
         self.focus = FocusTarget::Modal;
@@ -1630,6 +1646,7 @@ impl UiState {
 
     /// Close the active modal (returns focus to Editor)
     pub fn close_modal(&mut self) {
+        self.find_selection_drag = None;
         self.scrollbar_drag = None;
         self.active_modal = None;
         self.focus = FocusTarget::Editor;
@@ -1638,6 +1655,7 @@ impl UiState {
 
     /// Set focus to the editor
     pub fn focus_editor(&mut self) {
+        self.find_selection_drag = None;
         if self.focus != FocusTarget::Editor {
             tracing::trace!("Focus changed: {:?} -> Editor", self.focus);
             self.focus = FocusTarget::Editor;
@@ -1654,6 +1672,7 @@ impl UiState {
 
     /// Set focus to a dock
     pub fn focus_dock(&mut self, position: DockPosition) {
+        self.find_selection_drag = None;
         let target = FocusTarget::Dock(position);
         if self.focus != target {
             tracing::trace!("Focus changed: {:?} -> Dock({:?})", self.focus, position);

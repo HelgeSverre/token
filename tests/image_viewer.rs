@@ -116,7 +116,7 @@ fn test_sync_all_viewports_auto_fits_image_to_group_content_rect() {
 
     model
         .editor_area
-        .sync_all_viewports(model.line_height, model.char_width, &model.metrics);
+        .sync_all_viewports(model.line_height, model.char_width, &model.metrics, None);
 
     let image = model.editor().view_mode.as_image().unwrap();
     assert!((image.scale - 0.4).abs() < 1e-9);
@@ -142,7 +142,7 @@ fn test_sync_all_viewports_does_not_override_user_zoomed_image_scale() {
 
     model
         .editor_area
-        .sync_all_viewports(model.line_height, model.char_width, &model.metrics);
+        .sync_all_viewports(model.line_height, model.char_width, &model.metrics, None);
 
     let image = model.editor().view_mode.as_image().unwrap();
     assert!((image.scale - 2.0).abs() < 1e-9);

@@ -83,7 +83,7 @@ fn load_installed(db: &fontdb::Database, name: &str, editor: bool) -> Result<Fon
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::view::{GlyphCache, TextPainter};
+    use crate::view::{FontRole, GlyphCache, TextPainter};
 
     #[test]
     fn font_roles_keep_code_metrics_and_ui_caches_independent() {
@@ -97,12 +97,20 @@ mod tests {
         let mut ui_cache = GlyphCache::new();
         let mut painter =
             TextPainter::new(&fonts.editor, &mut code_cache, 14.0, 11.0, code_width, 20)
-                .with_ui_font(&fonts.ui, &mut ui_cache);
+                .with_ui_font(&fonts.ui, &mut ui_cache, FontRole::Ui);
         let ui_width = painter.measure_width("iiii");
         assert_eq!(painter.char_width(), code_width);
-        painter.use_ui_font(false);
-        assert_eq!(painter.measure_width("iiii"), code_width * 4.0);
-        painter.use_ui_font(true);
+        {
+            let mut code = painter.with_font(FontRole::Code);
+            assert_eq!(code.measure_width("iiii"), code_width * 4.0);
+            {
+                let mut ui = code.with_font(FontRole::Ui);
+                assert_eq!(ui.measure_width("iiii"), ui_width);
+            }
+            assert_eq!(code.font_role(), FontRole::Code);
+            assert_eq!(code.measure_width("iiii"), code_width * 4.0);
+        }
+        assert_eq!(painter.font_role(), FontRole::Ui);
         assert_eq!(painter.measure_width("iiii"), ui_width);
         assert!(ui_width < code_width * 4.0);
         let clipped = painter.truncate_to_width("WWiiiiWW", 35.0);

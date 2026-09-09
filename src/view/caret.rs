@@ -1,7 +1,7 @@
 //! Active text-input caret geometry for platform text services.
 
 use crate::csv::render::CsvRenderLayout;
-use crate::model::ui::{FindReplaceField, GotoLineState, ModalState, RenameSymbolState};
+use crate::model::ui::{GotoLineState, ModalState, RenameSymbolState};
 use crate::model::{AppModel, FocusTarget};
 
 use super::geometry::{GroupLayout, WidgetRect};
@@ -21,6 +21,11 @@ pub fn active_text_input_rect(
         return modal_caret_rect(model, modal, char_width, line_height);
     }
 
+    if model.ui.focus == FocusTarget::FindBar {
+        let state = model.ui.find_bar.as_ref()?;
+        let options = super::find_bar::field_options(model, state.focused_field)?;
+        return TextFieldRenderer::caret_rect(state.focused_editable(), &options);
+    }
     if model.ui.focus != FocusTarget::Editor {
         return None;
     }
@@ -146,27 +151,6 @@ fn modal_caret_rect(
             (
                 editable,
                 TextFieldOptions::for_modal(editable, &rect, line_height, char_width, scale_factor),
-            )
-        }
-        ModalState::FindReplace(state) => {
-            let field_index = match state.focused_field {
-                FindReplaceField::Query => 0,
-                FindReplaceField::Replace => 1,
-            };
-            let rect = super::modal::modal_field_input_rect(
-                model,
-                width,
-                height,
-                scale_factor,
-                field_index,
-            )?;
-            let content: &dyn super::TextFieldContent = match state.focused_field {
-                FindReplaceField::Query => &state.query_editable,
-                FindReplaceField::Replace => &state.replace_editable,
-            };
-            (
-                content,
-                TextFieldOptions::for_modal(content, &rect, line_height, char_width, scale_factor),
             )
         }
         ModalState::ThemePicker(_)

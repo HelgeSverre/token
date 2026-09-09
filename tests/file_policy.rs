@@ -212,7 +212,7 @@ fn editorconfig_reload_does_not_resume_an_automatic_save_for_an_older_revision()
     model.config.lsp.enabled = false;
     let commands = reply(&mut model, pending, "[*]\ntrim_trailing_whitespace=true\n").unwrap();
     assert!(find(&commands, |c| matches!(c, Cmd::SaveFile { .. })).is_none());
-    assert!(model.document().pending_save.is_none());
+    assert!(!model.document().save_busy());
     assert!(model.document().is_modified);
     assert_eq!(model.document().buffer.to_string(), "text!?  ");
 }

@@ -38,6 +38,19 @@ All notable changes to rust-editor are documented in this file.
 - Failed saves retain dirty state and show a persistent failure indicator;
   automatic retries wait for new edits or a successful manual save. Untitled and
   image/binary tabs are excluded, and unfinished CSV cell edits defer saving.
+### Docked Find and Replace
+
+- Find and Replace now open beneath the active editor pane's tabs instead of
+  in a modal. The editor remains available for clicking, editing and scrolling.
+- Cmd+F focuses Find; Cmd+R opens Replace (Ctrl on Windows/Linux). The bar has
+  match counts, previous/next navigation, search-option toggles and replacement
+  actions, with a stacked layout in narrow panes. Escape closes it.
+- Search inputs share the existing text-editing and caret primitives, including
+  selection, clipboard shortcuts and pointer selection. Queries are remembered
+  when closing; captured selection scopes reset when switching documents.
+- Viewport sizing and pointer targets stay aligned with the Find bar at
+  fractional display scales and split-pane sizes. Clicking another split keeps
+  the clicked text position when the Find bar moves to that pane.
 
 ### Pixel scrolling
 
@@ -137,6 +150,8 @@ All notable changes to rust-editor are documented in this file.
 - Code and UI share the text painter with independent glyph caches. UI labels
   use measured glyph advances; inputs retain matching text, selection and caret
   metrics in the editor font.
+- Cursor redraws, text fields and mixed code/UI surfaces retain the correct
+  font and baseline.
 
 ### Linux builds
 

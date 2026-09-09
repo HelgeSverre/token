@@ -105,6 +105,9 @@ bindings:
   - key: "cmd+f"
     command: ToggleFindReplace
 
+  - key: "cmd+r"
+    command: OpenReplace
+
   - key: "alt+z"
     command: ToggleSoftWrap
 

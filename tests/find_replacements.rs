@@ -2,7 +2,7 @@
 mod common;
 
 use token::messages::{DocumentMsg, LayoutMsg, ModalMsg, Msg, UiMsg};
-use token::model::{AppModel, Cursor, FindReplaceState, ModalState, Position, Selection};
+use token::model::{AppModel, Cursor, FindReplaceState, Position, Selection};
 use token::update::update;
 
 fn open_find(model: &mut AppModel, query: &str, replacement: &str, scoped: bool) {
@@ -11,7 +11,7 @@ fn open_find(model: &mut AppModel, query: &str, replacement: &str, scoped: bool)
     state.set_replacement(replacement);
     state.case_sensitive = true;
     state.set_selection_only(scoped, model.document(), &model.editor().selections[0]);
-    model.ui.open_modal(ModalState::FindReplace(state));
+    model.ui.open_find(state);
 }
 
 fn act(model: &mut AppModel, message: ModalMsg) {
@@ -19,10 +19,7 @@ fn act(model: &mut AppModel, message: ModalMsg) {
 }
 
 fn scope(model: &AppModel) -> Option<(usize, usize)> {
-    match model.ui.active_modal.as_ref().unwrap() {
-        ModalState::FindReplace(state) => state.scope,
-        _ => panic!("expected Find modal"),
-    }
+    model.ui.find_bar.as_ref().expect("Find bar").scope
 }
 
 #[test]
@@ -117,7 +114,7 @@ fn find_replace_scope_tracks_growth_and_zero_width_boundary_insertions() {
 
     let mut model = common::test_model_with_selection("foo\noutside", 0, 0, 0, 3);
     open_find(&mut model, "\\b", "_", true);
-    if let Some(ModalState::FindReplace(state)) = &mut model.ui.active_modal {
+    if let Some(state) = &mut model.ui.find_bar {
         state.use_regex = true;
     }
     act(&mut model, ModalMsg::ReplaceAll);

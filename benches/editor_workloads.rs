@@ -51,7 +51,7 @@ fn report(name: &str, mut times: Vec<Duration>) {
 fn cold_find(sample_stage: Option<&str>) {
     use std::sync::Arc;
     use token::messages::UiMsg;
-    use token::model::{FindReplaceState, ModalState};
+    use token::model::FindReplaceState;
 
     fn search_request(cmd: token::Cmd) -> Option<Arc<token::model::ui::FindSearchRequest>> {
         match cmd {
@@ -81,7 +81,7 @@ fn cold_find(sample_stage: Option<&str>) {
             // Install a genuinely cold state so update emits the production request.
             let mut state = FindReplaceState::default();
             state.set_query(pattern);
-            m.ui.open_modal(ModalState::FindReplace(state));
+            m.ui.open_find(state);
             let request =
                 search_request(token::update::update(&mut m, Msg::Ui(UiMsg::BlinkCursor)).unwrap())
                     .expect("large cold document must schedule Find");
@@ -416,7 +416,7 @@ fn rendering(sample_mode: bool) {
 
 fn replacements() {
     use token::messages::{LayoutMsg, ModalMsg, UiMsg};
-    use token::model::{FindReplaceState, ModalState, Selection, SplitDirection};
+    use token::model::{FindReplaceState, Selection, SplitDirection};
     for panes in [1, 2] {
         for count in [1, 100, 10_000] {
             let text = format!("header\n{}tail", "foo\n".repeat(count));
@@ -447,7 +447,7 @@ fn replacements() {
                 state.set_query("foo");
                 state.set_replacement("🙂\nx");
                 state.case_sensitive = true;
-                m.ui.open_modal(ModalState::FindReplace(state));
+                m.ui.open_find(state);
                 let start = Instant::now();
                 black_box(token::update::update(
                     &mut m,
@@ -798,7 +798,7 @@ fn main() {
             if sample_find {
                 // Sample warmed rendering, not the empty pending-search display.
                 black_box(state.matches(m.document()));
-                m.ui.active_modal = Some(token::model::ModalState::FindReplace(state));
+                m.ui.find_bar = Some(state);
                 let mut cache = GlyphCache::new();
                 let start = Instant::now();
                 while start.elapsed() < Duration::from_secs(12) {
@@ -837,7 +837,7 @@ fn main() {
             );
             state.set_query("ordinary");
             black_box(state.matches(m.document()));
-            m.ui.active_modal = Some(token::model::ModalState::FindReplace(state));
+            m.ui.find_bar = Some(state);
             let mut cache = GlyphCache::new();
             measure(
                 &format!("production_group_render_find lines={lines}"),

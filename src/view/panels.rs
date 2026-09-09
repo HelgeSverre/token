@@ -4,7 +4,7 @@ use crate::layout::{snapshot::snap, LayoutSnapshot, RowListView, UiKey};
 use crate::model::editor_area::Rect;
 use crate::model::AppModel;
 
-use super::frame::{Frame, TextPainter};
+use super::frame::{FontRole, Frame, TextPainter};
 use super::geometry::TreeRowLayout;
 use super::tree_view::render_tree;
 
@@ -124,13 +124,13 @@ impl DockPaneScene {
         chrome: &LayoutSnapshot,
     ) {
         self.render_chrome(frame);
-        let ui = painter.use_ui_font(false);
-        self.render_header(frame, painter);
-
-        if matches!(self.content, DockContentKind::Terminal) {
-            crate::panels::terminal::render_tabs(frame, painter, model, chrome);
+        {
+            let mut painter = painter.with_font(FontRole::Code);
+            self.render_header(frame, &mut painter);
+            if matches!(self.content, DockContentKind::Terminal) {
+                crate::panels::terminal::render_tabs(frame, &mut painter, model, chrome);
+            }
         }
-        painter.use_ui_font(ui);
 
         frame.push_clip(self.content_rect);
         match &self.content {
@@ -146,14 +146,13 @@ impl DockPaneScene {
                 );
             }
             DockContentKind::Terminal => {
-                let ui = painter.use_ui_font(false);
+                let mut painter = painter.with_font(FontRole::Code);
                 crate::panels::terminal::render_terminal_panel(
                     frame,
-                    painter,
+                    &mut painter,
                     model,
                     self.content_rect,
                 );
-                painter.use_ui_font(ui);
             }
             DockContentKind::Problems => {
                 let rows = chrome.row_list(UiKey::PanelRows(crate::panel::PanelId::Problems));
@@ -296,6 +295,7 @@ pub fn render_sidebar(
     let Some(rows) = chrome.row_list(UiKey::Sidebar) else {
         return;
     };
+    let mut painter = painter.with_font(FontRole::Code);
     let sidebar_rect = rows.rect();
     let (sidebar_x, sidebar_y, sidebar_width, sidebar_height) = snap(sidebar_rect);
 

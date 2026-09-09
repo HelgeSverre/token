@@ -423,7 +423,7 @@ fn folding_insert_at_end_boundary_keeps_new_visible_text_outside_the_fold() {
     assert_eq!(model.editor().folds.collapsed()[0].end, 6);
     let map = model.editor().viewport_map(model.document());
     assert!(map.visible_row_for_doc_line(6).is_some());
-    assert_eq!(model.document().get_line(6).unwrap(), "visible");
+    assert_eq!(model.document().get_line(6).unwrap(), "visible\n");
     update(&mut model, Msg::Document(DocumentMsg::Undo));
     assert!(model.editor().folds.is_collapsed(0));
     assert_eq!(model.editor().folds.collapsed()[0].end, 6);

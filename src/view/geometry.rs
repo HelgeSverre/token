@@ -80,8 +80,7 @@ fn focused_group_editor_document(
 /// Takes into account the group's position (including sidebar offset), tab bar,
 /// gutter, scroll offset, and horizontal scrolling.
 ///
-/// This function delegates to `pixel_to_cursor_in_group` using the focused group's
-/// rect, which includes the sidebar offset and any split view positioning.
+/// Uses the same `GroupLayout` as painting, including docked editor controls.
 pub fn pixel_to_cursor(
     x: f64,
     y: f64,
@@ -90,13 +89,11 @@ pub fn pixel_to_cursor(
     model: &AppModel,
 ) -> (usize, usize) {
     if let Some((group, editor, document)) = focused_group_editor_document(model) {
-        pixel_to_cursor_in_group(
+        GroupLayout::new(group, model, char_width).pixel_to_cursor(
             x,
             y,
             char_width,
             line_height,
-            &group.rect,
-            model,
             editor,
             document,
         )
@@ -111,8 +108,7 @@ pub fn pixel_to_cursor(
 /// independent of any specific line's text content.
 /// Returns (line, visual_column) where visual_column is the screen column.
 ///
-/// This function delegates to `pixel_to_line_and_visual_column_in_group` using
-/// the focused group's rect, which includes the sidebar offset and split positioning.
+/// Uses the same `GroupLayout` as painting, including docked editor controls.
 pub fn pixel_to_line_and_visual_column(
     x: f64,
     y: f64,
@@ -121,13 +117,11 @@ pub fn pixel_to_line_and_visual_column(
     model: &AppModel,
 ) -> (usize, usize) {
     if let Some((group, editor, document)) = focused_group_editor_document(model) {
-        pixel_to_line_and_visual_column_in_group(
+        GroupLayout::new(group, model, char_width).pixel_to_line_and_visual_column(
             x,
             y,
             char_width,
             line_height,
-            &group.rect,
-            model,
             editor,
             document,
         )
@@ -135,84 +129,6 @@ pub fn pixel_to_line_and_visual_column(
         // No focused group/editor/document - safe fallback
         (0, 0)
     }
-}
-
-/// Convert pixel coordinates to line and VISUAL column for a specific group.
-///
-/// Accounts for the group's rect position within the window.
-/// Used for rectangle selection where the raw visual column is needed.
-#[allow(clippy::too_many_arguments)]
-pub fn pixel_to_line_and_visual_column_in_group(
-    x: f64,
-    y: f64,
-    char_width: f32,
-    line_height: f64,
-    group_rect: &Rect,
-    model: &AppModel,
-    editor: &EditorState,
-    document: &Document,
-) -> (usize, usize) {
-    let viewport = editor.viewport_map(document);
-    let local_x = x - group_rect.x as f64;
-    let local_y = y - group_rect.y as f64;
-
-    let text_x = crate::model::text_start_x_scaled(
-        char_width,
-        &model.metrics,
-        document.line_count(),
-        !document.diagnostics.is_empty(),
-        editor.is_plain_text_mode(),
-    )
-    .round() as f64;
-
-    let text_start_y = model.metrics.tab_bar_height as f64;
-    let adjusted_y = (local_y - text_start_y).max(0.0);
-    let visible_row = viewport.visible_row_at_pixel(adjusted_y, line_height);
-    let line = viewport
-        .top_line()
-        .saturating_add(visible_row)
-        .min(viewport.last_line());
-
-    let x_offset = local_x - text_x;
-    let visual_column = viewport.visual_column_for_x_offset(x_offset, char_width);
-
-    (line, visual_column)
-}
-
-/// Convert pixel coordinates to document line and column for a specific group.
-///
-/// Accounts for the group's rect position within the window.
-/// This is the core hit-testing function that handles coordinate conversion
-/// from absolute window coordinates to local group coordinates.
-#[allow(clippy::too_many_arguments)]
-pub fn pixel_to_cursor_in_group(
-    x: f64,
-    y: f64,
-    char_width: f32,
-    line_height: f64,
-    group_rect: &Rect,
-    model: &AppModel,
-    editor: &EditorState,
-    document: &Document,
-) -> (usize, usize) {
-    let viewport = editor.viewport_map(document);
-    let local_x = x - group_rect.x as f64;
-    let local_y = y - group_rect.y as f64;
-
-    let text_x = crate::model::text_start_x_scaled(
-        char_width,
-        &model.metrics,
-        document.line_count(),
-        !document.diagnostics.is_empty(),
-        editor.is_plain_text_mode(),
-    )
-    .round() as f64;
-    let text_start_y = model.metrics.tab_bar_height as f64;
-    let adjusted_y = (local_y - text_start_y).max(0.0);
-    let x_offset = local_x - text_x;
-    let position =
-        viewport.position_for_pixel(document, x_offset, adjusted_y, char_width, line_height);
-    (position.line, position.column)
 }
 
 // ============================================================================
@@ -386,7 +302,9 @@ impl LaneId {
 pub struct GroupLayout {
     /// The group's rect in window coordinates (from compute_layout_scaled)
     pub group_rect: Rect,
-    /// Content area (excludes tab bar), in window coordinates
+    /// Docked Find bar below the tabs (zero height when absent).
+    pub find_bar_rect: Rect,
+    /// Content area (excludes tabs and docked controls), in window coordinates
     pub content_rect: Rect,
     /// Tab bar height (scaled for DPI)
     pub tab_bar_height: usize,
@@ -405,26 +323,53 @@ impl GroupLayout {
     /// ensuring DPI-correct rendering on all displays. Gutter width is derived
     /// from the group's active document line count.
     pub fn new(group: &EditorGroup, model: &AppModel, char_width: f32) -> Self {
-        let group_rect = group.rect;
-        let metrics = &model.metrics;
-
-        let tab_bar_height = metrics.tab_bar_height;
-        let content_rect = Rect::new(
-            group_rect.x,
-            group_rect.y + tab_bar_height as f32,
-            group_rect.width,
-            (group_rect.height - tab_bar_height as f32).max(0.0),
-        );
-
-        let document = model.editor_area.document_for_group(group);
-        let line_count = document.map(|doc| doc.line_count()).unwrap_or(1);
-        let has_marks = document.is_some_and(|doc| !doc.diagnostics.is_empty());
-
-        let rect_x = group_rect.x.round() as usize;
+        let find_height = model
+            .find_bar_inset()
+            .filter(|(id, _)| Some(*id) == group.active_editor_id())
+            .map_or(0, |(_, height)| height);
         let has_folds = group
             .active_tab()
             .and_then(|tab| model.editor_area.editors.get(&tab.editor_id))
             .is_some_and(EditorState::is_plain_text_mode);
+        Self::from_rect(
+            group.rect,
+            model.editor_area.document_for_group(group),
+            &model.metrics,
+            char_width,
+            find_height,
+            has_folds,
+        )
+    }
+
+    /// Shared with viewport synchronization, which needs to lay out inactive
+    /// tabs too and mutably borrow editor state independently of the model.
+    pub(crate) fn from_rect(
+        group_rect: Rect,
+        document: Option<&Document>,
+        metrics: &crate::model::ScaledMetrics,
+        char_width: f32,
+        find_height: usize,
+        has_folds: bool,
+    ) -> Self {
+        let tab_bar_height = metrics.tab_bar_height;
+        let below_tabs = (group_rect.height - tab_bar_height as f32).max(0.0);
+        let find_bar_rect = Rect::new(
+            group_rect.x,
+            group_rect.y + tab_bar_height as f32,
+            group_rect.width,
+            (find_height as f32).min(below_tabs),
+        );
+        let content_rect = Rect::new(
+            group_rect.x,
+            find_bar_rect.y + find_bar_rect.height,
+            group_rect.width,
+            below_tabs - find_bar_rect.height,
+        );
+
+        let line_count = document.map(|doc| doc.line_count()).unwrap_or(1);
+        let has_marks = document.is_some_and(|doc| !doc.diagnostics.is_empty());
+
+        let rect_x = group_rect.x.round() as usize;
         let gutter = GutterLayout::new(char_width, metrics, line_count, has_marks, has_folds);
         let gutter_right_x = rect_x + gutter.total_width();
         let text_start_x = rect_x
@@ -435,6 +380,7 @@ impl GroupLayout {
 
         Self {
             group_rect,
+            find_bar_rect,
             content_rect,
             tab_bar_height,
             gutter,
@@ -466,10 +412,10 @@ impl GroupLayout {
     }
 
     // =========================================================================
-    // Content-level accessors (below tab bar)
+    // Content-level accessors (below tabs and docked controls)
     // =========================================================================
 
-    /// Get absolute Y position for content area (below tab bar)
+    /// Get absolute Y position for the content area, below all docked controls.
     #[inline]
     pub fn content_y(&self) -> usize {
         self.content_rect.y.round() as usize
@@ -498,20 +444,78 @@ impl GroupLayout {
     /// Calculate visible line count for this group
     #[inline]
     pub fn visible_lines(&self, line_height: usize) -> usize {
-        self.content_h() / line_height
+        self.content_h().checked_div(line_height).unwrap_or(0)
     }
 
-    /// Calculate visible text columns for this group.
+    /// Width of the rendered text area, excluding the gutter.
     #[inline]
-    pub fn visible_columns(&self, char_width: f32) -> usize {
-        if char_width <= 0.0 {
-            return 0;
-        }
+    pub fn text_width(&self) -> usize {
+        (self.rect_x() + self.rect_w()).saturating_sub(self.text_start_x)
+    }
 
-        let text_start_x_offset = self.text_start_x.saturating_sub(self.rect_x());
-        ((self.rect_w() as f32 - text_start_x_offset as f32) / char_width)
-            .floor()
-            .max(0.0) as usize
+    /// Calculate visible text columns, including soft-wrap scrollbar/caret clearance.
+    #[inline]
+    pub fn visible_columns(
+        &self,
+        char_width: f32,
+        soft_wrap: bool,
+        scrollbar_width: usize,
+    ) -> usize {
+        crate::model::text_viewport_columns(
+            self.rect_w() as f32,
+            self.text_start_x.saturating_sub(self.rect_x()) as f32,
+            char_width,
+            soft_wrap,
+            scrollbar_width,
+        )
+    }
+
+    fn text_offset(&self, x: f64, y: f64) -> (f64, f64) {
+        (
+            x - self.text_start_x as f64,
+            (y - self.content_y() as f64).max(0.0),
+        )
+    }
+
+    /// Convert a window point using this pane's rendered text origin.
+    pub fn pixel_to_cursor(
+        &self,
+        x: f64,
+        y: f64,
+        char_width: f32,
+        line_height: f64,
+        editor: &EditorState,
+        document: &Document,
+    ) -> (usize, usize) {
+        let (x, y) = self.text_offset(x, y);
+        let position = editor.viewport_map(document).position_for_pixel(
+            document,
+            x,
+            y,
+            char_width,
+            line_height,
+        );
+        (position.line, position.column)
+    }
+
+    /// Convert a window point to the visual column used by rectangle selection.
+    pub fn pixel_to_line_and_visual_column(
+        &self,
+        x: f64,
+        y: f64,
+        char_width: f32,
+        line_height: f64,
+        editor: &EditorState,
+        document: &Document,
+    ) -> (usize, usize) {
+        let (x, y) = self.text_offset(x, y);
+        let viewport = editor.viewport_map(document);
+        let visible_row = viewport.visible_row_at_pixel(y, line_height);
+        let line = viewport
+            .top_line()
+            .saturating_add(visible_row)
+            .min(viewport.last_line());
+        (line, viewport.visual_column_for_x_offset(x, char_width))
     }
 
     // =========================================================================
@@ -670,6 +674,7 @@ mod tests {
     fn test_group_layout_visible_columns_respects_text_start() {
         let layout = GroupLayout {
             group_rect: Rect::new(0.0, 0.0, 200.0, 120.0),
+            find_bar_rect: Rect::new(0.0, 24.0, 200.0, 0.0),
             content_rect: Rect::new(0.0, 24.0, 200.0, 96.0),
             tab_bar_height: 24,
             gutter: GutterLayout::default(),
@@ -677,7 +682,10 @@ mod tests {
             text_start_x: 60,
         };
 
-        assert_eq!(layout.visible_columns(10.0), 14);
+        assert_eq!(layout.text_width(), 140);
+        assert_eq!(layout.visible_columns(10.0, false, 10), 14);
+        // Soft wrap reserves both the scrollbar and one caret column.
+        assert_eq!(layout.visible_columns(10.0, true, 10), 12);
     }
 
     #[test]

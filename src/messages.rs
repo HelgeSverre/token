@@ -166,7 +166,7 @@ pub enum DocumentMsg {
 
 use crate::model::{GroupId, ModalId, SegmentContent, SegmentId, SplitDirection, TabId};
 
-/// Modal-specific messages (command palette, goto line, find/replace)
+/// UI input actions shared by dialogs and the docked find/replace fields.
 #[derive(Debug, Clone)]
 pub enum ModalMsg {
     /// Open command palette
@@ -293,6 +293,21 @@ pub enum SettingsMsg {
 /// UI-specific messages (status bar, cursor blink, modals)
 #[derive(Debug, Clone)]
 pub enum UiMsg {
+    /// Open or focus the docked search bar, optionally expanding replacement.
+    OpenFind {
+        replace: bool,
+    },
+    CloseFind,
+    ToggleFindReplaceMode,
+    FocusFindField(crate::model::FindReplaceField),
+    FindFieldPointer {
+        field: crate::model::FindReplaceField,
+        column: usize,
+        extend: bool,
+        /// Zero extends an existing drag; two/three select a word/the field.
+        clicks: u8,
+    },
+    EndFindSelection,
     Settings(SettingsMsg),
     FindSearchCompleted {
         request: std::sync::Arc<crate::model::ui::FindSearchRequest>,

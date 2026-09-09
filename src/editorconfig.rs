@@ -24,7 +24,7 @@ pub struct ResolvedFilePolicy {
     pub preferences: TextPreferences,
     pub indent_uses_tab_width: bool,
     pub diagnostics: Vec<String>,
-    /// False for read/parse failures; retain the last successful values on reload.
+    /// True for read/parse failures; retain the last successful values on reload.
     pub incomplete: bool,
 }
 
