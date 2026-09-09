@@ -498,6 +498,8 @@ impl Severity {
 /// (`banner`/`code`/`text`, per lsp-integration.md).
 #[derive(Default)]
 pub struct Zones<'a> {
+    /// Center a short notification (the file-drop overlay), never documentation.
+    pub center_text: bool,
     /// Severity, message, source (e.g. `(Error, "unused import", "rustc")`).
     pub banner: Option<(Severity, &'a str, &'a str)>,
     /// Style spans (byte ranges) into the banner message.
@@ -1870,7 +1872,7 @@ pub fn render(
                 code,
                 lines,
                 false,
-                SIZE_ROW,
+                crate::layout::TextStyle::sized(SIZE_ROW),
                 colors.text_primary,
                 scale_factor,
             );
@@ -1885,7 +1887,7 @@ pub fn render(
                 text,
                 lines,
                 *truncated,
-                SIZE_ROW,
+                crate::layout::TextStyle::sized(SIZE_ROW),
                 colors.text_primary,
                 scale_factor,
             );
@@ -2365,7 +2367,7 @@ fn render_list(
                                 detail_x,
                                 text_y,
                                 &run,
-                                meta_size,
+                                crate::layout::TextStyle::sized(meta_size),
                                 colors.text_dim,
                                 painter.line_height_for_size(meta_size),
                                 scale_factor,
@@ -2959,7 +2961,7 @@ fn render_zones(
                 msg_x,
                 top + i * line_h,
                 line,
-                size,
+                crate::layout::TextStyle::sized(size),
                 text_color,
                 scale_factor,
             );
@@ -3005,7 +3007,10 @@ fn render_zones(
             content,
             lines,
             false,
-            SIZE_ROW,
+            crate::layout::TextStyle {
+                code: true,
+                ..crate::layout::TextStyle::sized(SIZE_ROW)
+            },
             colors.text_primary,
             scale_factor,
         );
@@ -3014,7 +3019,6 @@ fn render_zones(
     if let (Some(_), Some((lines, truncated, _)), Some(r)) =
         (zones.text, plan.text.as_ref(), layout.zones_text)
     {
-        let standalone = zones.banner.is_none() && zones.code.is_none();
         if should_center_zone_text(zones, lines, *truncated) {
             // Single-line, zone-only body (drop overlay): centered.
             let size = size_px(SIZE_INPUT, scale_factor);
@@ -3029,7 +3033,7 @@ fn render_zones(
                 text_x,
                 text_y,
                 text,
-                size,
+                crate::layout::TextStyle::sized(size),
                 colors.text_primary,
                 scale_factor,
             );
@@ -3041,7 +3045,11 @@ fn render_zones(
                 r,
                 lines,
                 *truncated,
-                if standalone { SIZE_INPUT } else { SIZE_ROW },
+                crate::layout::TextStyle::sized(if zones.center_text {
+                    SIZE_INPUT
+                } else {
+                    SIZE_ROW
+                }),
                 colors.text_primary,
                 scale_factor,
             );
@@ -3052,7 +3060,8 @@ fn render_zones(
 }
 
 fn should_center_zone_text(zones: &Zones<'_>, lines: &[StyledLine], truncated: bool) -> bool {
-    zones.banner.is_none()
+    zones.center_text
+        && zones.banner.is_none()
         && zones.code.is_none()
         && lines.len() == 1
         && lines[0].runs.is_empty()
@@ -3119,7 +3128,7 @@ fn documentation_style(
     mut base: crate::layout::TextStyle,
     span: Option<SpanStyle>,
 ) -> crate::layout::TextStyle {
-    if span == Some(SpanStyle::Code) {
+    if base.code || span == Some(SpanStyle::Code) {
         base.code = true;
         base.size *= 0.92;
     }
@@ -3162,7 +3171,7 @@ pub(crate) fn plan_zones(
     let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
     let content_w = panel_w.saturating_sub(2 * pad_x) as f32;
     let row_style = crate::layout::TextStyle::sized(size_px(SIZE_ROW, scale_factor));
-    let text_style = if zones.banner.is_none() && zones.code.is_none() {
+    let text_style = if zones.center_text {
         crate::layout::TextStyle::sized(size_px(SIZE_INPUT, scale_factor))
     } else {
         row_style
@@ -3250,7 +3259,10 @@ pub(crate) fn plan_zones(
         let lines = wrap_documentation(
             s,
             zones.code_spans,
-            row_style,
+            crate::layout::TextStyle {
+                code: true,
+                ..row_style
+            },
             content_w.max(min_wrap_w),
             measure,
         );
@@ -3389,11 +3401,11 @@ fn draw_text_lines(
     rect: WidgetRect,
     lines: &[StyledLine],
     truncated: bool,
-    size: f32,
+    mut style: crate::layout::TextStyle,
     color: u32,
     scale_factor: f64,
 ) {
-    let size = size_px(size, scale_factor);
+    style.size = size_px(style.size, scale_factor);
     let line_h = scaled(dims::ZONE_LINE_H, scale_factor);
     for (i, line) in lines.iter().enumerate() {
         draw_styled_line(
@@ -3403,7 +3415,7 @@ fn draw_text_lines(
             rect.x,
             rect.y + i * line_h,
             line,
-            size,
+            style,
             color,
             scale_factor,
         );
@@ -3414,7 +3426,7 @@ fn draw_text_lines(
             rect.x,
             rect.y + lines.len() * line_h,
             "\u{2026}",
-            size,
+            style.size,
             0.0,
             color,
         );
@@ -3432,7 +3444,7 @@ fn draw_styled_line(
     x: usize,
     y: usize,
     line: &StyledLine,
-    size: f32,
+    style: crate::layout::TextStyle,
     color: u32,
     scale_factor: f64,
 ) -> f32 {
@@ -3444,7 +3456,7 @@ fn draw_styled_line(
         x,
         y,
         line,
-        size,
+        style,
         color,
         line_h,
         scale_factor,
@@ -3462,7 +3474,7 @@ fn draw_styled_run(
     x: usize,
     y: usize,
     line: &StyledLine,
-    size: f32,
+    base_style: crate::layout::TextStyle,
     color: u32,
     line_h: usize,
     scale_factor: f64,
@@ -3475,63 +3487,65 @@ fn draw_styled_run(
         if range.start == 0 && range.end == line.text.len());
     let mut cursor = 0usize;
     let mut cx = x as f32;
-    let mut segment =
-        |frame: &mut Frame, painter: &mut TextPainter, text: &str, style: Option<SpanStyle>| {
-            if text.is_empty() {
-                return;
-            }
-            let text_style = if documentation {
-                documentation_style(crate::layout::TextStyle::sized(size), style)
-            } else {
-                crate::layout::TextStyle::sized(size)
-            };
-            let role = text_style.font_role(painter.font_role());
-            let mut painter = painter.with_font(role);
-            let size = text_style.size;
-            let text_y = y + line_h.saturating_sub(painter.line_height_for_size(size)) / 2;
-            let w = painter.measure_sized(text, size, 0.0);
-            let sx = cx.round() as usize;
-            match style {
-                Some(SpanStyle::Code) => {
-                    let inset = if documentation {
-                        scaled(2.0, scale_factor)
-                    } else {
-                        0
-                    };
-                    let pad = if documentation { 0 } else { chip_pad };
-                    if !documentation || !code_line {
-                        frame.blend_rect_px(
-                            sx.saturating_sub(pad),
-                            y + inset,
-                            w.ceil() as usize + 2 * pad,
-                            line_h.saturating_sub(2 * inset),
-                            colors.recessed_wash,
-                        );
-                    }
-                    painter.draw_sized(frame, sx, text_y, text, size, 0.0, colors.text_bright);
-                }
-                // Synthetic bold: a second strike one pixel right, and one
-                // extra pixel of advance so the widened glyphs never touch
-                // the next run.
-                Some(SpanStyle::Strong) => {
-                    painter.draw_sized(frame, sx, y, text, size, 0.0, colors.text_bright);
-                    painter.draw_sized(frame, sx + 1, y, text, size, 0.0, colors.text_bright);
-                    cx += 1.0;
-                }
-                Some(SpanStyle::Accent) => {
-                    painter.draw_sized(frame, sx, y, text, size, 0.0, colors.accent_bright);
-                    painter.draw_sized(frame, sx + 1, y, text, size, 0.0, colors.accent_bright);
-                    cx += 1.0;
-                }
-                Some(SpanStyle::Dim) => {
-                    painter.draw_sized(frame, sx, y, text, size, 0.0, colors.text_dim);
-                }
-                None => {
-                    painter.draw_sized(frame, sx, y, text, size, 0.0, color);
-                }
-            }
-            cx += w;
+    let mut segment = |frame: &mut Frame,
+                       painter: &mut TextPainter,
+                       text: &str,
+                       style: Option<SpanStyle>| {
+        if text.is_empty() {
+            return;
+        }
+        let text_style = if documentation {
+            documentation_style(base_style, style)
+        } else {
+            base_style
         };
+        let role = text_style.font_role(painter.font_role());
+        let mut painter = painter.with_font(role);
+        let size = text_style.size;
+        let text_y = y + line_h.saturating_sub(painter.line_height_for_size(size)) / 2;
+        let w = painter.measure_sized(text, size, 0.0);
+        let sx = cx.round() as usize;
+        match style {
+            Some(SpanStyle::Code) => {
+                let inset = if documentation {
+                    scaled(2.0, scale_factor)
+                } else {
+                    0
+                };
+                let pad = if documentation { 0 } else { chip_pad };
+                if !documentation || !code_line {
+                    frame.blend_rect_px(
+                        sx.saturating_sub(pad),
+                        y + inset,
+                        w.ceil() as usize + 2 * pad,
+                        line_h.saturating_sub(2 * inset),
+                        colors.recessed_wash,
+                    );
+                }
+                painter.draw_sized(frame, sx, text_y, text, size, 0.0, colors.text_bright);
+            }
+            // Synthetic bold: a second strike one pixel right, and one
+            // extra pixel of advance so the widened glyphs never touch
+            // the next run.
+            Some(SpanStyle::Strong) => {
+                painter.draw_sized(frame, sx, text_y, text, size, 0.0, colors.text_bright);
+                painter.draw_sized(frame, sx + 1, text_y, text, size, 0.0, colors.text_bright);
+                cx += 1.0;
+            }
+            Some(SpanStyle::Accent) => {
+                painter.draw_sized(frame, sx, text_y, text, size, 0.0, colors.accent_bright);
+                painter.draw_sized(frame, sx + 1, text_y, text, size, 0.0, colors.accent_bright);
+                cx += 1.0;
+            }
+            Some(SpanStyle::Dim) => {
+                painter.draw_sized(frame, sx, text_y, text, size, 0.0, colors.text_dim);
+            }
+            None => {
+                painter.draw_sized(frame, sx, text_y, text, size, 0.0, color);
+            }
+        }
+        cx += w;
+    };
     for (range, style) in &line.runs {
         segment(frame, painter, &line.text[cursor..range.start], None);
         segment(frame, painter, &line.text[range.clone()], Some(*style));
@@ -3748,7 +3762,7 @@ mod tests {
                 0,
                 row * 20,
                 line,
-                13.0,
+                crate::layout::TextStyle::sized(13.0),
                 colors.text_primary,
                 1.0,
             );
@@ -3761,6 +3775,43 @@ mod tests {
         assert!(lines
             .iter()
             .any(|line| line.runs.iter().any(|(_, style)| *style == SpanStyle::Code)));
+
+        // A signature is code regardless of whether its parameter is highlighted
+        // or the server supplied a Markdown code span.
+        let code = crate::layout::TextStyle {
+            code: true,
+            ..crate::layout::TextStyle::sized(SIZE_ROW)
+        };
+        for span in [None, Some(SpanStyle::Accent), Some(SpanStyle::Code)] {
+            let style = documentation_style(code, span);
+            assert_eq!(style.font_role(FontRole::Ui), FontRole::Code);
+            assert_eq!(style.size, SIZE_ROW * 0.92);
+        }
+        let plain = Zones {
+            text: Some(&docs.text),
+            text_spans: &docs.spans,
+            ..Default::default()
+        };
+        let with_signature = Zones {
+            code: Some("fn update(map: Map)"),
+            ..plain
+        };
+        let mut measure = crate::layout::PainterMeasure::new(&mut painter);
+        let prose = plan_zones(
+            &Zones {
+                code: None,
+                ..with_signature
+            },
+            220,
+            1.0,
+            &mut measure,
+        )
+        .text;
+        let signed = plan_zones(&with_signature, 220, 1.0, &mut measure).text;
+        assert_eq!(
+            prose, signed,
+            "a signature must not resize or rewrap the prose"
+        );
     }
 
     #[test]
@@ -4662,6 +4713,7 @@ mod tests {
     fn drop_overlay_centers_only_a_single_measured_line() {
         let long = "Drop these files into a narrow target that requires wrapping";
         let zones = Zones {
+            center_text: true,
             banner: None,
             code: None,
             text: Some(long),
@@ -4676,6 +4728,7 @@ mod tests {
         assert!(!should_center_zone_text(&zones, &lines, truncated));
 
         let short = Zones {
+            center_text: true,
             text: Some("Drop files here"),
             ..Zones::default()
         };
@@ -4684,6 +4737,11 @@ mod tests {
             .text
             .expect("drop text should have a plan");
         assert!(should_center_zone_text(&short, &lines, truncated));
+        let documentation = Zones {
+            center_text: false,
+            ..short
+        };
+        assert!(!should_center_zone_text(&documentation, &lines, truncated));
     }
 
     #[test]

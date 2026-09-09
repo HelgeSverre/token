@@ -100,6 +100,9 @@ All notable changes to rust-editor are documented in this file.
 
 ### Documentation cards
 
+- Hover prose stays left-aligned at the same size with or without signatures,
+  diagnostics or inline formatting. Signature help uses the configured editor
+  font throughout, including the highlighted parameter.
 - Automatic hover targets actual text, stays stable within a word, and leaves a
   short grace period for moving into the card. Typing, scrolling, selecting,
   switching panes or leaving the window cancels pending mouse documentation;

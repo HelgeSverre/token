@@ -1830,6 +1830,7 @@ pub fn render_drop_overlay(
         },
         header: None,
         body: Body::Zones(overlay_surface::Zones {
+            center_text: true,
             banner: None,
             code: None,
             text: Some(&text),
@@ -2229,6 +2230,7 @@ pub fn with_cursor_overlay_spec<R>(
                     code_spans: code.as_ref().map_or(&[], |c| c.spans.as_slice()),
                     text: (!text.is_empty()).then_some(text.text.as_str()),
                     text_spans: &text.spans,
+                    ..Default::default()
                 }),
                 footer: None,
                 hover_row: None,
@@ -2524,6 +2526,7 @@ pub fn with_signature_help_spec<R>(
             code_spans: &code.spans,
             text: (!text.is_empty()).then_some(text.text.as_str()),
             text_spans: &text.spans,
+            ..Default::default()
         }),
         footer: None,
         hover_row: None,
