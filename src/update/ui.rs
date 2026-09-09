@@ -26,6 +26,29 @@ use super::app::execute_command;
 /// Handle UI messages (status bar, cursor blink, modals)
 pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
     match msg {
+        UiMsg::PageDocumentation { forward } => model
+            .ui
+            .has_documentation()
+            .then_some(Cmd::PageDocumentation { forward }),
+        UiMsg::DocumentationScrolled(scroll) => {
+            if !model.ui.has_documentation() {
+                return None;
+            }
+            let documentation = &mut model.ui.cursor_overlay.as_mut()?.documentation;
+            if documentation.scroll == scroll {
+                return None;
+            }
+            documentation.scroll = scroll;
+            Some(Cmd::Redraw)
+        }
+        UiMsg::ToggleDocumentation => {
+            if !model.ui.has_documentation() {
+                return None;
+            }
+            let documentation = &mut model.ui.cursor_overlay.as_mut()?.documentation;
+            documentation.expanded = !documentation.expanded;
+            Some(Cmd::Redraw)
+        }
         UiMsg::OpenFind { replace } => open_find(model, replace),
         UiMsg::CloseFind => {
             if let Some(state) = model.ui.find_bar.take() {

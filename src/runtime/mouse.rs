@@ -531,7 +531,7 @@ mod tests {
         )
         .is_some());
         let state = model.ui.cursor_overlay.unwrap();
-        assert_eq!(state.docs_scroll, 3);
+        assert_eq!(state.documentation.scroll, 3);
         assert_eq!((state.scroll, state.selected), (0, 0));
         assert_eq!(model.editor().cursors, cursors);
         assert_eq!(model.document().buffer.to_string(), "va\n");
@@ -547,22 +547,15 @@ mod tests {
         ));
         let dismissal = dismiss_overlay_for_press(&mut model, &target, MouseButton::Left);
         assert!(!dismissal.dismissed);
-        update(
-            &mut model,
-            Msg::Completion(CompletionMsg::ToggleDocumentation),
-        );
-        assert!(model.ui.cursor_overlay.unwrap().docs_expanded);
+        update(&mut model, Msg::Ui(UiMsg::ToggleDocumentation));
+        assert!(model.ui.cursor_overlay.unwrap().documentation.expanded);
         update(&mut model, Msg::Completion(CompletionMsg::MenuNext));
         let state = model.ui.cursor_overlay.unwrap();
         assert_eq!(state.selected, 1);
-        assert_eq!(state.docs_scroll, 0);
-        assert!(!state.docs_expanded);
+        assert_eq!(state.documentation.scroll, 0);
+        assert!(!state.documentation.expanded);
         update(&mut model, Msg::Completion(CompletionMsg::Dismiss));
-        assert!(update(
-            &mut model,
-            Msg::Completion(CompletionMsg::DocumentationScrolled(100))
-        )
-        .is_none());
+        assert!(update(&mut model, Msg::Ui(UiMsg::DocumentationScrolled(100))).is_none());
         assert!(model.ui.cursor_overlay.is_none());
     }
 
@@ -605,25 +598,19 @@ mod tests {
             .filtered
             .truncate(1);
         let overlay = model.ui.cursor_overlay.as_mut().unwrap();
-        overlay.docs_scroll = 8;
-        overlay.docs_expanded = true;
+        overlay.documentation.scroll = 8;
+        overlay.documentation.expanded = true;
         update(&mut model, Msg::Completion(CompletionMsg::MenuNext));
-        assert_eq!(model.ui.cursor_overlay.unwrap().docs_scroll, 8);
-        assert!(model.ui.cursor_overlay.unwrap().docs_expanded);
+        assert_eq!(model.ui.cursor_overlay.unwrap().documentation.scroll, 8);
+        assert!(model.ui.cursor_overlay.unwrap().documentation.expanded);
         model
             .ui
             .open_modal(token::model::ModalState::GotoLine(Default::default()));
         // The outer update dismisses the hidden completion and may redraw.
         // Later documentation actions must not reopen it behind the modal.
-        update(
-            &mut model,
-            Msg::Completion(CompletionMsg::ToggleDocumentation),
-        );
+        update(&mut model, Msg::Ui(UiMsg::ToggleDocumentation));
         assert!(model.ui.cursor_overlay.is_none());
-        update(
-            &mut model,
-            Msg::Completion(CompletionMsg::DocumentationScrolled(0)),
-        );
+        update(&mut model, Msg::Ui(UiMsg::DocumentationScrolled(0)));
         assert!(model.ui.cursor_overlay.is_none());
         assert!(model.ui.has_modal());
     }
@@ -642,16 +629,103 @@ mod tests {
         );
         assert!(matches!(
             cmd,
-            Some(Some(Cmd::PageCompletionDocumentation { forward: true }))
+            Some(Some(Cmd::PageDocumentation { forward: true }))
         ));
         crate::runtime::input::handle_cursor_overlay_key(
             &mut model,
             &Key::Named(NamedKey::F1),
             Default::default(),
         );
-        assert!(model.ui.cursor_overlay.unwrap().docs_expanded);
+        assert!(model.ui.cursor_overlay.unwrap().documentation.expanded);
         assert_eq!(model.document().buffer.to_string(), "va\n");
         assert_eq!(model.ui.cursor_overlay.unwrap().selected, 0);
+    }
+
+    #[test]
+    fn hover_documentation_controls_preserve_the_card_and_editor() {
+        use token::model::{CursorOverlayKind, CursorOverlayState, HoverCardState};
+        use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+        let mut model = documentation_model();
+        let content = model
+            .ui
+            .completion_menu
+            .as_ref()
+            .unwrap()
+            .selected_documentation(0)
+            .unwrap()
+            .clone();
+        model.ui.completion_menu = None;
+        model.ui.hover_card = Some(HoverCardState {
+            content: Some(content),
+            ..Default::default()
+        });
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Hover));
+        let cursors = model.editor().cursors.clone();
+        let mut measure = token::view::overlay_surface::cell_measure(1.0);
+        let layout = token::view::modal::with_cursor_overlay_spec(&model, |spec| {
+            token::view::overlay_surface::layout_measured(spec, 1000, 600, 1.0, &mut measure)
+        })
+        .unwrap();
+        let text = layout.zones_text.unwrap();
+        model.ui.hover = HoverRegion::EditorText;
+        handle_mouse_wheel(
+            &mut model,
+            Some(((text.x + 1) as f64, (text.y + 1) as f64)),
+            (0, 1).into(),
+            Some(&mut measure),
+        );
+        assert_eq!(model.ui.cursor_overlay.unwrap().documentation.scroll, 3);
+        crate::runtime::input::handle_key(
+            &mut model,
+            Key::Named(NamedKey::F1),
+            PhysicalKey::Code(KeyCode::F1),
+            Default::default(),
+            false,
+        );
+        assert!(model.ui.cursor_overlay.unwrap().documentation.expanded);
+        let cmd = crate::runtime::input::handle_key(
+            &mut model,
+            Key::Named(NamedKey::PageDown),
+            PhysicalKey::Code(KeyCode::PageDown),
+            crate::runtime::input::KeyModifiers {
+                alt: true,
+                ..Default::default()
+            },
+            false,
+        );
+        assert!(matches!(
+            cmd,
+            Some(Cmd::PageDocumentation { forward: true })
+        ));
+        let layout = token::view::modal::with_cursor_overlay_spec(&model, |spec| {
+            token::view::overlay_surface::layout_measured(spec, 1000, 600, 1.0, &mut measure)
+        })
+        .unwrap();
+        let footer = layout.docs_footer.unwrap();
+        let target = token::view::hit_test::hit_test_cursor_overlay(
+            &model,
+            token::view::hit_test::Point::new((footer.x + 1) as f64, (footer.y + 1) as f64),
+            &mut measure,
+        )
+        .unwrap();
+        assert!(matches!(
+            target,
+            HitTarget::CursorOverlayDocumentation { toggle: true, .. }
+        ));
+        assert!(!dismiss_overlay_for_press(&mut model, &target, MouseButton::Left).dismissed);
+        update(&mut model, Msg::Ui(UiMsg::ToggleDocumentation));
+        assert!(!model.ui.cursor_overlay.unwrap().documentation.expanded);
+        assert_eq!(model.editor().cursors, cursors);
+        assert_eq!(model.document().buffer.to_string(), "va\n");
+        crate::runtime::input::handle_key(
+            &mut model,
+            Key::Named(NamedKey::Escape),
+            PhysicalKey::Code(KeyCode::Escape),
+            Default::default(),
+            false,
+        );
+        assert!(model.ui.cursor_overlay.is_none());
+        assert!(model.ui.hover_card.is_none());
     }
 
     #[test]
@@ -1911,7 +1985,7 @@ fn handle_left_click(
         HitTarget::CursorOverlay { flat_index } => handle_cursor_overlay_click(model, *flat_index),
         HitTarget::CursorOverlayDocumentation { toggle, .. } => {
             let cmd = if *toggle {
-                update(model, Msg::Completion(CompletionMsg::ToggleDocumentation))
+                update(model, Msg::Ui(UiMsg::ToggleDocumentation))
             } else {
                 None
             };
@@ -2886,7 +2960,7 @@ pub(super) fn handle_mouse_wheel(
     // Re-hit-test with current font/window geometry: a resize or a new reply
     // can move the card without moving the pointer. Never use stale row bounds.
     let mut hover_changed = false;
-    if model.ui.has_visible_completion() {
+    if model.ui.has_visible_completion() || model.ui.has_documentation() {
         if let (Some(measure), Some((x, y))) = (measure, mouse_position) {
             let target = token::view::hit_test::hit_test_ui(
                 model,
@@ -2897,10 +2971,7 @@ pub(super) fn handle_mouse_wheel(
             hover_changed = update_hover_target(model, target.as_ref());
             if let Some(HitTarget::CursorOverlayDocumentation { viewport, .. }) = target {
                 let scroll = viewport.scrolled((v_delta.signum() * 3) as isize);
-                let cmd = update(
-                    model,
-                    Msg::Completion(CompletionMsg::DocumentationScrolled(scroll)),
-                );
+                let cmd = update(model, Msg::Ui(UiMsg::DocumentationScrolled(scroll)));
                 return merge(hover_changed.then_some(Cmd::Redraw), cmd);
             }
         }

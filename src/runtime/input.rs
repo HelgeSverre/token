@@ -137,7 +137,7 @@ pub fn handle_key(
     modifiers: KeyModifiers,
     option_double_tapped: bool,
 ) -> Option<Cmd> {
-    let dismissal = dismiss_hover_for_key(model, &key);
+    let dismissal = dismiss_hover_for_key(model, &key, modifiers);
     if dismissal.is_some() && key == Key::Named(NamedKey::Escape) {
         return dismissal;
     }
@@ -157,11 +157,35 @@ pub(crate) fn is_modifier_key(key: &Key) -> bool {
     )
 }
 
-fn dismiss_hover_for_key(model: &mut AppModel, key: &Key) -> Option<Cmd> {
-    if is_modifier_key(key) || !model.ui.has_hover() {
+fn dismiss_hover_for_key(model: &mut AppModel, key: &Key, modifiers: KeyModifiers) -> Option<Cmd> {
+    if is_modifier_key(key)
+        || documentation_key(model, key, modifiers).is_some()
+        || !model.ui.has_hover()
+    {
         return None;
     }
     update(model, Msg::Lsp(token::messages::LspMsg::DismissHover))
+}
+
+/// One shortcut policy for dispatch and pre-dispatch hover invalidation.
+pub(super) fn documentation_key(
+    model: &AppModel,
+    key: &Key,
+    modifiers: KeyModifiers,
+) -> Option<UiMsg> {
+    if !model.ui.has_documentation() || modifiers.ctrl || modifiers.logo || modifiers.shift {
+        return None;
+    }
+    match key {
+        Key::Named(NamedKey::F1) if !modifiers.alt => Some(UiMsg::ToggleDocumentation),
+        Key::Named(NamedKey::PageUp) if modifiers.alt => {
+            Some(UiMsg::PageDocumentation { forward: false })
+        }
+        Key::Named(NamedKey::PageDown) if modifiers.alt => {
+            Some(UiMsg::PageDocumentation { forward: true })
+        }
+        _ => None,
+    }
 }
 
 fn handle_key_inner(
@@ -419,6 +443,9 @@ pub(crate) fn handle_cursor_overlay_key(
     }
     let overlay = model.ui.cursor_overlay?;
     let kind = overlay.kind;
+    if let Some(message) = documentation_key(model, key, modifiers) {
+        return Some(update(model, Msg::Ui(message)));
+    }
     if kind == token::model::CursorOverlayKind::DebugHover
         || kind == token::model::CursorOverlayKind::Hover
     {
@@ -524,28 +551,6 @@ pub(crate) fn handle_cursor_overlay_key(
     // extension), Ctrl/Cmd+Tab (group focus), Shift+Enter (find-previous in
     // modals reusing this path), etc. must fall through to the keymap
     // instead of being swallowed as menu navigation.
-    if kind == token::model::CursorOverlayKind::Completion
-        && !(ctrl || logo)
-        && model
-            .ui
-            .completion_menu
-            .as_ref()
-            .is_some_and(|menu| menu.selected_documentation(overlay.selected).is_some())
-    {
-        let message = match key {
-            Key::Named(NamedKey::F1) if !(shift || alt) => Some(CompletionMsg::ToggleDocumentation),
-            Key::Named(NamedKey::PageUp) if alt && !shift => {
-                Some(CompletionMsg::PageDocumentation { forward: false })
-            }
-            Key::Named(NamedKey::PageDown) if alt && !shift => {
-                Some(CompletionMsg::PageDocumentation { forward: true })
-            }
-            _ => None,
-        };
-        if let Some(message) = message {
-            return Some(update(model, Msg::Completion(message)));
-        }
-    }
     if ctrl || shift || alt || logo {
         return None;
     }

@@ -2034,8 +2034,7 @@ pub fn with_cursor_overlay_spec<R>(
             hover_row: state.hover_row.map(FlatIndex),
             docs: docs.map(|text| overlay_surface::Documentation {
                 text,
-                scroll: state.docs_scroll,
-                expanded: state.docs_expanded,
+                state: state.documentation,
             }),
         };
         return Some(f(&spec));
@@ -2224,6 +2223,7 @@ pub fn with_cursor_overlay_spec<R>(
                 },
                 header: None,
                 body: Body::Zones(Zones {
+                    documentation: Some(state.documentation),
                     banner,
                     banner_spans,
                     code: code.as_ref().map(|c| c.text.as_str()),

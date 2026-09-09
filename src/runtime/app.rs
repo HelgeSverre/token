@@ -2368,7 +2368,7 @@ impl App {
             Cmd::PrepareKeymap { session, save } => {
                 self.enqueue_file_job(super::file_io::FileJob::Keymap { session, save })
             }
-            Cmd::PageCompletionDocumentation { forward } => {
+            Cmd::PageDocumentation { forward } => {
                 let viewport = self.renderer.as_mut().and_then(|renderer| {
                     let mut painter = renderer.text_painter();
                     let mut measure = token::layout::PainterMeasure::new(&mut painter);
@@ -2393,7 +2393,7 @@ impl App {
                     let scroll = viewport.scrolled(lines);
                     let cmd = update(
                         &mut self.model,
-                        Msg::Completion(CompletionMsg::DocumentationScrolled(scroll)),
+                        Msg::Ui(UiMsg::DocumentationScrolled(scroll)),
                     );
                     if let Some(cmd) = cmd {
                         self.process_cmd(cmd);

@@ -293,6 +293,13 @@ pub enum SettingsMsg {
 /// UI-specific messages (status bar, cursor blink, modals)
 #[derive(Debug, Clone)]
 pub enum UiMsg {
+    /// Scroll documentation using the runtime's measured layout.
+    PageDocumentation {
+        forward: bool,
+    },
+    /// Measured destination; changes no selection or document content.
+    DocumentationScrolled(usize),
+    ToggleDocumentation,
     /// Open or focus the docked search bar, optionally expanding replacement.
     OpenFind {
         replace: bool,
@@ -1543,13 +1550,6 @@ pub enum DefinitionOutcome {
 /// inline-suggestion messages of Phase 2.
 #[derive(Debug, Clone)]
 pub enum CompletionMsg {
-    /// Scroll the selected documentation using runtime font measurements.
-    PageDocumentation {
-        forward: bool,
-    },
-    /// Measured scroll destination; changes no selection or document content.
-    DocumentationScrolled(usize),
-    ToggleDocumentation,
     /// Speculative directory listing; request identity is checked on arrival.
     PathsReady {
         request: std::sync::Arc<crate::completion::path::PathRequest>,

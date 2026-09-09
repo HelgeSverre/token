@@ -1,5 +1,6 @@
 //! Pointer timing for documentation; ownership/invalidation lives in update.
 
+use crate::runtime::input::{documentation_key, is_modifier_key, KeyModifiers};
 use std::time::{Duration, Instant};
 use token::commands::Cmd;
 use token::messages::{LspMsg, Msg};
@@ -52,7 +53,18 @@ impl App {
         let dismiss = match event {
             WindowEvent::KeyboardInput { event, .. } => {
                 event.state == ElementState::Pressed
-                    && !crate::runtime::input::is_modifier_key(&event.logical_key)
+                    && !is_modifier_key(&event.logical_key)
+                    && documentation_key(
+                        &self.model,
+                        &event.logical_key,
+                        KeyModifiers {
+                            ctrl: self.modifiers.control_key(),
+                            shift: self.modifiers.shift_key(),
+                            alt: self.modifiers.alt_key(),
+                            logo: self.modifiers.super_key(),
+                        },
+                    )
+                    .is_none()
             }
             WindowEvent::Focused(false)
             | WindowEvent::Resized(_)

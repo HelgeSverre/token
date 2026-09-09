@@ -500,16 +500,16 @@ mod tests {
         data.documentation = Some("documentation\n".repeat(60).into());
         update(
             &mut model,
-            Msg::Completion(CompletionMsg::DocumentationScrolled(7)),
+            Msg::Ui(crate::messages::UiMsg::DocumentationScrolled(7)),
         );
         update(
             &mut model,
-            Msg::Completion(CompletionMsg::ToggleDocumentation),
+            Msg::Ui(crate::messages::UiMsg::ToggleDocumentation),
         );
         reply(&mut model, request, "assets", true);
         let overlay = model.ui.cursor_overlay.unwrap();
-        assert_eq!(overlay.docs_scroll, 7);
-        assert!(overlay.docs_expanded);
+        assert_eq!(overlay.documentation.scroll, 7);
+        assert!(overlay.documentation.expanded);
         assert_eq!(
             model
                 .ui

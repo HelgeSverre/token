@@ -100,6 +100,10 @@ All notable changes to rust-editor are documented in this file.
 
 ### Documentation cards
 
+- Hover documentation now scrolls through the full signature and prose instead
+  of cutting off long content. Use the mouse wheel, Alt+PageUp/PageDown, or the
+  shared footer and F1 expansion controls without moving the editor caret.
+  Short hover and completion cards omit the footer when all their text fits.
 - Hover prose stays left-aligned at the same size with or without signatures,
   diagnostics or inline formatting. Signature help uses the configured editor
   font throughout, including the highlighted parameter.

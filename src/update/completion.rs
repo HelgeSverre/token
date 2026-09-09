@@ -53,28 +53,6 @@ const MIN_AUTO_TRIGGER_PREFIX: usize = 2;
 
 pub(super) fn update_completion(model: &mut AppModel, msg: CompletionMsg) -> Option<Cmd> {
     match msg {
-        CompletionMsg::PageDocumentation { forward } => {
-            has_documentation(model).then_some(Cmd::PageCompletionDocumentation { forward })
-        }
-        CompletionMsg::DocumentationScrolled(scroll) => {
-            if !has_documentation(model) {
-                return None;
-            }
-            let overlay = model.ui.cursor_overlay.as_mut()?;
-            if overlay.docs_scroll == scroll {
-                return None;
-            }
-            overlay.docs_scroll = scroll;
-            Some(Cmd::Redraw)
-        }
-        CompletionMsg::ToggleDocumentation => {
-            if !has_documentation(model) {
-                return None;
-            }
-            let overlay = model.ui.cursor_overlay.as_mut()?;
-            overlay.docs_expanded = !overlay.docs_expanded;
-            Some(Cmd::Redraw)
-        }
         CompletionMsg::PathsReady { request, result } => paths::ready(model, request, result),
         CompletionMsg::InlineStatisticsSaved(result) => {
             let failed = result.is_err();
@@ -117,19 +95,6 @@ pub(super) fn update_completion(model: &mut AppModel, msg: CompletionMsg) -> Opt
             super::inline::failed(model, snapshot, error)
         }
     }
-}
-
-fn has_documentation(model: &AppModel) -> bool {
-    !model.ui.has_modal()
-        && model.ui.focus == crate::model::FocusTarget::Editor
-        && model.ui.has_visible_completion()
-        && model.ui.cursor_overlay.is_some_and(|overlay| {
-            model
-                .ui
-                .completion_menu
-                .as_ref()
-                .is_some_and(|menu| menu.selected_documentation(overlay.selected).is_some())
-        })
 }
 
 /// Close the popup and drop its state, if open. A no-op if it's already

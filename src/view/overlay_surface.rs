@@ -26,6 +26,7 @@ use crate::layout::{
     RowListDecl, Sizing, SizingAxes, UiKey, UiTree,
 };
 use crate::model::editor_area::Rect;
+use crate::model::ui::DocumentationState;
 use crate::model::{runs_in_spans, Span, SpanStyle, StyledText};
 #[cfg(test)]
 use crate::theme::OverlayTheme;
@@ -500,6 +501,8 @@ impl Severity {
 pub struct Zones<'a> {
     /// Center a short notification (the file-drop overlay), never documentation.
     pub center_text: bool,
+    /// Interactive hover documentation uses the same row window as completion.
+    pub documentation: Option<DocumentationState>,
     /// Severity, message, source (e.g. `(Error, "unused import", "rustc")`).
     pub banner: Option<(Severity, &'a str, &'a str)>,
     /// Style spans (byte ranges) into the banner message.
@@ -527,16 +530,14 @@ impl<'a> Body<'a> {
 /// A documentation side card uses the same measured plan for paint and input.
 pub struct Documentation<'a> {
     pub text: &'a StyledText,
-    pub scroll: usize,
-    pub expanded: bool,
+    pub state: DocumentationState,
 }
 
 impl<'a> From<&'a StyledText> for Documentation<'a> {
     fn from(text: &'a StyledText) -> Self {
         Self {
             text,
-            scroll: 0,
-            expanded: false,
+            state: DocumentationState::default(),
         }
     }
 }
@@ -549,6 +550,10 @@ pub struct DocumentationViewport {
 }
 
 impl DocumentationViewport {
+    fn needs_controls(self) -> bool {
+        self.max_scroll() > 0 || self.total > MAX_DOCS_LINES
+    }
+
     pub fn max_scroll(self) -> usize {
         self.total.saturating_sub(self.visible)
     }
@@ -823,8 +828,7 @@ pub struct OverlayLayout {
     pub zones_code: Option<WidgetRect>,
     /// The text zone of a `Body::Zones` body.
     pub zones_text: Option<WidgetRect>,
-    /// The docs card beside the panel and its text zone; `None` unless
-    /// `spec.docs` is `Some`.
+    /// Interactive reading surface: the completion side card or hover panel.
     pub docs_panel: Option<WidgetRect>,
     pub docs_text: Option<WidgetRect>,
     pub footer: Option<WidgetRect>,
@@ -986,7 +990,13 @@ pub fn layout_measured(
     // Text wrapping is content measurement; the solved boxes below consume
     // its heights instead of re-deriving their stack manually.
     let zone_plan = match &spec.body {
-        Body::Zones(zones) => Some(plan_zones(zones, panel_w, scale_factor, measure)),
+        Body::Zones(zones) => {
+            let mut plan = plan_zones(zones, panel_w, scale_factor, measure);
+            if let Some(state) = zones.documentation {
+                plan.scroll_documentation(state, window_height, scale_factor);
+            }
+            Some(plan)
+        }
         Body::List { .. } | Body::Fields { .. } => None,
     };
     // Horizontal placement is independent of height. Reuse the solver's
@@ -1201,12 +1211,35 @@ pub fn layout_measured(
                         });
                     }
                     if let Some(height) = text_h {
-                        if banner_h.is_some() || code_h.is_some() {
+                        if plan.gap {
+                            spacer(
+                                t,
+                                if plan.viewport.is_some() {
+                                    scaled(dims::ZONE_LINE_H, scale_factor)
+                                } else {
+                                    gap
+                                },
+                            );
+                        } else if banner_h.is_some() && code_h.is_none() {
                             spacer(t, gap);
                         }
                         t.leaf(ElementDecl {
                             key: Some(UiKey::OverlayZoneText),
                             sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
+                            padding: Padding::xy(pad_x as f32, 0.0),
+                            ..Default::default()
+                        });
+                    }
+                    if plan
+                        .viewport
+                        .is_some_and(DocumentationViewport::needs_controls)
+                    {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayDocsFooter),
+                            sizing: SizingAxes::new(
+                                Sizing::GROW,
+                                Sizing::Fixed(scaled(dims::ZONE_LINE_H, scale_factor) as f32),
+                            ),
                             padding: Padding::xy(pad_x as f32, 0.0),
                             ..Default::default()
                         });
@@ -1266,12 +1299,14 @@ pub fn layout_measured(
                             ..Default::default()
                         });
                     }
-                    t.leaf(ElementDecl {
-                        key: Some(UiKey::OverlayDocsFooter),
-                        sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(line_h as f32)),
-                        padding: Padding::xy(pad_x as f32, 0.0),
-                        ..Default::default()
-                    });
+                    if docs_viewport.is_some_and(DocumentationViewport::needs_controls) {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::OverlayDocsFooter),
+                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(line_h as f32)),
+                            padding: Padding::xy(pad_x as f32, 0.0),
+                            ..Default::default()
+                        });
+                    }
                     spacer(t, pad_y);
                 },
             );
@@ -1326,7 +1361,10 @@ pub fn layout_measured(
     let zones_banner = solved_rect(&snapshot, UiKey::OverlayZoneBanner);
     let zones_code = solved_content_rect(&snapshot, UiKey::OverlayZoneCode);
     let zones_text = solved_content_rect(&snapshot, UiKey::OverlayZoneText);
-    let docs_panel = solved_rect(&snapshot, UiKey::OverlayDocsPanel);
+    let zone_viewport = zone_plan.as_ref().and_then(|plan| plan.viewport);
+    let docs_viewport = docs_viewport.or(zone_viewport);
+    let docs_panel =
+        solved_rect(&snapshot, UiKey::OverlayDocsPanel).or_else(|| zone_viewport.map(|_| panel));
     let docs_text = solved_content_rect(&snapshot, UiKey::OverlayDocsText);
     let docs_code = solved_content_rect(&snapshot, UiKey::OverlayDocsCode);
     let docs_footer = solved_content_rect(&snapshot, UiKey::OverlayDocsFooter);
@@ -1828,7 +1866,7 @@ pub fn render(
             mask_cache,
         );
     }
-    if let Some(panel) = layout.docs_panel {
+    if let Some(panel) = layout.docs_panel.filter(|_| spec.docs.is_some()) {
         frame.draw_shadow_rings(
             panel.x,
             panel.y,
@@ -1872,7 +1910,10 @@ pub fn render(
                 code,
                 lines,
                 false,
-                crate::layout::TextStyle::sized(SIZE_ROW),
+                crate::layout::TextStyle {
+                    code: true,
+                    ..crate::layout::TextStyle::sized(SIZE_ROW)
+                },
                 colors.text_primary,
                 scale_factor,
             );
@@ -1892,29 +1933,47 @@ pub fn render(
                 scale_factor,
             );
         }
-        if let (Some(footer), Some(viewport)) = (layout.docs_footer, layout.docs_viewport) {
-            let expanded = spec.docs.as_ref().is_some_and(|docs| docs.expanded);
-            let action = if expanded { "Collapse" } else { "Expand" };
-            let first = if viewport.visible == 0 {
-                0
-            } else {
-                viewport.scroll + 1
-            };
-            let label = format!(
-                "{first}–{} / {} · {action} (F1)",
-                viewport.scroll + viewport.visible,
-                viewport.total
-            );
-            painter.draw_sized(
-                frame,
-                footer.x,
-                footer.y,
-                &label,
-                size_px(SIZE_ROW, scale_factor),
-                0.0,
-                colors.text_dim,
-            );
-        }
+        frame.clear_clip();
+    }
+    if let (Some(panel), Some(footer), Some(viewport)) =
+        (layout.docs_panel, layout.docs_footer, layout.docs_viewport)
+    {
+        frame.set_clip(Rect::new(
+            panel.x as f32,
+            panel.y as f32,
+            panel.w as f32,
+            panel.h as f32,
+        ));
+        let state = spec
+            .docs
+            .as_ref()
+            .map(|docs| docs.state)
+            .or(match &spec.body {
+                Body::Zones(zones) => zones.documentation,
+                _ => None,
+            })
+            .unwrap_or_default();
+        let expanded = state.expanded;
+        let action = if expanded { "Collapse" } else { "Expand" };
+        let first = if viewport.visible == 0 {
+            0
+        } else {
+            viewport.scroll + 1
+        };
+        let label = format!(
+            "{first}–{} / {} · {action} (F1)",
+            viewport.scroll + viewport.visible,
+            viewport.total
+        );
+        painter.draw_sized(
+            frame,
+            footer.x,
+            footer.y,
+            &label,
+            size_px(SIZE_ROW, scale_factor),
+            0.0,
+            colors.text_dim,
+        );
         frame.clear_clip();
     }
 }
@@ -3068,14 +3127,14 @@ fn should_center_zone_text(zones: &Zones<'_>, lines: &[StyledLine], truncated: b
         && !truncated
 }
 
-/// Cap on wrapped text-zone lines (hover docs can be pages long); a
-/// truncated zone shows a trailing ellipsis line.
+/// Cap for non-interactive zones (notifications and signature-help calltips).
+/// Interactive documentation uses a viewport instead of truncation.
 const MAX_ZONE_TEXT_LINES: usize = 14;
 
 /// Cap on wrapped banner-message lines.
 const MAX_ZONE_BANNER_LINES: usize = 4;
 
-/// Default viewport height for completion documentation, before expansion.
+/// Default documentation viewport height, before expansion.
 const MAX_DOCS_LINES: usize = 12;
 
 /// `(lines, truncated, height)` for one wrapped text zone.
@@ -3091,6 +3150,39 @@ pub(crate) struct ZonePlan {
     pub banner: Option<BannerPlan>,
     pub code: Option<(Vec<StyledLine>, usize)>,
     pub text: Option<(Vec<StyledLine>, bool, usize)>, // lines, truncated, height
+    pub viewport: Option<DocumentationViewport>,
+    pub gap: bool,
+}
+
+impl ZonePlan {
+    fn scroll_documentation(
+        &mut self,
+        state: DocumentationState,
+        window_h: usize,
+        scale_factor: f64,
+    ) {
+        let line_h = scaled(dims::ZONE_LINE_H, scale_factor).max(1);
+        let gap = scaled(dims::ZONE_GAP, scale_factor);
+        let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
+        // Reserve fixed banner/padding, code-band padding, separator, footer and
+        // window margins. Capacity stays stable when the signature scrolls away.
+        let chrome = self.banner.as_ref().map_or(0, |banner| banner.h + gap)
+            + 2 * pad_y
+            + gap
+            + 2 * line_h
+            + scaled(16.0, scale_factor);
+        let available = window_h.saturating_sub(chrome) / line_h;
+        let code = self.code.take().map_or_else(Vec::new, |(lines, _)| lines);
+        let prose = self
+            .text
+            .take()
+            .map_or_else(Vec::new, |(lines, _, _)| lines);
+        let plan = window_documentation(code, prose, state, available, line_h);
+        self.code = plan.code.map(|(lines, height)| (lines, height + gap));
+        self.text = plan.text;
+        self.viewport = plan.viewport;
+        self.gap = plan.gap;
+    }
 }
 
 pub(crate) struct BannerPlan {
@@ -3277,13 +3369,24 @@ pub(crate) fn plan_zones(
             text_style,
             content_w,
             min_wrap_w,
-            MAX_ZONE_TEXT_LINES,
+            if zones.documentation.is_some() {
+                usize::MAX
+            } else {
+                MAX_ZONE_TEXT_LINES
+            },
             line_h,
             measure,
         )
     });
 
-    ZonePlan { banner, code, text }
+    let gap = code.is_some() && text.is_some();
+    ZonePlan {
+        banner,
+        code,
+        text,
+        viewport: None,
+        gap,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3343,20 +3446,32 @@ fn plan_docs(
         .map(|code| wrap(code, measure))
         .unwrap_or_default();
     let prose = wrap(&prose, measure);
+    window_documentation(code, prose, docs.state, available, line_h)
+}
+
+/// Shared scrolling over the signature, separator and prose. Neither caller
+/// truncates content; the measured visible rows also drive mouse/key input.
+fn window_documentation(
+    code: Vec<StyledLine>,
+    prose: Vec<StyledLine>,
+    state: DocumentationState,
+    available: usize,
+    line_h: usize,
+) -> DocumentationPlan {
     let gap = usize::from(!code.is_empty() && !prose.is_empty());
     let total = code.len() + gap + prose.len();
-    if total == 0 {
+    if total == 0 || available == 0 {
         return DocumentationPlan::default();
     }
     // Reserve the persistent footer and window-edge breathing room before
     // choosing a row count. The solver still owns final anchoring/flipping.
-    let capacity = if docs.expanded {
+    let capacity = if state.expanded {
         available
     } else {
         available.min(MAX_DOCS_LINES)
     };
     let visible = total.min(capacity);
-    let scroll = docs.scroll.min(total.saturating_sub(visible));
+    let scroll = state.scroll.min(total.saturating_sub(visible));
     let end = scroll + visible;
     let code_count = code.len();
     let prose_start = code_count + gap;
@@ -3638,8 +3753,7 @@ mod tests {
             hover_row: None,
             docs: Some(Documentation {
                 text: docs,
-                scroll,
-                expanded,
+                state: DocumentationState { scroll, expanded },
             }),
         }
     }
@@ -3680,6 +3794,85 @@ mod tests {
     }
 
     #[test]
+    fn hover_documentation_viewport_reaches_long_signatures_and_prose() {
+        let code = (0..40)
+            .map(|i| format!("parameter_{i}: Value,"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prose = (0..40)
+            .map(|i| format!("Description {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for scale in [1.0, 1.25, 2.0] {
+            for height in [300, 600, 900] {
+                let mut spec = OverlaySpec {
+                    anchor: Anchor::Cursor {
+                        x: 100,
+                        y: 150,
+                        h: 18,
+                        prefer_below: false,
+                        width: WidthRule {
+                            pct: 0.42,
+                            min: 360.0,
+                            max: 560.0,
+                        },
+                    },
+                    tabs: None,
+                    header: None,
+                    footer: None,
+                    hover_row: None,
+                    docs: None,
+                    body: Body::Zones(Zones {
+                        documentation: Some(DocumentationState::default()),
+                        banner: Some((Severity::Warning, "Deprecated", "fixture")),
+                        code: Some(&code),
+                        text: Some(&prose),
+                        ..Default::default()
+                    }),
+                };
+                let first = layout(&spec, 1000, height, scale);
+                let first_view = first.docs_viewport.expect("reading viewport");
+                assert!(first_view.total >= 81, "no source rows discarded");
+                assert!(
+                    first.zone_plan.as_ref().unwrap().code.as_ref().unwrap().0[0]
+                        .text
+                        .starts_with("parameter_0")
+                );
+                for expanded in [false, true] {
+                    let Body::Zones(zones) = &mut spec.body else {
+                        unreachable!()
+                    };
+                    zones.documentation = Some(DocumentationState {
+                        scroll: usize::MAX,
+                        expanded,
+                    });
+                    let bottom = layout(&spec, 1000, height, scale);
+                    let view = bottom.docs_viewport.unwrap();
+                    assert_eq!(view.scroll, view.max_scroll());
+                    assert_eq!(view.total, first_view.total);
+                    let (lines, truncated, _) =
+                        bottom.zone_plan.as_ref().unwrap().text.as_ref().unwrap();
+                    assert!(!truncated);
+                    assert_eq!(lines.last().unwrap().text, "Description 39");
+                    assert!(
+                        bottom.panel.y + bottom.panel.h <= height,
+                        "{scale}, {height}: {:?}",
+                        bottom.panel
+                    );
+                    let footer = bottom.docs_footer.unwrap();
+                    assert_eq!(
+                        hit_test(&spec, &bottom, footer.x + 1, footer.y + 1),
+                        OverlayHit::Documentation {
+                            viewport: view,
+                            toggle: true
+                        }
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn documentation_viewport_scrolls_long_code_into_prose_and_keeps_styles() {
         let code = (0..80)
             .map(|i| format!("fn line_{i}();"))
@@ -3707,7 +3900,17 @@ mod tests {
 
     #[test]
     fn documentation_viewport_hit_testing_separates_footer_from_content() {
-        let docs = StyledText::plain("one\ntwo\nthree");
+        let short = StyledText::plain("one\ntwo\nthree");
+        let compact = layout(&documentation_spec(&short, 0, false), 1000, 500, 1.0);
+        assert!(
+            compact.docs_footer.is_none(),
+            "no expansion hint when all text fits"
+        );
+        assert!(
+            compact.docs_viewport.is_some(),
+            "wheel input still belongs to the card"
+        );
+        let docs = StyledText::plain("one\ntwo\nthree\n".repeat(10));
         let spec = documentation_spec(&docs, 0, false);
         let l = layout(&spec, 1000, 500, 1.0);
         let viewport = l.docs_viewport.unwrap();

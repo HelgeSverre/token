@@ -1107,6 +1107,13 @@ pub enum CursorOverlayKind {
     ContextMenu,
 }
 
+/// Reading position shared by hover and completion documentation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DocumentationState {
+    pub scroll: usize,
+    pub expanded: bool,
+}
+
 /// State for a cursor-anchored popup (`ui.cursor_overlay`), distinct from
 /// `active_modal`: it does not hard-capture keyboard input — a dedicated
 /// pre-editor branch in `runtime/input.rs::handle_key` consumes only
@@ -1119,9 +1126,8 @@ pub struct CursorOverlayState {
     pub scroll: usize,
     /// Pointer hover is independent of keyboard selection and shares this popup's lifetime.
     pub hover_row: Option<usize>,
-    /// Independent wrapped-row viewport for the selected completion's docs.
-    pub docs_scroll: usize,
-    pub docs_expanded: bool,
+    /// Independent wrapped-row viewport for the current documentation.
+    pub documentation: DocumentationState,
 }
 
 impl CursorOverlayState {
@@ -1131,14 +1137,12 @@ impl CursorOverlayState {
             selected: 0,
             scroll: 0,
             hover_row: None,
-            docs_scroll: 0,
-            docs_expanded: false,
+            documentation: DocumentationState::default(),
         }
     }
 
     pub fn reset_documentation(&mut self) {
-        self.docs_scroll = 0;
-        self.docs_expanded = false;
+        self.documentation = DocumentationState::default();
     }
 }
 
@@ -1550,6 +1554,28 @@ pub struct UiState {
 }
 
 impl UiState {
+    /// The visible reading surface owns documentation controls, not the editor.
+    pub fn has_documentation(&self) -> bool {
+        if self.has_modal() || self.focus != FocusTarget::Editor {
+            return false;
+        }
+        self.cursor_overlay
+            .is_some_and(|overlay| match overlay.kind {
+                CursorOverlayKind::Hover => true,
+                CursorOverlayKind::Completion => {
+                    self.has_visible_completion()
+                        && self.completion_menu.as_ref().is_some_and(|menu| {
+                            menu.selected_documentation(overlay.selected).is_some()
+                        })
+                }
+                CursorOverlayKind::DebugCompletion
+                | CursorOverlayKind::DebugHover
+                | CursorOverlayKind::References
+                | CursorOverlayKind::CodeActions
+                | CursorOverlayKind::ContextMenu => false,
+            })
+    }
+
     pub fn has_hover(&self) -> bool {
         self.hover_request.is_some()
             || self.hover_card.is_some()

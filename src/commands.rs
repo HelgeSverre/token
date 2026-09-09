@@ -1052,7 +1052,7 @@ pub enum Cmd {
     CompletePaths(std::sync::Arc<crate::completion::path::PathRequest>),
     CancelPathCompletion,
     /// Resolve a documentation scroll against the same layout used for paint.
-    PageCompletionDocumentation {
+    PageDocumentation {
         forward: bool,
     },
     /// Copy a string to the system clipboard
@@ -1426,9 +1426,9 @@ impl Cmd {
             Cmd::SaveRecentFiles { .. } => Damage::Areas(vec![]),
             Cmd::SaveCommandHistory { .. } => Damage::Areas(vec![]),
             Cmd::RecordInlineUsage(_) => Damage::Areas(vec![]),
-            Cmd::CompletePaths(_)
-            | Cmd::CancelPathCompletion
-            | Cmd::PageCompletionDocumentation { .. } => Damage::Areas(vec![]),
+            Cmd::CompletePaths(_) | Cmd::CancelPathCompletion | Cmd::PageDocumentation { .. } => {
+                Damage::Areas(vec![])
+            }
             Cmd::CopyToClipboard(_) | Cmd::OpenWebUrl(_) => Damage::Areas(vec![]),
             Cmd::RequestClipboardPaste => Damage::Areas(vec![]),
             // Preparation completes synchronously in runtime command order and

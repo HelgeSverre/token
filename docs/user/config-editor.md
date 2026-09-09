@@ -265,13 +265,21 @@ into the card before it closes.
 
 Show Hover requests documentation immediately at the caret, independently of
 `hover_on_mouse`. Incidental pointer movement does not dismiss it. Editing,
-moving the caret, scrolling, switching panes, losing focus or pressing Escape
-closes documentation and cancels its pending request. Empty automatic results
-are silent; an explicit request still reports when information is unavailable.
+moving the caret, scrolling the editor, switching panes, losing focus or pressing
+Escape closes documentation and cancels its pending request. Empty automatic
+results are silent; an explicit request still reports when information is unavailable.
 
 Completion documentation takes precedence while its menu is open. Signature
 help yields visually until the menu closes, and automatic hover waits while
 signature help is visible.
+
+Hover and completion documentation share reading controls: scroll over the card,
+use Alt+PageUp/PageDown to move a page, or click the footer/press F1 to
+expand or collapse it. Long cards show the visible row range in the footer;
+short cards omit unnecessary controls. These actions keep the card open and
+leave the caret and completion selection unchanged;
+long signatures and prose are scrollable rather than cut off. Signature-help
+calltips remain non-interactive.
 
 ### Completion dropdown
 
@@ -287,14 +295,11 @@ markers, quoted lines and text tables. Links show their labels; images show alt
 text, without fetching resources. HTML stays literal text, and strikethrough is
 shown dimmed. Plain-text server documentation is not parsed as Markdown.
 
-For completion documentation, scroll over the card without moving the selected
-suggestion. The footer shows the visible row range, including wrapped code and
-prose. Click it or press F1 to expand/collapse the card; Alt+PageUp/PageDown moves
-one visible page. Ordinary PageUp/PageDown still navigates the suggestion list.
-Choosing a different suggestion resets its documentation view. Cards narrow to
-fit beside the menu and stay within the window height; if no text area fits,
-enlarge the window to see the card. These controls apply to the completion side
-card, not the separate hover/signature-help popups.
+The reading controls described above also apply to the completion side card.
+Ordinary PageUp/PageDown still navigates the suggestion list. Choosing a
+different suggestion resets its documentation view. Cards narrow to fit beside
+the menu and stay within the window height; if no text area fits, enlarge the
+window to see the card.
 
 For example, `ar_flag` and `archiver` after `cc::Build::new().` are valid builder
 methods, not words extracted from your file. Typing `comp` narrows that list to
