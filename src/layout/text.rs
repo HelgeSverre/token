@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 
 use crate::layout::snapshot::TextLine;
-use crate::view::TextPainter;
+use crate::view::{FontRole, TextPainter};
 
 /// Style inputs that affect measurement: font size and letter tracking, both
 /// in physical px (mapping to `TextPainter::measure_sized` inputs).
@@ -34,6 +34,14 @@ impl TextStyle {
             code: false,
         }
     }
+
+    pub(crate) fn font_role(self, inherited: FontRole) -> FontRole {
+        if self.code {
+            FontRole::Code
+        } else {
+            inherited
+        }
+    }
 }
 
 /// Width/line-height oracle for text layout.
@@ -51,21 +59,14 @@ pub trait TextMeasure {
 /// Direct measurement without an additional memo table.
 impl TextMeasure for TextPainter<'_> {
     fn width(&mut self, text: &str, style: TextStyle) -> f32 {
-        let previous = style.code.then(|| self.use_ui_font(false));
-        let width = self.measure_sized(text, style.size, style.tracking);
-        if let Some(previous) = previous {
-            self.use_ui_font(previous);
-        }
-        width
+        let role = style.font_role(self.font_role());
+        self.with_font(role)
+            .measure_sized(text, style.size, style.tracking)
     }
 
     fn line_height(&mut self, style: TextStyle) -> f32 {
-        let previous = style.code.then(|| self.use_ui_font(false));
-        let height = self.line_height_for_size(style.size) as f32;
-        if let Some(previous) = previous {
-            self.use_ui_font(previous);
-        }
-        height
+        let role = style.font_role(self.font_role());
+        self.with_font(role).line_height_for_size(style.size) as f32
     }
 }
 

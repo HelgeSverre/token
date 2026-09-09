@@ -1094,6 +1094,74 @@ mod tests {
     }
 
     #[test]
+    fn editor_click_uses_the_layout_before_find_bar_moves_between_splits() {
+        for button in [MouseButton::Left, MouseButton::Right, MouseButton::Middle] {
+            let mut model = AppModel::new(1000, 800, 1.0);
+            model.document_mut().buffer = ropey::Rope::from_str(&"alpha beta gamma\n".repeat(80));
+            let group_id = model.editor_area.focused_group_id;
+            update(
+                &mut model,
+                Msg::Layout(LayoutMsg::SplitFocused(
+                    token::model::SplitDirection::Vertical,
+                )),
+            );
+            model.resize(1000, 800);
+            update(&mut model, Msg::Ui(UiMsg::OpenFind { replace: true }));
+            let group = &model.editor_area.groups[&group_id];
+            let layout = token::view::geometry::GroupLayout::new(group, &model, model.char_width);
+            let event = MouseEvent::new(
+                layout.text_start_x as f64 + model.char_width as f64 * 3.0,
+                layout.content_y() as f64 + model.line_height as f64 * 5.25,
+                button,
+                ModifiersState::empty(),
+            );
+            let target = HitTarget::EditorContent {
+                group_id,
+                editor_id: group.active_editor_id().unwrap(),
+                document_id: model
+                    .editor_area
+                    .document_for_group(group)
+                    .unwrap()
+                    .id
+                    .unwrap(),
+            };
+            match button {
+                MouseButton::Left => {
+                    handle_editor_content_click(
+                        &mut model,
+                        group_id,
+                        &event,
+                        &mut ClickTracker::default(),
+                    );
+                }
+                MouseButton::Right => {
+                    handle_right_click(&mut model, &target, &event);
+                }
+                MouseButton::Middle => {
+                    handle_middle_click(&mut model, &target, &event);
+                    assert!(model.editor().rectangle_selection.active);
+                }
+                _ => unreachable!(),
+            }
+            assert_eq!(model.editor_area.focused_group_id, group_id);
+            let position = if button == MouseButton::Middle {
+                let selection = &model.editor().rectangle_selection;
+                (selection.start_line, selection.start_visual_col)
+            } else {
+                let cursor = model.editor().active_cursor();
+                (cursor.line, cursor.column)
+            };
+            assert_eq!(position, (5, 3), "{button:?}");
+            let moved = token::view::find_bar::FindBarLayout::new(&model).unwrap();
+            assert!(moved.rect.height > 0.0);
+            assert_eq!(
+                moved.rect.x,
+                model.editor_area.focused_group().unwrap().rect.x
+            );
+        }
+    }
+
+    #[test]
     fn right_click_on_a_sidebar_item_opens_the_file_tree_menu() {
         let mut model = AppModel::new(800, 600, 1.0);
         let target = HitTarget::SidebarItem {
@@ -1668,7 +1736,7 @@ fn dispatch_mouse_press(
 ) -> EventResult {
     match event.button {
         MouseButton::Left => handle_left_click(model, renderer, target, event, click_tracker),
-        MouseButton::Middle => handle_middle_click(model, renderer, target, event),
+        MouseButton::Middle => handle_middle_click(model, target, event),
         MouseButton::Right => handle_right_click(model, target, event),
         _ => EventResult::Bubble,
     }
@@ -1994,7 +2062,7 @@ fn handle_left_click(
 
         // Editor content - handled specially due to complex selection logic
         HitTarget::EditorContent { group_id, .. } => {
-            handle_editor_content_click(model, renderer, *group_id, event, click_tracker)
+            handle_editor_content_click(model, *group_id, event, click_tracker)
         }
 
         // CSV cell click - use renderer to find actual cell
@@ -2389,21 +2457,58 @@ fn handle_left_click(
     }
 }
 
+/// Resolve the click against the visible layout before focus changes move
+/// docked controls or resize wrapped text. Middle clicks use visual columns for
+/// rectangle selection; left/right clicks use document character columns.
+fn focus_editor_at_point(
+    model: &mut AppModel,
+    group_id: GroupId,
+    event: &MouseEvent,
+) -> Option<(usize, usize)> {
+    let position = model.editor_area.groups.get(&group_id).and_then(|group| {
+        let editor = model.editor_area.editors.get(&group.active_editor_id()?)?;
+        if !editor.is_plain_text_mode() {
+            return None;
+        }
+        let document = model.editor_area.document_for_group(group)?;
+        let layout = token::view::geometry::GroupLayout::new(group, model, model.char_width);
+        Some(if event.button == MouseButton::Middle {
+            layout.pixel_to_line_and_visual_column(
+                event.pos.x,
+                event.pos.y,
+                model.char_width,
+                model.line_height as f64,
+                editor,
+                document,
+            )
+        } else {
+            layout.pixel_to_cursor(
+                event.pos.x,
+                event.pos.y,
+                model.char_width,
+                model.line_height as f64,
+                editor,
+                document,
+            )
+        })
+    });
+    if group_id != model.editor_area.focused_group_id {
+        update(model, Msg::Layout(LayoutMsg::FocusGroup(group_id)));
+    }
+    position
+}
+
 /// Handle editor content click with full selection logic
 fn handle_editor_content_click(
     model: &mut AppModel,
-    renderer: &mut Renderer,
-    group_id: token::model::editor_area::GroupId,
+    group_id: GroupId,
     event: &MouseEvent,
     click_tracker: &mut ClickTracker,
 ) -> EventResult {
     use token::messages::EditorMsg;
     use token::model::FocusTarget;
 
-    // Focus group if needed
-    if group_id != model.editor_area.focused_group_id {
-        update(model, Msg::Layout(LayoutMsg::FocusGroup(group_id)));
-    }
+    let position = focus_editor_at_point(model, group_id, event);
 
     // Non-text tabs: double-click opens binary placeholder with default app, ignore other clicks
     if let Some(editor) = model.editor_area.focused_editor() {
@@ -2421,8 +2526,9 @@ fn handle_editor_content_click(
         }
     }
 
-    // Convert pixel to cursor position
-    let (line, column) = renderer.pixel_to_cursor(event.pos.x, event.pos.y, model);
+    let Some((line, column)) = position else {
+        return EventResult::consumed_with_focus(FocusTarget::Editor);
+    };
 
     // Track clicks for double/triple detection
     let click_count = click_tracker.track_click(ClickRegion::Editor {
@@ -2490,7 +2596,6 @@ fn handle_editor_content_click(
 /// Handle middle mouse button clicks
 fn handle_middle_click(
     model: &mut AppModel,
-    renderer: &mut Renderer,
     target: &HitTarget,
     event: &MouseEvent,
 ) -> EventResult {
@@ -2523,36 +2628,15 @@ fn handle_middle_click(
 
         // Editor gutter - treat like editor content for rectangle selection,
         // unless an interactive lane (fold/marks) owns the click.
-        HitTarget::EditorGutter { group_id, lane, .. } => {
-            use token::messages::EditorMsg;
-
-            if let Some(result) = interactive_gutter_lane_click(*lane) {
-                return result;
+        HitTarget::EditorGutter { group_id, .. } | HitTarget::EditorContent { group_id, .. } => {
+            if let HitTarget::EditorGutter { lane, .. } = target {
+                if let Some(result) = interactive_gutter_lane_click(*lane) {
+                    return result;
+                }
             }
-
-            if *group_id != model.editor_area.focused_group_id {
-                update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
-            }
-
-            let (line, visual_col) =
-                renderer.pixel_to_line_and_visual_column(event.pos.x, event.pos.y, model);
-            update(
-                model,
-                Msg::Editor(EditorMsg::StartRectangleSelection { line, visual_col }),
-            );
-            EventResult::consumed_redraw()
-        }
-
-        // Editor content - start rectangle selection
-        HitTarget::EditorContent { group_id, .. } => {
-            use token::messages::EditorMsg;
-
-            if *group_id != model.editor_area.focused_group_id {
-                update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
-            }
-
-            let (line, visual_col) =
-                renderer.pixel_to_line_and_visual_column(event.pos.x, event.pos.y, model);
+            let Some((line, visual_col)) = focus_editor_at_point(model, *group_id, event) else {
+                return EventResult::consumed_no_redraw();
+            };
             update(
                 model,
                 Msg::Editor(EditorMsg::StartRectangleSelection { line, visual_col }),
@@ -2640,30 +2724,14 @@ fn handle_right_click(model: &mut AppModel, target: &HitTarget, event: &MouseEve
             // convention, also move the caret to the click point, unless
             // the click landed inside the existing selection (which must
             // survive so Cut/Copy still act on it).
-            if *group_id != model.editor_area.focused_group_id {
-                update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
-            }
-            let caret_target = model
-                .editor_area
-                .groups
-                .get(group_id)
-                .zip(model.editor_area.editors.get(editor_id))
-                .and_then(|(group, editor)| {
-                    let document = editor
-                        .document_id
-                        .and_then(|id| model.editor_area.documents.get(&id))?;
-                    let (line, column) = token::view::geometry::pixel_to_cursor_in_group(
-                        event.pos.x,
-                        event.pos.y,
-                        model.char_width,
-                        model.line_height as f64,
-                        &group.rect,
-                        model,
-                        editor,
-                        document,
-                    );
+            let caret_target =
+                focus_editor_at_point(model, *group_id, event).filter(|&(line, column)| {
                     let pos = token::model::editor::Position::new(line, column);
-                    (!editor.active_selection().contains(pos)).then_some((line, column))
+                    model
+                        .editor_area
+                        .editors
+                        .get(editor_id)
+                        .is_some_and(|editor| !editor.active_selection().contains(pos))
                 });
             if let Some((line, column)) = caret_target {
                 update(

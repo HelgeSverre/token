@@ -14,7 +14,7 @@ mod settings_page;
 pub(crate) use settings_page::scroll_viewport as settings_scroll_viewport;
 pub use settings_page::visible_count as settings_visible_count;
 
-use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
+use super::frame::{FontRole, Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
 use super::helpers::EllipsisSide;
 use super::scrollbar::{
@@ -2022,7 +2022,11 @@ fn render_header(
     let Some(r) = layout.header else { return };
     // Editable headers (search, Settings, pickers) share the code font with
     // every other text input. Non-editable headings retain UI typography.
-    let ui = painter.use_ui_font(header.caret.is_none());
+    let mut painter = painter.with_font(if header.caret.is_none() {
+        FontRole::Ui
+    } else {
+        FontRole::Code
+    });
 
     // Bottom hairline separating the header from the list.
     frame.fill_rect_px(r.x, r.y + r.h.saturating_sub(1), r.w, 1, colors.hairline);
@@ -2078,7 +2082,7 @@ fn render_header(
         (String::new(), 0)
     } else {
         let (visible, kept_from) =
-            visible_header_text(painter, size, header.text, content_w as f32);
+            visible_header_text(&mut painter, size, header.text, content_w as f32);
         // Selection wash first, so the text paints over it. Columns are in
         // the full text's char space — re-express against the visible
         // string the same way the caret is.
@@ -2086,8 +2090,8 @@ fn render_header(
             if sel_end > sel_start {
                 let to_visible =
                     |col: usize| col.saturating_sub(kept_from) + usize::from(kept_from > 0);
-                let x0 = caret_x_for_column(painter, x, &visible, to_visible(sel_start), size);
-                let x1 = caret_x_for_column(painter, x, &visible, to_visible(sel_end), size);
+                let x0 = caret_x_for_column(&mut painter, x, &visible, to_visible(sel_start), size);
+                let x1 = caret_x_for_column(&mut painter, x, &visible, to_visible(sel_end), size);
                 if x1 > x0 {
                     frame.fill_rect_px(x0, text_y, x1 - x0, text_h, colors.selection_wash);
                 }
@@ -2103,7 +2107,7 @@ fn render_header(
             // re-express it against the (possibly head-truncated) visible
             // string so it never lands off-screen.
             let visible_col = col.saturating_sub(kept_from) + usize::from(kept_from > 0);
-            let caret_x = caret_x_for_column(painter, x, &visible, visible_col, size);
+            let caret_x = caret_x_for_column(&mut painter, x, &visible, visible_col, size);
             let caret_w = scaled(1.5, scale_factor);
             frame.fill_rect_px(caret_x, text_y, caret_w, text_h, colors.accent_bright);
         }
@@ -2126,7 +2130,6 @@ fn render_header(
             colors.text_dim,
         );
     }
-    painter.use_ui_font(ui);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3482,7 +3485,8 @@ fn draw_styled_run(
             } else {
                 crate::layout::TextStyle::sized(size)
             };
-            let previous = text_style.code.then(|| painter.use_ui_font(false));
+            let role = text_style.font_role(painter.font_role());
+            let mut painter = painter.with_font(role);
             let size = text_style.size;
             let text_y = y + line_h.saturating_sub(painter.line_height_for_size(size)) / 2;
             let w = painter.measure_sized(text, size, 0.0);
@@ -3527,9 +3531,6 @@ fn draw_styled_run(
                 }
             }
             cx += w;
-            if let Some(previous) = previous {
-                painter.use_ui_font(previous);
-            }
         };
     for (range, style) in &line.runs {
         segment(frame, painter, &line.text[cursor..range.start], None);
@@ -3723,7 +3724,8 @@ mod tests {
         )
         .unwrap();
         let mut ui_cache = super::super::GlyphCache::default();
-        let mut painter = test_painter(&font, &mut cache).with_ui_font(&ui_font, &mut ui_cache);
+        let mut painter =
+            test_painter(&font, &mut cache).with_ui_font(&ui_font, &mut ui_cache, FontRole::Ui);
         let before = painter.measure_sized("proportional width", 13.0, 0.0);
         let docs = crate::lsp::markdown::markdown_to_styled(
             "Replace `current` with `(map/update m key f)` and keep café readable.",

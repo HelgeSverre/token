@@ -21,7 +21,7 @@ pub mod text_field;
 pub mod tree_view;
 
 pub use button::{button_rect, render_button, ButtonState};
-pub use frame::{Frame, RoundedRectMaskCache, TextPainter};
+pub use frame::{FontRole, Frame, RoundedRectMaskCache, TextPainter};
 pub use text_field::{TextFieldContent, TextFieldOptions, TextFieldRenderer};
 
 use anyhow::Result;
@@ -152,7 +152,7 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
                 char_width,
                 line_height,
             )
-            .with_ui_font(ui_font, ui_glyph_cache),
+            .with_ui_font(ui_font, ui_glyph_cache, FontRole::Ui),
             model,
             plan,
             overlay_mask_cache,
@@ -170,14 +170,12 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
     }
 
     fn render_sidebar_phase(&mut self) {
-        let ui = self.painter.use_ui_font(false);
         Renderer::render_sidebar(
             &mut self.frame,
             &mut self.painter,
             self.model,
             &self.plan.chrome,
         );
-        self.painter.use_ui_font(ui);
     }
 
     fn render_right_dock_phase(&mut self) {
@@ -259,9 +257,7 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
             return;
         }
 
-        let ui = self.painter.use_ui_font(false);
         Renderer::render_tab_drag_ghost(&mut self.frame, &mut self.painter, self.model);
-        self.painter.use_ui_font(ui);
     }
 
     #[cfg(debug_assertions)]
@@ -556,17 +552,16 @@ impl<'a> EditorGroupScene<'a> {
         model: &AppModel,
         perf: &mut crate::perf::PerfStats,
     ) {
-        let ui = painter.use_ui_font(false);
+        let mut painter = painter.with_font(FontRole::Code);
         perf.measure_stage(crate::perf::PerfStage::TabBar, || {
-            Renderer::render_tab_bar(frame, painter, model, self.group, &self.tab_bar);
+            Renderer::render_tab_bar(frame, &mut painter, model, self.group, &self.tab_bar);
         });
-        self.render_content(frame, painter, model, perf);
+        self.render_content(frame, &mut painter, model, perf);
         if self.is_focused {
             perf.measure_stage(crate::perf::PerfStage::FindBar, || {
-                find_bar::render(frame, painter, model)
+                find_bar::render(frame, &mut painter, model)
             });
         }
-        painter.use_ui_font(ui);
 
         if self.should_render_scrollbars(model) {
             perf.measure_stage(crate::perf::PerfStage::Scrollbars, || {
@@ -906,7 +901,7 @@ impl Renderer {
             self.char_width,
             self.line_metrics.new_line_size.ceil() as usize,
         )
-        .with_ui_font(&self.ui_font, &mut self.ui_glyph_cache)
+        .with_ui_font(&self.ui_font, &mut self.ui_glyph_cache, FontRole::Ui)
     }
 
     /// Line height of status-bar text at the configured logical size.
@@ -1916,6 +1911,7 @@ impl Renderer {
             return;
         };
 
+        let mut painter = painter.with_font(FontRole::Code);
         let metrics = &model.metrics;
         let title = model.editor_area.tab_display_name(tab);
         let width = crate::layout::editor::tab_width(model, tab, painter.char_width());
@@ -2036,7 +2032,7 @@ impl Renderer {
                 char_width,
                 line_height,
             )
-            .with_ui_font(&self.ui_font, &mut self.ui_glyph_cache);
+            .with_ui_font(&self.ui_font, &mut self.ui_glyph_cache, FontRole::Code);
             perf.measure_stage(crate::perf::PerfStage::CursorFastPath, || {
                 editor_text::render_cursor_lines_only(&mut frame, &mut painter, model, dirty_lines);
             });

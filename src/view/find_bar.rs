@@ -4,8 +4,8 @@ use crate::messages::{ModalMsg, UiMsg};
 use crate::model::{AppModel, FindReplaceField, FocusTarget, Rect, ScaledMetrics};
 
 use super::button::{render_button, ButtonState};
-use super::geometry::WidgetRect;
-use super::{Frame, TextFieldOptions, TextFieldRenderer, TextPainter};
+use super::geometry::{GroupLayout, WidgetRect};
+use super::{FontRole, Frame, TextFieldOptions, TextFieldRenderer, TextPainter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Control {
@@ -67,19 +67,14 @@ pub struct FindBarLayout {
 
 impl FindBarLayout {
     pub fn new(model: &AppModel) -> Option<Self> {
-        let (_, bar_height) = model.find_bar_inset()?;
+        model.find_bar_inset()?;
         let group = model.editor_area.focused_group()?;
         let state = model.ui.find_bar.as_ref()?;
         let metrics = &model.metrics;
         let pad = metrics.padding_medium;
         let gap = metrics.padding_small;
         let row_h = model.line_height + gap * 2;
-        let rect = Rect::new(
-            group.rect.x,
-            group.rect.y + metrics.tab_bar_height as f32,
-            group.rect.width,
-            (bar_height as f32).min((group.rect.height - metrics.tab_bar_height as f32).max(0.0)),
-        );
+        let rect = GroupLayout::new(group, model, model.char_width).find_bar_rect;
         let x = rect.x.round() as usize + pad;
         let y = rect.y.round() as usize + pad;
         let right = (rect.x + rect.width).round() as usize;
@@ -266,7 +261,7 @@ pub(crate) fn render(frame: &mut Frame, painter: &mut TextPainter, model: &AppMo
     let Some(state) = model.ui.find_bar.as_ref() else {
         return;
     };
-    let previous_font = painter.use_ui_font(true);
+    let mut painter = painter.with_font(FontRole::Ui);
     frame.push_clip(layout.rect);
     let (x, y, w, h) = crate::layout::snapshot::snap(layout.rect);
     frame.fill_rect_px(
@@ -306,10 +301,10 @@ pub(crate) fn render(frame: &mut Frame, painter: &mut TextPainter, model: &AppMo
                 model.theme.overlay.input_background.to_argb_u32(),
                 border,
             );
-            painter.use_ui_font(false);
+            let mut painter = painter.with_font(FontRole::Code);
             TextFieldRenderer::render_modal_input(
                 frame,
-                painter,
+                &mut painter,
                 input,
                 rect,
                 model.line_height,
@@ -348,7 +343,6 @@ pub(crate) fn render(frame: &mut Frame, painter: &mut TextPainter, model: &AppMo
                 );
                 frame.pop_clip();
             }
-            painter.use_ui_font(true);
             continue;
         }
         let (label, active) = match control {
@@ -368,7 +362,7 @@ pub(crate) fn render(frame: &mut Frame, painter: &mut TextPainter, model: &AppMo
         frame.push_clip(rect);
         render_button(
             frame,
-            painter,
+            &mut painter,
             &model.theme,
             rect,
             label,
@@ -398,15 +392,9 @@ pub(crate) fn render(frame: &mut Frame, painter: &mut TextPainter, model: &AppMo
         } else {
             model.theme.overlay.foreground
         };
-        painter.draw(
-            frame,
-            rect.x,
-            rect.y + rect.h.saturating_sub(painter.line_height()) / 2,
-            &label,
-            color.to_argb_u32(),
-        );
+        let text_y = rect.y + rect.h.saturating_sub(painter.line_height()) / 2;
+        painter.draw(frame, rect.x, text_y, &label, color.to_argb_u32());
         frame.pop_clip();
     }
     frame.pop_clip();
-    painter.use_ui_font(previous_font);
 }

@@ -93,7 +93,7 @@ fn find_bar_scopes_cannot_leak_into_another_document() {
 
 #[test]
 fn find_bar_geometry_agrees_with_viewport_and_hits_at_different_sizes() {
-    for scale in [1.0, 2.0] {
+    for scale in [1.0, 1.25, 2.0] {
         for width in [220.0, 400.0, 1000.0] {
             let mut model = AppModel::with_document(
                 (width * scale) as u32,
@@ -102,10 +102,10 @@ fn find_bar_geometry_agrees_with_viewport_and_hits_at_different_sizes() {
                 token::model::Document::with_text(&"alpha beta gamma\n".repeat(80)),
             );
             model.editor_area.compute_layout(Rect::new(
-                0.0,
-                0.0,
-                (width * scale) as f32,
-                (800.0 * scale) as f32,
+                17.5,
+                23.5,
+                (width * scale) as f32 + 0.5,
+                (800.0 * scale) as f32 + 0.5,
             ));
             model.resync_viewports();
             let full_height = model.editor().viewport.pixels.y.extent;
@@ -114,6 +114,26 @@ fn find_bar_geometry_agrees_with_viewport_and_hits_at_different_sizes() {
             let group = model.editor_area.focused_group().unwrap();
             let content = GroupLayout::new(group, &model, model.char_width);
             assert_eq!(content.content_rect.y, bar.rect.y + bar.rect.height);
+            assert_eq!(
+                model.editor().viewport.pixels.y.extent,
+                content.content_h() as f64
+            );
+            assert_eq!(
+                model.editor().viewport.pixels.x.extent,
+                content.text_width() as f64
+            );
+            assert_eq!(
+                model.editor().viewport.visible_lines,
+                content.visible_lines(model.line_height)
+            );
+            assert_eq!(
+                model.editor().viewport.visible_columns,
+                content.visible_columns(
+                    model.char_width,
+                    model.editor().soft_wrap,
+                    model.metrics.scrollbar_width,
+                )
+            );
             let x = content.text_start_x as f64 + model.char_width as f64 * 3.0;
             let y = content.content_y() as f64 + model.line_height as f64 * 0.25;
             assert_eq!(

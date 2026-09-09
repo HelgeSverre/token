@@ -159,13 +159,12 @@ fn soft_wrap_caret_and_group_hit_test_agree_on_a_continuation() {
     )
     .unwrap();
     let group = model.editor_area.focused_group().unwrap();
-    let hit = token::view::geometry::pixel_to_cursor_in_group(
+    let layout = token::view::geometry::GroupLayout::new(group, &model, model.char_width);
+    let hit = layout.pixel_to_cursor(
         caret.x as f64,
         caret.y as f64,
         model.char_width,
         model.line_height as f64,
-        &group.rect,
-        &model,
         model.editor(),
         model.document(),
     );

@@ -827,7 +827,7 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
             font_info.char_width,
             font_info.line_height,
         )
-        .with_ui_font(&ui_font, &mut ui_cache);
+        .with_ui_font(&ui_font, &mut ui_cache, token::view::FontRole::Ui);
         let mut perf = token::perf::PerfStats::default();
 
         // 1. Editor area + splitters (render_editor_area_with_preview_mode includes splitters)

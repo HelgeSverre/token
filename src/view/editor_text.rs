@@ -130,8 +130,7 @@ impl<'a> EditorRenderContext<'a> {
         } else {
             crate::model::scroll::PixelAxis {
                 unit: (char_width as f64).max(1.0),
-                extent: (layout.rect_x() + layout.rect_w()).saturating_sub(layout.text_start_x)
-                    as f64,
+                extent: layout.text_width() as f64,
                 ..editor.viewport.pixels.x
             }
             .drawn_count()
@@ -1331,11 +1330,10 @@ pub fn render_cursor_lines_only(
         width: clip_w as f32,
         height: layout.content_h() as f32,
     });
-    // Mixed UI painters start in the UI role. Cursor-only redraws must select
-    // the same code font as full editor-group rendering, then restore the caller.
-    let ui = painter.use_ui_font(false);
-    renderer.render_cursor_lines_only(frame, painter, dirty_lines, &decorations);
-    painter.use_ui_font(ui);
+    // The caller may be painting UI. Cursor redraws use the code font just
+    // like full editor groups, without changing the caller's role.
+    let mut painter = painter.with_font(super::FontRole::Code);
+    renderer.render_cursor_lines_only(frame, &mut painter, dirty_lines, &decorations);
     frame.clear_clip();
 }
 
@@ -1923,7 +1921,7 @@ mod tests {
             char_width,
             line_height,
         )
-        .with_ui_font(&ui_font, &mut ui_cache);
+        .with_ui_font(&ui_font, &mut ui_cache, crate::view::FontRole::Ui);
 
         render_cursor_lines_only(&mut frame, &mut painter, model, dirty_lines);
     }
