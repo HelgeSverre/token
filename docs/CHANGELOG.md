@@ -6,6 +6,23 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Sema language support
+
+- Parse Unicode identifiers and numeric-tower literals, and refresh builtin and
+  macro highlighting from the current Sema documentation and prelude.
+- Show Sema definitions in Outline and fold balanced forms without indentation.
+- Use `sema lsp` semantic colors, line-end parameter hints, and code-lens actions
+  through Code Actions (Alt+Enter). Explicit Run actions show evaluation results.
+- Keep Run actions in Code Actions without repeating inline labels beside every
+  top-level Sema form.
+- Discard stale annotations and action menus after edits or server restarts.
+
+### Go language server
+
+- Go files automatically use `gopls` when installed, with `go.work`/`go.mod`
+  project-root detection and the standard Language Servers settings and
+  `lsp.servers.gopls` configuration overrides.
+
 ### Code folding
 
 - Collapse blocks using gutter chevrons, hidden-line badges, or command-palette
@@ -100,13 +117,16 @@ All notable changes to rust-editor are documented in this file.
 
 ### Documentation cards
 
+- Hover and completion documentation use a draggable scrollbar instead of the
+  row-count/Expand footer. Click the track or use the mouse wheel to read more;
+  short cards show no scrollbar. F1 expansion and Alt+PageUp/PageDown still work.
+- Leading code snippets form a full-width header with rounded top corners and
+  balanced vertical padding; their text stays aligned with the documentation body.
 - Language-tagged code snippets in hover, completion and signature documentation
   use the editor's syntax highlighting and current theme colors. Unknown languages
   remain plain code, and inline identifiers retain their compact code styling.
 - Hover documentation now scrolls through the full signature and prose instead
-  of cutting off long content. Use the mouse wheel, Alt+PageUp/PageDown, or the
-  shared footer and F1 expansion controls without moving the editor caret.
-  Short hover and completion cards omit the footer when all their text fits.
+  of cutting off long content, without moving the editor caret.
 - Hover prose stays left-aligned at the same size with or without signatures,
   diagnostics or inline formatting. Signature help uses the configured editor
   font throughout, including the highlighted parameter.
@@ -427,8 +447,8 @@ All notable changes to rust-editor are documented in this file.
   save; explicit nested values win and unknown settings remain preserved.
 
 - Completion documentation scrolls independently from the suggestion list,
-  including long signatures and code examples. The card shows its row range;
-  its footer or F1 expands/collapses it, and Alt+PageUp/PageDown scrolls a page.
+  including long signatures and code examples. F1 expands/collapses it, and
+  Alt+PageUp/PageDown scrolls a page.
   Cards wrap into available side space without covering the menu. Selection
   changes reset the view; late local-path results preserve an unchanged server
   item's position. Wheel events use current hit-test geometry after resizing.

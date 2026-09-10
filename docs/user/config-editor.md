@@ -51,6 +51,11 @@ edit (`lsp.servers.<id>.command`). They are read-only, as are the live process-s
 rows; Left/Right and Enter cannot change them. Status updates without reopening
 Settings. The existing Language Servers picker remains available.
 
+Go files use `gopls` from your `PATH`. No configuration is needed when it is
+installed; to override its location, set `lsp.servers.gopls.command` in the
+config file. Go projects use the open workspace root, falling back to the
+nearest `go.work` or `go.mod` when opening a file outside a workspace.
+
 ### Auto-save
 
 Auto-save is off by default. The **Editor** category offers focus-loss, idle,

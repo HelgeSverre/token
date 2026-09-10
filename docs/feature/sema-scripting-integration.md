@@ -6,7 +6,41 @@ Embed the Sema Lisp language into Token Editor to enable user-defined commands, 
 > **Priority:** P3 (Nice-to-have)
 > **Effort:** XL (2+ weeks)
 > **Created:** 2026-03-10
-> **Updated:** 2026-03-10
+> **Updated:** 2026-09-09
+
+## Verified implementation status
+
+This is a proposal, not an implemented feature. Token has no embedded Sema
+interpreter, script hooks, or `init.sema` loader. Its Sema support uses a vendored
+tree-sitter grammar and the external `sema lsp` process. Editor configuration
+remains YAML.
+
+The baseline for this plan is Sema 1.36.0 at commit `3b1e81be`. The public
+`sema::Interpreter` wrapper provides synchronous `eval_str`, `load_file`, and
+`register_fn`. The lower-level `sema_eval::Interpreter` also provides
+`submit_str`, `submit_value`, `drive_turn`, and root cancellation. These APIs
+allow a host to advance scripts without waiting for timers or external I/O.
+The public wrapper does not expose the host-driving APIs yet; do not implement
+the editor loop around blocking `eval_str` calls.
+
+Before Phase 1, choose either a wrapper API extension upstream or an explicit
+dependency on the evaluator/runtime crates. Keep interpreter values on their
+owning thread. Convert results to editor messages at the host boundary. A
+bounded runtime turn is not a wall-clock bound on arbitrary native callbacks
+or macro compilation; custom callbacks must not perform blocking work.
+
+`default-features = false` does not remove Sema's LLM, MCP, notebook, LSP, or DAP
+dependencies. The current package declares these dependencies unconditionally.
+`with_llm(false)` and `with_mcp(false)` disable builtin registration at runtime,
+not compilation. Measure the dependency cost or add upstream feature gates
+before describing this as a lightweight embedding.
+
+The initial mutation contract is a transaction: a script reads and edits a
+working copy of text, cursors, and selections. It must see its own edits. On
+success, validate every source document revision and apply one undo group;
+on cancellation, failure, or revision mismatch, discard the transaction.
+File opening, saving, prompts, and other host effects cross an explicit
+asynchronous message boundary. Never hold a model borrow while running Sema.
 
 ---
 
@@ -69,7 +103,7 @@ Sema is a Scheme-like Lisp created by the same author as Token Editor. Key advan
 | Capability-based sandbox | `Caps::FS_WRITE`, `Caps::SHELL`, `Caps::NETWORK` -- deny dangerous operations |
 | NaN-boxed `Value` type | Efficient, no allocation for small integers/bools/nil |
 | Module system | Scripts can import shared libraries |
-| 350+ stdlib functions | String manipulation, regex, JSON, file I/O out of the box |
+| Documented standard library | String manipulation, regex, JSON, file I/O out of the box |
 | No async/threading requirement | Single-threaded `Rc`-based -- matches Token's render thread model |
 
 ### Embedding Example
@@ -81,25 +115,34 @@ let interp = InterpreterBuilder::new()
     .with_llm(false)              // No LLM features in editor context
     .with_sandbox(
         Sandbox::deny(Caps::SHELL)  // No shell commands
-            .deny(Caps::NETWORK)    // No HTTP requests
+            .with_more_denied(Caps::NETWORK.union(Caps::FS_WRITE).union(Caps::PROCESS))
     )
+    .with_mcp(false)
     .build();
 
 // Expose an editor primitive
 interp.register_fn("editor/insert-text", |args: &[Value]| {
-    let text = args[0].as_str().ok_or_else(|| /* ... */)?;
+    if args.len() != 1 {
+        return Err(sema::SemaError::arity("editor/insert-text", "1", args.len()));
+    }
+    let text = args[0].as_str()
+        .ok_or_else(|| sema::SemaError::type_error("string", args[0].type_name()))?;
+    let _ = text; // The implementation edits the script transaction here.
     // Queue a Msg::Document(DocumentMsg::InsertString(text.into()))
     Ok(Value::nil())
 });
 
 // Run user script
-interp.eval_str_in_global(r#"
+interp.eval_str(r#"
   (define (surround-with open close)
     (let ((sel (editor/get-selection)))
       (editor/replace-selection
-        (string/concat open sel close))))
+        (string-append open sel close))))
 "#)?;
 ```
+
+This example demonstrates registration and definition only. User command
+execution must use the bounded host-driving API described above.
 
 ### Comparison with Alternatives
 
@@ -168,26 +211,28 @@ src/
 2. `Command::RunScript(ScriptId)` dispatched
 3. `Command::to_msgs()` produces `Msg::Script(ScriptMsg::Execute(ScriptId))`
 4. `update_script()` handler runs:
-   a. Creates a `ScriptContext` (read-only view of `AppModel`)
-   b. Calls `ScriptEngine::execute(script_id, context)`
-   c. Script calls editor API functions (e.g., `editor/insert-text`)
-   d. API functions return `Msg` values queued in a `Vec<Msg>`
-   e. After script completes, queued messages are dispatched via `Cmd::Batch`
-5. Queued messages go through normal `update()` cycle
+   a. Captures an owned `ScriptTransaction` with document revision, text, cursors, and selections
+   b. Submits the script to the cooperative evaluator through a runtime command
+   c. Runtime polls bounded turns and wakes again when asynchronous work is ready
+   d. Editor API calls read and update transaction-local state
+   e. Completion returns a revision-checked commit message; failure or cancellation discards changes
+5. A successful transaction commits through `update()` as one undo group; `Cmd::Batch` groups resulting effects
 6. Renderer displays results
 
 **Hook-triggered script:**
 
 1. Normal `update()` processes a message (e.g., `AppMsg::FileSaved`)
-2. Post-update, `ScriptEngine::fire_hooks(HookPoint::AfterSave, context)` runs
-3. Hook callbacks execute, queueing messages as above
-4. Queued messages dispatched
+2. Post-update, a runtime command submits matching hooks with owned event data
+3. Hook callbacks use the same cooperative evaluator and transaction protocol
+4. Each successful transaction is revision-checked before commit
 
 ---
 
 ## Editor API Surface
 
-Functions exposed to Sema scripts, organized by namespace. All functions interact through the message queue -- they never mutate `AppModel` directly.
+Proposed functions exposed to Sema scripts, organized by namespace. Reads and writes
+use transaction-local state with read-your-writes behavior. They never mutate
+`AppModel` directly; completion produces a validated commit message.
 
 ### Buffer Operations (`editor/`)
 
@@ -385,12 +430,12 @@ A single `init.sema` runs at startup for global configuration.
                     ┌─────────────────────┐
   Key/Palette ─────► Execute command fn   │
                     │  ├─ read state       │
-                    │  ├─ queue messages   │
-                    │  └─ return           │
+                    │  ├─ edit transaction │
+                    │  └─ suspend / finish │
                     └──────────┬──────────┘
                                │
                     ┌──────────▼──────────┐
-                    │ Dispatch queued Msgs │
+                    │ Validate and commit │
                     └─────────────────────┘
 
                     ┌─────────────────────┐
@@ -399,9 +444,9 @@ A single `init.sema` runs at startup for global configuration.
                     └─────────────────────┘
 ```
 
-**Key constraint:** Script execution is synchronous and blocking. A script runs, queues messages, and returns. Messages are dispatched after the script completes. This preserves the Elm Architecture invariant -- state changes happen through the update loop, never during script execution.
+**Key constraint:** Advance the runtime in bounded turns. Scripts edit an owned transaction, never the live model. Host effects and transaction commits pass through the update loop. A suspended script retains no model borrows.
 
-**Timeout:** Scripts that run longer than 100ms are terminated with a `ScriptError::Timeout`. This prevents infinite loops from freezing the editor.
+**Timeout:** The proposed `scripting.timeout_ms` deadline requests root cancellation. Discard the transaction and settle resource cleanup before reporting timeout. The host must separately bound compilation and avoid blocking native callbacks; a timer alone cannot interrupt those operations.
 
 ---
 
@@ -522,10 +567,11 @@ scripting:
 
 ```rust
 pub struct ScriptEngine {
-    interpreter: sema::Interpreter,
+    interpreter: ScriptInterpreter, // Host-driving wrapper selected in Phase 1
     commands: HashMap<String, ScriptCommand>,
     hooks: HashMap<HookPoint, Vec<HookEntry>>,
-    msg_queue: Vec<Msg>,
+    transactions: HashMap<DocumentId, ScriptTransaction>,
+    pending_effects: Vec<Msg>,
 }
 
 pub struct HookEntry {
@@ -571,17 +617,19 @@ pub enum HookPoint {
 }
 ```
 
-### ScriptContext (read-only model view)
+### ScriptTransaction (owned working state)
 
 ```rust
-/// Read-only snapshot of editor state passed to scripts.
-pub struct ScriptContext<'a> {
-    pub buffer_text: &'a ropey::Rope,
-    pub cursors: &'a [Cursor],
-    pub selections: &'a [Selection],
-    pub file_path: Option<&'a Path>,
-    pub language: Option<&'a str>,
-    pub workspace_root: Option<&'a Path>,
+/// No model borrow survives a script turn or suspension.
+pub struct ScriptTransaction {
+    pub document_id: DocumentId,
+    pub source_revision: u64,
+    pub buffer_text: ropey::Rope,
+    pub cursors: Vec<Cursor>,
+    pub selections: Vec<Selection>,
+    pub file_path: Option<PathBuf>,
+    pub language: LanguageId,
+    pub workspace_root: Option<PathBuf>,
 }
 ```
 
@@ -593,16 +641,17 @@ pub struct ScriptContext<'a> {
 
 **Effort:** L (1-2 weeks)
 
-- [ ] Add `sema-lang` dependency to `Cargo.toml` (with `default-features = false`, no LLM)
+- [ ] Select the public wrapper extension or lower-level runtime embedding; measure build cost (disabling default features does not exclude LLM dependencies)
 - [ ] Create `src/scripting/mod.rs` with `ScriptEngine` struct
 - [ ] Create `src/scripting/engine.rs`: interpreter init, script loading, eval
 - [ ] Create `src/scripting/types.rs`: `ScriptMsg`, `HookPoint`, `HookEntry`, `ScriptCommand`
 - [ ] Add `Msg::Script(ScriptMsg)` variant to `messages.rs`
 - [ ] Add `update_script()` handler in `src/update/mod.rs`
-- [ ] Add `Cmd::DispatchBatch(Vec<Msg>)` for script message queuing
-- [ ] Implement message queue: script API functions push to `ScriptEngine::msg_queue`
+- [ ] Use the existing `Cmd::Batch` and explicit script host-effect commands
+- [ ] Implement a working-copy transaction for text, cursor and selection edits; reads must observe earlier edits
 - [ ] Implement undo grouping: mark undo stack position before script execution, collapse all new `EditOperation` entries into a single `EditOperation::Batch` after script completes (uses existing `Batch` variant in `document.rs`)
-- [ ] Expose Sema's existing eval step limit on public `Interpreter` API (upstream: `set_step_limit()`, `reset_steps()` -- see `sema-lisp/docs/plans/2026-03-11-embedding-api-improvements.md`)
+- [ ] Expose or wrap `submit_str`, bounded `drive_turn`, completion wakeups and cancellation; verify timeouts without blocking the render thread
+- [ ] Test commit, rollback, undo grouping, stale document revisions and cancellation of a suspended script
 - [ ] Load `init.sema` at startup in `runtime/app.rs`
 - [ ] Unit tests for engine lifecycle
 
@@ -648,7 +697,7 @@ pub struct ScriptContext<'a> {
   - `update_layout.rs`: `BeforeClose`/`AfterClose` on tab close
   - `update_layout.rs`: `OnFocus` on group focus change
 - [ ] Implement `:before-*` cancellation (hook returns error = cancel operation)
-- [ ] Timeout enforcement (100ms default)
+- [ ] Timeout enforcement using the configured `scripting.timeout-ms` budget
 - [ ] Tests for hook registration, pattern filtering, event data passing, and dispatch
 
 ### Phase 5: Polish & Safety
@@ -709,7 +758,7 @@ The closest analog to our integration. Steel is a Scheme dialect embedded in a R
 
 - **`PluginSystem` trait**: Abstracts the scripting engine behind a trait. Allows swapping implementations. We should consider this for testability.
 - **Two-file config**: `helix.scm` (define commands, no editor access) + `init.scm` (has editor context, sets up hooks). Our `init.sema` combines both roles -- simpler.
-- **Context passing**: A `Context` object wraps editor state and is passed to every scripting call. We use `ScriptContext` similarly but with a message queue instead of direct mutation.
+- **Context passing**: A `Context` object wraps editor state and is passed to every scripting call. Token's proposed `ScriptTransaction` instead owns a revision-stamped copy and commits through messages.
 - **Thread-local context**: Helix stores context in thread-local storage. We can do the same since scripts run on the main thread.
 
 **What to adopt:** Trait-based engine abstraction (for testing), context pattern.
@@ -731,14 +780,10 @@ The closest analog to our integration. Steel is a Scheme dialect embedded in a R
 ### Design Decisions to Resolve
 
 1. **Synchronous vs async script execution?**
-   Current plan: fully synchronous, blocking the render loop. Pro: simple, deterministic. Con: scripts > 100ms freeze the editor. Alternative: run scripts on a background thread with `msg_tx` channel for results, but this complicates the API (scripts can't read current state synchronously).
-
-   **Recommendation:** Start synchronous with timeout. Add async later for specific long-running use cases.
+   Use the cooperative runtime from the start. Choose an owning thread and connect bounded turns, wakeups, deadlines and cancellation to Token. Expose these through the public wrapper or use the lower-level interpreter explicitly.
 
 2. **Should scripts see intermediate state changes?**
-   If a script calls `editor/insert-text` then `editor/get-text`, should the second call reflect the insertion? Current plan: no -- all messages are queued and dispatched after the script returns. The script operates on a snapshot.
-
-   **Recommendation:** Snapshot model. Intermediate state is a source of bugs and makes the execution model harder to reason about.
+   Yes. Reads use the transaction's current text, cursors and selections. Commit only if all source revisions still match; otherwise report a conflict and discard the transaction.
 
 3. **How to handle multi-cursor in the API?**
    Options: (a) API always operates on primary cursor, multi-cursor is implicit; (b) API exposes cursor index parameter; (c) API auto-applies to all cursors.
@@ -795,8 +840,8 @@ The closest analog to our integration. Steel is a Scheme dialect embedded in a R
 | Decision | Options Considered | Chosen | Rationale |
 |----------|-------------------|--------|-----------|
 | Scripting language | Sema, Lua, Steel, WASM | Sema | Same author, native Rust, built-in sandbox |
-| Execution model | Sync, async, hybrid | Synchronous | Simpler, preserves Elm Architecture |
-| State access | Direct mutation, message queue, snapshot | Message queue + snapshot | Maintains architectural invariants |
+| Execution model | Blocking calls, cooperative host turns, dedicated owner thread | Cooperative runtime | Rendering continues while scripts await I/O |
+| State access | Direct mutation, queued-only snapshot, working transaction | Working transaction + commit message | Read-your-writes, rollback and one undo group |
 | Script discovery | Auto-scan dir, manifest file, init script | Init script imports | Explicit, predictable, follows Neovim model |
 | Hook model | Trait objects, closures, Sema lambdas | Sema lambdas in Vec | Simple, matches Emacs hook-as-list pattern |
 | Sandbox default | Permissive, restrictive | Restrictive | Security by default, opt-in to capabilities |
@@ -874,17 +919,17 @@ The following gaps were identified during review and have been incorporated into
 - **Multi-buffer API** -- `buffer/*` namespace added with `DocumentId` integer handles. Read-only access to any open buffer. Added to Phase 2.
 - **Layout/window API** -- `layout/*` namespace added, mapping directly to existing `LayoutMsg` variants (split, close, focus, tabs). Added to Phase 2.
 - **Filetype-specific config** -- `editor/set-option` and `editor/get-option` added. Combined with `:on-language-change` hook, scripts can set per-language settings. Added to Phase 2.
-- **Timeout/interruption** -- Sema already has a working step limit mechanism internally (`eval_step_limit`/`eval_steps` on `EvalContext`). Needs public API exposure (small upstream change). See `sema-lisp/docs/plans/2026-03-11-embedding-api-improvements.md`.
+- **Timeout/interruption** -- use the current cooperative runtime and root cancellation. The wrapper still needs a host-driving API. Instruction budgets do not bound a blocking native callback or compilation; test these separately.
 
 #### Remaining: Should Address Early
 
-**The snapshot model kills composition.** If a script calls `(editor/insert-text "foo")` then `(editor/get-text)`, the second call returns the *old* text because messages are queued and dispatched after the script returns. Scripts cannot build on intermediate results. Emacs and Neovim both let scripts see their own mutations immediately. The snapshot model is architecturally clean but practically crippling for anything beyond simple single-operation commands. A possible mitigation: apply text-only mutations to a working copy of the `Rope` mid-script (the Rope is cheap to clone due to shared tree nodes) while keeping non-text state (cursors, selections) snapshotted. This preserves the Elm Architecture for rendering while giving scripts readable intermediate text state.
+**Read-your-writes is required.** A queued-only snapshot would return old text after `editor/insert-text`. The transaction specified above includes text, cursors and selections together. Test sequential edits and reads, rollback on error, and rejection if the live document changes during suspension.
 
 #### Remaining: Nice to Have (Can Defer)
 
 **No custom UI / virtual text.** Neovim has floating windows, extmarks (virtual text, inline diagnostics), signs. Emacs has overlays and text properties. Our plan offers `editor/show-message` (status bar) and a deferred `editor/prompt`. Scripts cannot render inline annotations, diagnostic markers, code lenses, or any visual feedback beyond a status bar string.
 
-**No process/subprocess management.** Emacs has `start-process` with process sentinels. Neovim has `vim.fn.jobstart`. Running external tools (formatters, linters, grep) is a fundamental scripting use case. Our sandbox denies `SHELL` by default, and even if allowed, Sema's process functions are blocking -- no way to stream output from a long-running process without freezing the editor.
+**Process management needs host policy.** Sema provides cooperative `proc/*`, stream, task and channel operations. Token must drive the runtime, handle completion wakeups, and cancel resources on script shutdown. Deny process/shell capabilities by default; do not implement custom blocking callbacks on the render thread.
 
 **No interactive input beyond prompt.** Emacs has `completing-read` (fuzzy completion list), `y-or-n-p`, `read-char`. Neovim has `vim.ui.select` (picker), `vim.ui.input`. Our plan has only a deferred `editor/prompt` with no completion, no picker, no confirmation dialog. Scripts that need user choices have no mechanism.
 
@@ -896,11 +941,11 @@ These are constraints of the Sema language itself that limit what the scripting 
 
 #### Blockers for Future Features
 
-**No threading (`Rc`, not `Arc`).** Sema values are `!Send`. An `Interpreter` or `Value` cannot be moved to a background thread. This completely blocks background script execution (listed as a future feature). It also means any script that calls an external process or does file I/O will block the render loop. Neovim's Lua runs on the main thread too, but integrates with libuv's event loop for non-blocking I/O. Sema has no equivalent.
+**Thread ownership remains explicit.** Sema values use `Rc` and are `!Send`. Keep each interpreter and its values on one thread. This does not prohibit background execution: a dedicated thread can create and own an interpreter and exchange plain host messages. A render-thread host can instead use bounded runtime turns.
 
-**No coroutines or continuations.** Sema has `delay`/`force` (lazy thunks) but no `yield`/`resume` mechanism. Many scripting patterns need "do something, wait for user input, then continue." Emacs solves this with `recursive-edit`, Neovim with Lua coroutines + `vim.schedule`. Without coroutines, implementing `editor/prompt` with a callback is architecturally awkward -- the script cannot suspend mid-execution and resume when the user provides input.
+**Suspension is available.** Tasks, promises and channels support suspended operations. A prompt can be an explicit host request whose result resumes a task. General first-class continuations are not required for that design. The host must discard or cancel prompts when their script/root ends.
 
-**No async/event loop integration.** Sema's LLM functions use `tokio::block_on()` internally, but there is no way to hook into an *external* event loop (like winit's). Sema cannot register "call me back when this I/O completes" without blocking. For an editor that needs to keep rendering at 60fps, this is a fundamental mismatch for any I/O-heavy scripting use case.
+**Event-loop integration needs a Token adapter.** The lower-level interpreter exposes submission and bounded `drive_turn`. Connect completion wakeups and timer deadlines to winit, process results as messages, and keep drawing between turns. The public wrapper does not yet expose this interface; synchronous `eval_str` is not a substitute.
 
 #### Development Friction
 
@@ -920,15 +965,15 @@ Items marked with a checkmark have been incorporated into the implementation pha
 |----------|-----|----------|--------|
 | Must fix | Undo grouping | Plan | Addressed -- Phase 1 (engine) + Phase 2 (`editor/with-undo-group`) |
 | Must fix | Event data in hooks | Plan | Addressed -- Phase 4 (event maps passed to callbacks) |
-| Must fix | Timeout/interruption | Sema | Addressed -- mechanism exists, needs public API exposure (small upstream change) |
+| Must fix | Timeout/interruption | Host + Sema wrapper | Runtime exists; host-driving API and cancellation integration still required |
 | Must fix | Multi-buffer API | Plan | Addressed -- Phase 2 (`buffer/*` namespace with DocumentId handles) |
 | Must fix | Layout/window API | Plan | Addressed -- Phase 2 (`layout/*` namespace, maps to existing LayoutMsg) |
 | Must fix | Hook pattern filtering | Plan | Addressed -- Phase 4 (optional `{:pattern glob}` filter) |
 | Must fix | Filetype config from scripts | Plan | Addressed -- Phase 2 (`editor/set-option`, `editor/get-option`) |
-| Should fix | Snapshot vs live state | Plan | Open -- decide before Phase 2; consider Rope working copy for text mutations |
+| Must fix | Read-your-writes | Plan | Working-copy transaction; validate revisions and commit one undo group |
 | Should fix | Typed registration | Sema | Open -- upstream plan documented (`sema-lisp/docs/plans/2026-03-11-embedding-api-improvements.md`) |
 | Nice to have | Custom UI / virtual text | Plan | Deferred -- design API surface when needed |
-| Nice to have | Subprocess management | Plan + Sema | Deferred -- blocked by Sema async gap |
+| Nice to have | Subprocess management | Host | Runtime operations exist; host policy, wakeups and cancellation required |
 | Nice to have | Interactive input (picker, completion) | Plan | Deferred -- requires modal input system |
-| Nice to have | Coroutines | Sema | Deferred -- upstream feature request; not blocking MVP |
+| Nice to have | Suspended prompts | Host | Task/channel support exists; prompt lifecycle adapter required |
 | Nice to have | Dynamic library loading | Sema | Deferred -- upstream feature; not blocking MVP |
