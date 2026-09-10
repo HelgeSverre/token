@@ -596,8 +596,6 @@ pub fn render_problems_panel(
     let selection_bg = theme.selection_background.to_argb_u32();
     let selection_fg = theme.selection_foreground.to_argb_u32();
     let icon_color = theme.folder_icon.to_argb_u32();
-    let error_color = overlay.severity_error.to_argb_u32();
-    let warning_color = overlay.severity_warning.to_argb_u32();
     let dim_color = overlay.text_dim.to_argb_u32();
     let workspace_root = model.workspace_root();
 
@@ -621,9 +619,10 @@ pub fn render_problems_panel(
         .unwrap_or(model.problems_panel.scroll_offset);
     let base_x = content_rect.x as usize;
     let container_width = base_x + content_rect.width as usize;
-    // Ceil, not floor: draw() advances by the true fractional advance, so
-    // flooring undermeasures every width and overflows budgets rightward.
-    let char_w = painter.char_width().ceil() as usize;
+    let scale = model.metrics.scale_factor as f32;
+    let icon_width = (16.0 * scale).round() as usize;
+    let icon_gap = model.metrics.padding_medium;
+    let meta_size = 12.0 * scale;
 
     // Paint the drawn range (ceil — the partial bottom row is painted and
     // clipped by the panel scissor, so a clickable sliver is never blank).
@@ -651,6 +650,18 @@ pub fn render_problems_panel(
         } else {
             text_color
         };
+        let dim = if is_selected { selection_fg } else { dim_color };
+        let meta_y = row_y + row_height.saturating_sub(painter.line_height_for_size(meta_size)) / 2;
+        // Chevron hit testing still uses TreeRowLayout's original indicator
+        // column. File/severity icons get their own padded cell after it.
+        let icon_cell = |x: usize, width: usize, ink_size: f32| {
+            Rect::new(
+                x as f32 + (width as f32 - ink_size) / 2.0,
+                row_y as f32 + (row_height as f32 - ink_size) / 2.0,
+                ink_size,
+                ink_size,
+            )
+        };
 
         match row {
             ProblemsRow::File {
@@ -661,17 +672,34 @@ pub fn render_problems_panel(
                 let pos = tree.node_position(0, row_y);
                 let icon_x = pos.icon_x + base_x;
                 let text_x = pos.text_x + base_x;
-                let chevron = if *collapsed { "\u{25B8}" } else { "\u{25BE}" };
-                let chevron_color = if is_selected {
-                    selection_fg
-                } else {
-                    icon_color
-                };
-                painter.draw(frame, icon_x, pos.text_y, chevron, chevron_color);
-
-                let file_icon = crate::model::FileExtension::from_path(path).icon();
-                painter.draw(frame, text_x, pos.text_y, file_icon, icon_color);
-                let name_x = text_x + 2 * char_w;
+                {
+                    let mut icons = painter.with_font(FontRole::Code);
+                    icons.draw_icon(
+                        frame,
+                        icon_cell(icon_x, tree.indicator_width, 8.0 * scale),
+                        if *collapsed { '\u{25B8}' } else { '\u{25BE}' },
+                        if *collapsed { '>' } else { 'v' },
+                        dim,
+                    );
+                    if let Some(ch) = crate::model::FileExtension::from_path(path)
+                        .icon()
+                        .chars()
+                        .next()
+                    {
+                        icons.draw_icon(
+                            frame,
+                            icon_cell(text_x, icon_width, 14.0 * scale),
+                            ch,
+                            '?',
+                            if is_selected {
+                                selection_fg
+                            } else {
+                                icon_color
+                            },
+                        );
+                    }
+                }
+                let name_x = text_x + icon_width + icon_gap;
 
                 let name = path
                     .file_name()
@@ -685,23 +713,37 @@ pub fn render_problems_panel(
                         .to_string()
                 });
                 let suffix = match dir.filter(|d| !d.is_empty()) {
-                    Some(dir) => format!("  {dir} \u{b7} {count}"),
-                    None => format!("  {count}"),
+                    Some(dir) => format!("{dir} \u{b7} {count}"),
+                    None => count.to_string(),
                 };
                 let name_available = tree.available_text_width(container_width, name_x);
                 let name_display = painter.truncate_to_width(&name, name_available as f32);
                 painter.draw(frame, name_x, pos.text_y, &name_display, fg);
 
-                let suffix_x = name_x + painter.measure_width(&name_display).ceil() as usize;
+                let suffix_x = name_x
+                    + painter.measure_width(&name_display).ceil() as usize
+                    + tree.left_padding;
                 let suffix_available = tree.available_text_width(container_width, suffix_x);
-                let suffix_display = painter.truncate_to_width(&suffix, suffix_available as f32);
-                let dim = if is_selected { selection_fg } else { dim_color };
-                painter.draw(frame, suffix_x, pos.text_y, &suffix_display, dim);
+                let suffix_display = painter.truncate_sized(
+                    &suffix,
+                    meta_size,
+                    suffix_available as f32,
+                    super::helpers::EllipsisSide::End,
+                );
+                painter.draw_sized(
+                    frame,
+                    suffix_x,
+                    meta_y,
+                    &suffix_display,
+                    meta_size,
+                    0.0,
+                    dim,
+                );
             }
             ProblemsRow::Diagnostic { path, index } => {
                 let pos = tree.node_position(1, row_y);
                 let icon_x = pos.icon_x + base_x;
-                let text_x = pos.text_x + base_x;
+                let text_x = icon_x + icon_width + icon_gap;
 
                 let diagnostic = model
                     .lsp
@@ -712,37 +754,50 @@ pub fn render_problems_panel(
                     continue;
                 };
 
-                let mark = crate::model::diagnostic_mark(diagnostic.severity);
-                let (glyph, glyph_color) = match mark {
-                    crate::model::Mark::Error => ("\u{2717}", error_color),
-                    crate::model::Mark::Warning => ("\u{26A0}", warning_color),
-                    _ => ("\u{2022}", icon_color),
+                // One outlined Codicon family from the same Nerd Font used for
+                // file icons, rather than unrelated UI-font Unicode symbols.
+                let (glyph, fallback, glyph_color) = match diagnostic.severity {
+                    Some(lsp_types::DiagnosticSeverity::WARNING) => {
+                        ('\u{ea6c}', '!', overlay.severity_warning)
+                    }
+                    Some(lsp_types::DiagnosticSeverity::INFORMATION) => {
+                        ('\u{ea74}', 'i', overlay.severity_info)
+                    }
+                    Some(lsp_types::DiagnosticSeverity::HINT) => {
+                        ('\u{ea61}', '?', overlay.severity_hint)
+                    }
+                    _ => ('\u{ea87}', 'x', overlay.severity_error),
                 };
                 let glyph_color = if is_selected {
                     selection_fg
                 } else {
-                    glyph_color
+                    glyph_color.to_argb_u32()
                 };
-                painter.draw(frame, icon_x, pos.text_y, glyph, glyph_color);
+                painter.with_font(FontRole::Code).draw_icon(
+                    frame,
+                    icon_cell(icon_x, icon_width, 14.0 * scale),
+                    glyph,
+                    fallback,
+                    glyph_color,
+                );
 
                 let accessory = format!(
                     "{}:{}",
                     diagnostic.range.start.line + 1,
                     diagnostic.range.start.character + 1
                 );
-                // Fractional measure + right inset (symmetric with
-                // available_text_width's implicit left_padding right inset).
-                let accessory_width = painter.measure_width(&accessory);
+                let accessory = painter.truncate_sized(
+                    &accessory,
+                    meta_size,
+                    tree.available_text_width(container_width, text_x) as f32,
+                    super::helpers::EllipsisSide::End,
+                );
+                let accessory_width = painter.measure_sized(&accessory, meta_size, 0.0);
                 let right_inset = tree.left_padding as f32;
                 let accessory_x =
                     (content_rect.x + content_rect.width - right_inset - accessory_width)
                         .max(content_rect.x) as usize;
-                let accessory_color = if is_selected {
-                    selection_fg
-                } else {
-                    icon_color
-                };
-                painter.draw(frame, accessory_x, pos.text_y, &accessory, accessory_color);
+                painter.draw_sized(frame, accessory_x, meta_y, &accessory, meta_size, 0.0, dim);
 
                 let available = accessory_x.saturating_sub(text_x + tree.left_padding);
                 // Multi-line LSP messages would smear their later lines

@@ -6,6 +6,12 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Problems panel
+
+- Align file and severity icons in consistently sized cells with clear spacing
+  before diagnostic messages. Use matching error, warning, information, and hint
+  symbols, with smaller, subdued file details and line/column labels.
+
 ### Sema language support
 
 - Parse Unicode identifiers and numeric-tower literals, and refresh builtin and

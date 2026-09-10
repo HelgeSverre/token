@@ -975,6 +975,47 @@ impl<'a> TextPainter<'a> {
         self.glyph_cache.len()
     }
 
+    /// Fit and center an icon's visible ink, independent of its font bearings
+    /// and advance width. Fall back to a plain symbol if the configured font
+    /// lacks the icon; the caller supplies its icon font and padded cell.
+    pub(crate) fn draw_icon(
+        &mut self,
+        frame: &mut Frame,
+        cell: Rect,
+        ch: char,
+        fallback: char,
+        color: u32,
+    ) {
+        if cell.width <= 1.0 || cell.height <= 1.0 {
+            return;
+        }
+        let font = glyph_font(self.font, self.fallback_font, ch);
+        let (font, ch) = if font.lookup_glyph_index(ch) != 0 {
+            (font, ch)
+        } else {
+            (
+                glyph_font(self.font, self.fallback_font, fallback),
+                fallback,
+            )
+        };
+        let bounds = font.metrics(ch, 1.0).bounds;
+        if bounds.width <= 0.0 || bounds.height <= 0.0 {
+            return;
+        }
+        // Leave one physical pixel for rasterization rounding, not a font's
+        // arbitrary em-square padding. Keep the original glyph's aspect ratio.
+        let size = ((cell.width - 1.0) / bounds.width).min((cell.height - 1.0) / bounds.height);
+        let (metrics, bitmap) = self
+            .glyph_cache
+            .entry((ch, size.to_bits()))
+            .or_insert_with(|| font.rasterize(ch, size));
+        let x = (cell.x + (cell.width - metrics.width as f32) / 2.0).round() as isize;
+        let y = (cell.y + (cell.height - metrics.height as f32) / 2.0).round();
+        frame.push_clip(cell);
+        paint_glyph(frame, x, y, metrics, bitmap, color);
+        frame.pop_clip();
+    }
+
     /// Draw text at the specified position
     pub fn draw(&mut self, frame: &mut Frame, x: usize, y: usize, text: &str, color: u32) {
         let mut current_x = x as f32;
@@ -1000,29 +1041,14 @@ impl<'a> TextPainter<'a> {
 
             let glyph_top = baseline - metrics.height as f32 - metrics.ymin as f32;
 
-            for bitmap_y in 0..metrics.height {
-                for bitmap_x in 0..metrics.width {
-                    let bitmap_idx = bitmap_y * metrics.width + bitmap_x;
-                    if bitmap_idx < bitmap.len() {
-                        let alpha = bitmap[bitmap_idx];
-                        if alpha > 0 {
-                            let px = current_x.round() as isize
-                                + bitmap_x as isize
-                                + metrics.xmin as isize;
-                            let py = (glyph_top + bitmap_y as f32) as isize;
-
-                            if px >= 0 && py >= 0 {
-                                frame.blend_text_pixel(
-                                    px as usize,
-                                    py as usize,
-                                    color,
-                                    alpha as f32 / 255.0,
-                                );
-                            }
-                        }
-                    }
-                }
-            }
+            paint_glyph(
+                frame,
+                current_x.round() as isize + metrics.xmin as isize,
+                glyph_top,
+                metrics,
+                bitmap,
+                color,
+            );
 
             current_x += metrics.advance_width;
         }
@@ -1070,29 +1096,14 @@ impl<'a> TextPainter<'a> {
 
             let glyph_top = baseline - metrics.height as f32 - metrics.ymin as f32;
 
-            for bitmap_y in 0..metrics.height {
-                for bitmap_x in 0..metrics.width {
-                    let bitmap_idx = bitmap_y * metrics.width + bitmap_x;
-                    if bitmap_idx < bitmap.len() {
-                        let alpha = bitmap[bitmap_idx];
-                        if alpha > 0 {
-                            let px = current_x.round() as isize
-                                + bitmap_x as isize
-                                + metrics.xmin as isize;
-                            let py = (glyph_top + bitmap_y as f32) as isize;
-
-                            if px >= 0 && py >= 0 {
-                                frame.blend_text_pixel(
-                                    px as usize,
-                                    py as usize,
-                                    color,
-                                    alpha as f32 / 255.0,
-                                );
-                            }
-                        }
-                    }
-                }
-            }
+            paint_glyph(
+                frame,
+                current_x.round() as isize + metrics.xmin as isize,
+                glyph_top,
+                metrics,
+                bitmap,
+                color,
+            );
 
             // Integer advances: JetBrains Mono's advance is 0.6*size —
             // fractional below ~20px — and truncating a float pen makes
@@ -1231,32 +1242,49 @@ impl<'a> TextPainter<'a> {
 
             let glyph_top = baseline - metrics.height as f32 - metrics.ymin as f32;
 
-            for bitmap_y in 0..metrics.height {
-                for bitmap_x in 0..metrics.width {
-                    let bitmap_idx = bitmap_y * metrics.width + bitmap_x;
-                    if bitmap_idx < bitmap.len() {
-                        let alpha = bitmap[bitmap_idx];
-                        if alpha > 0 {
-                            let px = current_x.round() as isize
-                                + bitmap_x as isize
-                                + metrics.xmin as isize;
-                            let py = (glyph_top + bitmap_y as f32) as isize;
-
-                            if px >= 0 && py >= 0 {
-                                frame.blend_text_pixel(
-                                    px as usize,
-                                    py as usize,
-                                    color,
-                                    alpha as f32 / 255.0,
-                                );
-                            }
-                        }
-                    }
-                }
-            }
+            paint_glyph(
+                frame,
+                current_x.round() as isize + metrics.xmin as isize,
+                glyph_top,
+                metrics,
+                bitmap,
+                color,
+            );
 
             current_x += metrics.advance_width;
         }
+    }
+}
+
+fn paint_glyph(
+    frame: &mut Frame,
+    x: isize,
+    y: f32,
+    metrics: &fontdue::Metrics,
+    bitmap: &[u8],
+    color: u32,
+) {
+    for bitmap_y in 0..metrics.height {
+        for bitmap_x in 0..metrics.width {
+            let Some(&alpha) = bitmap.get(bitmap_y * metrics.width + bitmap_x) else {
+                continue;
+            };
+            let px = x + bitmap_x as isize;
+            let py = (y + bitmap_y as f32) as isize;
+            if alpha > 0 && px >= 0 && py >= 0 {
+                frame.blend_text_pixel(px as usize, py as usize, color, alpha as f32 / 255.0);
+            }
+        }
+    }
+}
+
+fn glyph_font<'a>(font: &'a Font, fallback: Option<&'a Font>, ch: char) -> &'a Font {
+    // UI families often omit shortcut arrows or command symbols. Use the
+    // editor face for missing glyphs, identically for measuring and painting.
+    if font.lookup_glyph_index(ch) == 0 {
+        fallback.unwrap_or(font)
+    } else {
+        font
     }
 }
 
@@ -1266,14 +1294,7 @@ fn rasterize(
     ch: char,
     size: f32,
 ) -> (fontdue::Metrics, Vec<u8>) {
-    // UI families often omit shortcut arrows or command symbols. Use the
-    // editor face for missing glyphs, identically for measuring and painting.
-    let font = if font.lookup_glyph_index(ch) == 0 {
-        fallback.unwrap_or(font)
-    } else {
-        font
-    };
-    font.rasterize(ch, size)
+    glyph_font(font, fallback, ch).rasterize(ch, size)
 }
 
 const KEYCAP_SIZE_LOGICAL: f32 = 11.0;
@@ -1873,6 +1894,80 @@ mod tests {
         );
         // Far outside all rings, untouched white.
         assert_eq!(frame.get_pixel(0, 0) & 0xFF, 0xFF);
+    }
+
+    #[test]
+    fn icon_ink_is_centered_and_contained_at_display_scales() {
+        let font = Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        let mut cache = super::super::GlyphCache::default();
+        let mut painter = TextPainter::new(&font, &mut cache, 14.0, 11.0, 8.0, 18);
+        for scale in [1.0, 1.25, 2.0] {
+            for ch in [
+                '\u{ea87}',
+                '\u{ea6c}',
+                '\u{ea74}',
+                '\u{ea61}',
+                '\u{f1617}',
+                '▾',
+            ] {
+                assert_ne!(font.lookup_glyph_index(ch), 0, "bundled icon {ch}");
+                let cell = Rect::new(10.0, 10.0, 14.0 * scale, 14.0 * scale);
+                let mut pixels = vec![0; 64 * 64];
+                painter.draw_icon(
+                    &mut Frame::new(&mut pixels, 64, 64),
+                    cell,
+                    ch,
+                    '?',
+                    0xffffffff,
+                );
+                let ink: Vec<_> = pixels
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, &pixel)| {
+                        (pixel != 0).then_some(((i % 64) as f32, (i / 64) as f32))
+                    })
+                    .collect();
+                assert!(!ink.is_empty(), "{ch} at {scale}");
+                for &(x, y) in &ink {
+                    assert!(x >= cell.x && x < cell.x + cell.width);
+                    assert!(y >= cell.y && y < cell.y + cell.height);
+                }
+                for (axis, origin, extent) in [(0, cell.x, cell.width), (1, cell.y, cell.height)] {
+                    let coordinate = |&(x, y): &(f32, f32)| if axis == 0 { x } else { y };
+                    let min = ink.iter().map(coordinate).fold(f32::INFINITY, f32::min);
+                    let max = ink.iter().map(coordinate).fold(f32::NEG_INFINITY, f32::max);
+                    assert!(
+                        ((min + max + 1.0) / 2.0 - (origin + extent / 2.0)).abs() <= 1.0,
+                        "{ch} must be visually centered at {scale}"
+                    );
+                }
+            }
+        }
+        let ui_font = Font::from_bytes(
+            include_bytes!("../../assets/Inter-Regular.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        assert_eq!(ui_font.lookup_glyph_index('\u{ea6c}'), 0);
+        let mut ui_cache = super::super::GlyphCache::default();
+        let mut ui_painter = TextPainter::new(&ui_font, &mut ui_cache, 14.0, 11.0, 8.0, 18);
+        let mut pixels = vec![0; 32 * 32];
+        ui_painter.draw_icon(
+            &mut Frame::new(&mut pixels, 32, 32),
+            Rect::new(4.0, 4.0, 14.0, 14.0),
+            '\u{ea6c}',
+            '!',
+            0xffffffff,
+        );
+        assert!(pixels.iter().any(|&pixel| pixel != 0));
+        assert!(
+            ui_cache.keys().all(|&(ch, _)| ch == '!'),
+            "missing icons must use the supplied fallback"
+        );
     }
 
     #[test]
