@@ -35,6 +35,8 @@ All notable changes to rust-editor are documented in this file.
 - Go files automatically use `gopls` when installed, with `go.work`/`go.mod`
   project-root detection and the standard Language Servers settings and
   `lsp.servers.gopls` configuration overrides.
+- Synchronize open Go buffers with the server so hover and completion work after
+  initialization instead of silently returning no results.
 
 ### Code folding
 

@@ -30,6 +30,7 @@ pub fn language_id_str(language: LanguageId) -> Option<&'static str> {
     use LanguageId::*;
     Some(match language {
         Rust => "rust",
+        Go => "go",
         TypeScript => "typescript",
         Tsx => "typescriptreact",
         JavaScript => "javascript",
@@ -130,6 +131,7 @@ mod tests {
     #[test]
     fn language_id_maps_ts_family_to_lsp_conventional_strings() {
         assert_eq!(language_id_str(LanguageId::Rust), Some("rust"));
+        assert_eq!(language_id_str(LanguageId::Go), Some("go"));
         assert_eq!(language_id_str(LanguageId::TypeScript), Some("typescript"));
         assert_eq!(language_id_str(LanguageId::Tsx), Some("typescriptreact"));
         assert_eq!(language_id_str(LanguageId::JavaScript), Some("javascript"));
@@ -141,6 +143,19 @@ mod tests {
     fn language_id_is_none_for_unregistered_languages() {
         assert_eq!(language_id_str(LanguageId::PlainText), None);
         assert_eq!(language_id_str(LanguageId::Markdown), None);
+    }
+
+    #[test]
+    fn every_registered_server_language_can_sync_documents() {
+        for server in crate::lsp::all_server_defs() {
+            for &language in crate::lsp::languages_for_server(server.id) {
+                assert!(
+                    language_id_str(language).is_some(),
+                    "{} cannot sync {language:?} documents",
+                    server.id
+                );
+            }
+        }
     }
 
     #[test]

@@ -327,6 +327,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
             app.process_async_messages();
+            app.check_lsp_completion_debounces();
             if cond(app) {
                 return true;
             }
@@ -335,6 +336,72 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    /// Exercise the real provider without requiring an interactive window.
+    #[test]
+    #[ignore = "requires gopls in GOPLS_SMOKE_BINARY and a Go toolchain"]
+    fn gopls_live_hover_and_completion() {
+        let binary = std::env::var("GOPLS_SMOKE_BINARY").expect("set GOPLS_SMOKE_BINARY");
+        let dir = tempfile::tempdir_in("target").unwrap();
+        std::fs::write(
+            dir.path().join("go.mod"),
+            "module example.com/smoke\n\ngo 1.23\n",
+        )
+        .unwrap();
+        let path = dir.path().canonicalize().unwrap().join("smoke.go");
+        std::fs::write(
+            &path,
+            "package smoke\n\nfunc Add(a, b int) int { return a+b }\n\nvar Answer = Add(20, 22)\n",
+        )
+        .unwrap();
+        let mut app = app();
+        app.model.config = token::config::EditorConfig::default();
+        app.model.config.lsp.servers.insert(
+            "gopls".into(),
+            token::config::LspServerOverride {
+                command: Some(binary),
+                ..Default::default()
+            },
+        );
+        let document_id = app.model.document().id.unwrap();
+        let mut document = token::model::Document::from_file(path.clone()).unwrap();
+        document.id = Some(document_id);
+        app.model
+            .editor_area
+            .documents
+            .insert(document_id, document);
+        app.process_cmd(Cmd::LspEnsureServer {
+            language: LanguageId::Go,
+            file_path: path.clone(),
+        });
+        app.process_cmd(Cmd::LspDidOpen {
+            document_id,
+            file_path: path,
+            language: LanguageId::Go,
+        });
+        assert!(pump_until(&mut app, |app| app
+            .model
+            .lsp
+            .servers
+            .values()
+            .any(|state| *state == lsp::ServerState::Ready)));
+        app.model.editor_mut().cursors[0] = token::model::Cursor::at(4, 14);
+        app.model.editor_mut().clear_selection();
+        app.process_automation_msg(Msg::Lsp(LspMsg::ShowHover));
+        let hover = pump_until(&mut app, |app| app.model.ui.hover_card.is_some());
+        app.process_automation_msg(Msg::Completion(token::messages::CompletionMsg::TriggerMenu));
+        let completion = pump_until(&mut app, |app| {
+            app.model.ui.completion_menu.as_ref().is_some_and(|menu| {
+                menu.items.iter().any(|item| {
+                    item.source == token::completion::menu::MenuSourceId::Lsp
+                        && item.label.starts_with("Add")
+                })
+            })
+        });
+        app.teardown_all_lsp_servers();
+        assert!(hover, "gopls did not return hover documentation for Add");
+        assert!(completion, "gopls did not suggest Add for its A prefix");
     }
 
     /// Opt-in integration test: runs only this fixture, never a user's program.
