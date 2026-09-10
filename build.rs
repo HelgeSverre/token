@@ -90,7 +90,10 @@ fn compile_windows_resources() -> Result<(), Box<dyn std::error::Error>> {
     let version = env!("CARGO_PKG_VERSION");
     let numeric_version = windows_version(version);
     let icon_path = std::path::PathBuf::from(std::env::var("OUT_DIR")?).join("token.ico");
-    let icon = image::load_from_memory(include_bytes!("assets/icon.png"))?.to_rgba8();
+    // ICO entries are limited to 256 pixels in either dimension.
+    let icon = image::load_from_memory(include_bytes!("assets/icon.png"))?
+        .resize(256, 256, image::imageops::FilterType::Lanczos3)
+        .into_rgba8();
     image::DynamicImage::ImageRgba8(icon).save_with_format(&icon_path, image::ImageFormat::Ico)?;
 
     let mut res = winres::WindowsResource::new();

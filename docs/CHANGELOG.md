@@ -6,6 +6,12 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Windows packaging
+
+- Fix MSI generation while retaining the bundled Inter font license, and resize
+  the Windows executable icon to the ICO format's supported dimensions so its
+  icon and version resources are embedded correctly.
+
 ### Automation
 
 - Add window-local focus, pointer and pixel/line wheel input to the automation
