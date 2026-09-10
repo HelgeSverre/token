@@ -3,7 +3,7 @@ import { Picture, getImage } from 'astro:assets';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { showcase } from '../data/showcase';
 
-const tags = ['All', 'Multi-cursor', 'Splits', 'CSV', 'Preview', 'Themes', 'Languages', 'Workspace', 'UI'];
+const tags = ['All', ...new Set(showcase.flatMap((item) => item.tags))];
 
 // Pre-generate optimized full-size images for the lightbox
 const lightboxImages = await Promise.all(
@@ -24,7 +24,7 @@ const clientItems = showcase.map((item) => ({
 }));
 ---
 
-<SiteLayout title="Showcase — Token" description="Token editor in action — screenshots of themes, multi-cursor editing, split views, and more.">
+<SiteLayout title="Showcase — Token" description="Token editor in action — language-server completion, documentation, inline suggestions, diagnostics, split views, and themes.">
 
 <section class="showcase-page" data-items={JSON.stringify(clientItems)}>
 
@@ -36,6 +36,8 @@ const clientItems = showcase.map((item) => ({
     </div>
     <span class="sc-count">{showcase.length} screenshots</span>
   </div>
+
+  <p class="sc-intro">Native screenshots with reproducible examples. Language features depend on the installed server; inline suggestions use a provider you configure.</p>
 
   <!-- Tag filter bar -->
   <div class="sc-filters">
@@ -281,6 +283,14 @@ const clientItems = showcase.map((item) => ({
   }
 
   /* ── Tag filter bar ─────────────────────────────────────── */
+  .sc-intro {
+    max-width: 72ch;
+    margin: 0 0 var(--space-6);
+    color: var(--fg-muted);
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+
   .sc-filters {
     display: flex;
     flex-wrap: wrap;

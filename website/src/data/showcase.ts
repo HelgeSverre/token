@@ -29,6 +29,14 @@ import imgHtmlPreview from '../assets/screenshots/screenshot-showcase-html-previ
 import imgFractalSplits from '../assets/screenshots/screenshot-showcase-fractal-splits.png';
 import imgDocumentation from '../assets/screenshots/screenshot-showcase-documentation.png';
 import imgSettings from '../assets/screenshots/screenshot-showcase-settings.png';
+import imgCompletion from '../assets/screenshots/screenshot-showcase-completion.png';
+import imgSignatureHelp from '../assets/screenshots/screenshot-showcase-signature-help.png';
+import imgDiagnostics from '../assets/screenshots/screenshot-showcase-diagnostics.png';
+import imgGhostText from '../assets/screenshots/screenshot-showcase-ghost-text.png';
+import imgFolding from '../assets/screenshots/screenshot-showcase-folding.png';
+import imgLanguageServers from '../assets/screenshots/screenshot-showcase-language-servers.png';
+import imgFileConflict from '../assets/screenshots/screenshot-file-conflict.png';
+import imgTerminal from '../assets/screenshots/screenshot-showcase-terminal.png';
 
 export interface ShowcaseItem {
   id: string;
@@ -37,17 +45,67 @@ export interface ShowcaseItem {
   description: string;
   tags: string[];
   feature?: string;
+  homepageLabel?: string;
 }
 
 export const showcase: ShowcaseItem[] = [
+  {
+    id: 'showcase-completion',
+    src: imgCompletion,
+    title: 'Completions That Know Your Code',
+    description:
+      'Explore methods for a Rust HashMap with signatures and documentation beside the selected completion. Language-server results keep their semantic ordering instead of mixing in unrelated buffer words.',
+    tags: ['LSP', 'Languages'],
+    feature: 'Ctrl+Space complete · Enter accept',
+    homepageLabel: 'Completion',
+  },
+  {
+    id: 'showcase-ghost-text',
+    src: imgGhostText,
+    title: 'Preview the Next Edit',
+    description:
+      'Inline suggestions preview several lines of code without changing your file. Accept the whole suggestion, take the next word, or cycle alternatives. Requires a configured inline-suggestion provider; the example shown is a reproducible fixture.',
+    tags: ['Inline suggestions', 'Languages'],
+    feature: 'Tab accept · ⌘+→ next word · ⌥+[ / ] alternatives',
+    homepageLabel: 'Ghost text',
+  },
   {
     id: 'showcase-documentation',
     src: imgDocumentation,
     title: 'Documentation at the Cursor',
     description:
       'Read signatures, syntax-highlighted examples, and formatted language-server documentation without leaving your code. Longer cards scroll and expand.',
-    tags: ['UI', 'Languages'],
+    tags: ['LSP', 'UI', 'Languages'],
     feature: '⌘+⇧+D show documentation · F1 expand long cards',
+    homepageLabel: 'Documentation',
+  },
+  {
+    id: 'showcase-signature-help',
+    src: imgSignatureHelp,
+    title: 'The Right Argument, in Context',
+    description:
+      'Go signature help highlights the active parameter and explains the values a function expects. A compact calltip keeps the call and surrounding code visible, here in GitHub Light.',
+    tags: ['LSP', 'Languages', 'Themes'],
+    feature: '⌘+P signature help',
+  },
+  {
+    id: 'showcase-diagnostics',
+    src: imgDiagnostics,
+    title: 'From Error to Source',
+    description:
+      'Language-server errors and warnings appear in the gutter, under the affected code, and in the Problems panel. Review messages by file and jump straight to the location that needs attention.',
+    tags: ['LSP', 'Workspace'],
+    feature: 'F2 next diagnostic · ⇧+F2 previous',
+    homepageLabel: 'Diagnostics',
+  },
+  {
+    id: 'showcase-folding',
+    src: imgFolding,
+    title: 'Keep the Structure, Hide the Detail',
+    description:
+      'Collapse finished methods while keeping the code you are changing expanded. Gutter chevrons and hidden-line badges show what is folded, and Outline keeps definitions within reach. Each split remembers its own folds.',
+    tags: ['Editing', 'Languages', 'Workspace'],
+    feature: 'Click a gutter chevron to fold or expand',
   },
   {
     id: 'showcase-settings',
@@ -57,6 +115,33 @@ export const showcase: ShowcaseItem[] = [
       'Browse preferences by category and adjust editing behavior, appearance, and language-server options in place. Keymaps and themes remain configurable in YAML.',
     tags: ['UI'],
     feature: '⌘+, open settings',
+    homepageLabel: 'Settings',
+  },
+  {
+    id: 'showcase-language-servers',
+    src: imgLanguageServers,
+    title: 'Language Servers, Your Way',
+    description:
+      'Enable or disable gopls for Go and inspect its configured executable in the dedicated preferences page. Command overrides, arguments, and initialization options live in YAML. Language servers are separate tools installed on your machine.',
+    tags: ['LSP', 'UI'],
+    feature: '⌘+, open settings · LSP category',
+  },
+  {
+    id: 'file-conflict',
+    src: imgFileConflict,
+    title: 'Outside Changes Stay Visible',
+    description:
+      'When another program changes a file, Token asks how to resolve the conflict before overwriting it. Keep editing, reload the disk version, overwrite explicitly, or save your work elsewhere.',
+    tags: ['Workspace', 'Editing'],
+  },
+  {
+    id: 'showcase-terminal',
+    src: imgTerminal,
+    title: 'A Terminal for Each Task',
+    description:
+      'Keep a server, requests, and a shell in separate terminal tabs. Select and copy output without sending input to the shell; hold Cmd on macOS or Ctrl elsewhere to follow web links.',
+    tags: ['Terminal', 'Workspace'],
+    feature: '⌘+C copy selection · Cmd/Ctrl+click open link',
   },
   {
     id: 'hero',
@@ -83,6 +168,7 @@ export const showcase: ShowcaseItem[] = [
     description:
       'Three horizontal split panes showing Rust, TypeScript, and Python side by side. Each pane has its own viewport and scroll position.',
     tags: ['Splits', 'Languages'],
+    homepageLabel: 'Split views',
   },
   {
     id: 'csv',
@@ -207,6 +293,7 @@ export const showcase: ShowcaseItem[] = [
     description:
       'Workspace sidebar combined with split editing — Rust and TypeScript side by side with the full project tree visible.',
     tags: ['Workspace', 'Splits'],
+    homepageLabel: 'Workspace',
   },
   {
     id: 'showcase-command-palette',
@@ -216,15 +303,17 @@ export const showcase: ShowcaseItem[] = [
       'Search commands by name, see their keyboard shortcuts, and run an action without leaving the editor.',
     tags: ['UI'],
     feature: '⌘+⇧+A open command palette',
+    homepageLabel: 'Command palette',
   },
   {
     id: 'showcase-find-replace',
     src: imgFindReplace,
     title: 'Find & Replace',
     description:
-      'Find and replace dialog with case-sensitive search. Supports regex, whole word matching, and replace-all.',
+      'Search and replace in a docked bar beneath the active pane’s tabs while keeping the editor available. Use regex, whole-word or case-sensitive matching and replace one result or all of them.',
     tags: ['UI'],
     feature: '⌘+F find & replace',
+    homepageLabel: 'Find & replace',
   },
   {
     id: 'showcase-goto-line',
@@ -258,6 +347,7 @@ export const showcase: ShowcaseItem[] = [
     title: 'CSV + Code Split',
     description:
       'CSV spreadsheet view side by side with Rust source code. View data and implementation together in a single workspace.',
+    homepageLabel: 'CSV + Code',
     tags: ['CSV', 'Splits'],
   },
   {
@@ -268,6 +358,7 @@ export const showcase: ShowcaseItem[] = [
       'Live markdown preview alongside the source file. Headings, lists, and code blocks render in real time as you type.',
     tags: ['Preview'],
     feature: '⌘+⇧+V toggle preview',
+    homepageLabel: 'Live preview',
   },
   {
     id: 'showcase-html-preview',
