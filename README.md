@@ -40,6 +40,12 @@ just dev      # Run debug build (faster compile)
 just watch    # Start bacon watch mode
 ```
 
+Windows MSI packaging requires Windows, the Rust MSVC toolchain, PowerShell 7,
+and WiX Toolset 3.14 (`candle.exe`/`light.exe` on PATH, or the installation directory
+in `WIX`). Run `just bundle-windows`; the installer is written to
+`target/x86_64-pc-windows-msvc/release/bundle/msi/Token.msi`. The CI-only smoke script
+installs and uninstalls the package, so run it only on a disposable Windows system.
+
 ---
 
 ## Quick Start

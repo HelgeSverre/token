@@ -66,13 +66,13 @@ just lint
 
 ## Before publishing
 
-- [Hosted CI](https://github.com/HelgeSverre/token/actions/runs/34483137098)
-  passed on `38e94bf`. [Packaging](https://github.com/HelgeSverre/token/actions/runs/34483137003)
-  passed for Linux and both macOS targets. Windows compiled, but MSI generation
-  failed because cargo-bundle rejected `Inter-OFL.txt` as a Component `KeyPath`.
-  Windows also warned that the 512-pixel icon exceeded the ICO encoder's
-  256-pixel limit. Resolve these packaging issues and recheck the final source
-  revision before publishing.
+- [Hosted CI](https://github.com/HelgeSverre/token/actions/runs/34491028145)
+  passed on non-release revision `235093e`. [Packaging](https://github.com/HelgeSverre/token/actions/runs/34491767089)
+  passed on `531a854` for all four targets, including native Windows MSI
+  installation, payload/resource checks and uninstall. The packaging blocker is
+  closed; see the Windows follow-up below. Recheck the final release revision
+  before publishing: these hosted builds exclude the local version bump and
+  automation-input changes.
 - The input-handler checks below now cover focus-loss saving, scrolling, drag
   capture and Find hit testing through the running app's bridge. OS event
   delivery, perceived trackpad smoothness and native LSP Configure pointer
@@ -112,3 +112,64 @@ The rebuilt macOS `.app` also passed the same complete smoke check. Its local
 JSON report is `target/verification/input-smoke/run-k7tiNB/report.json`. All five
 final-API runs exited normally; the native mouse-interleaving failures above
 were from the superseded single-event API, not retried into a passing result.
+
+## Windows MSI follow-up
+
+`9c973d9` fixes the two failures identified in the earlier Windows build:
+
+- cargo-bundle 0.9.0 uses resource filenames verbatim as MSI `File` keys and
+  Component `KeyPath` identifiers. Rename `Inter-OFL.txt` to `Inter_OFL.txt` in
+  both bundle metadata blocks, cargo-dist's includes and the README link. The
+  license is byte-identical; it is not removed from distribution.
+- Resize the executable's icon to 256 pixels before ICO encoding. Previously
+  the oversized image aborted resource creation before `winres` could embed
+  either the icon or version metadata.
+
+The first native [verification run](https://github.com/HelgeSverre/token/actions/runs/34487928868)
+on non-release revision `9d9ed1f` successfully generated the MSI without the icon
+warning. However, its new install smoke check failed with Windows Installer error
+1620: the experimental backend's output was not accepted as a valid package.
+Successful archive generation was therefore not sufficient to close this blocker.
+
+`606b3f6` replaces that backend with WiX Toolset 3.14, already installed on the
+hosted Windows runner. The shared PowerShell packaging script builds only Token,
+takes the exact generated ICO path from Cargo's build-script output, and invokes
+WiX compilation/linking with validation enabled. The package contains the
+executable, Credits, MIT license and both font licenses, plus a standard directory
+selection dialog and Start menu shortcut. It has a stable upgrade identity.
+WiX linking also caught a redundant `ARPNOMODIFY` property already supplied by
+the standard dialog; `78c909a` removes that duplicate.
+
+The Windows Build job installs the MSI to an isolated path containing spaces,
+compares all five installed payload files against their source hashes, checks
+embedded product/version metadata, and uninstalls the package. Installer logs are
+retained as CI artifacts even if the smoke check fails. The smoke script is
+intended only for disposable Windows runners.
+
+`just bundle-windows` now calls the same WiX packaging script as CI. The old ZIP
+recipe could rename a host-native executable to `token.exe`; it has been removed.
+
+Local verification passed: 2,699 tests, seven skipped; two doctests, six ignored;
+strict Clippy, formatting, actionlint, PowerShell syntax parsing and WiX schema
+validation using .NET's schema validator. The system libxml validator could not
+compile WiX's schema regexes; native WiX linking/validation remained enabled.
+
+Final [packaging verification](https://github.com/HelgeSverre/token/actions/runs/34491767089)
+on non-release revision `531a854` passed all four targets. Windows installed the
+MSI successfully, verified all five payload hashes and embedded Token 0.6.0
+product/version resources, then uninstalled successfully and confirmed the
+executable was removed. [Standard CI](https://github.com/HelgeSverre/token/actions/runs/34491028145)
+passed on `235093e`; the only subsequent implementation change was removal of the
+duplicate WiX property. Interactive installer dialogs, upgrade scenarios and
+Windows application interaction were not exercised by this quiet-install check.
+WiX emitted ICE61 because same-version replacement is explicitly enabled; this
+avoids registering rebuilt packages of the same three-part version side by side.
+Upgrade/downgrade behavior still needs its own verification before shipping.
+
+The verified MSI is saved locally at
+`target/verification/windows-msi-artifact/x86_64-pc-windows-msvc/release/bundle/msi/Token.msi`.
+Its metadata identifies an x64/en-US package built by WiX 3.14.1.8722.
+
+The verification branch excluded the local version bump and automation-input
+changes. MSI files remain Build workflow artifacts; the release-publishing
+workflow is unchanged. No release tag or publication was made.
