@@ -1,0 +1,50 @@
+name: showcase-diagnostics
+width: 2000
+height: 1200
+scale: 2.0
+theme: fleet-dark
+workspace:
+  root: .
+  sidebar_visible: false
+files:
+  - path: examples/pricing.rs
+    cursor_line: 10
+    cursor_column: 16
+    content: |
+      struct Product {
+          name: String,
+          price: u32,
+      }
+
+      fn total(products: &[Product]) -> u32 {
+          products.iter().map(|product| product.price).sum()
+      }
+
+      fn main() {
+          let tax = "25";
+          let products = vec![
+              Product { name: "Keyboard".into(), price: 129 },
+              Product { name: "Mouse".into(), price: 59 },
+          ];
+
+          let subtotal = total(&products);
+          let grand_total = subtotal + tax;
+          println!("Total: ${grand_total}");
+      }
+lsp:
+  problems: true
+  diagnostics:
+    - range:
+        start: { line: 17, character: 33 }
+        end: { line: 17, character: 36 }
+      severity: 1
+      source: rust-analyzer
+      code: E0277
+      message: "cannot add `&str` to `u32`: the trait `Add<&str>` is not implemented for `u32`"
+    - range:
+        start: { line: 1, character: 4 }
+        end: { line: 1, character: 8 }
+      severity: 2
+      source: rust-analyzer
+      code: dead_code
+      message: "field `name` is never read"

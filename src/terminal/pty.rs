@@ -64,41 +64,43 @@ impl PtyHandle {
     }
 }
 
-#[cfg(any(test, debug_assertions))]
 impl PtyHandle {
-    pub fn new_for_test() -> (Self, mpsc::Receiver<Vec<u8>>) {
+    /// In-memory transport for headless rendering and tests. No process, file
+    /// descriptor or worker is created; writes can be inspected by the receiver.
+    pub fn headless() -> (Self, mpsc::Receiver<Vec<u8>>) {
         let (write_tx, write_rx) = mpsc::channel();
         (
             Self {
-                master: Box::new(TestMasterPty),
+                master: Box::new(HeadlessMasterPty),
                 write_tx,
-                child_killer: Box::new(TestChildKiller),
+                child_killer: Box::new(HeadlessChildKiller),
             },
             write_rx,
         )
     }
+
+    #[cfg(any(test, debug_assertions))]
+    pub fn new_for_test() -> (Self, mpsc::Receiver<Vec<u8>>) {
+        Self::headless()
+    }
 }
 
-#[cfg(any(test, debug_assertions))]
 #[derive(Debug)]
-struct TestChildKiller;
+struct HeadlessChildKiller;
 
-#[cfg(any(test, debug_assertions))]
-impl portable_pty::ChildKiller for TestChildKiller {
+impl portable_pty::ChildKiller for HeadlessChildKiller {
     fn kill(&mut self) -> std::io::Result<()> {
         Ok(())
     }
 
     fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> {
-        Box::new(TestChildKiller)
+        Box::new(HeadlessChildKiller)
     }
 }
 
-#[cfg(any(test, debug_assertions))]
-struct TestMasterPty;
+struct HeadlessMasterPty;
 
-#[cfg(any(test, debug_assertions))]
-impl MasterPty for TestMasterPty {
+impl MasterPty for HeadlessMasterPty {
     fn resize(&self, _size: PtySize) -> Result<(), anyhow::Error> {
         Ok(())
     }

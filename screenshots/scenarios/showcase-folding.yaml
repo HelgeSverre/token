@@ -1,0 +1,50 @@
+name: showcase-folding
+width: 2200
+height: 1100
+scale: 2.0
+theme: fleet-dark
+outline: true
+files:
+  - path: examples/router.rs
+    cursor_line: 23
+    cursor_column: 8
+    collapsed_lines: [7, 12, 17]
+    content: |
+      use std::collections::HashMap;
+
+      struct Router {
+          routes: HashMap<String, String>,
+      }
+
+      impl Router {
+          fn new() -> Self {
+              let routes = HashMap::new();
+              Self { routes }
+          }
+
+          fn register(&mut self, path: &str, handler: &str) {
+              self.routes.insert(path.to_owned(), handler.to_owned());
+              println!("Registered {path}");
+          }
+
+          fn resolve(&self, path: &str) -> Option<&String> {
+              let normalized = path.trim_end_matches('/');
+              self.routes.get(normalized)
+          }
+
+          fn paths(&self) -> Vec<&str> {
+              let mut paths: Vec<_> = self.routes.keys().map(String::as_str).collect();
+              paths.sort_unstable();
+              paths
+          }
+      }
+
+      fn main() {
+          let mut router = Router::new();
+          router.register("/", "home");
+          router.register("/products", "catalog");
+
+          for path in router.paths() {
+              println!("{path}");
+          }
+      }

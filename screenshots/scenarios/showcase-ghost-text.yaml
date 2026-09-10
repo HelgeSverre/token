@@ -1,0 +1,39 @@
+name: showcase-ghost-text
+width: 1800
+height: 1100
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: examples/search.ts
+    cursor_line: 10
+    cursor_column: 4
+    content: |
+      type SearchOptions = {
+          query: string;
+          page?: number;
+          limit?: number;
+      };
+
+      // Build a URL with only the parameters the caller supplies.
+      export function searchUrl(options: SearchOptions): string {
+          const url = new URL("https://example.com/search");
+
+          
+          return url.toString();
+      }
+
+      const url = searchUrl({ query: "mechanical keyboard", limit: 20 });
+      console.log(url);
+inline_suggestion:
+  - |-
+    url.searchParams.set("q", options.query);
+        if (options.page !== undefined) {
+            url.searchParams.set("page", String(options.page));
+        }
+        if (options.limit !== undefined) {
+            url.searchParams.set("limit", String(options.limit));
+        }
+  - |-
+    url.searchParams.set("q", options.query);
+        url.searchParams.set("page", String(options.page ?? 1));
+        url.searchParams.set("limit", String(options.limit ?? 20));

@@ -1,0 +1,79 @@
+name: showcase-completion
+width: 2200
+height: 1300
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: examples/catalog.rs
+    cursor_line: 14
+    cursor_column: 12
+    content: |
+      use std::collections::HashMap;
+
+      #[derive(Debug)]
+      struct Product {
+          name: String,
+          price: u32,
+      }
+
+      fn main() {
+          let mut catalog = HashMap::new();
+          catalog.insert("keyboard", Product {
+              name: "Mechanical keyboard".into(),
+              price: 129,
+          });
+          catalog.
+      }
+lsp:
+  completion:
+    query_start_column: 12
+    items:
+      - label: get
+        kind: 2
+        detail: "Option<&Product>"
+        sortText: "01"
+        documentation:
+          kind: markdown
+          value: |
+            ```rust
+            fn get(&self, key: &str) -> Option<&Product>
+            ```
+
+            Returns a reference to the value corresponding to the key.
+
+            The key may be any borrowed form of the map's key type.
+            Missing keys return `None` without changing the map.
+
+            ```rust
+            if let Some(item) = catalog.get("keyboard") {
+                println!("{}: ${}", item.name, item.price);
+            }
+            ```
+      - label: get_mut
+        kind: 2
+        detail: "Option<&mut Product>"
+        sortText: "02"
+      - label: contains_key
+        kind: 2
+        detail: bool
+        sortText: "03"
+      - label: entry
+        kind: 2
+        detail: "Entry<&str, Product>"
+        sortText: "04"
+      - label: insert
+        kind: 2
+        detail: "Option<Product>"
+        sortText: "05"
+      - label: keys
+        kind: 2
+        detail: "Keys<&str, Product>"
+        sortText: "06"
+      - label: values
+        kind: 2
+        detail: "Values<&str, Product>"
+        sortText: "07"
+      - label: len
+        kind: 2
+        detail: usize
+        sortText: "08"

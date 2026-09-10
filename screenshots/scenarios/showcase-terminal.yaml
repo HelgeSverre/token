@@ -1,0 +1,49 @@
+name: showcase-terminal
+width: 2000
+height: 1200
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: examples/server.go
+    cursor_line: 8
+    cursor_column: 4
+    content: |
+      package main
+
+      import (
+          "fmt"
+          "net/http"
+      )
+
+      func main() {
+          http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+              fmt.Fprintln(w, "Hello from Token!")
+          })
+
+          fmt.Println("Listening on http://localhost:8080")
+          http.ListenAndServe(":8080", nil)
+      }
+terminal:
+  sessions:
+    - title: Server
+      output: |
+        $ go run server.go
+        Listening on http://localhost:8080
+    - title: Requests
+      output: |
+        $ curl -i http://localhost:8080
+        HTTP/1.1 200 OK
+        Content-Type: text/plain; charset=utf-8
+        Content-Length: 18
+
+        Hello from Token!
+
+        $
+      selection:
+        anchor_line: 5
+        anchor_column: 0
+        head_line: 5
+        head_column: 16
+    - title: Shell
+      output: "$ "
+  active: 1

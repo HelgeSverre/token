@@ -1,13 +1,35 @@
 name: showcase-documentation
 width: 1800
-height: 1400
+height: 1100
 scale: 2.0
 theme: fleet-dark
 files:
-  - path: samples/syntax/sample.sema
-    scroll_to: 96
-    cursor_line: 122
+  - path: examples/frequencies.sema
+    cursor_line: 15
     cursor_column: 10
+    content: |
+      ;; Count words without mutating the input collection.
+
+      (define words
+        (list "the" "cat" "sat" "on" "the" "mat"))
+
+      (define scores {:ada 10 :linus 7})
+      (define updated
+        (map/update scores :ada (fn (n) (+ n 1))))
+
+      (println updated)
+      ;; => {:ada 11 :linus 7}
+
+      (define (frequencies items)
+        (fold
+          (fn (counts word)
+            (map/update counts word (fn (n) (+ (or n 0) 1))))
+          {}
+          items))
+
+      (println (frequencies words))
+      ;; => {"the" 2 "cat" 1 "sat" 1 "on" 1 "mat" 1}
+lsp: {}
 hover: |
   ```sema
   (map/update m key f) → map
@@ -24,3 +46,11 @@ hover: |
 
   If the key is **absent**, `f` receives `nil`. For nested paths,
   use `map/update-in`.
+
+  The function is applied once. Return the replacement value from `f`;
+  the result of `map/update` is a new map, not the updated value alone.
+
+  ```sema
+  (map/update {} :visits (fn (n) (+ (or n 0) 1)))
+  ; => {:visits 1}
+  ```

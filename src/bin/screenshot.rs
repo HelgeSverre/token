@@ -17,7 +17,7 @@ use serde::Deserialize;
 
 use token::csv::{detect_delimiter, parse_csv, CsvState, Delimiter};
 use token::markdown::{content_to_preview_html, PreviewTheme};
-use token::messages::{LayoutMsg, Msg};
+use token::messages::{LayoutMsg, LspMsg, Msg};
 use token::model::document::Document;
 use token::model::editor::{EditorState, Position, Selection, ViewMode};
 use token::model::editor_area::{EditorArea, SplitDirection};
@@ -67,6 +67,7 @@ struct Args {
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 struct Scenario {
     name: String,
     #[serde(default = "default_width")]
@@ -84,17 +85,48 @@ struct Scenario {
     workspace: Option<WorkspaceConfig>,
     #[serde(default)]
     modal: Option<ModalConfig>,
-    /// Ghost text shown at the first file's cursor (autocomplete.md Phase 2).
+    /// Ghost text shown at the focused (last) file's cursor.
     #[serde(default)]
     inline_suggestion: Option<InlineFixture>,
     /// Deterministic Markdown content for a native documentation hover card.
     #[serde(default)]
     hover: Option<String>,
+    /// Protocol fixtures use the same conversion and rendering as live LSP replies.
+    #[serde(default)]
+    lsp: Option<LspFixture>,
+    #[serde(default)]
+    terminal: Option<TerminalFixture>,
+    #[serde(default)]
+    outline: bool,
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+struct TerminalFixture {
+    sessions: Vec<TerminalFixtureSession>,
+    #[serde(default)]
+    active: usize,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+struct TerminalFixtureSession {
+    title: String,
+    /// ANSI output, fed to the real terminal emulator without running a shell.
+    output: String,
+    #[serde(default)]
+    selection: Option<SelectionRange>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 struct ScenarioFile {
     path: PathBuf,
+    /// Optional in-memory source; path still supplies the tab name and language.
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    collapsed_lines: Vec<usize>,
     #[serde(default)]
     soft_wrap: bool,
     #[serde(default)]
@@ -118,6 +150,35 @@ struct ScenarioFile {
     /// Open a preview pane (markdown/HTML) next to this file's editor
     #[serde(default)]
     preview: bool,
+}
+
+impl ScenarioFile {
+    fn source(&self) -> Result<String> {
+        match &self.content {
+            Some(content) => Ok(content.clone()),
+            None => std::fs::read_to_string(&self.path)
+                .with_context(|| format!("reading {}", self.path.display())),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Default)]
+#[serde(default, deny_unknown_fields)]
+struct LspFixture {
+    completion: Option<CompletionFixture>,
+    signature_help: Option<lsp_types::SignatureHelp>,
+    diagnostics: Vec<lsp_types::Diagnostic>,
+    problems: bool,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+struct CompletionFixture {
+    /// Character column where the typed prefix begins (same line as the cursor).
+    query_start_column: usize,
+    #[serde(default)]
+    selected: usize,
+    items: Vec<lsp_types::CompletionItem>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -185,6 +246,9 @@ fn default_sidebar_visible() -> bool {
 #[derive(Deserialize, Debug)]
 struct ModalConfig {
     id: ModalId,
+    /// Settings category label from the shared metadata (for example, LSP).
+    #[serde(default)]
+    category: Option<String>,
     /// Settings-only physical-pixel scroll delta, after selection setup.
     #[serde(default)]
     scroll_pixels: isize,
@@ -289,8 +353,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         .files
         .first()
         .context("scenario must have at least one file")?;
-    let content = std::fs::read_to_string(&first.path)
-        .with_context(|| format!("reading {}", first.path.display()))?;
+    let content = first.source()?;
 
     let mut document = Document::with_text(&content);
     document.file_path = Some(first.path.clone());
@@ -327,6 +390,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         jump_history: Vec::new(),
         forward_history: Vec::new(),
     };
+    let mut scenario_editors = vec![model.editor().id.context("first scenario editor")?];
 
     // Add additional files as splits
     let default_direction = match scenario.split_direction {
@@ -335,8 +399,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
     };
 
     for file in scenario.files.iter().skip(1) {
-        let file_content = std::fs::read_to_string(&file.path)
-            .with_context(|| format!("reading {}", file.path.display()))?;
+        let file_content = file.source()?;
 
         // Use per-file split direction if specified, otherwise use scenario default
         let direction = file
@@ -373,11 +436,39 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         if let Some(editor) = model.editor_area.focused_editor_mut() {
             editor.document_id = Some(new_doc_id);
             apply_cursor_and_scroll(editor, file);
+            scenario_editors.push(editor.id.context("split scenario editor")?);
         }
     }
 
     // Apply syntax highlighting synchronously
     apply_syntax_highlighting(&mut model);
+
+    if scenario.outline {
+        model
+            .dock_layout
+            .right
+            .activate(token::panel::PanelId::OUTLINE);
+    }
+
+    for (file, editor_id) in scenario.files.iter().zip(scenario_editors) {
+        let editor = model
+            .editor_area
+            .editors
+            .get_mut(&editor_id)
+            .context("scenario editor")?;
+        let document = editor
+            .document_id
+            .and_then(|id| model.editor_area.documents.get(&id))
+            .context("scenario document")?;
+        for &line in &file.collapsed_lines {
+            anyhow::ensure!(
+                editor.fold(document, token::folding::FoldAction::Collapse, Some(line)),
+                "{}: cannot collapse line {}",
+                file.path.display(),
+                line
+            );
+        }
+    }
 
     // Set up workspace/sidebar if configured
     if let Some(ws_config) = &scenario.workspace {
@@ -392,7 +483,15 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
 
     // Set up modal if configured
     if let Some(modal_config) = &scenario.modal {
-        apply_modal(&mut model, modal_config);
+        apply_modal(&mut model, modal_config)?;
+    }
+
+    if let Some(fixture) = &scenario.lsp {
+        apply_lsp_fixture(&mut model, fixture)?;
+    }
+
+    if let Some(fixture) = &scenario.terminal {
+        apply_terminal_fixture(&mut model, fixture)?;
     }
 
     if let Some(markdown) = &scenario.hover {
@@ -450,7 +549,117 @@ fn apply_syntax_highlighting(model: &mut AppModel) {
         let source = doc.buffer.to_string();
         let highlights = parser.parse_and_highlight(&source, doc.language, *doc_id, doc.revision);
         doc.syntax_highlights = Some(highlights);
+        doc.syntax_tree = parser.syntax_tree_snapshot(*doc_id, doc.revision);
+        doc.outline = doc.syntax_tree.as_ref().map(|snapshot| {
+            token::outline::extract_outline(&snapshot.tree, &source, doc.language, doc.revision)
+        });
+        doc.folds = Some(std::sync::Arc::new(token::syntax::folding::detect(
+            &source,
+            token::folding::FoldStamp {
+                revision: doc.revision,
+                language: doc.language,
+                policy_generation: 0,
+            },
+            doc.text_settings.tabs,
+            doc.syntax_tree.as_ref(),
+        )));
     }
+}
+
+/// Install deterministic replies, without launching servers or running effects.
+fn apply_lsp_fixture(model: &mut AppModel, fixture: &LspFixture) -> Result<()> {
+    let document = model.document();
+    let path = std::path::absolute(
+        document
+            .file_path
+            .as_ref()
+            .context("LSP fixture needs a path")?,
+    )?;
+    let server = token::lsp::lsp_server_def(document.language)
+        .context("LSP fixture needs a language with a registered server")?;
+    let server_id = token::lsp::LspServerId::from(server.id);
+    let document_id = document.id.context("LSP fixture needs a document")?;
+    let revision = document.revision;
+    model.document_mut().file_path = Some(path.clone());
+    model
+        .lsp
+        .servers
+        .insert(server_id.clone(), token::lsp::ServerState::Ready);
+
+    update(
+        model,
+        Msg::Lsp(LspMsg::DiagnosticsPublished {
+            uri: token::lsp::path_to_uri(&path),
+            version: None,
+            diagnostics: fixture.diagnostics.clone(),
+        }),
+    );
+    if fixture.problems {
+        model
+            .dock_layout
+            .bottom
+            .activate(token::panel::PanelId::PROBLEMS);
+        model.dock_layout.bottom.set_size(
+            190.0 * model.metrics.scale_factor as f32,
+            model.metrics.scale_factor,
+        );
+    }
+    if let Some(help) = &fixture.signature_help {
+        model.ui.signature_help = token::lsp::client::signature_help_state(help);
+    }
+    if let Some(completion) = &fixture.completion {
+        let cursor = *model.editor().active_cursor();
+        anyhow::ensure!(
+            completion.query_start_column <= cursor.column,
+            "completion prefix starts after the cursor"
+        );
+        let query_start = token::model::Cursor::at(cursor.line, completion.query_start_column);
+        let line = model
+            .document()
+            .buffer
+            .get_line(cursor.line)
+            .context("completion cursor line is outside the document")?;
+        anyhow::ensure!(
+            cursor.column <= line.len_chars(),
+            "completion cursor column is outside the line"
+        );
+        let query = line
+            .chars()
+            .skip(query_start.column)
+            .take(cursor.column - query_start.column)
+            .collect::<String>();
+        let items = token::completion::lsp::items_to_menu_items(
+            completion.items.clone(),
+            &server_id,
+            path.parent().context("LSP root")?,
+            None,
+        );
+        let filtered = token::completion::menu::filter_and_sort(&items, &query);
+        anyhow::ensure!(
+            completion.selected < filtered.len(),
+            "completion selection has no matching item"
+        );
+        model.ui.completion_menu = Some(token::completion::CompletionMenuState {
+            context: token::completion::context::CompletionContext::at(
+                model.document(),
+                query_start,
+            ),
+            selection_changed: false,
+            document_id,
+            revision,
+            query_start,
+            query,
+            items,
+            filtered,
+            is_incomplete: false,
+            pending_resolve: None,
+        });
+        let mut overlay =
+            token::model::CursorOverlayState::new(token::model::CursorOverlayKind::Completion);
+        overlay.selected = completion.selected;
+        model.ui.cursor_overlay = Some(overlay);
+    }
+    Ok(())
 }
 
 /// Apply view modes (CSV grid, etc.) based on scenario file settings
@@ -574,7 +783,7 @@ fn apply_workspace(model: &mut AppModel, config: &WorkspaceConfig, scale: f64) {
     }
 }
 
-fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
+fn apply_modal(model: &mut AppModel, config: &ModalConfig) -> Result<()> {
     let modal_state = match config.id {
         ModalId::FileConflict => {
             let observed = token::model::ObservedFile {
@@ -599,6 +808,13 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
                 model,
                 Msg::Ui(UiMsg::ToggleModal(token::model::ModalId::Settings)),
             );
+            if let Some(category) = &config.category {
+                let index = token::settings::categories()
+                    .iter()
+                    .position(|label| *label == Some(category.as_str()))
+                    .with_context(|| format!("unknown Settings category {category}"))?;
+                update(model, Msg::Ui(UiMsg::Modal(ModalMsg::ActivateTab(index))));
+            }
             if let Some(input) = &config.input {
                 token::update::update(
                     model,
@@ -612,7 +828,7 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
                 model,
                 Msg::Ui(UiMsg::Modal(ModalMsg::Scroll(config.scroll_pixels))),
             );
-            return;
+            return Ok(());
         }
         ModalId::CommandPalette => {
             let mut state = CommandPaletteState::default();
@@ -649,7 +865,7 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
             state.use_regex = config.use_regex;
             model.ui.open_find(state);
             model.resync_viewports();
-            return;
+            return Ok(());
         }
         ModalId::ThemePicker => {
             let current_id = model.config.theme.clone();
@@ -668,6 +884,69 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) {
         }
     };
     model.ui.open_modal(modal_state);
+    Ok(())
+}
+
+fn apply_terminal_fixture(model: &mut AppModel, fixture: &TerminalFixture) -> Result<()> {
+    use alacritty_terminal::index::{Column, Line, Point, Side};
+    use alacritty_terminal::selection::SelectionType;
+    use token::terminal::{PtyHandle, TerminalSession};
+
+    anyhow::ensure!(
+        fixture.active < fixture.sessions.len(),
+        "terminal active tab is out of range"
+    );
+    let scale = model.metrics.scale_factor;
+    model
+        .dock_layout
+        .bottom
+        .activate(token::panel::PanelId::TERMINAL);
+    model
+        .dock_layout
+        .bottom
+        .set_size(240.0 * scale as f32, scale);
+    let chrome = token::layout::chrome::chrome(model);
+    let rect = chrome
+        .rect(token::layout::UiKey::PanelContent(
+            token::panel::PanelId::TERMINAL,
+        ))
+        .context("terminal fixture has no content rectangle")?;
+    let size =
+        token::panels::terminal::grid_size_for_rect(rect, model.char_width, model.line_height);
+    let (tx, _rx) = std::sync::mpsc::channel();
+    for fixture_session in &fixture.sessions {
+        let id = model
+            .terminal
+            .begin_spawn()
+            .context("terminal fixture session id")?;
+        let (pty, _writes) = PtyHandle::headless();
+        let mut session =
+            TerminalSession::new(id, size.rows.into(), size.cols.into(), pty, tx.clone());
+        session.title.clone_from(&fixture_session.title);
+        session.apply_bytes(fixture_session.output.replace('\n', "\r\n").as_bytes());
+        if let Some(selection) = &fixture_session.selection {
+            let point = |line: usize, col: usize| -> Result<Point> {
+                anyhow::ensure!(
+                    line < usize::from(size.rows) && col < usize::from(size.cols),
+                    "terminal selection is outside the visible grid"
+                );
+                Ok(Point::new(Line(i32::try_from(line)?), Column(col)))
+            };
+            session.start_selection(
+                point(selection.anchor_line, selection.anchor_column)?,
+                Side::Left,
+                SelectionType::Simple,
+            );
+            session.update_selection(
+                point(selection.head_line, selection.head_column)?,
+                Side::Right,
+            );
+        }
+        model.terminal.sessions.push(session);
+        model.terminal.clear_spawn_pending(id);
+    }
+    model.terminal.active = fixture.active;
+    Ok(())
 }
 
 /// Walk the layout tree to find the SplitContainer holding `group_id` and set
@@ -963,10 +1242,8 @@ fn collect_scenarios(args: &Args) -> Result<Vec<(PathBuf, Scenario)>> {
 
         for entry in entries {
             let path = entry.path();
-            match load_scenario(&path) {
-                Ok(scenario) => scenarios.push((path, scenario)),
-                Err(e) => eprintln!("Warning: skipping {}: {}", path.display(), e),
-            }
+            let scenario = load_scenario(&path)?;
+            scenarios.push((path, scenario));
         }
 
         if scenarios.is_empty() {
@@ -1216,4 +1493,92 @@ fn main() -> Result<()> {
 
     eprintln!("Done!");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Catch fixtures that parse successfully but silently omit their feature.
+    #[test]
+    fn screenshot_feature_fixtures_populate_native_state() -> Result<()> {
+        for name in [
+            "completion",
+            "signature-help",
+            "diagnostics",
+            "ghost-text",
+            "folding",
+            "terminal",
+            "documentation",
+            "language-servers",
+        ] {
+            let scenario = load_scenario(&PathBuf::from(format!(
+                "screenshots/scenarios/showcase-{name}.yaml"
+            )))?;
+            let source = scenario.files.last().context("fixture source")?.source()?;
+            let model = create_model_from_scenario(&scenario, Theme::default())?;
+            assert_eq!(
+                model.document().buffer.to_string(),
+                source,
+                "{name} must not edit source"
+            );
+            match name {
+                "completion" => {
+                    let menu = model.ui.completion_menu.as_ref().expect("completion menu");
+                    assert_eq!(
+                        menu.context,
+                        token::completion::context::CompletionContext::Member
+                    );
+                    assert_eq!(menu.selected_item(0).unwrap().label, "get");
+                    assert!(menu
+                        .selected_documentation(0)
+                        .unwrap()
+                        .text
+                        .contains("Option<&Product>"));
+                }
+                "signature-help" => assert!(model.ui.signature_help.as_ref().unwrap().signatures
+                    [0]
+                .active_parameter_range
+                .is_some()),
+                "diagnostics" => {
+                    assert_eq!(model.document().diagnostics.len(), 2);
+                    assert_eq!(
+                        model.dock_layout.bottom.active_panel(),
+                        Some(token::panel::PanelId::PROBLEMS)
+                    );
+                }
+                "ghost-text" => assert!(model.ui.inline_suggestion.is_some()),
+                "folding" => {
+                    assert_eq!(model.editor().folds.collapsed().len(), 3);
+                    assert!(!model.document().outline.as_ref().unwrap().roots.is_empty());
+                }
+                "terminal" => {
+                    assert_eq!(model.terminal.sessions.len(), 3);
+                    assert_eq!(model.terminal.active, 1);
+                    assert_eq!(
+                        model
+                            .terminal
+                            .active_session()
+                            .unwrap()
+                            .term()
+                            .selection_to_string()
+                            .as_deref(),
+                        Some("Hello from Token!")
+                    );
+                }
+                "documentation" => assert!(model.ui.hover_card.as_ref().unwrap().content.is_some()),
+                "language-servers" => {
+                    let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+                        panic!("Settings page");
+                    };
+                    assert_eq!(token::settings::categories()[state.category], Some("LSP"));
+                    assert!(state
+                        .filtered_rows()
+                        .any(|(label, _)| label == "gopls enabled"));
+                }
+                _ => unreachable!(),
+            }
+        }
+        Ok(())
+    }
 }

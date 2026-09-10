@@ -1,0 +1,12 @@
+name: showcase-language-servers
+width: 2000
+height: 1300
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: samples/syntax/sample.go
+modal:
+  id: settings
+  category: LSP
+  input: gopls Go
+  selected_index: 1
