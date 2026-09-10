@@ -1,0 +1,26 @@
+name: showcase-documentation
+width: 1800
+height: 1400
+scale: 2.0
+theme: fleet-dark
+files:
+  - path: samples/syntax/sample.sema
+    scroll_to: 96
+    cursor_line: 122
+    cursor_column: 10
+hover: |
+  ```sema
+  (map/update m key f) → map
+  ```
+
+  Return a new map with the value at `key` replaced by `(f current)`.
+  The original map is unchanged.
+
+  ```sema
+  (define scores {:ada 10 :linus 7})
+  (map/update scores :ada (fn (n) (+ n 1)))
+  ; => {:ada 11 :linus 7}
+  ```
+
+  If the key is **absent**, `f` receives `nil`. For nested paths,
+  use `map/update-in`.

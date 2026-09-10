@@ -9,6 +9,8 @@ import imgFindReplace from '../assets/screenshots/screenshot-showcase-find-repla
 import imgSidebarSplits from '../assets/screenshots/screenshot-showcase-sidebar-splits.png';
 import imgCsvSplit from '../assets/screenshots/screenshot-showcase-csv-split.png';
 import imgSplits from '../assets/screenshots/screenshot-splits.png';
+import imgDocumentation from '../assets/screenshots/screenshot-showcase-documentation.png';
+import imgSettings from '../assets/screenshots/screenshot-showcase-settings.png';
 
 const syntaxLanguages = [
   'YAML',
@@ -100,6 +102,8 @@ const syntaxLanguages = [
 
 const showcaseSlides = [
   { id: 'splits', label: 'Split views', desc: 'Side-by-side editing with independent viewports. Horizontal, vertical, or nested.', key: '⌘⇧⌥V', img: imgSplits },
+  { id: 'documentation', label: 'Documentation', desc: 'Signatures, highlighted examples, and language-server documentation beside your code. Scroll or expand longer cards.', key: '⌘⇧D', img: imgDocumentation },
+  { id: 'settings', label: 'Settings', desc: 'A dedicated preferences page with categories and form controls for appearance, editing, and language servers.', key: '⌘,', img: imgSettings },
   { id: 'preview', label: 'Live preview', desc: 'Markdown and HTML render in real time alongside your source.', key: '⌘⇧V', img: imgMarkdownPreview },
   { id: 'workspace', label: 'Workspace', desc: 'File tree, splits, and sidebar — all in one view for real projects.', key: '⌘+1', img: imgSidebarSplits },
   { id: 'palette', label: 'Command palette', desc: 'Fuzzy search for any action. Switch themes, open files, run commands.', key: '⌘+⇧+A', img: imgCommandPalette },
@@ -211,8 +215,8 @@ const optimizedSlides = await Promise.all(
     </div>
     <div class="feature-card">
       <span class="feature-num">05</span>
-      <h3>YAML config</h3>
-      <p>Keymaps and themes in plain YAML. No JSON schema. No settings UI maze.</p>
+      <h3>Your editor, your settings</h3>
+      <p>A dedicated preferences page for everyday adjustments. Keymaps and themes stay editable in plain YAML.</p>
       <div class="feature-demo compact">
         <div class="demo-line"><span class="kw">bindings</span>:</div>
         <div class="demo-line">  - <span class="var">key</span>: <span class="str">"cmd+s"</span></div>

@@ -1,0 +1,9 @@
+name: showcase-settings
+width: 1920
+height: 1440
+scale: 1.5
+theme: fleet-dark
+files:
+  - path: samples/syntax/sample.rs
+modal:
+  id: settings

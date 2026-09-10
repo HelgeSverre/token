@@ -27,6 +27,8 @@ import imgCsvSplit from '../assets/screenshots/screenshot-showcase-csv-split.png
 import imgMarkdownPreview from '../assets/screenshots/screenshot-showcase-markdown-preview.png';
 import imgHtmlPreview from '../assets/screenshots/screenshot-showcase-html-preview.png';
 import imgFractalSplits from '../assets/screenshots/screenshot-showcase-fractal-splits.png';
+import imgDocumentation from '../assets/screenshots/screenshot-showcase-documentation.png';
+import imgSettings from '../assets/screenshots/screenshot-showcase-settings.png';
 
 export interface ShowcaseItem {
   id: string;
@@ -38,6 +40,24 @@ export interface ShowcaseItem {
 }
 
 export const showcase: ShowcaseItem[] = [
+  {
+    id: 'showcase-documentation',
+    src: imgDocumentation,
+    title: 'Documentation at the Cursor',
+    description:
+      'Read signatures, syntax-highlighted examples, and formatted language-server documentation without leaving your code. Longer cards scroll and expand.',
+    tags: ['UI', 'Languages'],
+    feature: '⌘+⇧+D show documentation · F1 expand long cards',
+  },
+  {
+    id: 'showcase-settings',
+    src: imgSettings,
+    title: 'A Dedicated Settings Page',
+    description:
+      'Browse preferences by category and adjust editing behavior, appearance, and language-server options in place. Keymaps and themes remain configurable in YAML.',
+    tags: ['UI'],
+    feature: '⌘+, open settings',
+  },
   {
     id: 'hero',
     src: imgHero,
@@ -191,11 +211,11 @@ export const showcase: ShowcaseItem[] = [
   {
     id: 'showcase-command-palette',
     src: imgCommandPalette,
-    title: 'Theme Picker',
+    title: 'Command Palette',
     description:
-      'The theme picker modal showing all 9 built-in themes. Browse and preview themes instantly with arrow keys.',
+      'Search commands by name, see their keyboard shortcuts, and run an action without leaving the editor.',
     tags: ['UI'],
-    feature: '⌘+⇧+A → "theme"',
+    feature: '⌘+⇧+A open command palette',
   },
   {
     id: 'showcase-find-replace',
@@ -247,7 +267,7 @@ export const showcase: ShowcaseItem[] = [
     description:
       'Live markdown preview alongside the source file. Headings, lists, and code blocks render in real time as you type.',
     tags: ['Preview'],
-    feature: '⌘+⇧+P toggle preview',
+    feature: '⌘+⇧+V toggle preview',
   },
   {
     id: 'showcase-html-preview',

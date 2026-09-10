@@ -72,7 +72,7 @@ csv: build sample-csv
 
 [group('run')]
 screenshots:
-    cargo run --release --bin screenshot -- --all --out-dir website/public
+    cargo run --release --bin screenshot -- --all --out-dir website/src/assets/screenshots
 
 # Run nextest and doctests; optionally filter nextest by expression/name.
 [group('check')]
