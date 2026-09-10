@@ -4,7 +4,12 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
-## Unreleased
+## v0.7.0 - 2026-09-10
+
+This release adds code folding, pixel scrolling, docked Find and Replace,
+auto-save and EditorConfig, saved-file session restore, external-file protection,
+terminal tabs and selection, richer documentation cards, and Go/Sema language
+support. It also improves completion relevance, Settings, fonts, and rendering.
 
 ### Language server preferences
 
