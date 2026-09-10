@@ -84,6 +84,8 @@ pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarge
         _ => None,
     };
     let previous_modal = model.ui.modal_hover_row;
+    let previous_close = model.ui.modal_close_hovered;
+    model.ui.modal_close_hovered = matches!(target, Some(HitTarget::ModalClose));
     let previous_terminal = model.terminal.hovered_tab;
     model.terminal.hovered_tab = match target {
         Some(HitTarget::TerminalAction { action, .. }) => Some(*action),
@@ -113,6 +115,7 @@ pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarge
         }
         || previous_terminal != model.terminal.hovered_tab
         || previous_modal != model.ui.modal_hover_row
+        || previous_close != model.ui.modal_close_hovered
         || previous_popup
             != model
                 .ui
@@ -2042,6 +2045,7 @@ fn handle_left_click(
             ),
         },
         HitTarget::ModalScrollbar { geometry } => modal_scrollbar_press(model, geometry, event),
+        HitTarget::ModalClose => modal_press(model, ModalMsg::Close),
         HitTarget::Modal { inside } => {
             if *inside {
                 // Click inside modal (header/footer/padding) - consume but
@@ -2842,6 +2846,7 @@ fn handle_middle_click(
 
         // Modal - consume, no action
         HitTarget::FindBar { .. }
+        | HitTarget::ModalClose
         | HitTarget::Modal { .. }
         | HitTarget::ModalScrollbar { .. }
         | HitTarget::ModalRow { .. }

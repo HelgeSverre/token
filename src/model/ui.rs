@@ -1515,6 +1515,7 @@ pub struct UiState {
     /// (overlay-surface.md Pointer: hover wash). Cleared whenever the mouse
     /// isn't over a row.
     pub modal_hover_row: Option<usize>,
+    pub modal_close_hovered: bool,
     /// Cursor-anchored popup (completion/hover/debug demo), if one is open.
     /// Distinct from `active_modal` — see `CursorOverlayState`.
     pub cursor_overlay: Option<CursorOverlayState>,
@@ -1654,6 +1655,7 @@ impl UiState {
             status_message_is_diagnostic: false,
             previous_cursor_lines: Vec::new(),
             modal_hover_row: None,
+            modal_close_hovered: false,
             cursor_overlay: None,
             completion_menu: None,
             completion_commit: None,
@@ -1704,6 +1706,7 @@ impl UiState {
         self.active_modal = Some(state);
         self.focus = FocusTarget::Modal;
         self.modal_hover_row = None;
+        self.modal_close_hovered = false;
     }
 
     /// Close the active modal (returns focus to Editor)
@@ -1713,6 +1716,7 @@ impl UiState {
         self.active_modal = None;
         self.focus = FocusTarget::Editor;
         self.modal_hover_row = None;
+        self.modal_close_hovered = false;
     }
 
     /// Set focus to the editor

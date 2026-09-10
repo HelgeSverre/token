@@ -289,9 +289,9 @@ pub(super) fn layout(
         })
         .collect();
     out.footer = Some(WidgetRect {
-        x: p.x + pad,
+        x: p.x,
         y: p.y + p.h.saturating_sub(scaled(FOOT, sf)),
-        w: p.w.saturating_sub(pad * 2),
+        w: p.w,
         h: scaled(FOOT, sf),
     });
     out.scrollbar = if viewport.max_scroll_pixels() > 0 {
@@ -397,7 +397,7 @@ pub(super) fn hit_test(
 ) -> OverlayHit {
     // The close button shares the modal's existing dismiss action.
     if contains(&close_rect(&layout.panel, layout.scale_factor), x, y) {
-        return OverlayHit::Outside;
+        return OverlayHit::Close;
     }
     if !contains(&layout.panel, x, y) {
         return OverlayHit::Outside;
@@ -499,6 +499,7 @@ pub(super) fn render(
     painter: &mut TextPainter,
     masks: &mut RoundedRectMaskCache,
     colors: &Palette,
+    theme: &crate::theme::Theme,
     spec: &OverlaySpec,
     layout: &OverlayLayout,
     sf: f64,
@@ -514,13 +515,29 @@ pub(super) fn render(
     frame.fill_rounded_rect(p.x, p.y, p.w, p.h, radius, panel_bg, masks);
     frame.push_clip(Rect::new(p.x as f32, p.y as f32, p.w as f32, p.h as f32));
     let close = close_rect(&p, sf);
-    text(
+    crate::view::button::render_button(
         frame,
         painter,
-        &close,
-        "Close ×",
-        size_px(11.0, sf),
-        colors.text_dim,
+        theme,
+        Rect::new(
+            close.x as f32,
+            close.y as f32,
+            close.w as f32,
+            close.h as f32,
+        ),
+        "Close",
+        if matches!(
+            spec.anchor,
+            Anchor::Settings {
+                close_hovered: true,
+                ..
+            }
+        ) {
+            crate::view::button::ButtonState::Hovered
+        } else {
+            crate::view::button::ButtonState::Normal
+        },
+        false,
     );
     let title = WidgetRect {
         x: p.x + pad,
@@ -901,7 +918,17 @@ pub(super) fn render(
     }
     render_list_scrollbar(frame, layout, colors);
     if let (Some(footer), Some(rect)) = (&spec.footer, layout.footer) {
-        render_footer(frame, painter, colors, footer, rect, sf, 0, masks);
+        render_footer(
+            frame,
+            painter,
+            colors,
+            footer,
+            rect,
+            sf,
+            radius,
+            colors.panel_secondary | 0xFF00_0000,
+            masks,
+        );
     }
     frame.pop_clip();
 }
@@ -1024,6 +1051,7 @@ mod tests {
                         &mut painter,
                         &mut RoundedRectMaskCache::new(),
                         &Palette::from_theme(&model.theme),
+                        &model.theme,
                         spec,
                         &layout,
                         1.0,
@@ -1108,6 +1136,7 @@ mod tests {
                         &mut painter,
                         &mut RoundedRectMaskCache::new(),
                         &Palette::from_theme(&model.theme),
+                        &model.theme,
                         spec,
                         &layout,
                         scale,
@@ -1186,6 +1215,7 @@ mod tests {
                         &mut painter,
                         &mut RoundedRectMaskCache::new(),
                         &Palette::from_theme(&model.theme),
+                        &model.theme,
                         spec,
                         &geometry,
                         scale,
@@ -1227,6 +1257,14 @@ mod tests {
                 let geometry = super::super::layout(spec, width as usize, height as usize, scale);
                 assert!(geometry.panel.h > height as usize * 4 / 5);
                 assert_eq!(geometry.row_height, scaled(ROW, scale));
+                let footer = geometry.footer.unwrap();
+                assert_eq!((footer.x, footer.w), (geometry.panel.x, geometry.panel.w));
+                assert_eq!(footer.y + footer.h, geometry.panel.y + geometry.panel.h);
+                let close = close_rect(&geometry.panel, scale);
+                assert_eq!(
+                    hit_test(spec, &geometry, close.x + 1, close.y + 1),
+                    OverlayHit::Close
+                );
                 let tabs = spec.tabs.as_ref().unwrap();
                 assert_eq!(tabs.tabs[0].0, "All Settings");
                 assert!(tabs.tabs.iter().any(|(label, _)| *label == "Appearance"));
@@ -1328,6 +1366,7 @@ mod tests {
                     &mut painter,
                     &mut RoundedRectMaskCache::new(),
                     &colors,
+                    &model.theme,
                     spec,
                     &geometry,
                     1.0,

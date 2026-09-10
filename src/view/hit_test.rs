@@ -91,6 +91,7 @@ impl MouseEvent {
 /// future use (e.g., context menus, detailed click handling).
 #[derive(Clone, Debug)]
 pub enum HitTarget {
+    ModalClose,
     FindBar {
         control: Option<super::find_bar::Control>,
     },
@@ -302,6 +303,7 @@ impl HitTarget {
         use winit::window::CursorIcon;
 
         match self {
+            HitTarget::ModalClose => CursorIcon::Pointer,
             HitTarget::FindBar {
                 control: Some(super::find_bar::Control::Field(_)),
             } => CursorIcon::Text,
@@ -336,7 +338,8 @@ impl HitTarget {
         match self {
             HitTarget::FindBar { control } => HoverRegion::FindBar(*control),
             HitTarget::ModalField { .. } => HoverRegion::Modal,
-            HitTarget::Modal { .. }
+            HitTarget::ModalClose
+            | HitTarget::Modal { .. }
             | HitTarget::ModalScrollbar { .. }
             | HitTarget::ModalRow { .. }
             | HitTarget::ModalChoice { .. }
@@ -467,6 +470,7 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
                     HitTarget::ModalScrollbar { geometry }
                 }),
             super::overlay_surface::OverlayHit::Outside => HitTarget::Modal { inside: false },
+            super::overlay_surface::OverlayHit::Close => HitTarget::ModalClose,
             super::overlay_surface::OverlayHit::Row(flat_index) => HitTarget::ModalRow {
                 flat_index: flat_index.0,
             },
@@ -514,7 +518,8 @@ pub fn hit_test_cursor_overlay(
                         .filter(|bar| bar.hits_track(pt.x as f32, pt.y as f32)),
                 })
             }
-            super::overlay_surface::OverlayHit::Outside => None,
+            super::overlay_surface::OverlayHit::Outside
+            | super::overlay_surface::OverlayHit::Close => None,
             super::overlay_surface::OverlayHit::Row(flat_index) => Some(HitTarget::CursorOverlay {
                 flat_index: Some(flat_index.0),
             }),

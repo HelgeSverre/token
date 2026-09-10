@@ -208,7 +208,10 @@ pub use crate::layout::anchor::WidthRule;
 
 pub enum Anchor {
     /// Spacious preferences page with category navigation.
-    Settings { width: WidthRule },
+    Settings {
+        width: WidthRule,
+        close_hovered: bool,
+    },
     /// Centered X; Y follows the Chrome table's `min(h/4, Y)` class. Dims
     /// the backdrop at `dim_alpha`.
     Centered { width: WidthRule, dim_alpha: u8 },
@@ -241,7 +244,7 @@ impl Anchor {
             Anchor::Centered { width, .. }
             | Anchor::Cursor { width, .. }
             | Anchor::Menu { width, .. }
-            | Anchor::Settings { width } => width,
+            | Anchor::Settings { width, .. } => width,
         }
     }
 }
@@ -1451,6 +1454,7 @@ pub fn layout_measured(
 /// actually painted).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayHit {
+    Close,
     Input {
         row: FlatIndex,
         position: crate::editable::Position,
@@ -1777,6 +1781,7 @@ pub fn render(
             painter,
             mask_cache,
             &colors,
+            theme,
             spec,
             &layout,
             scale_factor,
@@ -1886,6 +1891,7 @@ pub fn render(
             footer_rect,
             scale_factor,
             radius,
+            colors.recessed_wash,
             mask_cache,
         );
     }
@@ -2814,6 +2820,7 @@ fn render_footer(
     rect: WidgetRect,
     scale_factor: f64,
     radius: usize,
+    background: u32,
     mask_cache: &mut RoundedRectMaskCache,
 ) {
     frame.fill_rect_px(rect.x, rect.y, rect.w, 1, colors.hairline);
@@ -2825,7 +2832,7 @@ fn render_footer(
         rect.w,
         rect.h.saturating_sub(1),
         radius,
-        colors.recessed_wash,
+        background,
         mask_cache,
     );
 

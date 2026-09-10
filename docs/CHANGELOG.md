@@ -6,6 +6,11 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Settings polish
+
+- Integrate the Settings footer as a lighter, full-width bar and use the shared
+  themed Close button with pointer-hover feedback.
+
 ### Language-server setup
 
 - Configure language-server executables, arguments, initialization options and

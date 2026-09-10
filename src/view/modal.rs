@@ -990,6 +990,7 @@ pub(crate) fn with_settings_spec<R>(
     let spec = OverlaySpec {
         tabs: Some(tabs),
         anchor: Anchor::Settings {
+            close_hovered: model.ui.modal_close_hovered,
             width: WidthRule {
                 pct: 0.95,
                 min: 0.0,
