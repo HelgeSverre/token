@@ -10,7 +10,6 @@
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="Token.exe" SourceFile="$(var.Icon)" />
     <Property Id="ARPPRODUCTICON" Value="Token.exe" />
-    <Property Id="ARPNOMODIFY" Value="1" />
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.License)" />
     <UIRef Id="WixUI_InstallDir" />
