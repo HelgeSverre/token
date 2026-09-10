@@ -135,7 +135,8 @@ tree-sitter-ini = "1.4"
 tree-sitter-xml = "0.7"
 # Vendored: upstream has no committed Rust bindings/Cargo.toml, so it can't be
 # used as a git dependency. Canonical grammar: https://github.com/sema-lisp/tree-sitter-sema
-# Highlight query synchronized through upstream commit 39a7dc9.
+# Grammar/query synchronized through canonical commit 8b8386c (2026-09-09).
+# Builtin captures are generated there by scripts/sync-builtins.mjs from Sema docs/prelude.
 tree-sitter-sema = { path = "vendor/tree-sitter-sema" }
 
 # Vendored because upstream v0.12.3 has an SSH submodule URL that breaks

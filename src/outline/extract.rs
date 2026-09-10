@@ -8,6 +8,8 @@ use tree_sitter::{Node, Tree};
 use super::{OutlineData, OutlineKind, OutlineNode, OutlineRange};
 use crate::syntax::LanguageId;
 
+mod sema;
+
 pub(crate) trait OutlineBehavior: Sync {
     fn extract(&self, root: Node<'_>, source: &str) -> Vec<OutlineNode>;
 }
@@ -96,6 +98,7 @@ flat_outline!(
 );
 flat_outline!(R_OUTLINE, R_OUTLINE_IMPL, extract_r_symbols);
 flat_outline!(ELIXIR_OUTLINE, ELIXIR_OUTLINE_IMPL, extract_elixir_symbols);
+flat_outline!(SEMA_OUTLINE, SEMA_OUTLINE_IMPL, sema::extract);
 
 fn extract_c_symbols(root: Node<'_>, source: &str) -> Vec<FlatSymbol> {
     extract_c_cpp_symbols(root, source, LanguageId::C)

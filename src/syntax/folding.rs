@@ -54,6 +54,15 @@ pub(crate) const fn profile(language: LanguageId) -> FoldingProfile {
             "tuple",
             "string",
         ],
+        LanguageId::Sema => &[
+            "list",
+            "short_lambda",
+            "vector",
+            "hash_map",
+            "byte_vector",
+            "block_comment",
+            "string",
+        ],
         LanguageId::Json => &["object", "array"],
         LanguageId::Yaml => &[
             "block_mapping_pair",

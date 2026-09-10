@@ -33,6 +33,21 @@ fn detect(document: &mut Document, syntax: bool) {
 fn fixture() -> &'static str {
     "outer\n\tfirst body with long words 🙂\n\tinner\n\t\tdeep\n\t\tdeeper\n\tlast\n\nsecond\n  body\nend\n"
 }
+
+#[test]
+fn sema_folding_uses_balanced_forms_without_indentation() {
+    let mut document = Document::with_text("(define (square x)\n(* x x))\n(println 42)\n");
+    document.language = LanguageId::Sema;
+    detect(&mut document, true);
+    let folds = &document.folds.as_ref().unwrap().regions;
+    assert_eq!(
+        folds
+            .iter()
+            .map(|region| (region.header, region.end))
+            .collect::<Vec<_>>(),
+        [(0, 2)]
+    );
+}
 fn model() -> AppModel {
     let mut model = common::test_model(fixture(), 0, 0);
     detect(model.document_mut(), false);

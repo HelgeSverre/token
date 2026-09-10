@@ -8,8 +8,15 @@
 //   start: alphabetic | + - * / ! ? < > = _ & % ^ ~ .
 //   rest:  start | ascii digit | - / .
 // Note: `-` and `.` appear in both sets; digits only in rest.
-const SYMBOL_START = /[a-zA-Z\u00C0-\u024F+\-*\/!?<>=_&%^~.]/;
-const SYMBOL_CHAR = /[a-zA-Z\u00C0-\u024F+\-*\/!?<>=_&%^~.#0-9]/;
+const SYMBOL_START = /[\p{Alphabetic}+\-*\/!?<>=_&%^~.]/u;
+const SYMBOL_CHAR = /[\p{Alphabetic}+\-*\/!?<>=_&%^~.#0-9]/u;
+
+// The reader accepts integers, rationals, decimal/scientific reals, complex
+// numbers, and Scheme-style radix/exactness prefixes. Keep these expressions
+// in sync with crates/sema-reader/src/lexer.rs.
+const DECIMAL_NUMBER = /(?:[+-]?[0-9]+(?:\/[0-9]+|(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)(?:[+-](?:[0-9]+(?:\/[0-9]+|(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?))?i|i)?|[+-]i)/;
+const PREFIXED_DECIMAL_NUMBER = /(?:#[eEiI]#[dD]|#[dD]#[eEiI]|#[eEiIdD])(?:[+-]?[0-9]+(?:\/[0-9]+|(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)(?:[+-](?:[0-9]+(?:\/[0-9]+|(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?))?i|i)?|[+-]i)/;
+const PREFIXED_RADIX_INTEGER = /(?:(?:#[eEiI]#[xX]|#[xX]#[eEiI]|#[xX])[+-]?[0-9a-fA-F]+|(?:#[eEiI]#[oO]|#[oO]#[eEiI]|#[oO])[+-]?[0-7]+|(?:#[eEiI]#[bB]|#[bB]#[eEiI]|#[bB])[+-]?[01]+)/;
 
 module.exports = grammar({
   name: 'sema',
@@ -94,17 +101,12 @@ module.exports = grammar({
       $.character,
     ),
 
-    // Numbers: integer or float, optional leading minus.
-    // Negative numbers only when `-` is immediately followed by a digit
-    // (otherwise `-` is a symbol).
-    // Float requires digit(s) on both sides of the dot: 3.14, -0.5
-    number: _$ => token(
-      seq(
-        optional('-'),
-        /[0-9]+/,
-        optional(seq('.', /[0-9]+/)),
-      ),
-    ),
+    // Full numeric tower.
+    number: _$ => token(choice(
+      DECIMAL_NUMBER,
+      PREFIXED_DECIMAL_NUMBER,
+      PREFIXED_RADIX_INTEGER,
+    )),
 
     // Strings with escape sequences ──────────────────────────────────
 

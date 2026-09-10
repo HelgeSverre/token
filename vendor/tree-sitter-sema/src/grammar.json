@@ -310,44 +310,19 @@
     "number": {
       "type": "TOKEN",
       "content": {
-        "type": "SEQ",
+        "type": "CHOICE",
         "members": [
           {
-            "type": "CHOICE",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "-"
-              },
-              {
-                "type": "BLANK"
-              }
-            ]
+            "type": "PATTERN",
+            "value": "(?:[+-]?[0-9]+(?:\\/[0-9]+|(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)(?:[+-](?:[0-9]+(?:\\/[0-9]+|(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?))?i|i)?|[+-]i)"
           },
           {
             "type": "PATTERN",
-            "value": "[0-9]+"
+            "value": "(?:#[eEiI]#[dD]|#[dD]#[eEiI]|#[eEiIdD])(?:[+-]?[0-9]+(?:\\/[0-9]+|(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)(?:[+-](?:[0-9]+(?:\\/[0-9]+|(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?))?i|i)?|[+-]i)"
           },
           {
-            "type": "CHOICE",
-            "members": [
-              {
-                "type": "SEQ",
-                "members": [
-                  {
-                    "type": "STRING",
-                    "value": "."
-                  },
-                  {
-                    "type": "PATTERN",
-                    "value": "[0-9]+"
-                  }
-                ]
-              },
-              {
-                "type": "BLANK"
-              }
-            ]
+            "type": "PATTERN",
+            "value": "(?:(?:#[eEiI]#[xX]|#[xX]#[eEiI]|#[xX])[+-]?[0-9a-fA-F]+|(?:#[eEiI]#[oO]|#[oO]#[eEiI]|#[oO])[+-]?[0-7]+|(?:#[eEiI]#[bB]|#[bB]#[eEiI]|#[bB])[+-]?[01]+)"
           }
         ]
       }
@@ -380,13 +355,15 @@
         "members": [
           {
             "type": "PATTERN",
-            "value": "[a-zA-Z\\u00C0-\\u024F+\\-*\\/!?<>=_&%^~.]"
+            "value": "[\\p{Alphabetic}+\\-*\\/!?<>=_&%^~.]",
+            "flags": "u"
           },
           {
             "type": "REPEAT",
             "content": {
               "type": "PATTERN",
-              "value": "[a-zA-Z\\u00C0-\\u024F+\\-*\\/!?<>=_&%^~.#0-9]"
+              "value": "[\\p{Alphabetic}+\\-*\\/!?<>=_&%^~.#0-9]",
+              "flags": "u"
             }
           }
         ]
@@ -403,13 +380,15 @@
           },
           {
             "type": "PATTERN",
-            "value": "[a-zA-Z\\u00C0-\\u024F+\\-*\\/!?<>=_&%^~.#0-9]"
+            "value": "[\\p{Alphabetic}+\\-*\\/!?<>=_&%^~.#0-9]",
+            "flags": "u"
           },
           {
             "type": "REPEAT",
             "content": {
               "type": "PATTERN",
-              "value": "[a-zA-Z\\u00C0-\\u024F+\\-*\\/!?<>=_&%^~.#0-9]"
+              "value": "[\\p{Alphabetic}+\\-*\\/!?<>=_&%^~.#0-9]",
+              "flags": "u"
             }
           }
         ]

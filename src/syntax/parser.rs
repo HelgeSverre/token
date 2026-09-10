@@ -3038,6 +3038,12 @@ fi"#;
 
         assert_eq!(highlights.language, LanguageId::Sema);
         assert!(!highlights.lines.is_empty());
+        assert!(!state
+            .syntax_tree_snapshot(doc_id, 1)
+            .unwrap()
+            .tree
+            .root_node()
+            .has_error());
     }
 
     #[test]
@@ -3049,6 +3055,81 @@ fi"#;
         assert_eq!(highlights.language, LanguageId::Sema);
         assert!(highlights.lines.keys().all(|line| *line < 4));
         assert_eq!(highlights.lines.len(), 4);
+        for (line, word, capture) in [
+            (0, "def", "keyword"),
+            (1, "defn", "keyword"),
+            (1, "run", "function"),
+            (1, "workflow/run", "function.builtin"),
+            (2, "defworkflow", "keyword"),
+            (2, "deploy", "function"),
+            (3, "defpolicy", "keyword"),
+            (3, "safe", "function"),
+        ] {
+            let text = source.lines().nth(line).unwrap();
+            let column = text[..text.find(word).unwrap()].chars().count();
+            assert_eq!(
+                highlights.lines[&line].highlight_at(column),
+                crate::syntax::highlight_id_for_name(capture),
+                "{word} should be {capture}"
+            );
+        }
+        assert!(!state
+            .syntax_tree_snapshot(DocumentId(53), 1)
+            .unwrap()
+            .tree
+            .root_node()
+            .has_error());
+    }
+
+    #[test]
+    fn test_sema_numeric_tower_and_unicode() {
+        let mut state = ParserState::new();
+        let source =
+            "(define π 3.14)\n(list #xFF 1e3 3/4 1+2i #e#xFF #i1/2)\n(:имя {:имя \"日本語\"})\n";
+        let id = DocumentId(54);
+        let highlights = state.parse_and_highlight(source, LanguageId::Sema, id, 1);
+        let tree = state.syntax_tree_snapshot(id, 1).unwrap();
+        assert!(
+            !tree.tree.root_node().has_error(),
+            "{}",
+            tree.tree.root_node().to_sexp()
+        );
+        let text = source.lines().nth(1).unwrap();
+        for number in ["#xFF", "1e3", "3/4", "1+2i", "#e#xFF", "#i1/2"] {
+            let start = text.find(number).unwrap();
+            for column in start..start + number.len() {
+                assert_eq!(
+                    highlights.lines[&1].highlight_at(column),
+                    crate::syntax::highlight_id_for_name("number"),
+                    "{number} at {column}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_sema_async_builtin_highlights() {
+        let mut state = ParserState::new();
+        for name in [
+            "async/spawn",
+            "async/await",
+            "async/sleep",
+            "async/cancel",
+            "channel/new",
+            "channel/send",
+            "channel/recv",
+            "proc/spawn",
+            "git/status",
+        ] {
+            let source = format!("({name})");
+            let highlights =
+                state.parse_and_highlight(&source, LanguageId::Sema, DocumentId(55), 1);
+            assert_eq!(
+                highlights.lines[&0].highlight_at(1),
+                crate::syntax::highlight_id_for_name("function.builtin"),
+                "{name}"
+            );
+        }
     }
 
     #[test]
