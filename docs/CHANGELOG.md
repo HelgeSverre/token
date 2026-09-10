@@ -6,6 +6,13 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Completion preferences
+
+- Add Settings controls for the completion master switch, automatic dropdown,
+  local word policy and minimum candidate length, AI inline suggestions, request
+  delay, and allowed text after the cursor. Defaults are unchanged; AI suggestions
+  still require a configured provider and remain disabled initially.
+
 ### Unsaved-change protection
 
 - Ask to Save, Discard or Cancel before closing unsaved tabs, split groups or the

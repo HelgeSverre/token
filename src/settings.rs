@@ -42,6 +42,13 @@ pub(crate) enum Setting {
     LineEnding,
     SessionRestore,
     SessionSave,
+    CompletionEnabled,
+    CompletionMenu,
+    CompletionWords,
+    CompletionMinLength,
+    InlineEnabled,
+    InlineDelay,
+    InlineSuffix,
     InlineStatistics,
 }
 
@@ -58,6 +65,14 @@ const BLINK: &[u64] = &[0, 1000, 600, 300];
 const FONT: &[f32] = &[11.0, 12.0, 13.0];
 const HOVER_DELAY: &[u64] = &[150, 300, 600];
 const AUTO_SAVE_DELAY: &[u64] = &[500, 1000, 2000, 5000];
+const WORD_LENGTHS: &[usize] = &[1, 3, 5, 8];
+const INLINE_DELAYS: &[u64] = &[150, 300, 600, 1000];
+const INLINE_SUFFIXES: &[usize] = &[0, 8, 32];
+const WORD_MODES: &[crate::config::WordsMode] = &[
+    crate::config::WordsMode::Disabled,
+    crate::config::WordsMode::Fallback,
+    crate::config::WordsMode::Enabled,
+];
 const AUTO_SAVE_MODES: &[crate::config::AutoSaveMode] = &[
     crate::config::AutoSaveMode::Off,
     crate::config::AutoSaveMode::OnFocusLoss,
@@ -228,6 +243,55 @@ pub(crate) static DESCRIPTORS: &[Descriptor] = &[
             "completion.inline.statistics · counts only, never source or network telemetry",
         labels: BOOL_LABELS,
     },
+    Descriptor {
+        setting: Setting::CompletionEnabled,
+        section: "Completion",
+        name: "Code completion",
+        description: "completion.enabled · master switch, including manual requests",
+        labels: BOOL_LABELS,
+    },
+    Descriptor {
+        setting: Setting::CompletionMenu,
+        section: "Completion",
+        name: "Automatic completion menu",
+        description: "completion.menu.enabled · turn off to use only manual completion",
+        labels: BOOL_LABELS,
+    },
+    Descriptor {
+        setting: Setting::CompletionWords,
+        section: "Completion",
+        name: "Local word suggestions",
+        description: "completion.menu.words · fallback uses words when language-server results are absent",
+        labels: &["Off", "Fallback", "Always"],
+    },
+    Descriptor {
+        setting: Setting::CompletionMinLength,
+        section: "Completion",
+        name: "Minimum local word length",
+        description: "completion.menu.min_word_length · shortest candidate identifier to include",
+        labels: &["1", "3", "5", "8"],
+    },
+    Descriptor {
+        setting: Setting::InlineEnabled,
+        section: "Completion",
+        name: "AI inline suggestions",
+        description: "completion.inline.enabled · requires a configured provider; may send source code",
+        labels: BOOL_LABELS,
+    },
+    Descriptor {
+        setting: Setting::InlineDelay,
+        section: "Completion",
+        name: "Inline suggestion delay",
+        description: "completion.inline.debounce_ms · wait after typing before requesting a suggestion",
+        labels: &["150 ms", "300 ms", "600 ms", "1 s"],
+    },
+    Descriptor {
+        setting: Setting::InlineSuffix,
+        section: "Completion",
+        name: "Text after the cursor",
+        description: "completion.inline.max_line_suffix · limit on text after the cursor; whitespace and closers are ignored",
+        labels: &["0", "8", "32"],
+    },
 ];
 
 impl Descriptor {
@@ -284,6 +348,21 @@ impl Descriptor {
             .position(|value| *value == config.text.end_of_line)?,
             Setting::SessionRestore => usize::from(config.session.restore),
             Setting::SessionSave => usize::from(config.session.save_on_exit),
+            Setting::CompletionEnabled => usize::from(config.completion.enabled),
+            Setting::CompletionMenu => usize::from(config.completion.menu.enabled),
+            Setting::CompletionWords => WORD_MODES
+                .iter()
+                .position(|&mode| mode == config.completion.menu.words)?,
+            Setting::CompletionMinLength => WORD_LENGTHS
+                .iter()
+                .position(|&length| length == config.completion.menu.min_word_length)?,
+            Setting::InlineEnabled => usize::from(config.completion.inline.enabled),
+            Setting::InlineDelay => INLINE_DELAYS
+                .iter()
+                .position(|&delay| delay == config.completion.inline.debounce_ms)?,
+            Setting::InlineSuffix => INLINE_SUFFIXES
+                .iter()
+                .position(|&length| length == config.completion.inline.max_line_suffix)?,
             Setting::InlineStatistics => usize::from(config.completion.inline.statistics),
         })
     }
@@ -331,6 +410,17 @@ impl Descriptor {
             }
             Setting::SessionRestore => config.session.restore = choice != 0,
             Setting::SessionSave => config.session.save_on_exit = choice != 0,
+            Setting::CompletionEnabled => config.completion.enabled = choice != 0,
+            Setting::CompletionMenu => config.completion.menu.enabled = choice != 0,
+            Setting::CompletionWords => config.completion.menu.words = WORD_MODES[choice],
+            Setting::CompletionMinLength => {
+                config.completion.menu.min_word_length = WORD_LENGTHS[choice]
+            }
+            Setting::InlineEnabled => config.completion.inline.enabled = choice != 0,
+            Setting::InlineDelay => config.completion.inline.debounce_ms = INLINE_DELAYS[choice],
+            Setting::InlineSuffix => {
+                config.completion.inline.max_line_suffix = INLINE_SUFFIXES[choice]
+            }
             Setting::InlineStatistics => config.completion.inline.statistics = choice != 0,
         }
         true
@@ -653,7 +743,13 @@ mod tests {
 
     #[test]
     fn settings_fuzzy_search_sections_share_flat_order() {
-        let mut state = SettingsState::default();
+        let mut state = SettingsState {
+            category: categories()
+                .iter()
+                .position(|&category| category == Some("Editor"))
+                .unwrap(),
+            ..SettingsState::default()
+        };
         state.editable.set_content("brackets");
         state.resolve_rows();
         assert_eq!(state.rows.len(), 2);

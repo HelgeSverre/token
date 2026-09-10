@@ -33,6 +33,14 @@ preset control. Clicking the row label only selects it.
 Changes save immediately; Escape closes the page without undoing them. The Theme
 row opens the existing theme picker.
 
+**Completion** controls the master switch (including manual requests), automatic
+menu opening, local-word fallback/mixing, minimum local candidate length, and AI
+inline suggestions with their typing delay and line-tail limit. These settings
+are independent of hover timing and inlay hints in **Editor**. Turning off the
+automatic menu leaves manual completion available; turning off the master switch
+disables both dropdown and inline requests. AI suggestions remain off by default
+and require a configured provider.
+
 Tab/Shift+Tab cycles categories, including [Keymap](config-keymap.md#editing-in-settings).
 The Keymap category records shortcuts with an explicit Save/Cancel step; its base-preset
 chips save immediately. General controls and keymap overrides use separate files.
