@@ -35,6 +35,12 @@ impl From<&str> for LspServerId {
     }
 }
 
+impl From<String> for LspServerId {
+    fn from(id: String) -> Self {
+        Self(id)
+    }
+}
+
 impl std::fmt::Display for LspServerId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
@@ -127,18 +133,90 @@ static ALL_SERVER_DEFS: &[&LspServerDef] = &[
     &SEMA,
 ];
 
-/// Looks up a registered def by `LspServerDef::id` (e.g. `"pyright"`) —
-/// used to respawn a server on restart, when only its id (not the
-/// triggering language) is known.
+/// Built-in defaults by server ID. Use `resolve_server` for runtime configuration.
 pub fn server_def_by_id(id: &str) -> Option<&'static LspServerDef> {
     ALL_SERVER_DEFS.iter().copied().find(|def| def.id == id)
 }
 
-/// Every registered server def, in a stable order — the Language Servers
-/// picker modal's row source (one row per entry) and the `FlatIndex`
-/// selection/clamp math that mirrors it.
+/// Built-in defaults in a stable order. UI lists use config-aware `server_ids`.
 pub fn all_server_defs() -> &'static [&'static LspServerDef] {
     ALL_SERVER_DEFS
+}
+
+/// Stable UI ordering: built-ins first, followed by configured custom IDs.
+pub fn server_ids(config: &crate::config::LspConfig) -> Vec<&str> {
+    let mut custom: Vec<_> = config
+        .servers
+        .keys()
+        .map(String::as_str)
+        .filter(|id| server_def_by_id(id).is_none())
+        .collect();
+    custom.sort_unstable();
+    ALL_SERVER_DEFS
+        .iter()
+        .map(|def| def.id)
+        .chain(custom)
+        .collect()
+}
+
+/// Effective language associations, including custom servers.
+pub fn configured_languages<'a>(
+    id: &str,
+    config: &'a crate::config::LspConfig,
+) -> &'a [LanguageId] {
+    config
+        .servers
+        .get(id)
+        .and_then(|server| server.languages.as_deref())
+        .unwrap_or_else(|| languages_for_server(id))
+}
+
+/// One authoritative routing decision for startup, completion, status and menus.
+/// Enabled explicit associations take precedence over built-in defaults. Ties
+/// in hand-written config are deterministic (ID order); Settings rejects them.
+pub fn server_id_for_language(
+    language: LanguageId,
+    config: &crate::config::LspConfig,
+) -> Option<&str> {
+    let explicit = config
+        .servers
+        .iter()
+        .filter(|(_, server)| {
+            server
+                .languages
+                .as_ref()
+                .is_some_and(|languages| languages.contains(&language))
+        })
+        .min_by_key(|(id, server)| (server.enabled == Some(false), id.as_str()));
+    if let Some((id, server)) = explicit {
+        if server.enabled != Some(false) {
+            return Some(id);
+        }
+    }
+    lsp_server_def(language)
+        .filter(|def| configured_languages(def.id, config).contains(&language))
+        .map(|def| def.id)
+        .or_else(|| explicit.map(|(id, _)| id.as_str()))
+}
+
+/// Another enabled explicit assignment that would compete with this server.
+pub fn association_conflict<'a>(
+    id: &str,
+    languages: &[LanguageId],
+    config: &'a crate::config::LspConfig,
+) -> Option<&'a str> {
+    config
+        .servers
+        .iter()
+        .filter(|(other, server)| {
+            other.as_str() != id
+                && server.enabled != Some(false)
+                && server.languages.as_ref().is_some_and(|assigned| {
+                    assigned.iter().any(|language| languages.contains(language))
+                })
+        })
+        .map(|(id, _)| id.as_str())
+        .min()
 }
 
 /// Languages a registered server def handles, for display (the picker's
@@ -188,6 +266,7 @@ pub struct ResolvedServer {
     pub id: LspServerId,
     pub command: String,
     pub args: Vec<String>,
+    pub root_markers: Vec<String>,
     /// `lsp.servers.<id>.initialization_options` — sent verbatim in the
     /// `initialize` request. `Null` when unconfigured.
     pub initialization_options: serde_json::Value,
@@ -197,24 +276,33 @@ pub struct ResolvedServer {
     pub settings: serde_json::Value,
 }
 
-/// Applies `config.yaml`'s `lsp:` overrides to a registry def.
-pub fn resolve_server(
-    def: &'static LspServerDef,
-    config: &crate::config::LspConfig,
-) -> Option<ResolvedServer> {
+/// Resolve a built-in or custom server, respecting the global and local switches.
+pub fn resolve_server(id: &str, config: &crate::config::LspConfig) -> Option<ResolvedServer> {
     if !config.enabled {
         return None;
     }
-    let over = config.servers.get(def.id);
+    let def = server_def_by_id(id);
+    let over = config.servers.get(id);
     if over.is_some_and(|o| o.enabled == Some(false)) {
         return None;
     }
     let command = over
         .and_then(|o| o.command.clone())
-        .unwrap_or_else(|| def.command.to_owned());
-    let args = over
-        .and_then(|o| o.args.clone())
-        .unwrap_or_else(|| def.args.iter().map(|s| s.to_string()).collect());
+        .or_else(|| def.map(|def| def.command.to_owned()))?;
+    let args = over.and_then(|o| o.args.clone()).unwrap_or_else(|| {
+        def.into_iter()
+            .flat_map(|def| def.args)
+            .map(|s| s.to_string())
+            .collect()
+    });
+    let root_markers = over
+        .and_then(|o| o.root_markers.clone())
+        .unwrap_or_else(|| {
+            def.into_iter()
+                .flat_map(|def| def.project_markers)
+                .map(|s| s.to_string())
+                .collect()
+        });
     let initialization_options = over
         .and_then(|o| o.initialization_options.clone())
         .unwrap_or(serde_json::Value::Null);
@@ -222,9 +310,10 @@ pub fn resolve_server(
         .and_then(|o| o.settings.clone())
         .unwrap_or(serde_json::Value::Null);
     Some(ResolvedServer {
-        id: LspServerId::from(def.id),
+        id: LspServerId::from(id),
         command,
         args,
+        root_markers,
         initialization_options,
         settings,
     })
@@ -233,6 +322,54 @@ pub fn resolve_server(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_server_configuration_routes_languages_and_preserves_builtin_fallbacks() {
+        let mut config: crate::config::LspConfig = serde_yaml::from_str(
+            r#"
+servers:
+  custom-rust:
+    command: /installed/server
+    args: [--stdio]
+    languages: [rust, cpp]
+    root_markers: [project.json, .git]
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            server_id_for_language(LanguageId::Rust, &config),
+            Some("custom-rust")
+        );
+        assert_eq!(
+            server_id_for_language(LanguageId::Cpp, &config),
+            Some("custom-rust")
+        );
+        assert_eq!(
+            server_id_for_language(LanguageId::Go, &config),
+            Some("gopls")
+        );
+        let resolved = resolve_server("custom-rust", &config).unwrap();
+        assert_eq!(resolved.command, "/installed/server");
+        assert_eq!(resolved.args, ["--stdio"]);
+        assert_eq!(resolved.root_markers, ["project.json", ".git"]);
+        assert_eq!(server_ids(&config).last(), Some(&"custom-rust"));
+        let round_trip: crate::config::LspConfig =
+            serde_yaml::from_str(&serde_yaml::to_string(&config).unwrap()).unwrap();
+        assert_eq!(resolve_server("custom-rust", &round_trip), Some(resolved));
+        config.servers.get_mut("custom-rust").unwrap().enabled = Some(false);
+        assert_eq!(
+            server_id_for_language(LanguageId::Rust, &config),
+            Some("rust-analyzer")
+        );
+        assert!(resolve_server("custom-rust", &config).is_none());
+        config.servers.get_mut("custom-rust").unwrap().enabled = Some(true);
+        assert_eq!(
+            association_conflict("another", &[LanguageId::Rust], &config),
+            Some("custom-rust")
+        );
+        config.enabled = false;
+        assert!(resolve_server("custom-rust", &config).is_none());
+    }
 
     #[test]
     fn maps_every_ts_family_language_to_the_same_server_def() {
@@ -264,7 +401,7 @@ mod tests {
             enabled: false,
             ..Default::default()
         };
-        assert!(resolve_server(&RUST_ANALYZER, &config).is_none());
+        assert!(resolve_server(RUST_ANALYZER.id, &config).is_none());
     }
 
     #[test]
@@ -281,9 +418,10 @@ mod tests {
                 enabled: None,
                 initialization_options: None,
                 settings: None,
+                ..Default::default()
             },
         );
-        let resolved = resolve_server(&PHPANTOM, &config).unwrap();
+        let resolved = resolve_server(PHPANTOM.id, &config).unwrap();
         assert_eq!(resolved.command, "laravel-lsp");
         assert!(resolved.args.is_empty()); // def.args is empty and no override
         assert_eq!(resolved.initialization_options, serde_json::Value::Null);
@@ -304,10 +442,11 @@ mod tests {
                 enabled: Some(false),
                 initialization_options: None,
                 settings: None,
+                ..Default::default()
             },
         );
-        assert!(resolve_server(&PYRIGHT, &config).is_none());
-        assert!(resolve_server(&RUST_ANALYZER, &config).is_some());
+        assert!(resolve_server(PYRIGHT.id, &config).is_none());
+        assert!(resolve_server(RUST_ANALYZER.id, &config).is_some());
     }
 
     #[test]
@@ -324,9 +463,10 @@ mod tests {
                 enabled: None,
                 initialization_options: Some(serde_json::json!({ "python": { "pythonPath": "/usr/bin/python3" } })),
                 settings: Some(serde_json::json!({ "python": { "analysis": { "typeCheckingMode": "strict" } } })),
+                ..Default::default()
             },
         );
-        let resolved = resolve_server(&PYRIGHT, &config).unwrap();
+        let resolved = resolve_server(PYRIGHT.id, &config).unwrap();
         assert_eq!(
             resolved.initialization_options["python"]["pythonPath"],
             serde_json::json!("/usr/bin/python3")

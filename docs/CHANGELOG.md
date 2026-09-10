@@ -13,6 +13,10 @@ All notable changes to rust-editor are documented in this file.
 
 ### Language-server setup
 
+- Add custom language servers from Settings, with language associations and
+  project-root markers. Apply changes to matching open files, use custom servers
+  throughout completion/navigation/status, and reject conflicting assignments.
+
 - Configure language-server executables, arguments, initialization options and
   server settings directly in the separate Settings page. Drafts support native
   file browsing, multiline JSON/YAML validation, executable lookup, live status

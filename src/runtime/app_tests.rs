@@ -2457,6 +2457,7 @@ fn missing_server_is_memoized_and_not_retried_on_repeated_opens() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
     let dir = tempfile::tempdir().expect("temp dir should be created");
@@ -4000,6 +4001,7 @@ fn hover_resolved_opens_the_card_with_plaintext_content() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -4070,6 +4072,7 @@ fn a_stale_hover_response_after_a_revision_bump_is_dropped() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -4177,6 +4180,7 @@ fn references_resolved_populates_destination(panel: bool) {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -4279,6 +4283,7 @@ fn stale_references_response_after_a_revision_bump_is_dropped() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -4372,6 +4377,7 @@ fn goto_definition_with_multiple_locations_opens_the_popup() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -4464,6 +4470,7 @@ fn hover_on_a_diagnostic_line_includes_related_information() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -4560,6 +4567,7 @@ fn problems_panel_end_to_end_via_fake_server_publish_and_command() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -4676,6 +4684,7 @@ fn server_exit_empties_the_open_problems_panel() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -4783,6 +4792,7 @@ fn configure_fake_rust_analyzer(app: &mut App, dir: &Path, transcript_path: &Pat
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 }
@@ -4835,6 +4845,92 @@ fn settings_server_reconfiguration_recovers_missing_process_and_opens_once() {
     app.process_cmd(Cmd::LspApplyConfiguration { server_id });
     assert!(app.lsp.servers.is_empty());
     assert!(app.lsp.open_documents.is_empty());
+}
+
+#[test]
+fn custom_lsp_server_syncs_cpp_and_rebinds_when_language_assignments_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("source").join("main.cpp");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "int main() {}\n").unwrap();
+    std::fs::write(dir.path().join("project.json"), "{}").unwrap();
+    let transcript = dir.path().join("custom.jsonl");
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.document_mut().file_path = Some(path.clone());
+    app.model.document_mut().language = LanguageId::Cpp;
+    let document_id = app.model.document().id.unwrap();
+    configure_fake_rust_analyzer(&mut app, dir.path(), &transcript);
+    let mut custom = app
+        .model
+        .config
+        .lsp
+        .servers
+        .remove("rust-analyzer")
+        .unwrap();
+    custom.languages = Some(vec![LanguageId::Cpp]);
+    custom.root_markers = Some(vec!["project.json".into()]);
+    app.model
+        .config
+        .lsp
+        .servers
+        .insert("custom-cpp".into(), custom.clone());
+    let first = LspServerId::from("custom-cpp");
+    app.process_cmd(Cmd::LspApplyConfiguration {
+        server_id: first.clone(),
+    });
+    assert!(
+        pump_until(&mut app, Duration::from_secs(5), |app| {
+            app.model.lsp.servers.get(&first) == Some(&ServerState::Ready)
+                && read_transcript_lines(&transcript)
+                    .iter()
+                    .any(|line| line.starts_with("notify:textDocument/didOpen:"))
+        }),
+        "state: {:?}, document open: {}, transcript: {:?}",
+        app.model.lsp.servers,
+        app.lsp.open_documents.contains_key(&document_id),
+        read_transcript_lines(&transcript)
+    );
+    let open = &app.lsp.open_documents[&document_id];
+    assert_eq!(open.server_id, first);
+    assert_eq!(open.root, dir.path());
+    // A newly configured replacement must retire the previous owner's process
+    // and re-open the document without a tab switch or edit.
+    app.model
+        .config
+        .lsp
+        .servers
+        .get_mut("custom-cpp")
+        .unwrap()
+        .enabled = Some(false);
+    app.model
+        .config
+        .lsp
+        .servers
+        .insert("replacement-cpp".into(), custom);
+    let second = LspServerId::from("replacement-cpp");
+    app.process_cmd(Cmd::LspApplyConfiguration {
+        server_id: second.clone(),
+    });
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+        app.model.lsp.servers.get(&second) == Some(&ServerState::Ready)
+            && app
+                .lsp
+                .open_documents
+                .get(&document_id)
+                .is_some_and(|open| open.server_id == second)
+    }));
+    assert!(app.lsp.servers.keys().all(|(id, _)| *id != first));
+    app.model
+        .config
+        .lsp
+        .servers
+        .get_mut("replacement-cpp")
+        .unwrap()
+        .languages = Some(vec![LanguageId::C]);
+    app.process_cmd(Cmd::LspApplyConfiguration { server_id: second });
+    assert!(app.lsp.servers.is_empty());
+    assert!(app.lsp.open_documents.is_empty());
+    assert!(app.lsp.detached_roots.is_empty());
 }
 
 fn read_transcript_lines(transcript_path: &Path) -> Vec<String> {
@@ -5005,6 +5101,7 @@ fn server_initiated_apply_edit_is_applied_and_acknowledged() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
     let doc_id = app.model.document().id.expect("document id");
@@ -5257,6 +5354,7 @@ fn goto_definition_into_an_unopened_file_opens_it_and_places_the_cursor() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -5367,6 +5465,7 @@ fn goto_definition_and_hover_flush_a_pending_did_change_ahead_of_their_request()
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -5506,6 +5605,7 @@ fn diagnostics_publish_for_an_unopened_file_is_retained_and_applied_on_open() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -5601,6 +5701,7 @@ fn stale_version_diagnostics_publish_is_dropped() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -5689,6 +5790,7 @@ fn crash_restart_resyncs_previously_open_documents() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -5736,6 +5838,7 @@ fn crash_restart_resyncs_previously_open_documents() {
             enabled: None,
             initialization_options: None,
             settings: None,
+            ..Default::default()
         },
     );
 
@@ -5802,7 +5905,7 @@ fn resync_uses_the_stored_server_and_root_not_a_re_resolved_one() {
 
     let server_id = LspServerId::from("rust-analyzer");
     let def = lsp::server_def_by_id(&server_id.0).unwrap();
-    let resolved = lsp::resolve_server(def, &app.model.config.lsp).unwrap();
+    let resolved = lsp::resolve_server(def.id, &app.model.config.lsp).unwrap();
     app.spawn_lsp_server_at(&resolved, &resolving_root);
 
     let doc_id = token::model::editor_area::DocumentId(1);

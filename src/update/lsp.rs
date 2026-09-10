@@ -135,6 +135,22 @@ pub fn toggle_lsp_enabled(model: &mut AppModel) -> Option<Cmd> {
 /// apply-live shape as `toggle_lsp_enabled`, scoped to a single server;
 /// `None` only if the config can't be reached (never for a valid `id`).
 pub fn toggle_lsp_server_enabled(model: &mut AppModel, server_id: &str) -> Option<Cmd> {
+    if let Some(server) = model
+        .config
+        .lsp
+        .servers
+        .get(server_id)
+        .filter(|server| server.enabled == Some(false))
+    {
+        if let Some(conflict) = server.languages.as_ref().and_then(|languages| {
+            crate::lsp::association_conflict(server_id, languages, &model.config.lsp)
+        }) {
+            model.ui.set_status(format!(
+                "Cannot enable {server_id}: language assignments overlap with {conflict}"
+            ));
+            return Some(Cmd::Redraw);
+        }
+    }
     let enabled = apply_lsp_server_toggle(&mut model.config.lsp, server_id);
     Some(Cmd::Batch(vec![
         Cmd::SaveConfiguration {

@@ -884,7 +884,7 @@ pub(crate) fn with_settings_spec<R>(
         .rows
         .iter()
         .map(|&id| {
-            if let (RowKind::FormInfo, Some(form)) = (state.entries[id].kind, &state.form) {
+            if let (RowKind::FormInfo, Some(form)) = (state.entries[id].kind.clone(), &state.form) {
                 return std::borrow::Cow::Borrowed(form.executable_status.as_str());
             }
             if matches!(state.entries[id].kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
@@ -926,12 +926,12 @@ pub(crate) fn with_settings_spec<R>(
                         } else { Some(&details[index]) },
                         detail_style: None,
                         match_indices: &[],
-                        accessory: if let (RowKind::FormField(field), Some(form)) = (entry.kind, &state.form) {
+                        accessory: if let (RowKind::FormField(field), Some(form)) = (entry.kind.clone(), &state.form) {
                             Accessory::SettingInput { content: &form.fields[field].input, focused: form.focused == Some(field) && !form.saving,
                                 browse: form.fields[field].browse, line_height: model.line_height, char_width: model.char_width }
                         } else if matches!(entry.kind, RowKind::FormInfo) {
                             Accessory::SettingValue { text: &details[index], action: None }
-                        } else if let (RowKind::FormEnabled, Some(form)) = (entry.kind, &state.form) {
+                        } else if let (RowKind::FormEnabled, Some(form)) = (entry.kind.clone(), &state.form) {
                             Accessory::Choices { labels: entry.choices(), active: Some(usize::from(form.enabled)) }
                         } else if matches!(entry.kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
                             Accessory::SettingValue { text: &model.config.theme, action: Some("Choose…") }
@@ -983,7 +983,12 @@ pub(crate) fn with_settings_spec<R>(
         .unwrap_or_else(|| {
             state.form.as_ref().map_or_else(
                 || state.editable.text(),
-                |form| format!("{} configuration", form.server.id),
+                |form| {
+                    form.server.as_ref().map_or_else(
+                        || "Add language server".into(),
+                        |id| format!("{id} configuration"),
+                    )
+                },
             )
         });
     let selected_detail = state.selected_index.min(details.len().saturating_sub(1));
@@ -1175,7 +1180,7 @@ fn render_language_picker_modal(
 /// state — e.g. `"TypeScript, JavaScript · Ready"`.
 fn lsp_server_detail(model: &AppModel, server_id: &str) -> String {
     let (_, state_label) = lsp_server_state_visual(model, server_id);
-    let languages: Vec<&str> = crate::lsp::languages_for_server(server_id)
+    let languages: Vec<&str> = crate::lsp::configured_languages(server_id, &model.config.lsp)
         .iter()
         .map(|l| l.display_name())
         .collect();
@@ -1190,23 +1195,20 @@ fn render_lsp_servers_modal(
     ctx: &ModalRenderCtx,
     mask_cache: &mut RoundedRectMaskCache,
 ) {
-    let defs = crate::lsp::all_server_defs();
-    let details: Vec<String> = defs
-        .iter()
-        .map(|def| lsp_server_detail(model, def.id))
-        .collect();
-    let rows: Vec<Row> = defs
+    let ids = crate::lsp::server_ids(&model.config.lsp);
+    let details: Vec<String> = ids.iter().map(|id| lsp_server_detail(model, id)).collect();
+    let rows: Vec<Row> = ids
         .iter()
         .zip(&details)
-        .map(|(def, detail)| {
-            let (color, _) = lsp_server_state_visual(model, def.id);
-            let enabled = lsp_server_config_enabled(model, def.id);
+        .map(|(id, detail)| {
+            let (color, _) = lsp_server_state_visual(model, id);
+            let enabled = lsp_server_config_enabled(model, id);
             Row {
                 icon: RowIcon::Glyph {
                     ch: '\u{25CF}',
                     color,
                 },
-                label: def.id,
+                label: id,
                 match_indices: &[],
                 detail: Some(detail.as_str()),
                 detail_style: None,
@@ -1219,7 +1221,7 @@ fn render_lsp_servers_modal(
         rows: &rows,
     }];
 
-    let selected_index = state.selected_index.min(defs.len().saturating_sub(1));
+    let selected_index = state.selected_index.min(ids.len().saturating_sub(1));
 
     let spec = OverlaySpec {
         tabs: None,
@@ -1527,7 +1529,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
             Some(f(&spec, &l))
         }
         ModalState::LspServers(state) => {
-            let rows = placeholder_rows(crate::lsp::all_server_defs().len());
+            let rows = placeholder_rows(crate::lsp::server_ids(&model.config.lsp).len());
             let sections = [Section {
                 title: None,
                 rows: &rows,
@@ -2675,7 +2677,7 @@ mod tests {
         };
         state.keymap.snapshot =
             Some(crate::keymap::preferences::KeymapSnapshot::parse(None).unwrap());
-        state.refresh_entries();
+        state.refresh_entries(&model.config);
         with_settings_spec(&model, &state, |spec| {
             assert_eq!(
                 spec.tabs.as_ref().unwrap().active,
@@ -2721,7 +2723,7 @@ mod tests {
             strokes: crate::keymap::preferences::parse_sequence("ctrl+k ctrl+s").unwrap(),
             literal_next: false,
         });
-        state.refresh_entries();
+        state.refresh_entries(&model.config);
         with_settings_spec(&model, &state, |spec| {
             assert!(spec.header.as_ref().unwrap().caret.is_none());
             let recorded = state

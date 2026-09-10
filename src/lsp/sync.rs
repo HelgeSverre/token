@@ -25,7 +25,7 @@ pub const DID_CHANGE_MAX_WAIT_MS: u64 = 300;
 
 /// LSP-conventional `languageId` string for `didOpen`
 /// (docs/feature/lsp-integration.md "URIs and Paths"). `None` for
-/// languages with no registered server def — nothing else needs one.
+/// languages without a registered tag. Custom servers use the same mapping.
 pub fn language_id_str(language: LanguageId) -> Option<&'static str> {
     use LanguageId::*;
     Some(match language {
@@ -38,7 +38,11 @@ pub fn language_id_str(language: LanguageId) -> Option<&'static str> {
         Python => "python",
         Php => "php",
         Sema => "sema",
-        _ => return None,
+        PlainText => "plaintext",
+        Markdown => "markdown",
+        Bash => "shellscript",
+        Make => "makefile",
+        _ => return language.primary_tag(),
     })
 }
 
@@ -140,9 +144,11 @@ mod tests {
     }
 
     #[test]
-    fn language_id_is_none_for_unregistered_languages() {
-        assert_eq!(language_id_str(LanguageId::PlainText), None);
-        assert_eq!(language_id_str(LanguageId::Markdown), None);
+    fn custom_server_languages_have_sync_ids_without_builtin_servers() {
+        assert_eq!(language_id_str(LanguageId::PlainText), Some("plaintext"));
+        assert_eq!(language_id_str(LanguageId::Markdown), Some("markdown"));
+        assert_eq!(language_id_str(LanguageId::Cpp), Some("cpp"));
+        assert_eq!(language_id_str(LanguageId::Make), Some("makefile"));
     }
 
     #[test]

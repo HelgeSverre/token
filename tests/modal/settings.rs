@@ -341,6 +341,81 @@ fn form_input(model: &mut AppModel, name: &str, value: &str) {
 }
 
 #[test]
+fn settings_adds_a_custom_server_without_overwriting_existing_configuration() {
+    use token::messages::SettingsMsg;
+    let mut model = test_model("text", 0, 0);
+    open(&mut model);
+    let add = row(&model, "Custom language server");
+    modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: add,
+            choice: 0,
+        },
+    );
+    form_input(&mut model, "Server ID", "rust-analyzer");
+    form_input(&mut model, "Executable", "/installed/clangd");
+    form_input(
+        &mut model,
+        "Arguments (JSON / YAML list)",
+        "[--background-index]",
+    );
+    form_input(&mut model, "Languages", "C, C++");
+    form_input(
+        &mut model,
+        "Root markers (JSON / YAML list)",
+        "[compile_commands.json, .git]",
+    );
+    let actions = row(&model, "Configuration");
+    let apply = ModalMsg::ChooseSetting {
+        row: actions,
+        choice: 0,
+    };
+    assert!(
+        pending_form(&modal(&mut model, apply.clone()).unwrap()).is_none(),
+        "a built-in ID must not be overwritten"
+    );
+    form_input(&mut model, "Server ID", "clangd");
+    form_input(&mut model, "Languages", "not-a-language");
+    assert!(pending_form(&modal(&mut model, apply.clone()).unwrap()).is_none());
+    form_input(&mut model, "Languages", "C, C++");
+    let (session, change) = pending_form(&modal(&mut model, apply).unwrap()).unwrap();
+    assert!(!model.config.lsp.servers.contains_key("clangd"));
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::Settings(SettingsMsg::FormApplied {
+            session,
+            change,
+            result: Ok(()),
+        })),
+    );
+    let server = &model.config.lsp.servers["clangd"];
+    assert_eq!(server.command.as_deref(), Some("/installed/clangd"));
+    assert_eq!(
+        server.languages.as_deref(),
+        Some(&[token::syntax::LanguageId::C, token::syntax::LanguageId::Cpp][..])
+    );
+    assert_eq!(
+        server.root_markers.as_deref(),
+        Some(&["compile_commands.json".into(), ".git".into()][..])
+    );
+    modal(&mut model, ModalMsg::Close);
+    let configure = row(&model, "clangd executable");
+    modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: configure,
+            choice: 0,
+        },
+    );
+    let executable = row(&model, "Executable");
+    modal(&mut model, ModalMsg::ActivateRow(executable));
+    assert!(
+        matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.input() == "/installed/clangd")
+    );
+}
+
+#[test]
 fn settings_server_form_validates_and_applies_only_after_save_success() {
     use token::messages::SettingsMsg;
     let mut model = test_model("text", 0, 0);

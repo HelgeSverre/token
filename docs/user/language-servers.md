@@ -10,10 +10,15 @@ downloaded automatically. Syntax highlighting works without a language server.
 Open **Settings** with Cmd+, (Ctrl+, on Windows/Linux), then select **LSP**.
 
 - **Language servers** switches all servers on or off.
+- **Add language server…** registers another installed server; it is not limited
+  to the built-in entries. Choose a unique ID, executable, arguments, languages,
+  and optional project-root markers.
 - Each server has its own enabled switch, executable row, and live status.
 - **Configure…** opens a draft form inside Settings. Edit the executable (or
   Browse for it), arguments, initialization options, and server settings.
-  **Apply & Restart** saves and reconfigures only that server. Cancel or Escape
+  **Apply & Restart** saves that server's configuration and rebinds matching open
+  documents. If language assignments change, the affected previous servers are
+  also restarted; unrelated servers are left alone. Cancel or Escape
   returns to the settings list without applying the draft. A failed save leaves
   the running configuration unchanged.
 - The **Editor** category has Mouse hover, Hover delay, and Inlay hints controls.
@@ -39,7 +44,7 @@ draft; reopen Settings to return to it. Applying retries a previously missing
 server for matching open files, and turning its form switch off stops it. No
 installer is run automatically.
 
-## Supported servers
+## Built-in servers
 
 | Files                            | Configuration ID             | Default executable and arguments     | Project markers     |
 | -------------------------------- | ---------------------------- | ------------------------------------ | ------------------- |
@@ -54,6 +59,46 @@ For files inside the open workspace, that workspace is the project root. For
 other files, Token searches upward for the server's project markers, then falls
 back to the file's directory.
 Server IDs, not language names, are the keys under `lsp.servers`.
+
+## Add a custom server
+
+In **Settings → LSP → Add language server…**:
+
+1. Choose an unused ID such as `clangd` or `lua-language-server`.
+2. Choose the installed executable and its argument list. Token communicates over
+   standard input/output; add a server's stdio argument when it requires one.
+3. Enter comma-separated **Languages**, such as `C, C++` or `Lua`. The form accepts
+   supported language names and code-fence aliases; unknown names are rejected.
+4. Optionally supply **Root markers**, a JSON/YAML list of file or directory names,
+   for example `[compile_commands.json, .git]`. An open workspace takes precedence;
+   otherwise the nearest matching ancestor is used, falling back to the file's
+   directory. `[]` means no markers; an empty field restores built-in defaults.
+5. **Apply & Restart** validates and saves the entry. It then appears alongside the
+   built-ins with its own Configure button, enabled switch, and live status.
+
+Enabled explicit language assignments override the built-in mapping. Only one
+server is chosen per language; Settings rejects overlapping enabled explicit
+assignments. Disable the previous custom server before replacing it. Disabling a
+custom server restores the built-in default, if one exists and is enabled.
+For conflicting hand-written YAML, the alphabetically first enabled explicit
+server ID wins. This does not add new syntax grammars or install server binaries.
+
+Equivalent YAML for an installed C/C++ server:
+
+```yaml
+lsp:
+  servers:
+    clangd:
+      command: clangd
+      args: [--background-index]
+      languages: [c, cpp]
+      root_markers: [compile_commands.json, .git]
+```
+
+YAML language identifiers are lowercase registry names, such as `rust`, `cpp`,
+`python`, `typescript`, `tsx`, `lua`, and `markdown`. The form writes these names
+for you. Built-ins retain their default associations and root markers when these
+fields are omitted.
 
 ## Configure paths and server options
 

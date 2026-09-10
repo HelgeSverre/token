@@ -441,9 +441,9 @@ pub enum WordsMode {
 ///       enabled: false
 /// ```
 ///
-/// Overrides are keyed by `LspServerDef::id`, not by language — to run
-/// `laravel-lsp` instead of the default `phpantom`, override the
-/// `phpantom` entry's `command`.
+/// Entries are keyed by server ID. Built-ins retain their default command and
+/// language associations unless overridden. A custom ID needs `command` and
+/// `languages`; `root_markers` optionally controls detached-project discovery.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LspConfig {
     /// Master switch; `false` disables every server regardless of
@@ -470,6 +470,14 @@ impl Default for LspConfig {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LspServerOverride {
+    /// Explicit language associations override the built-in mapping. A custom
+    /// server needs both a command and at least one language association.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub languages: Option<Vec<crate::syntax::LanguageId>>,
+    /// Root marker files or directories. Empty uses the file's parent when
+    /// there is no workspace; absent retains a built-in server's defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_markers: Option<Vec<String>>,
     pub command: Option<String>,
     pub args: Option<Vec<String>>,
     pub enabled: Option<bool>,

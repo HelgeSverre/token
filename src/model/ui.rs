@@ -825,13 +825,13 @@ impl ThemePickerState {
 }
 
 /// State for the Language Servers picker modal (dynamic — one row per
-/// entry in `lsp::all_server_defs()`, built fresh from `model.lsp` /
+/// entry in `lsp::server_ids()`, built fresh from `model.lsp` /
 /// `model.config.lsp` at render time each frame instead of cached here,
-/// since the registry is static and the live state already lives in the
+/// since definitions and live state already live in the
 /// model — see `docs/feature/lsp-integration.md`).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LspServersState {
-    /// Index of selected server in `lsp::all_server_defs()`
+    /// Index of selected server in `lsp::server_ids()`
     pub selected_index: usize,
     /// Scroll offset (in rows) for keeping a long server list clipped and
     /// the selection visible instead of overflowing the modal.

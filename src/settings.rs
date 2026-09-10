@@ -428,8 +428,9 @@ impl Descriptor {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) enum RowKind {
+    AddServer,
     FormField(usize),
     FormEnabled,
     FormActions,
@@ -439,9 +440,9 @@ pub(crate) enum RowKind {
     CaptureActions,
     Preset(usize),
     LspMaster,
-    ServerEnabled(&'static str),
-    ServerCommand(&'static crate::lsp::LspServerDef),
-    ServerStatus(&'static str),
+    ServerEnabled(String),
+    ServerCommand(String),
+    ServerStatus(String),
 }
 
 #[derive(Debug, Clone)]
@@ -455,6 +456,7 @@ pub(crate) struct SettingRow {
 impl SettingRow {
     pub fn choices(&self) -> &'static [&'static str] {
         match self.kind {
+            RowKind::AddServer => &["Add language server…"],
             RowKind::FormField(_) | RowKind::FormInfo => &[],
             RowKind::FormEnabled => BOOL_LABELS,
             RowKind::FormActions => &["Apply & Restart", "Cancel", "Open log"],
@@ -469,13 +471,14 @@ impl SettingRow {
     }
 
     pub fn active(&self, config: &EditorConfig) -> Option<usize> {
-        match self.kind {
+        match &self.kind {
+            RowKind::AddServer => None,
             RowKind::FormField(_)
             | RowKind::FormEnabled
             | RowKind::FormActions
             | RowKind::FormInfo => None,
             RowKind::KeymapBase | RowKind::KeymapBinding(..) | RowKind::CaptureActions => None,
-            RowKind::Preset(index) => DESCRIPTORS[index].active(config),
+            RowKind::Preset(index) => DESCRIPTORS[*index].active(config),
             RowKind::LspMaster => Some(usize::from(config.lsp.enabled)),
             RowKind::ServerEnabled(id) => Some(usize::from(
                 config
@@ -492,28 +495,35 @@ impl SettingRow {
     /// Open-ended commands use the row's clipped detail slot, never an unbounded
     /// accessory that could overwrite the label or paint outside the panel.
     pub fn detail<'a>(&'a self, config: &'a EditorConfig) -> Cow<'a, str> {
-        if let RowKind::ServerCommand(def) = self.kind {
+        if let RowKind::ServerCommand(id) = &self.kind {
             return match config
                 .lsp
                 .servers
-                .get(def.id)
+                .get(id)
                 .and_then(|o| o.command.as_deref())
             {
                 Some("") => Cow::Borrowed("(empty override)"),
                 Some(command) => Cow::Borrowed(command),
-                None => Cow::Owned(format!("{} (default)", def.command)),
+                None => crate::lsp::server_def_by_id(id)
+                    .map_or(Cow::Borrowed("No executable configured"), |def| {
+                        Cow::Owned(format!("{} (default)", def.command))
+                    }),
             };
         }
         Cow::Borrowed(&self.description)
     }
 
     pub fn status(&self, model: &crate::model::AppModel) -> Option<Cow<'static, str>> {
-        let RowKind::ServerStatus(id) = self.kind else {
+        let RowKind::ServerStatus(id) = &self.kind else {
             return None;
         };
         use crate::lsp::ServerState;
         Some(
-            match model.lsp.servers.get(&crate::lsp::LspServerId::from(id)) {
+            match model
+                .lsp
+                .servers
+                .get(&crate::lsp::LspServerId::from(id.as_str()))
+            {
                 None => Cow::Borrowed("Not started"),
                 Some(ServerState::Starting) => Cow::Borrowed("Starting"),
                 Some(ServerState::Indexing) => Cow::Borrowed("Indexing"),
@@ -529,7 +539,7 @@ impl SettingRow {
     }
 }
 
-fn settings_rows() -> Vec<SettingRow> {
+fn settings_rows(config: &EditorConfig) -> Vec<SettingRow> {
     let mut rows: Vec<_> = DESCRIPTORS
         .iter()
         .enumerate()
@@ -546,35 +556,39 @@ fn settings_rows() -> Vec<SettingRow> {
         name: "Language servers".into(),
         description: "lsp.enabled · enable language intelligence".into(),
     });
-    for def in crate::lsp::all_server_defs() {
-        let languages = crate::lsp::languages_for_server(def.id)
+    rows.push(SettingRow {
+        kind: RowKind::AddServer,
+        section: "LSP",
+        name: "Custom language server".into(),
+        description: "Add an installed server and choose the languages it handles".into(),
+    });
+    for id in crate::lsp::server_ids(&config.lsp) {
+        let languages = crate::lsp::configured_languages(id, &config.lsp)
             .iter()
             .map(|language| language.display_name())
             .collect::<Vec<_>>()
             .join(", ");
         rows.extend([
             SettingRow {
-                kind: RowKind::ServerEnabled(def.id),
+                kind: RowKind::ServerEnabled(id.into()),
                 section: "LSP",
-                name: format!("{} enabled", def.id).into(),
-                description: format!("lsp.servers.{}.enabled · {languages}", def.id).into(),
+                name: format!("{id} enabled").into(),
+                description: format!("lsp.servers.{id}.enabled · {languages}").into(),
             },
             SettingRow {
-                kind: RowKind::ServerCommand(def),
+                kind: RowKind::ServerCommand(id.into()),
                 section: "LSP",
-                name: format!("{} executable", def.id).into(),
+                name: format!("{id} executable").into(),
                 description: format!(
-                    "lsp.servers.{}.command · {languages} · configure this server",
-                    def.id
+                    "lsp.servers.{id}.command · {languages} · configure this server"
                 )
                 .into(),
             },
             SettingRow {
-                kind: RowKind::ServerStatus(def.id),
+                kind: RowKind::ServerStatus(id.into()),
                 section: "LSP",
-                name: format!("{} status", def.id).into(),
-                description: format!("{} live process state · {languages} · read-only", def.id)
-                    .into(),
+                name: format!("{id} status").into(),
+                description: format!("{id} live process state · {languages} · read-only").into(),
             },
         ]);
     }
@@ -599,7 +613,13 @@ pub struct SettingsState {
 
 impl Default for SettingsState {
     fn default() -> Self {
-        let entries = settings_rows();
+        Self::new(&EditorConfig::default())
+    }
+}
+
+impl SettingsState {
+    pub fn new(config: &EditorConfig) -> Self {
+        let entries = settings_rows(config);
         let rows = (0..entries.len()).collect();
         Self {
             form: None,
@@ -645,7 +665,7 @@ impl SettingsState {
             None => Some(&mut self.editable),
         }
     }
-    pub(crate) fn refresh_entries(&mut self) {
+    pub(crate) fn refresh_entries(&mut self, config: &EditorConfig) {
         if let Some(form) = &self.form {
             self.entries = form.entries();
             self.rows = (0..self.entries.len()).collect();
@@ -653,7 +673,7 @@ impl SettingsState {
             return;
         }
         self.entries = match self.tab {
-            keymap::SettingsTab::General => settings_rows(),
+            keymap::SettingsTab::General => settings_rows(config),
             keymap::SettingsTab::Keymap => self.keymap.entries(),
         };
         self.resolve_rows();
@@ -754,12 +774,12 @@ mod tests {
         let state = SettingsState::default();
         assert_eq!(
             state.rows.len(),
-            DESCRIPTORS.len() + 1 + 3 * crate::lsp::all_server_defs().len()
+            DESCRIPTORS.len() + 2 + 3 * crate::lsp::all_server_defs().len()
         );
         let mut config = EditorConfig::default();
         for (def, group) in crate::lsp::all_server_defs()
             .iter()
-            .zip(state.entries[DESCRIPTORS.len() + 1..].as_chunks::<3>().0)
+            .zip(state.entries[DESCRIPTORS.len() + 2..].as_chunks::<3>().0)
         {
             assert_eq!(group[0].active(&config), Some(1));
             assert_eq!(group[1].name, format!("{} executable", def.id));

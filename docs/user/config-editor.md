@@ -51,14 +51,16 @@ chip and stay unchanged until you choose a preset. Saves preserve unknown YAML
 keys, but not comments or formatting.
 
 The LSP section includes a master switch and an enabled switch for each registered
-server. Disabling stops the affected servers; enabling permits startup on the next
-matching file open/edit. A server's switch retains its own preference when the
+server, plus **Add language server…** for custom executables, languages, arguments
+and root markers. Server switches update matching open files immediately.
+A server's switch retains its own preference when the
 master switch is Off. Selecting an unchanged choice does not save again.
 
 Executable rows show the configured command or registry default. Their
 **Configure…** buttons open a draft form for paths, arguments and advanced
 JSON/YAML options, with Browse, executable lookup, live status and Open log.
-Apply & Restart saves and reconfigures that server; Cancel/Escape discards only
+Apply & Restart saves that server and rebinds documents affected by its language
+assignments; Cancel/Escape discards only
 unapplied edits. Validation or save failures keep the draft and leave the live
 configuration unchanged. Live process-state rows remain read-only. Status updates without
 reopening Settings. The existing Language Servers picker remains available.

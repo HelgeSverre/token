@@ -218,3 +218,50 @@ binary passed on retry after the full suite finished. No timeouts or host securi
 settings were changed. These are synthetic handler checks, not physical trackpad
 or OS focus-delivery coverage. Settings and final cross-platform release gates
 remain pending; no release was published.
+
+## Settings forms and custom-server follow-up
+
+The earlier LSP Configure action now opens a draft form in the separate Settings
+page instead of opening YAML. It provides executable browsing/lookup, arguments,
+initialization options, server settings, live status and Open log. Multiline
+inputs use the shared editing and pointer/caret geometry. Apply persists before
+changing the runtime configuration; validation or save errors preserve the draft.
+
+Settings → LSP also has **Add language server…**. Custom entries specify an
+installed executable, language associations and optional root markers. A shared
+config-aware registry drives startup, restart, completion, status, context menus
+and the Language Servers picker. Explicit assignments override built-in defaults;
+the form rejects competing enabled assignments. Reconfiguration rebinds affected
+open files and releases unused detached-root slots. It does not install servers.
+
+The footer now uses a lighter, full-width surface with the panel's lower corners,
+and Close uses the shared button renderer and hover/hit geometry. Production
+renderer captures are in `target/verification/settings-forms/`; these are headless
+layout checks, not native file-dialog or physical pointer verification.
+
+Verification was completed in stages:
+
+- The initial full run passed 2,715 tests, with seven opt-in tests skipped. Its
+  one failure was an incorrect new test assertion: the fake server records a
+  message summary, not raw JSON. The corrected custom-server lifecycle test
+  passed against the real child process, including document open, root discovery,
+  replacement-server ownership and unused-root cleanup.
+- After putting basic form fields before advanced options, the existing geometry
+  test's fixed scroll samples skipped over the multiline caret at 2× scale. An
+  intermediate sample now exercises it. No production geometry change was needed.
+  All 19 final focused library checks and all ten Settings modal interaction
+  checks passed, along with the lifecycle check and two doctests (six ignored).
+- The repeat broad run was stopped after identifying that sampling gap: 2,058
+  tests passed, one failed on the old sample, 12 running cases were interrupted,
+  and 645 were not run. This is not a claim of one clean full run on the final
+  tree; coverage combines the initial full run and final focused checks.
+- Strict all-target/all-feature Clippy passed on the final source.
+
+Host delays affected both compilation and test-process startup. A saved compiler
+sample shows it waiting in the macOS loader while opening a procedural-macro
+library (`target/verification/settings-forms/final-lint-delay.sample.txt`). No
+test deadlines or host security settings were changed.
+
+Full AI-provider forms, code/UI font selectors and final exact-candidate native
+and hosted release verification remain separate pending work. These Settings
+changes do not authorize a release tag or publication.

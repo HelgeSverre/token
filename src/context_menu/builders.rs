@@ -81,11 +81,11 @@ fn active_document_for_group(
 /// the request itself still falls back to a status transient
 /// (`NotSupported`/`StillIndexing`) if this is too optimistic.
 fn lsp_available_for(model: &AppModel, language: crate::syntax::LanguageId) -> bool {
-    crate::lsp::lsp_server_def(language).is_some_and(|def| {
+    crate::lsp::server_id_for_language(language, &model.config.lsp).is_some_and(|id| {
         model
             .lsp
             .servers
-            .contains_key(&crate::lsp::LspServerId::from(def.id))
+            .contains_key(&crate::lsp::LspServerId::from(id))
     })
 }
 

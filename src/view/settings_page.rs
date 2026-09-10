@@ -944,7 +944,7 @@ mod tests {
             let mut model = crate::model::AppModel::new(1000, 740, scale);
             model.char_width = 8.0 * scale as f32;
             model.line_height = (20.0 * scale) as usize;
-            let mut form = SettingsForm::language_server(&crate::lsp::RUST_ANALYZER, &model.config);
+            let mut form = SettingsForm::language_server(Some("rust-analyzer"), &model.config);
             form.fields[2]
                 .input
                 .set_content("{\n  \"check\": {\n    \"command\": \"clippy\"\n  }\n}");
@@ -954,13 +954,18 @@ mod tests {
             form.focused = Some(2);
             let mut state = SettingsState {
                 form: Some(form),
-                selected_index: 3,
                 ..SettingsState::default()
             };
-            state.refresh_entries();
+            state.refresh_entries(&model.config);
+            let advanced_row = state
+                .entries
+                .iter()
+                .position(|row| matches!(row.kind, crate::settings::RowKind::FormField(2)))
+                .unwrap();
+            state.selected_index = advanced_row;
             let mut advanced_hits = 0;
             let mut advanced_geometry = Vec::new();
-            for offset in [0, 145, 311, 499, 657, 799] {
+            for offset in [0, 145, 311, 499, 550, 657, 799] {
                 state.scroll_offset_px = (offset as f64 * scale) as usize;
                 crate::view::modal::with_settings_spec(&model, &state, |spec| {
                     let layout = super::super::layout(spec, 1000, 740, scale);
@@ -985,7 +990,7 @@ mod tests {
                         ) else {
                             continue;
                         };
-                        if index.0 == 3 {
+                        if index.0 == advanced_row {
                             advanced_geometry.push((offset, *raw, caret, viewport.rect()));
                         }
                         if !viewport.rect().contains(caret.x as f32, caret.y as f32) {
@@ -1000,7 +1005,7 @@ mod tests {
                             panic!("expected field at {caret:?}, got {hit:?}")
                         };
                         assert_eq!(actual, *index);
-                        if index.0 == 3 {
+                        if index.0 == advanced_row {
                             advanced_hits += 1;
                         }
                         let Accessory::SettingInput { content, .. } = row.accessory else {

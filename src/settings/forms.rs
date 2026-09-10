@@ -4,12 +4,12 @@ use std::sync::Arc;
 use super::{RowKind, SettingRow};
 use crate::config::{EditorConfig, LspServerOverride};
 use crate::editable::{EditConstraints, EditableState, StringBuffer};
-use crate::lsp::LspServerDef;
+use crate::syntax::LanguageId;
 
 #[derive(Debug, Clone)]
 pub enum SettingsChange {
     LanguageServer {
-        id: &'static str,
+        id: String,
         value: LspServerOverride,
     },
 }
@@ -18,7 +18,7 @@ impl SettingsChange {
     pub fn apply(&self, config: &mut EditorConfig) {
         match self {
             Self::LanguageServer { id, value } => {
-                config.lsp.servers.insert((*id).into(), value.clone());
+                config.lsp.servers.insert(id.clone(), value.clone());
             }
         }
     }
@@ -26,6 +26,20 @@ impl SettingsChange {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FormError {
+    #[error("Choose a unique server ID using letters, digits, dashes, underscores or dots")]
+    ServerId,
+    #[error("At least one supported language is required")]
+    MissingLanguages,
+    #[error(
+        "Unknown language: {0}. Use a language name or alias, such as Rust, Python, C++, or tsx"
+    )]
+    Language(String),
+    #[error(
+        "Language assignments overlap with {0}; disable that server or change its languages first"
+    )]
+    AssociationConflict(String),
+    #[error("Root markers must be file or directory names, without slashes, newlines or NUL")]
+    RootMarker,
     #[error("Executable must not be empty or contain a newline or NUL")]
     Executable,
     #[error("{field}: {source}")]
@@ -73,7 +87,7 @@ impl FormField {
 #[derive(Debug, Clone)]
 pub(crate) struct SettingsForm {
     pub session: Arc<()>,
-    pub server: &'static LspServerDef,
+    pub server: Option<String>,
     pub fields: Vec<FormField>,
     pub enabled: bool,
     pub focused: Option<usize>,
@@ -97,30 +111,67 @@ impl SettingsForm {
         }
     }
 
-    pub fn language_server(def: &'static LspServerDef, config: &EditorConfig) -> Self {
-        let value = config.lsp.servers.get(def.id).cloned().unwrap_or_default();
-        let args = value
-            .args
-            .unwrap_or_else(|| def.args.iter().map(|arg| (*arg).into()).collect());
+    pub fn language_server(id: Option<&str>, config: &EditorConfig) -> Self {
+        let def = id.and_then(crate::lsp::server_def_by_id);
+        let value = id
+            .and_then(|id| config.lsp.servers.get(id))
+            .cloned()
+            .unwrap_or_default();
+        let args = value.args.unwrap_or_else(|| {
+            def.into_iter()
+                .flat_map(|def| def.args)
+                .map(|arg| (*arg).into())
+                .collect()
+        });
+        let languages = id
+            .map(|id| crate::lsp::configured_languages(id, &config.lsp))
+            .unwrap_or_default()
+            .iter()
+            .map(LanguageId::display_name)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let markers = value.root_markers.unwrap_or_else(|| {
+            def.into_iter()
+                .flat_map(|def| def.project_markers)
+                .map(|marker| (*marker).into())
+                .collect()
+        });
         let mut executable = FormField::new(
             "Executable",
             "Command on PATH or an absolute path; no shell expansion",
-            value.command.as_deref().unwrap_or(def.command),
+            value
+                .command
+                .as_deref()
+                .or_else(|| def.map(|def| def.command))
+                .unwrap_or_default(),
             false,
         );
         executable.browse = true;
-        Self {
-            session: Arc::new(()), server: def,
+        let mut form = Self {
+            session: Arc::new(()), server: id.map(str::to_owned),
             fields: vec![
                 executable,
                 FormField::new("Arguments (JSON / YAML list)", "A list of strings, not a shell command; [] means no arguments; empty uses defaults", &json_text(Some(&serde_json::json!(args))), true),
                 FormField::new("Initialization options (JSON / YAML)", "Advanced options sent as initializationOptions; empty uses defaults", &json_text(value.initialization_options.as_ref()), true),
                 FormField::new("Server settings (JSON / YAML object)", "Advanced settings returned to workspace/configuration; empty uses defaults", &json_text(value.settings.as_ref()), true),
+                FormField::new("Languages", "Comma-separated language names or aliases, for example C, C++, Python, tsx", &languages, false),
+                FormField::new("Root markers (JSON / YAML list)", "Nearest ancestor containing any marker; the open workspace takes precedence", &json_text(Some(&serde_json::json!(markers))), true),
             ],
             enabled: value.enabled.unwrap_or(true), focused: Some(0), dragging: false, saving: false,
             status: "Draft · Apply & Restart saves this server only; Cancel leaves it unchanged".into(),
             executable_status: "Checking executable…".into(),
+        };
+        if id.is_none() {
+            form.fields.push(FormField::new(
+                "Server ID",
+                "Unique name, for example clangd or lua-language-server",
+                "",
+                false,
+            ));
+            form.focused = Some(6);
+            form.executable_status = "Choose an installed executable".into();
         }
+        form
     }
 
     pub fn entries(&self) -> Vec<SettingRow> {
@@ -128,19 +179,26 @@ impl SettingsForm {
         let mut rows = vec![SettingRow {
             kind: RowKind::FormEnabled,
             section,
-            name: format!("{} enabled", self.server.id).into(),
-            description: "The global Language servers switch still takes precedence".into(),
+            name: "Server enabled".into(),
+            description: "Explicit language assignments take precedence over built-in defaults"
+                .into(),
         }];
         rows.extend(
-            self.fields
-                .iter()
-                .enumerate()
-                .map(|(index, field)| SettingRow {
+            (self
+                .server
+                .is_none()
+                .then_some(6)
+                .into_iter()
+                .chain([0, 4, 1, 5, 2, 3]))
+            .map(|index| {
+                let field = &self.fields[index];
+                SettingRow {
                     kind: RowKind::FormField(index),
                     section,
                     name: field.label.into(),
                     description: field.help.into(),
-                }),
+                }
+            }),
         );
         rows.push(SettingRow {
             kind: RowKind::FormInfo,
@@ -148,13 +206,15 @@ impl SettingsForm {
             name: "Resolved executable".into(),
             description: "The application's PATH may differ from an interactive shell".into(),
         });
-        rows.push(SettingRow {
-            kind: RowKind::ServerStatus(self.server.id),
-            section,
-            name: "Live server status".into(),
-            description: "Current process state; open a matching document to start the server"
-                .into(),
-        });
+        if let Some(id) = &self.server {
+            rows.push(SettingRow {
+                kind: RowKind::ServerStatus(id.clone()),
+                section,
+                name: "Live server status".into(),
+                description: "Current process state; open a matching document to start the server"
+                    .into(),
+            });
+        }
         rows.push(SettingRow {
             kind: RowKind::FormActions,
             section,
@@ -164,14 +224,32 @@ impl SettingsForm {
         rows
     }
 
-    pub fn change(&self) -> Result<SettingsChange, FormError> {
+    pub fn change(&self, config: &EditorConfig) -> Result<SettingsChange, FormError> {
+        let id = self
+            .server
+            .clone()
+            .unwrap_or_else(|| self.fields[6].input.text());
+        if !id.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
+            || !id
+                .bytes()
+                .all(|ch| ch.is_ascii_alphanumeric() || b"-_.".contains(&ch))
+            || (self.server.is_none()
+                && (crate::lsp::server_def_by_id(&id).is_some()
+                    || config.lsp.servers.contains_key(&id)))
+        {
+            return Err(FormError::ServerId);
+        }
+        let def = crate::lsp::server_def_by_id(&id);
         let command = self.fields[0].input.text();
         if command.trim().is_empty() || command.contains(['\n', '\r', '\0']) {
             return Err(FormError::Executable);
         }
         let arguments = self.fields[1].input.text();
         let args: Vec<String> = if arguments.trim().is_empty() {
-            self.server.args.iter().map(|arg| (*arg).into()).collect()
+            def.into_iter()
+                .flat_map(|def| def.args)
+                .map(|arg| (*arg).into())
+                .collect()
         } else {
             serde_yaml::from_str(&arguments).map_err(|source| FormError::Structured {
                 field: "Arguments",
@@ -199,18 +277,70 @@ impl SettingsForm {
         if settings.as_ref().is_some_and(|value| !value.is_object()) {
             return Err(FormError::SettingsObject);
         }
+        let mut languages = Vec::new();
+        for name in self.fields[4]
+            .input
+            .text()
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
+            let language = LanguageId::from_name(name)
+                .filter(|language| crate::lsp::sync::language_id_str(*language).is_some())
+                .ok_or_else(|| FormError::Language(name.into()))?;
+            if !languages.contains(&language) {
+                languages.push(language);
+            }
+        }
+        if languages.is_empty() {
+            return Err(FormError::MissingLanguages);
+        }
+        let languages = (languages != crate::lsp::languages_for_server(&id)).then_some(languages);
+        if let Some(languages) = languages.as_ref().filter(|_| self.enabled) {
+            if let Some(other) = crate::lsp::association_conflict(&id, languages, &config.lsp) {
+                return Err(FormError::AssociationConflict(other.into()));
+            }
+        }
+        let marker_text = self.fields[5].input.text();
+        let root_markers: Vec<String> = if marker_text.trim().is_empty() {
+            def.into_iter()
+                .flat_map(|def| def.project_markers)
+                .map(|marker| (*marker).into())
+                .collect()
+        } else {
+            serde_yaml::from_str(&marker_text).map_err(|source| FormError::Structured {
+                field: "Root markers",
+                source,
+            })?
+        };
+        if root_markers.iter().any(|marker| {
+            marker.is_empty()
+                || marker == "."
+                || marker == ".."
+                || marker.contains(['/', '\\', '\n', '\r', '\0'])
+        }) {
+            return Err(FormError::RootMarker);
+        }
+        let default_args = def.map_or(&[][..], |def| def.args);
+        let default_markers = def.map_or(&[][..], |def| def.project_markers);
         Ok(SettingsChange::LanguageServer {
-            id: self.server.id,
+            id,
             value: LspServerOverride {
-                command: (command != self.server.command).then_some(command),
+                command: (Some(command.as_str()) != def.map(|def| def.command)).then_some(command),
                 args: (args
                     .iter()
                     .map(String::as_str)
-                    .ne(self.server.args.iter().copied()))
+                    .ne(default_args.iter().copied()))
                 .then_some(args),
                 enabled: Some(self.enabled),
                 initialization_options,
                 settings,
+                languages,
+                root_markers: root_markers
+                    .iter()
+                    .map(String::as_str)
+                    .ne(default_markers.iter().copied())
+                    .then_some(root_markers),
             },
         })
     }

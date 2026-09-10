@@ -249,6 +249,9 @@ struct ModalConfig {
     /// Open a registered server's Settings draft without running any effects.
     #[serde(default)]
     server: Option<String>,
+    /// Open the custom language-server creation form in Settings.
+    #[serde(default)]
+    new_server: bool,
     /// Settings category label from the shared metadata (for example, LSP).
     #[serde(default)]
     category: Option<String>,
@@ -824,14 +827,22 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) -> Result<()> {
                     Msg::Ui(UiMsg::Modal(ModalMsg::SetInput(input.clone()))),
                 );
             }
-            if let Some(server) = &config.server {
+            if config.new_server || config.server.is_some() {
+                anyhow::ensure!(
+                    !(config.new_server && config.server.is_some()),
+                    "choose server or new_server, not both"
+                );
+                let label = config.server.as_ref().map_or_else(
+                    || "Custom language server".to_owned(),
+                    |server| format!("{server} executable"),
+                );
                 let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
                     unreachable!()
                 };
                 let row = state
                     .filtered_rows()
-                    .position(|(label, _)| label == format!("{server} executable"))
-                    .with_context(|| format!("server {server} not in filtered Settings rows"))?;
+                    .position(|(name, _)| name == label)
+                    .with_context(|| format!("{label} not in filtered Settings rows"))?;
                 update(
                     model,
                     Msg::Ui(UiMsg::Modal(ModalMsg::ChooseSetting { row, choice: 0 })),

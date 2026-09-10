@@ -663,7 +663,10 @@ fn find_bar_snapshot(model: &AppModel) -> Option<OverlaySnapshot> {
     })
 }
 
-fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot> {
+fn overlay_snapshot(
+    config: &token::config::LspConfig,
+    modal: &token::model::ModalState,
+) -> Option<OverlaySnapshot> {
     match modal {
         token::model::ModalState::UnsavedChanges(state) => Some(OverlaySnapshot {
             context: "unsaved_changes".to_owned(),
@@ -915,10 +918,10 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
             context: "lsp_servers".to_owned(),
             query: String::new(),
             active_tab: None,
-            rows: token::lsp::all_server_defs()
-                .iter()
-                .map(|def| OverlayRowSnapshot {
-                    label: def.id.to_owned(),
+            rows: token::lsp::server_ids(config)
+                .into_iter()
+                .map(|id| OverlayRowSnapshot {
+                    label: id.to_owned(),
                     section: None,
                 })
                 .collect(),
@@ -1010,7 +1013,7 @@ impl EditorSnapshot {
                 .ui
                 .active_modal
                 .as_ref()
-                .and_then(overlay_snapshot)
+                .and_then(|modal| overlay_snapshot(&model.config.lsp, modal))
                 .or_else(|| find_bar_snapshot(model)),
             gutter_marks: gutter_marks_snapshot(document, model.editor()),
             completion: completion_snapshot(model),
@@ -1847,7 +1850,8 @@ mod tests {
         let mut state = GotoLineState::default();
         state.set_input("42");
         let modal = ModalState::GotoLine(state);
-        let snapshot = overlay_snapshot(&modal).expect("Go to Line must report an overlay");
+        let snapshot = overlay_snapshot(&Default::default(), &modal)
+            .expect("Go to Line must report an overlay");
         assert_eq!(snapshot.context, "goto_line");
         assert_eq!(snapshot.query, "42");
     }
@@ -1860,10 +1864,13 @@ mod tests {
             active_tab: SearchTab::All,
             ..Default::default()
         };
-        assert!(overlay_snapshot(&ModalState::CommandPalette(state.clone()))
-            .unwrap()
-            .status
-            .is_none());
+        assert!(overlay_snapshot(
+            &Default::default(),
+            &ModalState::CommandPalette(state.clone())
+        )
+        .unwrap()
+        .status
+        .is_none());
         state.symbols.available = true;
         state.symbols.results.failures = 1;
         state.symbols.results.items = (0..7)
@@ -1882,7 +1889,11 @@ mod tests {
                 },
             })
             .collect();
-        let all = overlay_snapshot(&ModalState::CommandPalette(state.clone())).unwrap();
+        let all = overlay_snapshot(
+            &Default::default(),
+            &ModalState::CommandPalette(state.clone()),
+        )
+        .unwrap();
         assert_eq!(
             all.rows
                 .iter()
@@ -1894,7 +1905,8 @@ mod tests {
         assert!(all.status.unwrap().contains("unavailable"));
         state.active_tab = SearchTab::Symbols;
         state.symbols.selected_index = 6;
-        let symbols = overlay_snapshot(&ModalState::CommandPalette(state)).unwrap();
+        let symbols =
+            overlay_snapshot(&Default::default(), &ModalState::CommandPalette(state)).unwrap();
         assert_eq!(symbols.rows.len(), 7);
         assert_eq!(symbols.selected, 6);
         assert_eq!(symbols.rows[6].label, "symbol6");
@@ -1907,7 +1919,7 @@ mod tests {
             .filtered_rows()
             .map(|(label, section)| (label.to_owned(), section))
             .collect();
-        let snapshot = overlay_snapshot(&ModalState::Settings(state)).unwrap();
+        let snapshot = overlay_snapshot(&Default::default(), &ModalState::Settings(state)).unwrap();
         assert_eq!(snapshot.context, "settings");
         assert_eq!(snapshot.rows.len(), expected.len());
         for (row, (label, section)) in snapshot.rows.iter().zip(expected) {
@@ -1946,7 +1958,8 @@ mod tests {
         state.selected_index = 1;
         let expected_len = state.themes.len();
         let modal = ModalState::ThemePicker(state);
-        let snapshot = overlay_snapshot(&modal).expect("theme picker must report an overlay");
+        let snapshot = overlay_snapshot(&Default::default(), &modal)
+            .expect("theme picker must report an overlay");
         assert_eq!(snapshot.context, "theme_picker");
         assert_eq!(snapshot.rows.len(), expected_len);
         assert_eq!(snapshot.selected, 1);
@@ -1976,7 +1989,8 @@ mod tests {
 
         let sections = token::update::search_everywhere_sections(&state);
         let modal = ModalState::CommandPalette(state);
-        let snapshot = overlay_snapshot(&modal).expect("command palette must report an overlay");
+        let snapshot = overlay_snapshot(&Default::default(), &modal)
+            .expect("command palette must report an overlay");
 
         assert_eq!(
             snapshot.rows.len(),
@@ -2005,7 +2019,8 @@ mod tests {
         };
         let state = RecentFilesState::new(&recent, None);
         let modal = ModalState::RecentFiles(state);
-        let snapshot = overlay_snapshot(&modal).expect("recent files must report an overlay");
+        let snapshot = overlay_snapshot(&Default::default(), &modal)
+            .expect("recent files must report an overlay");
         assert_eq!(snapshot.context, "recent_files");
         assert_eq!(snapshot.rows.len(), 2);
         assert_eq!(snapshot.selected, 0);
@@ -2020,7 +2035,8 @@ mod tests {
             scroll_offset: 0,
         };
         let modal = ModalState::LspServers(state);
-        let snapshot = overlay_snapshot(&modal).expect("lsp servers must report an overlay");
+        let snapshot = overlay_snapshot(&Default::default(), &modal)
+            .expect("lsp servers must report an overlay");
         assert_eq!(snapshot.context, "lsp_servers");
         assert_eq!(snapshot.rows.len(), token::lsp::all_server_defs().len());
         assert_eq!(snapshot.rows[0].label, token::lsp::all_server_defs()[0].id);

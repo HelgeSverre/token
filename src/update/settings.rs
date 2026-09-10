@@ -10,38 +10,39 @@ use crate::settings::{
 };
 use std::sync::Arc;
 
-fn state_mut(model: &mut AppModel) -> Option<&mut SettingsState> {
-    match &mut model.ui.active_modal {
+fn state_mut(ui: &mut crate::model::UiState) -> Option<&mut SettingsState> {
+    match &mut ui.active_modal {
         Some(ModalState::Settings(state)) => Some(state),
         _ => None,
     }
 }
 
-pub(super) fn open_server(
-    model: &mut AppModel,
-    def: &'static crate::lsp::LspServerDef,
-) -> Option<Cmd> {
-    let form = crate::settings::forms::SettingsForm::language_server(def, &model.config);
-    let cmd = Cmd::InspectSettingsExecutable {
-        session: Arc::clone(&form.session),
-        command: form.fields[0].input.text(),
-    };
-    let state = state_mut(model)?;
+pub(super) fn open_server(model: &mut AppModel, id: Option<&str>) -> Option<Cmd> {
+    let form = crate::settings::forms::SettingsForm::language_server(id, &model.config);
+    let mut commands = vec![Cmd::Redraw];
+    let command = form.fields[0].input.text();
+    if !command.is_empty() {
+        commands.push(Cmd::InspectSettingsExecutable {
+            session: Arc::clone(&form.session),
+            command,
+        });
+    }
+    let state = state_mut(&mut model.ui)?;
     state.form = Some(form);
     state.selected_index = 1;
     state.scroll_offset_px = 0;
-    state.refresh_entries();
+    state.refresh_entries(&model.config);
     super::ui::reveal_settings_selection(model);
-    Some(Cmd::Batch(vec![cmd, Cmd::Redraw]))
+    Some(Cmd::Batch(commands))
 }
 
 pub(super) fn cancel_form(model: &mut AppModel) -> Option<Cmd> {
-    let state = state_mut(model)?;
+    let state = state_mut(&mut model.ui)?;
     if state.form.as_ref().is_some_and(|form| form.saving) {
         return Some(Cmd::Redraw);
     }
     state.form = None;
-    state.refresh_entries();
+    state.refresh_entries(&model.config);
     Some(Cmd::Redraw)
 }
 
@@ -50,11 +51,12 @@ pub(super) fn form_choice(
     choice: Option<usize>,
     delta: isize,
 ) -> Option<Cmd> {
-    let state = state_mut(model)?;
+    let state = state_mut(&mut model.ui)?;
     let kind = state
         .entries
         .get(*state.rows.get(state.selected_index)?)?
-        .kind;
+        .kind
+        .clone();
     let form = state.form.as_mut()?;
     if form.saving {
         return Some(Cmd::Redraw);
@@ -85,7 +87,7 @@ pub(super) fn form_choice(
         RowKind::FormActions => {
             form.focused = None;
             match choice.unwrap_or(if delta < 0 { 1 } else { 0 }) {
-                0 => match form.change() {
+                0 => match form.change(&model.config) {
                     Ok(change) => {
                         form.saving = true;
                         form.status = "Saving configuration…".into();
@@ -125,7 +127,7 @@ pub(super) fn form_choice(
 }
 
 pub(super) fn adjust_form(model: &mut AppModel) -> Option<Cmd> {
-    let state = state_mut(model)?;
+    let state = state_mut(&mut model.ui)?;
     if matches!(
         state
             .entries
@@ -140,7 +142,7 @@ pub(super) fn adjust_form(model: &mut AppModel) -> Option<Cmd> {
 }
 
 pub(super) fn form_focus(model: &mut AppModel, forward: bool) -> Option<Cmd> {
-    let state = state_mut(model)?;
+    let state = state_mut(&mut model.ui)?;
     let form = state.form.as_mut()?;
     if form.saving {
         return Some(Cmd::Redraw);
@@ -165,7 +167,7 @@ pub(super) fn form_focus(model: &mut AppModel, forward: bool) -> Option<Cmd> {
 }
 
 pub(super) fn page_field(model: &mut AppModel, forward: bool) -> Option<Cmd> {
-    let row = state_mut(model)?.selected_index;
+    let row = state_mut(&mut model.ui)?.selected_index;
     let count = crate::view::modal::with_modal_overlay_layout(
         model,
         model.window_size.0 as usize,
@@ -178,7 +180,7 @@ pub(super) fn page_field(model: &mut AppModel, forward: bool) -> Option<Cmd> {
     )
     .flatten()
     .unwrap_or(1);
-    let input = state_mut(model)?.focused_input_mut()?;
+    let input = state_mut(&mut model.ui)?.focused_input_mut()?;
     for _ in 0..count {
         if forward {
             input.move_down(false);
@@ -195,7 +197,7 @@ pub(super) fn capturing(model: &AppModel) -> bool {
 }
 
 pub(super) fn switch_tab(model: &mut AppModel, index: Option<usize>) -> Option<Cmd> {
-    let state = state_mut(model)?;
+    let state = state_mut(&mut model.ui)?;
     if let Some(form) = &mut state.form {
         form.status = "Apply or Cancel this draft before changing categories".into();
         return Some(Cmd::Redraw);
@@ -211,7 +213,7 @@ pub(super) fn switch_tab(model: &mut AppModel, index: Option<usize>) -> Option<C
         SettingsTab::General
     };
     state.editable.set_content("");
-    state.refresh_entries();
+    state.refresh_entries(&model.config);
     if state.tab == SettingsTab::Keymap && state.keymap.snapshot.is_none() && !state.keymap.loading
     {
         state.keymap.loading = true;
@@ -228,12 +230,13 @@ pub(super) fn switch_tab(model: &mut AppModel, index: Option<usize>) -> Option<C
 }
 
 pub(super) fn activate_row(model: &mut AppModel) -> Option<Cmd> {
-    let state = state_mut(model)?;
+    let state = state_mut(&mut model.ui)?;
     if state.form.is_some() {
         let kind = state
             .entries
             .get(*state.rows.get(state.selected_index)?)?
-            .kind;
+            .kind
+            .clone();
         if let Some(form) = &mut state.form {
             form.focused = match kind {
                 RowKind::FormField(index) => Some(index),
@@ -260,7 +263,7 @@ pub(super) fn activate_row(model: &mut AppModel) -> Option<Cmd> {
         literal_next: false,
     });
     state.keymap.update_capture_status();
-    state.refresh_entries();
+    state.refresh_entries(&model.config);
     Some(Cmd::Redraw)
 }
 
@@ -288,12 +291,12 @@ pub(super) fn choose_base(
     choice: Option<usize>,
     delta: isize,
 ) -> Option<Cmd> {
-    let state = state_mut(model)?;
+    let state = state_mut(&mut model.ui)?;
     if !matches!(
         state
             .entries
             .get(*state.rows.get(state.selected_index)?)
-            .map(|r| r.kind),
+            .map(|r| r.kind.clone()),
         Some(RowKind::KeymapBase)
     ) {
         return Some(Cmd::Redraw);
@@ -314,7 +317,7 @@ pub(super) fn choose_base(
 }
 
 pub(super) fn capture_action(model: &mut AppModel, action: usize) -> Option<Cmd> {
-    let state = state_mut(model)?;
+    let state = state_mut(&mut model.ui)?;
     if state.keymap.saving {
         return Some(Cmd::Redraw);
     }
@@ -339,14 +342,14 @@ pub(super) fn capture_action(model: &mut AppModel, action: usize) -> Option<Cmd>
         }
         _ => return None,
     }
-    state.refresh_entries();
+    state.refresh_entries(&model.config);
     Some(Cmd::Redraw)
 }
 
 pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<Cmd> {
     match msg {
         SettingsMsg::EndFieldSelection => {
-            state_mut(model)?.form.as_mut()?.dragging = false;
+            state_mut(&mut model.ui)?.form.as_mut()?.dragging = false;
             None
         }
         SettingsMsg::FieldPointer {
@@ -354,7 +357,7 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             position,
             extend,
         } => {
-            let state = state_mut(model)?;
+            let state = state_mut(&mut model.ui)?;
             let RowKind::FormField(index) = state.entries.get(*state.rows.get(row)?)?.kind else {
                 return None;
             };
@@ -373,7 +376,7 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             Some(Cmd::Redraw)
         }
         SettingsMsg::MoveFieldCursor { down, extend } => {
-            let input = state_mut(model)?.focused_input_mut()?;
+            let input = state_mut(&mut model.ui)?.focused_input_mut()?;
             if down {
                 input.move_down(extend);
             } else {
@@ -383,13 +386,13 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             Some(Cmd::Redraw)
         }
         SettingsMsg::UndoField { redo } => {
-            let input = state_mut(model)?.focused_input_mut()?;
+            let input = state_mut(&mut model.ui)?.focused_input_mut()?;
             if redo {
                 input.redo();
             } else {
                 input.undo();
             }
-            if let Some(form) = state_mut(model)?.form.as_mut() {
+            if let Some(form) = state_mut(&mut model.ui)?.form.as_mut() {
                 form.changed();
             }
             model.ui.reset_cursor_blink();
@@ -400,7 +403,7 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             field,
             path,
         } => {
-            let state = state_mut(model)?;
+            let state = state_mut(&mut model.ui)?;
             let form = state.form.as_mut()?;
             if !Arc::ptr_eq(&form.session, &session) || form.saving {
                 return None;
@@ -426,7 +429,7 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             command,
             status,
         } => {
-            let form = state_mut(model)?.form.as_mut()?;
+            let form = state_mut(&mut model.ui)?.form.as_mut()?;
             if !Arc::ptr_eq(&form.session, &session) || form.fields[0].input.text() != command {
                 return None;
             }
@@ -442,11 +445,18 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             if success {
                 change.apply(&mut model.config);
             }
-            if let Some(form) = state_mut(model)
+            if let Some(form) = state_mut(&mut model.ui)
                 .and_then(|state| state.form.as_mut())
                 .filter(|form| Arc::ptr_eq(&form.session, &session))
             {
                 form.saving = false;
+                if success {
+                    let crate::settings::forms::SettingsChange::LanguageServer { id, .. } =
+                        change.as_ref();
+                    form.server = Some(id.clone());
+                    form.fields.truncate(6);
+                    form.focused = None;
+                }
                 form.status = match result {
                     Ok(()) => "Saved · the configuration is applied".into(),
                     Err(error) => format!("Not applied: {error}"),
@@ -454,13 +464,16 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             }
             if success {
                 let crate::settings::forms::SettingsChange::LanguageServer { id, .. } = *change;
+                if let Some(state) = state_mut(&mut model.ui) {
+                    state.refresh_entries(&model.config);
+                }
                 let mut commands = vec![
                     Cmd::LspApplyConfiguration {
                         server_id: id.into(),
                     },
                     Cmd::Redraw,
                 ];
-                if let Some(form) = state_mut(model).and_then(|state| state.form.as_ref()) {
+                if let Some(form) = state_mut(&mut model.ui).and_then(|state| state.form.as_ref()) {
                     commands.push(Cmd::InspectSettingsExecutable {
                         session: Arc::clone(&form.session),
                         command: form.fields[0].input.text(),
@@ -472,10 +485,10 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             }
         }
         SettingsMsg::CaptureRejected(reason) => {
-            let state = state_mut(model)?;
+            let state = state_mut(&mut model.ui)?;
             if state.keymap.capture.is_some() && !state.keymap.saving {
                 state.keymap.status = reason;
-                state.refresh_entries();
+                state.refresh_entries(&model.config);
             }
             Some(Cmd::Redraw)
         }
@@ -496,7 +509,7 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             if !active {
                 return saved.then_some(Cmd::Redraw);
             }
-            let state = state_mut(model)?;
+            let state = state_mut(&mut model.ui)?;
             state.keymap.loading = false;
             state.keymap.saving = false;
             match result {
@@ -513,12 +526,12 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                 Err(error) => state.keymap.status = error,
             }
             if state.tab == SettingsTab::Keymap {
-                state.refresh_entries();
+                state.refresh_entries(&model.config);
             }
             Some(Cmd::Redraw)
         }
         SettingsMsg::CaptureKey(stroke) => {
-            let state = state_mut(model)?;
+            let state = state_mut(&mut model.ui)?;
             if state.keymap.saving {
                 return Some(Cmd::Redraw);
             }
@@ -533,7 +546,7 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                 if stroke.key == KeyCode::Backspace && stroke.mods.is_empty() {
                     capture.strokes.pop();
                     state.keymap.update_capture_status();
-                    state.refresh_entries();
+                    state.refresh_entries(&model.config);
                     return Some(Cmd::Redraw);
                 }
             }
@@ -544,7 +557,7 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                 capture.literal_next = false;
                 state.keymap.update_capture_status();
             }
-            state.refresh_entries();
+            state.refresh_entries(&model.config);
             Some(Cmd::Redraw)
         }
     }

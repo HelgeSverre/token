@@ -614,18 +614,15 @@ fn count_diagnostics(diagnostics: &[lsp_types::Diagnostic]) -> (usize, usize) {
 /// lifecycle state (`model.lsp.servers`), with config switches on top.
 fn lsp_server_status(model: &AppModel) -> SegmentContent {
     use crate::lsp::ServerState::*;
-    let Some(def) = crate::lsp::lsp_server_def(model.document().language) else {
+    let Some(id) = crate::lsp::server_id_for_language(model.document().language, &model.config.lsp)
+    else {
         return SegmentContent::Empty;
     };
     if !model.config.lsp.enabled {
         return SegmentContent::Text("LSP off".into());
     }
-    let disabled = model.config.lsp.servers.get(def.id).and_then(|o| o.enabled) == Some(false);
-    let state = match model
-        .lsp
-        .servers
-        .get(&crate::lsp::LspServerId::from(def.id))
-    {
+    let disabled = model.config.lsp.servers.get(id).and_then(|o| o.enabled) == Some(false);
+    let state = match model.lsp.servers.get(&crate::lsp::LspServerId::from(id)) {
         _ if disabled => "off",
         Some(Starting) => "starting",
         Some(Indexing) => "indexing",
@@ -635,7 +632,7 @@ fn lsp_server_status(model: &AppModel) -> SegmentContent {
         Some(Missing) => "not found",
         Some(ShuttingDown) | None => "off",
     };
-    SegmentContent::Text(format!("{}: {state}", def.id))
+    SegmentContent::Text(format!("{id}: {state}"))
 }
 
 /// The message of the highest-severity diagnostic whose range contains

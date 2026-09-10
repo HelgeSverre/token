@@ -177,8 +177,8 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
 
         AppMsg::RestartLanguageServer => {
             let language = model.document().language;
-            match crate::lsp::lsp_server_def(language)
-                .map(|def| crate::lsp::LspServerId::from(def.id))
+            match crate::lsp::server_id_for_language(language, &model.config.lsp)
+                .map(crate::lsp::LspServerId::from)
             {
                 Some(server_id) if model.lsp.servers.contains_key(&server_id) => {
                     super::lsp::update_lsp(

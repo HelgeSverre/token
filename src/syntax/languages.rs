@@ -42,6 +42,22 @@ impl LanguageId {
         super::registry::language(*self).display_name
     }
 
+    /// Primary language tag, shared by fenced snippets and LSP document sync.
+    pub(crate) fn primary_tag(self) -> Option<&'static str> {
+        super::registry::language(self)
+            .fence_aliases
+            .first()
+            .copied()
+    }
+
+    /// Accept a displayed language name or a registered code-fence alias.
+    pub fn from_name(name: &str) -> Option<Self> {
+        let name = name.trim();
+        Self::all()
+            .find(|language| language.display_name().eq_ignore_ascii_case(name))
+            .or_else(|| Self::from_code_fence_info(name))
+    }
+
     /// Check if this language has syntax highlighting support
     pub fn has_highlighting(&self) -> bool {
         !matches!(self, LanguageId::PlainText)

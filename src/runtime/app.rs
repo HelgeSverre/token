@@ -2981,35 +2981,7 @@ impl App {
                 self.restart_lsp_server(&server_id);
             }
             Cmd::LspApplyConfiguration { server_id } => {
-                self.teardown_lsp_server(&server_id);
-                self.lsp
-                    .open_documents
-                    .retain(|_, state| state.server_id != server_id);
-                self.lsp.resync_pending.retain(|(id, _)| *id != server_id);
-                self.lsp
-                    .restart_attempts
-                    .retain(|(id, _), _| *id != server_id);
-                self.lsp
-                    .restart_deadlines
-                    .retain(|(id, _), _| *id != server_id);
-                self.lsp.missing_servers.retain(|(id, _)| *id != server_id);
-                let documents: Vec<_> = self
-                    .model
-                    .editor_area
-                    .documents
-                    .iter()
-                    .filter_map(|(&document_id, document)| {
-                        (lsp::lsp_server_def(document.language)?.id == server_id.0)
-                            .then(|| {
-                                Some((document_id, document.file_path.clone()?, document.language))
-                            })
-                            .flatten()
-                    })
-                    .collect();
-                for (document_id, path, language) in documents {
-                    self.ensure_lsp_server(language, &path);
-                    self.lsp_open_document(document_id, path, language);
-                }
+                self.reconfigure_lsp_server(&server_id);
             }
             Cmd::LspDidOpen {
                 document_id,
@@ -3361,12 +3333,8 @@ impl App {
                         });
                 }
             }
-            Cmd::LspSetServerEnabled { server_id, enabled } => {
-                if enabled {
-                    self.lsp.missing_servers.retain(|(id, _)| *id != server_id);
-                } else {
-                    self.teardown_lsp_server(&server_id);
-                }
+            Cmd::LspSetServerEnabled { server_id, .. } => {
+                self.reconfigure_lsp_server(&server_id);
             }
 
             // =====================================================================
@@ -4082,10 +4050,7 @@ impl App {
     /// the same root(s) — used both for manual restart and, capped at
     /// `MAX_RESTART_ATTEMPTS`, crash backoff.
     fn restart_lsp_server(&mut self, server_id: &LspServerId) {
-        let Some(def) = lsp::server_def_by_id(&server_id.0) else {
-            return;
-        };
-        let Some(resolved) = lsp::resolve_server(def, &self.model.config.lsp) else {
+        let Some(resolved) = lsp::resolve_server(&server_id.0, &self.model.config.lsp) else {
             return;
         };
         // `roots_for` only sees roots with a live handle — a `Failed`
@@ -4128,6 +4093,81 @@ impl App {
         // `RestartLanguageServer` pointed at roots it's not allowed to run
         // at anymore.
         self.lsp.failed_roots.remove(server_id);
+    }
+
+    /// Rebind open documents when explicit associations change. Only the edited
+    /// server and servers whose documents change owner are restarted.
+    fn reconfigure_lsp_server(&mut self, server_id: &LspServerId) {
+        let mut affected = HashSet::from([server_id.clone()]);
+        for (document_id, open) in &self.lsp.open_documents {
+            let desired = self
+                .model
+                .editor_area
+                .documents
+                .get(document_id)
+                .and_then(|doc| lsp::server_id_for_language(doc.language, &self.model.config.lsp));
+            if desired != Some(open.server_id.0.as_str()) {
+                affected.insert(open.server_id.clone());
+                if let Some(id) = desired {
+                    affected.insert(id.into());
+                }
+            }
+        }
+        let previous_roots: HashSet<_> = self
+            .lsp
+            .servers
+            .keys()
+            .filter(|(id, _)| affected.contains(id))
+            .map(|(_, root)| root.clone())
+            .chain(
+                self.lsp
+                    .failed_roots
+                    .iter()
+                    .filter(|(id, _)| affected.contains(id))
+                    .flat_map(|(_, roots)| roots.iter().cloned()),
+            )
+            .collect();
+        for id in &affected {
+            self.teardown_lsp_server(id);
+        }
+        // Changing root markers must not consume a new detached-root slot while
+        // retaining the now-unused old one. Shared roots keep their slot.
+        self.lsp.detached_roots.retain(|root| {
+            !previous_roots.contains(root)
+                || self.lsp.servers.keys().any(|(_, active)| active == root)
+        });
+        self.lsp
+            .open_documents
+            .retain(|_, state| !affected.contains(&state.server_id));
+        self.lsp
+            .resync_pending
+            .retain(|(id, _)| !affected.contains(id));
+        self.lsp
+            .restart_attempts
+            .retain(|(id, _), _| !affected.contains(id));
+        self.lsp
+            .restart_deadlines
+            .retain(|(id, _), _| !affected.contains(id));
+        self.lsp
+            .missing_servers
+            .retain(|(id, _)| !affected.contains(id));
+        let documents: Vec<_> = self
+            .model
+            .editor_area
+            .documents
+            .iter()
+            .filter_map(|(&document_id, document)| {
+                let id = lsp::server_id_for_language(document.language, &self.model.config.lsp)?;
+                affected
+                    .contains(&LspServerId::from(id))
+                    .then(|| Some((document_id, document.file_path.clone()?, document.language)))
+                    .flatten()
+            })
+            .collect();
+        for (document_id, path, language) in documents {
+            self.ensure_lsp_server(language, &path);
+            self.lsp_open_document(document_id, path, language);
+        }
     }
 
     /// Tears down every running language server without quitting the app —
@@ -4295,12 +4335,11 @@ impl App {
         language: token::syntax::LanguageId,
         file_path: &Path,
     ) -> Option<(lsp::ResolvedServer, PathBuf)> {
-        let def = lsp::lsp_server_def(language)?;
-        let resolved = lsp::resolve_server(def, &self.model.config.lsp)?;
+        let id = lsp::server_id_for_language(language, &self.model.config.lsp)?;
+        let resolved = lsp::resolve_server(id, &self.model.config.lsp)?;
         let workspace_root = self.model.workspace.as_ref().map(|w| w.root.as_path());
-        let root = lsp::client::resolve_root(file_path, workspace_root, def.project_markers, |p| {
-            p.is_file()
-        });
+        let markers: Vec<_> = resolved.root_markers.iter().map(String::as_str).collect();
+        let root = lsp::client::resolve_root(file_path, workspace_root, &markers, |p| p.exists());
         Some((resolved, root))
     }
 
@@ -5312,10 +5351,7 @@ impl App {
             self.lsp
                 .restart_deadlines
                 .remove(&(server_id.clone(), root.clone()));
-            let Some(def) = lsp::server_def_by_id(&server_id.0) else {
-                continue;
-            };
-            let Some(resolved) = lsp::resolve_server(def, &self.model.config.lsp) else {
+            let Some(resolved) = lsp::resolve_server(&server_id.0, &self.model.config.lsp) else {
                 continue;
             };
             self.lsp

@@ -191,7 +191,13 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                 ModalId::UnsavedChanges => return None, // Opened only for a concrete close intention.
                 ModalId::FileConflict => return super::file_change::show_focused(model, true),
                 ModalId::Settings => {
-                    ModalState::Settings(model.ui.suspended_settings.take().unwrap_or_default())
+                    let mut state = model
+                        .ui
+                        .suspended_settings
+                        .take()
+                        .unwrap_or_else(|| crate::settings::SettingsState::new(&model.config));
+                    state.refresh_entries(&model.config);
+                    ModalState::Settings(state)
                 }
                 ModalId::CommandPalette => {
                     // Cmd+Shift+A: Search Everywhere, pre-focused on All
@@ -647,7 +653,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
         ModalMsg::ActivateRow(row) => {
             if let Some(ref mut modal) = model.ui.active_modal {
-                set_modal_selected_index(modal, row);
+                set_modal_selected_index(modal, row, &model.config.lsp);
                 if matches!(modal, ModalState::Settings(_)) {
                     return super::settings::activate_row(model);
                 }
@@ -945,7 +951,11 @@ fn activate_search_tab(model: &mut AppModel, index: usize) -> Option<Cmd> {
 /// Set the `FlatIndex`-space selected row for whichever list-body modal is
 /// active — used by `ModalMsg::ActivateRow` (row click) ahead of confirming.
 /// A no-op for `Fields`/no-list contexts.
-fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
+fn set_modal_selected_index(
+    modal: &mut ModalState,
+    row: usize,
+    lsp_config: &crate::config::LspConfig,
+) {
     match modal {
         ModalState::UnsavedChanges(state) => {
             state.selected_index = row.min(state.actions().len() - 1)
@@ -970,7 +980,8 @@ fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
         ModalState::FileFinder(state) => state.selected_index = row.min(state.results.len()),
         ModalState::RecentFiles(state) => state.selected_index = row.min(state.filtered_rows.len()),
         ModalState::LspServers(state) => {
-            state.selected_index = row.min(crate::lsp::all_server_defs().len())
+            state.selected_index =
+                row.min(crate::lsp::server_ids(lsp_config).len().saturating_sub(1))
         }
         ModalState::LanguagePicker(state) => {
             state.selected_index = row.min(LanguageId::all().count())
@@ -1091,10 +1102,10 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
             // unlike every other Confirm arm above, the modal stays open
             // (Escape is the only way out).
             ModalState::LspServers(state) => {
-                let server_id = crate::lsp::all_server_defs()
+                let server_id = crate::lsp::server_ids(&model.config.lsp)
                     .get(state.selected_index)
-                    .map(|def| def.id);
-                match server_id.and_then(|id| toggle_lsp_server_enabled(model, id)) {
+                    .map(|id| (*id).to_owned());
+                match server_id.and_then(|id| toggle_lsp_server_enabled(model, &id)) {
                     Some(cmd) => Some(cmd),
                     None => Some(Cmd::Redraw),
                 }
@@ -1330,17 +1341,18 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
     if row.active(&model.config) == Some(choice) {
         return Some(Cmd::Redraw);
     }
-    let descriptor = match row.kind {
+    let descriptor = match row.kind.clone() {
+        crate::settings::RowKind::AddServer => return super::settings::open_server(model, None),
         crate::settings::RowKind::LspMaster => {
             let effect = super::lsp::toggle_lsp_enabled(model);
             return super::merge_cmds(effect, Some(Cmd::Redraw));
         }
         crate::settings::RowKind::ServerEnabled(id) => {
-            return super::lsp::toggle_lsp_server_enabled(model, id)
+            return super::lsp::toggle_lsp_server_enabled(model, &id)
         }
         crate::settings::RowKind::Preset(index) => &crate::settings::DESCRIPTORS[index],
-        crate::settings::RowKind::ServerCommand(def) => {
-            return super::settings::open_server(model, def)
+        crate::settings::RowKind::ServerCommand(id) => {
+            return super::settings::open_server(model, Some(&id))
         }
         crate::settings::RowKind::FormField(_)
         | crate::settings::RowKind::FormEnabled
@@ -1442,10 +1454,10 @@ fn theme_picker_shapes(state: &ThemePickerState) -> Vec<SectionShape> {
 }
 
 /// Section shapes for the Language Servers picker: a single, untitled
-/// section (like the Command Palette/File Finder) sized off the static
-/// registry rather than any per-modal cached count.
-fn lsp_servers_shapes() -> [SectionShape; 1] {
-    flat_shapes(crate::lsp::all_server_defs().len())
+/// section (like the Command Palette/File Finder) sized from the same
+/// config-aware registry as painting and activation.
+fn lsp_servers_shapes(config: &crate::config::LspConfig) -> [SectionShape; 1] {
+    flat_shapes(crate::lsp::server_ids(config).len())
 }
 
 /// Section shapes for the "Set Language..." picker: one flat section over
@@ -1595,7 +1607,7 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
             None
         }
         ModalState::LspServers(state) => {
-            let shapes = lsp_servers_shapes();
+            let shapes = lsp_servers_shapes(&model.config.lsp);
             move_list_selection(
                 &mut state.selected_index,
                 &mut state.scroll_offset,
@@ -1738,7 +1750,7 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
             );
         }
         ModalState::LspServers(state) => {
-            let shapes = lsp_servers_shapes();
+            let shapes = lsp_servers_shapes(&model.config.lsp);
             page_list_selection(
                 &mut state.selected_index,
                 &mut state.scroll_offset,
@@ -1829,7 +1841,10 @@ fn modal_scroll_to(model: &mut AppModel, position: Option<usize>, delta: isize) 
             let shapes = recent_files_shapes(state);
             (&mut state.scroll_offset, shapes)
         }
-        ModalState::LspServers(state) => (&mut state.scroll_offset, lsp_servers_shapes().to_vec()),
+        ModalState::LspServers(state) => (
+            &mut state.scroll_offset,
+            lsp_servers_shapes(&model.config.lsp).to_vec(),
+        ),
         ModalState::LanguagePicker(state) => {
             (&mut state.scroll_offset, language_picker_shapes().to_vec())
         }

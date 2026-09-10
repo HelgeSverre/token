@@ -33,7 +33,7 @@ use crate::completion::menu::{
 };
 use crate::completion::sources::{collect_snippets, collect_words};
 use crate::config::WordsMode;
-use crate::lsp::lsp_server_def;
+use crate::lsp::server_id_for_language;
 use crate::messages::CompletionMsg;
 #[cfg(test)]
 use crate::model::Selection;
@@ -172,7 +172,8 @@ fn signature_triggers_for(model: &AppModel) -> (Vec<String>, Vec<String>) {
 }
 
 fn focused_server_id(model: &AppModel) -> Option<crate::lsp::LspServerId> {
-    lsp_server_def(model.document().language).map(|def| crate::lsp::LspServerId::from(def.id))
+    server_id_for_language(model.document().language, &model.config.lsp)
+        .map(crate::lsp::LspServerId::from)
 }
 
 /// Whether the focused document could ever carry LSP completion traffic —
@@ -186,12 +187,12 @@ fn lsp_capable(model: &AppModel) -> bool {
     if doc.file_path.is_none() || !model.config.lsp.enabled {
         return false;
     }
-    match lsp_server_def(doc.language) {
-        Some(def) => !model
+    match server_id_for_language(doc.language, &model.config.lsp) {
+        Some(id) => !model
             .config
             .lsp
             .servers
-            .get(def.id)
+            .get(id)
             .is_some_and(|o| o.enabled == Some(false)),
         None => false,
     }

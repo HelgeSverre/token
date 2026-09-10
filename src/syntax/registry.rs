@@ -124,7 +124,8 @@ macro_rules! language_registry {
         $(language!($module:ident, $id:ident, $($definition:tt)*);)*
     ) => {
         /// Supported language identifiers.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "lowercase")]
         pub enum LanguageId {
             #[default]
             $plain_id,
