@@ -550,10 +550,6 @@ pub struct DocumentationViewport {
 }
 
 impl DocumentationViewport {
-    fn needs_controls(self) -> bool {
-        self.max_scroll() > 0 || self.total > MAX_DOCS_LINES
-    }
-
     pub fn max_scroll(self) -> usize {
         self.total.saturating_sub(self.visible)
     }
@@ -846,7 +842,7 @@ pub struct OverlayLayout {
     pub(crate) docs_code_plan: Option<(Vec<StyledLine>, usize)>,
     /// Content rect of the docs card's code block.
     pub docs_code: Option<WidgetRect>,
-    pub docs_footer: Option<WidgetRect>,
+    pub docs_scrollbar: Option<ScrollbarGeometry>,
     pub docs_viewport: Option<DocumentationViewport>,
 }
 
@@ -1196,7 +1192,7 @@ pub fn layout_measured(
                             sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
                             ..Default::default()
                         });
-                    } else {
+                    } else if code_h.is_none() {
                         spacer(t, pad_y);
                     }
                     if let Some(height) = code_h {
@@ -1226,20 +1222,6 @@ pub fn layout_measured(
                         t.leaf(ElementDecl {
                             key: Some(UiKey::OverlayZoneText),
                             sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(height as f32)),
-                            padding: Padding::xy(pad_x as f32, 0.0),
-                            ..Default::default()
-                        });
-                    }
-                    if plan
-                        .viewport
-                        .is_some_and(DocumentationViewport::needs_controls)
-                    {
-                        t.leaf(ElementDecl {
-                            key: Some(UiKey::OverlayDocsFooter),
-                            sizing: SizingAxes::new(
-                                Sizing::GROW,
-                                Sizing::Fixed(scaled(dims::ZONE_LINE_H, scale_factor) as f32),
-                            ),
                             padding: Padding::xy(pad_x as f32, 0.0),
                             ..Default::default()
                         });
@@ -1279,7 +1261,9 @@ pub fn layout_measured(
                     ..Default::default()
                 },
                 |t| {
-                    spacer(t, pad_y);
+                    if docs_code_plan.is_none() {
+                        spacer(t, pad_y);
+                    }
                     if let Some((_, code_h)) = &docs_code_plan {
                         t.leaf(ElementDecl {
                             key: Some(UiKey::OverlayDocsCode),
@@ -1295,14 +1279,6 @@ pub fn layout_measured(
                         t.leaf(ElementDecl {
                             key: Some(UiKey::OverlayDocsText),
                             sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(*text_h as f32)),
-                            padding: Padding::xy(pad_x as f32, 0.0),
-                            ..Default::default()
-                        });
-                    }
-                    if docs_viewport.is_some_and(DocumentationViewport::needs_controls) {
-                        t.leaf(ElementDecl {
-                            key: Some(UiKey::OverlayDocsFooter),
-                            sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(line_h as f32)),
                             padding: Padding::xy(pad_x as f32, 0.0),
                             ..Default::default()
                         });
@@ -1367,7 +1343,22 @@ pub fn layout_measured(
         solved_rect(&snapshot, UiKey::OverlayDocsPanel).or_else(|| zone_viewport.map(|_| panel));
     let docs_text = solved_content_rect(&snapshot, UiKey::OverlayDocsText);
     let docs_code = solved_content_rect(&snapshot, UiKey::OverlayDocsCode);
-    let docs_footer = solved_content_rect(&snapshot, UiKey::OverlayDocsFooter);
+    let docs_scrollbar = docs_panel.zip(docs_viewport).and_then(|(panel, viewport)| {
+        (viewport.max_scroll() > 0).then(|| {
+            // Keep the shared scrollbar inside the card's rounded corners.
+            // Horizontal text padding already leaves room for the track.
+            let inset = scaled(dims::PANEL_PAD_Y, scale_factor).min(panel.h / 2);
+            list_scrollbar(
+                WidgetRect {
+                    y: panel.y + inset,
+                    h: panel.h.saturating_sub(2 * inset),
+                    ..panel
+                },
+                ScrollbarState::new(viewport.total, viewport.visible, viewport.scroll),
+                scale_factor,
+            )
+        })
+    });
     let footer = solved_rect(&snapshot, UiKey::OverlayFooter);
     let scrollbar = list_info.and_then(|(start, visible, total, max_visible)| {
         if total <= max_visible {
@@ -1414,7 +1405,7 @@ pub fn layout_measured(
         zone_plan,
         docs_plan,
         docs_code_plan,
-        docs_footer,
+        docs_scrollbar,
         docs_viewport,
     };
     if matches!(spec.anchor, Anchor::Settings { .. }) {
@@ -1447,7 +1438,6 @@ pub enum OverlayHit {
     Inside,
     Documentation {
         viewport: DocumentationViewport,
-        toggle: bool,
     },
 }
 
@@ -1465,10 +1455,7 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
     }
     if let (Some(panel), Some(viewport)) = (layout.docs_panel, layout.docs_viewport) {
         if x >= panel.x && x < panel.x + panel.w && y >= panel.y && y < panel.y + panel.h {
-            let toggle = layout
-                .docs_footer
-                .is_some_and(|footer| y >= footer.y && y < footer.y + footer.h);
-            return OverlayHit::Documentation { viewport, toggle };
+            return OverlayHit::Documentation { viewport };
         }
     }
     for (row, choices) in &layout.choices {
@@ -1530,7 +1517,6 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
             | UiKey::OverlayDocsPanel
             | UiKey::OverlayDocsText
             | UiKey::OverlayDocsCode
-            | UiKey::OverlayDocsFooter
             | UiKey::OverlayFooter,
         ) => OverlayHit::Inside,
         Some(
@@ -1904,21 +1890,16 @@ pub fn render(
             height: panel.h as f32,
         });
         if let (Some(code), Some((lines, _))) = (layout.docs_code, layout.docs_code_plan.as_ref()) {
-            // Same band treatment as the hover card's code zone.
-            frame.fill_rect_px(panel.x, code.y, panel.w, code.h, colors.panel_secondary);
-            draw_text_lines(
+            render_code_band(
                 frame,
                 painter,
                 &colors,
+                panel,
                 code,
                 lines,
-                false,
-                crate::layout::TextStyle {
-                    code: true,
-                    ..crate::layout::TextStyle::sized(SIZE_ROW)
-                },
-                colors.text_primary,
                 scale_factor,
+                radius,
+                mask_cache,
             );
         }
         if let (Some(text), Some((lines, truncated, _))) =
@@ -1938,46 +1919,8 @@ pub fn render(
         }
         frame.clear_clip();
     }
-    if let (Some(panel), Some(footer), Some(viewport)) =
-        (layout.docs_panel, layout.docs_footer, layout.docs_viewport)
-    {
-        frame.set_clip(Rect::new(
-            panel.x as f32,
-            panel.y as f32,
-            panel.w as f32,
-            panel.h as f32,
-        ));
-        let state = spec
-            .docs
-            .as_ref()
-            .map(|docs| docs.state)
-            .or(match &spec.body {
-                Body::Zones(zones) => zones.documentation,
-                _ => None,
-            })
-            .unwrap_or_default();
-        let expanded = state.expanded;
-        let action = if expanded { "Collapse" } else { "Expand" };
-        let first = if viewport.visible == 0 {
-            0
-        } else {
-            viewport.scroll + 1
-        };
-        let label = format!(
-            "{first}–{} / {} · {action} (F1)",
-            viewport.scroll + viewport.visible,
-            viewport.total
-        );
-        painter.draw_sized(
-            frame,
-            footer.x,
-            footer.y,
-            &label,
-            size_px(SIZE_ROW, scale_factor),
-            0.0,
-            colors.text_dim,
-        );
-        frame.clear_clip();
+    if let Some(bar) = &layout.docs_scrollbar {
+        render_scrollbar(frame, bar, false, &colors.scrollbar);
     }
 }
 
@@ -2637,7 +2580,7 @@ fn render_list(
     render_list_scrollbar(frame, layout, colors);
 }
 
-/// List surfaces share the editor scrollbar's width, geometry and paint primitive.
+/// Overlay surfaces share the editor scrollbar's width, geometry and paint primitive.
 fn list_scrollbar(body: WidgetRect, state: ScrollbarState, scale: f64) -> ScrollbarGeometry {
     let width = scaled(SCROLLBAR_WIDTH_LOGICAL as f32, scale).min(body.w);
     ScrollbarGeometry::vertical(
@@ -3056,25 +2999,16 @@ fn render_zones(
     }
 
     if let (Some((lines, _)), Some(r)) = (plan.code.as_ref(), layout.zones_code) {
-        frame.fill_rect_px(r.x, r.y, r.w, r.h, colors.panel_secondary);
-        let content = WidgetRect {
-            y: r.y + gap / 2,
-            h: r.h.saturating_sub(gap),
-            ..r
-        };
-        draw_text_lines(
+        render_code_band(
             frame,
             painter,
             colors,
-            content,
+            layout.panel,
+            r,
             lines,
-            false,
-            crate::layout::TextStyle {
-                code: true,
-                ..crate::layout::TextStyle::sized(SIZE_ROW)
-            },
-            colors.text_primary,
             scale_factor,
+            radius,
+            mask_cache,
         );
     }
 
@@ -3119,6 +3053,55 @@ fn render_zones(
     }
 
     frame.clear_clip();
+}
+
+/// The same full-width, padded signature header for hover and completion docs.
+/// The solved code box keeps its horizontal text inset; only its wash bleeds.
+#[allow(clippy::too_many_arguments)]
+fn render_code_band(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    colors: &Palette,
+    panel: WidgetRect,
+    code: WidgetRect,
+    lines: &[StyledLine],
+    scale_factor: f64,
+    radius: usize,
+    mask_cache: &mut RoundedRectMaskCache,
+) {
+    if code.y == panel.y {
+        frame.fill_rect_top_rounded(
+            panel.x,
+            code.y,
+            panel.w,
+            code.h,
+            radius,
+            colors.panel_secondary,
+            mask_cache,
+        );
+    } else {
+        frame.fill_rect_px(panel.x, code.y, panel.w, code.h, colors.panel_secondary);
+    }
+    let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
+    let content = WidgetRect {
+        y: code.y + pad_y,
+        h: code.h.saturating_sub(2 * pad_y),
+        ..code
+    };
+    draw_text_lines(
+        frame,
+        painter,
+        colors,
+        content,
+        lines,
+        false,
+        crate::layout::TextStyle {
+            code: true,
+            ..crate::layout::TextStyle::sized(SIZE_ROW)
+        },
+        colors.text_primary,
+        scale_factor,
+    );
 }
 
 fn should_center_zone_text(zones: &Zones<'_>, lines: &[StyledLine], truncated: bool) -> bool {
@@ -3167,12 +3150,13 @@ impl ZonePlan {
         let line_h = scaled(dims::ZONE_LINE_H, scale_factor).max(1);
         let gap = scaled(dims::ZONE_GAP, scale_factor);
         let pad_y = scaled(dims::PANEL_PAD_Y, scale_factor);
-        // Reserve fixed banner/padding, code-band padding, separator, footer and
-        // window margins. Capacity stays stable when the signature scrolls away.
-        let chrome = self.banner.as_ref().map_or(0, |banner| banner.h + gap)
-            + 2 * pad_y
-            + gap
-            + 2 * line_h
+        // Reserve fixed banner/padding, code-band padding and window
+        // margins. The separator already counts as a row in the shared window.
+        // Capacity stays stable when the signature scrolls away.
+        let chrome = self
+            .banner
+            .as_ref()
+            .map_or(3 * pad_y, |banner| banner.h + gap + 4 * pad_y)
             + scaled(16.0, scale_factor);
         let available = window_h.saturating_sub(chrome) / line_h;
         let code = self.code.take().map_or_else(Vec::new, |(lines, _)| lines);
@@ -3180,8 +3164,8 @@ impl ZonePlan {
             .text
             .take()
             .map_or_else(Vec::new, |(lines, _, _)| lines);
-        let plan = window_documentation(code, prose, state, available, line_h);
-        self.code = plan.code.map(|(lines, height)| (lines, height + gap));
+        let plan = window_documentation(code, prose, state, available, line_h, pad_y);
+        self.code = plan.code;
         self.text = plan.text;
         self.viewport = plan.viewport;
         self.gap = plan.gap;
@@ -3361,7 +3345,7 @@ pub(crate) fn plan_zones(
             content_w.max(min_wrap_w),
             measure,
         );
-        let h = lines.len().max(1) * line_h + 2 * (gap / 2);
+        let h = lines.len().max(1) * line_h + 2 * scaled(dims::PANEL_PAD_Y, scale_factor);
         (lines, h)
     });
 
@@ -3432,8 +3416,9 @@ fn plan_docs(
     let line_h = scaled(dims::ZONE_LINE_H, scale_factor).max(1);
     let style = crate::layout::TextStyle::sized(size_px(SIZE_ROW, scale_factor));
     let width = panel_w.saturating_sub(2 * pad_x) as f32;
-    let available =
-        window_h.saturating_sub(2 * pad_y + line_h + scaled(16.0, scale_factor)) / line_h;
+    let (code, prose) = docs.text.split_leading_code();
+    let padding = if code.is_some() { 3 * pad_y } else { 2 * pad_y };
+    let available = window_h.saturating_sub(padding + scaled(16.0, scale_factor)) / line_h;
     if available == 0 || width <= 0.0 {
         return DocumentationPlan::default();
     }
@@ -3443,13 +3428,12 @@ fn plan_docs(
         }
         wrap_documentation(&text.text, &text.spans, style, width.max(1.0), measure)
     };
-    let (code, prose) = docs.text.split_leading_code();
     let code = code
         .as_ref()
         .map(|code| wrap(code, measure))
         .unwrap_or_default();
     let prose = wrap(&prose, measure);
-    window_documentation(code, prose, docs.state, available, line_h)
+    window_documentation(code, prose, docs.state, available, line_h, pad_y)
 }
 
 /// Shared scrolling over the signature, separator and prose. Neither caller
@@ -3460,13 +3444,14 @@ fn window_documentation(
     state: DocumentationState,
     available: usize,
     line_h: usize,
+    pad_y: usize,
 ) -> DocumentationPlan {
     let gap = usize::from(!code.is_empty() && !prose.is_empty());
     let total = code.len() + gap + prose.len();
     if total == 0 || available == 0 {
         return DocumentationPlan::default();
     }
-    // Reserve the persistent footer and window-edge breathing room before
+    // The caller reserves padding and window-edge breathing room before
     // choosing a row count. The solver still owns final anchoring/flipping.
     let capacity = if state.expanded {
         available
@@ -3490,7 +3475,7 @@ fn window_documentation(
         .collect();
     DocumentationPlan {
         code: (!code.is_empty()).then(|| {
-            let h = code.len() * line_h;
+            let h = code.len() * line_h + 2 * pad_y;
             (code, h)
         }),
         text: (!prose.is_empty()).then(|| {
@@ -3876,13 +3861,10 @@ mod tests {
                         "{scale}, {height}: {:?}",
                         bottom.panel
                     );
-                    let footer = bottom.docs_footer.unwrap();
+                    let track = bottom.docs_scrollbar.unwrap().track_rect;
                     assert_eq!(
-                        hit_test(&spec, &bottom, footer.x + 1, footer.y + 1),
-                        OverlayHit::Documentation {
-                            viewport: view,
-                            toggle: true
-                        }
+                        hit_test(&spec, &bottom, track.x as usize + 1, track.y as usize + 1),
+                        OverlayHit::Documentation { viewport: view }
                     );
                 }
             }
@@ -3916,12 +3898,12 @@ mod tests {
     }
 
     #[test]
-    fn documentation_viewport_hit_testing_separates_footer_from_content() {
+    fn documentation_scrollbar_uses_the_reading_viewport_and_stays_clear_of_text() {
         let short = StyledText::plain("one\ntwo\nthree");
         let compact = layout(&documentation_spec(&short, 0, false), 1000, 500, 1.0);
         assert!(
-            compact.docs_footer.is_none(),
-            "no expansion hint when all text fits"
+            compact.docs_scrollbar.is_none(),
+            "no scrollbar when all text fits"
         );
         assert!(
             compact.docs_viewport.is_some(),
@@ -3932,20 +3914,24 @@ mod tests {
         let l = layout(&spec, 1000, 500, 1.0);
         let viewport = l.docs_viewport.unwrap();
         let text = l.docs_text.unwrap();
-        let footer = l.docs_footer.unwrap();
+        let bar = l.docs_scrollbar.unwrap();
+        assert_eq!(
+            bar.state,
+            ScrollbarState::new(viewport.total, viewport.visible, viewport.scroll)
+        );
+        assert!(text.x + text.w <= bar.track_rect.x as usize);
         assert_eq!(
             hit_test(&spec, &l, text.x + 1, text.y + 1),
-            OverlayHit::Documentation {
-                viewport,
-                toggle: false
-            }
+            OverlayHit::Documentation { viewport }
         );
         assert_eq!(
-            hit_test(&spec, &l, footer.x + 1, footer.y + 1),
-            OverlayHit::Documentation {
-                viewport,
-                toggle: true
-            }
+            hit_test(
+                &spec,
+                &l,
+                bar.track_rect.x as usize + 1,
+                bar.track_rect.y as usize + 1
+            ),
+            OverlayHit::Documentation { viewport }
         );
     }
 
@@ -4223,7 +4209,7 @@ mod tests {
     /// text), reproduced at the finding's exact geometry: 280px min-width
     /// Cursor anchor, `(Error, "unused variable", "rustc")`.
     #[test]
-    fn a_zones_banner_does_not_square_the_panel_corners() {
+    fn zones_banners_and_code_headers_preserve_corners_and_text_insets() {
         let font = Font::from_bytes(
             include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
             fontdue::FontSettings::default(),
@@ -4232,7 +4218,7 @@ mod tests {
         let mut glyph_cache = super::super::GlyphCache::default();
         let theme = OverlayTheme::default_dark();
 
-        let mut render_corners = |banner: bool| -> [u32; 2] {
+        let mut render_corners = |banner: bool, code: bool| -> [u32; 2] {
             let (w, h) = (1200usize, 800usize);
             let mut buffer = vec![0u32; w * h];
             let mut frame = Frame::new(&mut buffer, w, h);
@@ -4255,7 +4241,7 @@ mod tests {
                 header: None,
                 body: Body::Zones(Zones {
                     banner: banner.then_some((Severity::Error, "unused variable", "rustc")),
-                    code: None,
+                    code: code.then_some("fn example()"),
                     text: Some("some explanatory hover text"),
                     ..Default::default()
                 }),
@@ -4280,19 +4266,33 @@ mod tests {
             );
 
             let l = layout(&spec, w, h, 1.0);
+            if let Some(code) = l.zones_code {
+                assert_eq!(code.x, l.zones_text.unwrap().x);
+                if !banner {
+                    assert_eq!(code.y, l.panel.y);
+                }
+                for x in [l.panel.x + 1, l.panel.x + l.panel.w - 2] {
+                    assert_eq!(
+                        frame.get_pixel(x, code.y + code.h / 2),
+                        theme.panel_secondary.to_argb_u32(),
+                        "the code background reaches both panel edges",
+                    );
+                }
+            }
             [
                 frame.get_pixel(l.panel.x, l.panel.y),
                 frame.get_pixel(l.panel.x + l.panel.w - 1, l.panel.y),
             ]
         };
 
-        let without_banner = render_corners(false);
-        let with_banner = render_corners(true);
-
-        assert_eq!(
-            with_banner, without_banner,
-            "the banner wash must not paint over the panel's rounded top corners"
-        );
+        let plain = render_corners(false, false);
+        for (banner, code) in [(true, false), (false, true), (true, true)] {
+            assert_eq!(
+                render_corners(banner, code),
+                plain,
+                "full-width bands must preserve the panel's rounded top corners",
+            );
+        }
     }
 
     /// Code has a compact background without invading the preceding prose;
@@ -4435,6 +4435,8 @@ mod tests {
         let l = layout_for(&fenced);
         let code = l.docs_code.expect("fenced docs get a code block");
         let text = l.docs_text.expect("and the prose below it");
+        assert_eq!(code.y, l.docs_panel.unwrap().y);
+        assert_eq!(code.x, text.x);
         assert!(text.y >= code.y + code.h, "prose sits below the code block");
         let (code_lines, _) = l.docs_code_plan.as_ref().unwrap();
         assert_eq!(code_lines[0].text, "fn foo() -> u8");

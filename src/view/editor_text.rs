@@ -787,6 +787,54 @@ impl<'a> TextEditorRenderer<'a> {
         }
     }
 
+    /// End-of-line annotations share the source row projection. They do not
+    /// change cursor columns, wrapping or hit testing, and never cover ghosts.
+    fn render_lsp_annotations(
+        &self,
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        line: &VisibleTextLine,
+    ) {
+        let features = &self.document.lsp_features;
+        if features.revision != self.document.revision
+            || line.projected.is_some()
+            || line.segment_end < self.document.line_length(line.doc_line)
+            || self.editor.folds.is_collapsed(line.doc_line)
+        {
+            return;
+        }
+        let hints = features.hints.get(&line.doc_line);
+        let output = features.eval_output.get(&line.doc_line);
+        if hints.is_none() && output.is_none() {
+            return;
+        }
+        let text = line.text(self.document);
+        let column = line
+            .visual_column(&text, line.segment_end)
+            .saturating_add(2);
+        let right = self
+            .viewport_left()
+            .saturating_add(self.ctx.visible_columns);
+        if column < self.viewport_left() || column >= right {
+            return;
+        }
+        let mut annotations = hints.map(|hints| hints.join(" · ")).unwrap_or_default();
+        if let Some(output) = output {
+            if !annotations.is_empty() {
+                annotations.push_str(" · ");
+            }
+            annotations.push_str(output);
+        }
+        let visible: String = annotations.chars().take(right - column).collect();
+        painter.draw(
+            frame,
+            self.ctx.pixel_x(column, self.viewport_left()),
+            line.y,
+            &visible,
+            self.palette.ghost_text,
+        );
+    }
+
     fn render_gutter_line_number(
         &self,
         frame: &mut Frame,
@@ -1093,6 +1141,7 @@ impl<'a> TextEditorRenderer<'a> {
     ) {
         self.render_line_text_stage(frame, painter, line);
         self.render_ghost_text_stage(frame, painter, line);
+        self.render_lsp_annotations(frame, painter, line);
         if line.segment_end >= self.document.line_length(line.doc_line) {
             if let Some(rect) = geometry::fold_badge_rect(
                 self.editor,
@@ -1992,6 +2041,48 @@ mod tests {
             &mut perf,
         );
         buffer
+    }
+
+    #[test]
+    fn sema_line_annotations_follow_tabs_wrap_and_revision_in_full_and_blink_render() {
+        for wrapped in [false, true] {
+            let mut model = make_text_model();
+            model.document_mut().buffer = Rope::from_str("(f\t1)\n");
+            model.document_mut().language = crate::syntax::LanguageId::Sema;
+            let (_, _, _, char_width, line_height) = load_test_font();
+            model.char_width = char_width;
+            model.line_height = line_height;
+            model.config.show_scrollbar = false;
+            model.editor_mut().soft_wrap = wrapped;
+            model.editor_mut().cursors = vec![Cursor::at(0, 0)];
+            model.editor_mut().clear_selection();
+            model.editor_mut().matched_brackets = None;
+            model.resize(420, 140);
+            let baseline = render_full_editor_group(&model);
+            let revision = model.document().revision;
+            model.document_mut().lsp_features.revision = revision;
+            model
+                .document_mut()
+                .lsp_features
+                .hints
+                .insert(0, vec!["x:".into()]);
+            let annotated = render_full_editor_group(&model);
+            assert_ne!(
+                annotated, baseline,
+                "annotation must be visible with wrap={wrapped}"
+            );
+            model.ui.cursor_visible = !model.ui.cursor_visible;
+            let mut blink = annotated;
+            rerender_cursor_lines(&model, &mut blink, &[0]);
+            assert_eq!(blink, render_full_editor_group(&model));
+            model.ui.cursor_visible = !model.ui.cursor_visible;
+            model.document_mut().revision += 1;
+            assert_eq!(
+                render_full_editor_group(&model),
+                baseline,
+                "stale hint must disappear"
+            );
+        }
     }
 
     fn rerender_cursor_lines(model: &AppModel, buffer: &mut [u32], dirty_lines: &[usize]) {

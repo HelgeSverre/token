@@ -8,6 +8,7 @@
 //! `docs/feature/lsp-integration.md`.
 
 pub mod client;
+pub mod document_features;
 pub mod markdown;
 pub mod position;
 pub mod sync;
@@ -59,8 +60,8 @@ pub enum ServerState {
 /// for a language and how to find its project root.
 ///
 /// Deliberately *not* a field on `syntax::registry::LanguageDefinition` —
-/// that struct is built by a positional macro with ~85 call sites, and
-/// only 5 languages need an LSP def. A side table keyed by `LanguageId`
+/// that struct is built by a positional macro with many call sites, and
+/// only a subset of languages need an LSP def. A side table keyed by `LanguageId`
 /// (`lsp_server_def`, below) gets the same "one place to register a
 /// server" ergonomics without touching every call site or growing the
 /// macro's arity.
@@ -96,6 +97,13 @@ pub static PYRIGHT: LspServerDef = LspServerDef {
     project_markers: &["pyproject.toml"],
 };
 
+pub static GOPLS: LspServerDef = LspServerDef {
+    id: "gopls",
+    command: "gopls",
+    args: &[],
+    project_markers: &["go.work", "go.mod"],
+};
+
 pub static PHPANTOM: LspServerDef = LspServerDef {
     id: "phpantom",
     command: "phpantom_lsp",
@@ -114,6 +122,7 @@ static ALL_SERVER_DEFS: &[&LspServerDef] = &[
     &RUST_ANALYZER,
     &TYPESCRIPT_LANGUAGE_SERVER,
     &PYRIGHT,
+    &GOPLS,
     &PHPANTOM,
     &SEMA,
 ];
@@ -135,7 +144,7 @@ pub fn all_server_defs() -> &'static [&'static LspServerDef] {
 /// Languages a registered server def handles, for display (the picker's
 /// "TypeScript, JavaScript" detail text). The reverse direction of
 /// `lsp_server_def`'s match, kept as a small static table rather than
-/// scanning all of `LanguageId`'s ~85 variants for the 5 that have a
+/// scanning all of `LanguageId`'s variants for the subset that have a
 /// server registered.
 pub fn languages_for_server(id: &str) -> &'static [LanguageId] {
     use LanguageId::*;
@@ -143,6 +152,7 @@ pub fn languages_for_server(id: &str) -> &'static [LanguageId] {
         "rust-analyzer" => &[Rust],
         "typescript-language-server" => &[TypeScript, Tsx, JavaScript, Jsx],
         "pyright" => &[Python],
+        "gopls" => &[Go],
         "phpantom" => &[Php],
         "sema" => &[Sema],
         _ => &[],
@@ -163,6 +173,7 @@ pub fn lsp_server_def(language: LanguageId) -> Option<&'static LspServerDef> {
         Rust => Some(&RUST_ANALYZER),
         TypeScript | Tsx | JavaScript | Jsx => Some(&TYPESCRIPT_LANGUAGE_SERVER),
         Python => Some(&PYRIGHT),
+        Go => Some(&GOPLS),
         Php => Some(&PHPANTOM),
         Sema => Some(&SEMA),
         _ => None,
@@ -242,13 +253,7 @@ mod tests {
 
     #[test]
     fn every_def_has_a_non_empty_project_marker_list() {
-        for def in [
-            &RUST_ANALYZER,
-            &TYPESCRIPT_LANGUAGE_SERVER,
-            &PYRIGHT,
-            &PHPANTOM,
-            &SEMA,
-        ] {
+        for def in all_server_defs() {
             assert!(!def.project_markers.is_empty(), "{} has no markers", def.id);
         }
     }
@@ -348,6 +353,9 @@ mod tests {
                 "{} has no languages mapped",
                 def.id
             );
+            for &language in languages_for_server(def.id) {
+                assert_eq!(lsp_server_def(language).unwrap().id, def.id);
+            }
         }
         assert!(languages_for_server("not-a-real-server").is_empty());
     }

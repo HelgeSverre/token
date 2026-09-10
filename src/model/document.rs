@@ -136,6 +136,7 @@ pub struct Document {
     /// `lsp::position::lsp_to_position`, which also clamps into the
     /// current buffer (see `model::collect_line_marks`).
     pub diagnostics: Vec<lsp_types::Diagnostic>,
+    pub lsp_features: crate::lsp::document_features::DocumentFeatures,
 }
 
 impl Document {
@@ -171,6 +172,7 @@ impl Document {
             outline: None,
             revision: 0,
             diagnostics: Vec::new(),
+            lsp_features: Default::default(),
         }
     }
 
@@ -476,12 +478,26 @@ impl Document {
     }
 
     /// Get highlight tokens for a specific line
-    pub fn get_line_highlights(&self, line: usize) -> &[crate::syntax::HighlightToken] {
-        self.syntax_highlights
+    pub fn get_line_highlights(
+        &self,
+        line: usize,
+    ) -> std::borrow::Cow<'_, [crate::syntax::HighlightToken]> {
+        let lexical = self
+            .syntax_highlights
             .as_ref()
             .and_then(|h| h.get_line(line))
             .map(|lh| lh.tokens.as_slice())
-            .unwrap_or(&[])
+            .unwrap_or(&[]);
+        let semantic = self
+            .lsp_features
+            .semantic
+            .as_ref()
+            .filter(|highlights| {
+                highlights.revision == self.revision && highlights.language == self.language
+            })
+            .map(|highlights| highlights.get_line_tokens(line))
+            .unwrap_or(&[]);
+        crate::lsp::document_features::overlay_tokens(lexical, semantic)
     }
 
     /// Find all occurrences of text in the document

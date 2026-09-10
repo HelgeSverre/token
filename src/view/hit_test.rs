@@ -130,7 +130,8 @@ pub enum HitTarget {
     },
     CursorOverlayDocumentation {
         viewport: super::overlay_surface::DocumentationViewport,
-        toggle: bool,
+        /// Present only when the pointer is on the documentation scrollbar.
+        scrollbar: Option<super::scrollbar::ScrollbarGeometry>,
     },
 
     /// Status bar at the bottom of the window
@@ -307,7 +308,6 @@ impl HitTarget {
                 ..
             } => CursorIcon::Text,
             HitTarget::BinaryPlaceholderButton { .. } => CursorIcon::Pointer,
-            HitTarget::CursorOverlayDocumentation { toggle: true, .. } => CursorIcon::Pointer,
             HitTarget::SidebarResize => CursorIcon::ColResize,
             HitTarget::DockResize { position } => match position {
                 crate::panel::DockPosition::Right | crate::panel::DockPosition::Left => {
@@ -495,8 +495,13 @@ pub fn hit_test_cursor_overlay(
         // are the rects that were painted.
         let layout = super::overlay_surface::layout_measured(spec, ww, wh, sf, measure);
         match super::overlay_surface::hit_test(spec, &layout, x, y) {
-            super::overlay_surface::OverlayHit::Documentation { viewport, toggle } => {
-                Some(HitTarget::CursorOverlayDocumentation { viewport, toggle })
+            super::overlay_surface::OverlayHit::Documentation { viewport } => {
+                Some(HitTarget::CursorOverlayDocumentation {
+                    viewport,
+                    scrollbar: layout
+                        .docs_scrollbar
+                        .filter(|bar| bar.hits_track(pt.x as f32, pt.y as f32)),
+                })
             }
             super::overlay_surface::OverlayHit::Outside => None,
             super::overlay_surface::OverlayHit::Row(flat_index) => Some(HitTarget::CursorOverlay {

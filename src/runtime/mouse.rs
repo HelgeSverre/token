@@ -511,7 +511,7 @@ mod tests {
     }
 
     #[test]
-    fn documentation_viewport_wheel_and_footer_do_not_accept_or_move_selection() {
+    fn documentation_wheel_scrollbar_and_expansion_do_not_accept_or_move_selection() {
         let mut model = documentation_model();
         let mut measure = token::view::overlay_surface::cell_measure(1.0);
         let layout = token::view::modal::with_cursor_overlay_spec(&model, |spec| {
@@ -519,7 +519,7 @@ mod tests {
         })
         .unwrap();
         let text = layout.docs_text.unwrap();
-        let footer = layout.docs_footer.unwrap();
+        let bar = layout.docs_scrollbar.unwrap();
         let cursors = model.editor().cursors.clone();
         // Deliberately stale hover: hit-test the actual card on this event.
         model.ui.hover = HoverRegion::EditorText;
@@ -537,16 +537,79 @@ mod tests {
         assert_eq!(model.document().buffer.to_string(), "va\n");
         let target = token::view::hit_test::hit_test_cursor_overlay(
             &model,
-            token::view::hit_test::Point::new((footer.x + 1) as f64, (footer.y + 1) as f64),
+            token::view::hit_test::Point::new(
+                (bar.track_rect.x + 1.0) as f64,
+                (bar.track_rect.y + 1.0) as f64,
+            ),
             &mut measure,
         )
         .unwrap();
         assert!(matches!(
             target,
-            HitTarget::CursorOverlayDocumentation { toggle: true, .. }
+            HitTarget::CursorOverlayDocumentation {
+                scrollbar: Some(_),
+                ..
+            }
         ));
         let dismissal = dismiss_overlay_for_press(&mut model, &target, MouseButton::Left);
         assert!(!dismissal.dismissed);
+        let HitTarget::CursorOverlayDocumentation {
+            scrollbar: Some(bar),
+            ..
+        } = target
+        else {
+            panic!("documentation track must expose the painted scrollbar");
+        };
+        let event = MouseEvent::new(
+            (bar.thumb_rect.x + 1.0) as f64,
+            (bar.thumb_rect.y + bar.thumb_rect.height / 2.0) as f64,
+            MouseButton::Left,
+            ModifiersState::empty(),
+        );
+        let target = ScrollbarTarget::Documentation {
+            kind: state.kind,
+            selected: state.selected,
+        };
+        overlay_scrollbar_press(&mut model, target, &bar, &event);
+        assert!(model.ui.scrollbar_drag.is_some());
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::ScrollbarDragUpdate {
+                mouse_coord: event.pos.y as f32,
+            }),
+        );
+        assert_eq!(
+            model.ui.cursor_overlay.unwrap().documentation.scroll,
+            3,
+            "grabbing must not jump"
+        );
+        for (mouse_coord, expected) in [(5000.0, bar.state.max_position()), (-500.0, 0)] {
+            update(
+                &mut model,
+                Msg::Ui(UiMsg::ScrollbarDragUpdate { mouse_coord }),
+            );
+            assert_eq!(
+                model.ui.cursor_overlay.unwrap().documentation.scroll,
+                expected
+            );
+        }
+        update(&mut model, Msg::Ui(UiMsg::ScrollbarDragEnd));
+        assert!(model.ui.scrollbar_drag.is_none());
+        let track_click = MouseEvent::new(
+            (bar.track_rect.x + 1.0) as f64,
+            (bar.track_rect.y + bar.track_rect.height - 1.0) as f64,
+            MouseButton::Left,
+            ModifiersState::empty(),
+        );
+        overlay_scrollbar_press(&mut model, target, &bar, &track_click);
+        assert_eq!(
+            model.ui.cursor_overlay.unwrap().documentation.scroll,
+            bar.state.max_position()
+        );
+        assert!(model.ui.scrollbar_drag.is_none());
+        assert_eq!(model.editor().viewport.top_line, 0);
+        assert_eq!(model.editor().cursors, cursors);
+        assert_eq!(model.document().buffer.to_string(), "va\n");
         update(&mut model, Msg::Ui(UiMsg::ToggleDocumentation));
         assert!(model.ui.cursor_overlay.unwrap().documentation.expanded);
         update(&mut model, Msg::Completion(CompletionMsg::MenuNext));
@@ -701,16 +764,22 @@ mod tests {
             token::view::overlay_surface::layout_measured(spec, 1000, 600, 1.0, &mut measure)
         })
         .unwrap();
-        let footer = layout.docs_footer.unwrap();
+        let bar = layout.docs_scrollbar.unwrap();
         let target = token::view::hit_test::hit_test_cursor_overlay(
             &model,
-            token::view::hit_test::Point::new((footer.x + 1) as f64, (footer.y + 1) as f64),
+            token::view::hit_test::Point::new(
+                (bar.track_rect.x + 1.0) as f64,
+                (bar.track_rect.y + 1.0) as f64,
+            ),
             &mut measure,
         )
         .unwrap();
         assert!(matches!(
             target,
-            HitTarget::CursorOverlayDocumentation { toggle: true, .. }
+            HitTarget::CursorOverlayDocumentation {
+                scrollbar: Some(_),
+                ..
+            }
         ));
         assert!(!dismiss_overlay_for_press(&mut model, &target, MouseButton::Left).dismissed);
         update(&mut model, Msg::Ui(UiMsg::ToggleDocumentation));
@@ -1884,6 +1953,16 @@ fn modal_scrollbar_press(
         return EventResult::consumed_no_redraw();
     };
     let target = ScrollbarTarget::Modal(modal.id());
+    overlay_scrollbar_press(model, target, geometry, event)
+}
+
+/// Modal lists and documentation share vertical track clicks and thumb capture.
+fn overlay_scrollbar_press(
+    model: &mut AppModel,
+    target: ScrollbarTarget,
+    geometry: &token::view::scrollbar::ScrollbarGeometry,
+    event: &MouseEvent,
+) -> EventResult {
     let message = if geometry.hits_thumb(event.pos.x as f32, event.pos.y as f32) {
         UiMsg::ScrollbarThumbPressed(ScrollbarDragState {
             target,
@@ -1983,16 +2062,19 @@ fn handle_left_click(
         // Enter — otherwise the real popup could only ever be used with the
         // keyboard).
         HitTarget::CursorOverlay { flat_index } => handle_cursor_overlay_click(model, *flat_index),
-        HitTarget::CursorOverlayDocumentation { toggle, .. } => {
-            let cmd = if *toggle {
-                update(model, Msg::Ui(UiMsg::ToggleDocumentation))
+        HitTarget::CursorOverlayDocumentation { scrollbar, .. } => {
+            if let (Some(geometry), Some(overlay)) = (scrollbar, model.ui.cursor_overlay) {
+                overlay_scrollbar_press(
+                    model,
+                    ScrollbarTarget::Documentation {
+                        kind: overlay.kind,
+                        selected: overlay.selected,
+                    },
+                    geometry,
+                    event,
+                )
             } else {
-                None
-            };
-            EventResult::Consumed {
-                cmd,
-                focus: None,
-                redraw: false,
+                EventResult::consumed_no_redraw()
             }
         }
 

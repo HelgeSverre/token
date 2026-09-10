@@ -45,6 +45,8 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             if !model.ui.has_documentation() {
                 return None;
             }
+            // Expansion changes track geometry; an old thumb capture is no longer valid.
+            model.ui.scrollbar_drag = None;
             let documentation = &mut model.ui.cursor_overlay.as_mut()?.documentation;
             documentation.expanded = !documentation.expanded;
             Some(Cmd::Redraw)
@@ -327,6 +329,18 @@ fn scroll_target(
             modal_scroll_to(model, Some(position), 0)
         }
         (ScrollbarTarget::Modal(_), _) => {
+            model.ui.scrollbar_drag = None;
+            None
+        }
+        (ScrollbarTarget::Documentation { kind, selected }, ScrollbarDragAxis::Vertical)
+            if model.ui.has_documentation()
+                && model.ui.cursor_overlay.is_some_and(|overlay| {
+                    overlay.kind == kind && overlay.selected == selected
+                }) =>
+        {
+            update_ui(model, UiMsg::DocumentationScrolled(position))
+        }
+        (ScrollbarTarget::Documentation { .. }, _) => {
             model.ui.scrollbar_drag = None;
             None
         }

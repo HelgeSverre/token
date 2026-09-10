@@ -1355,9 +1355,13 @@ pub struct TabDragState {
 pub enum ScrollbarTarget {
     Editor(crate::model::editor_area::EditorId),
     Modal(ModalId),
+    Documentation {
+        kind: CursorOverlayKind,
+        selected: usize,
+    },
 }
 
-/// Shared capture state for editor and modal scrollbar thumbs.
+/// Shared capture state for editor, modal and documentation scrollbar thumbs.
 #[derive(Debug, Clone)]
 pub struct ScrollbarDragState {
     pub target: ScrollbarTarget,
@@ -1537,6 +1541,8 @@ pub struct UiState {
     /// The Code Actions popup's rows, set alongside `cursor_overlay` being
     /// `Some(CursorOverlayKind::CodeActions)`; preferred actions first.
     pub code_action_list: Option<Vec<CodeActionItem>>,
+    /// Document and revision captured when the action menu was populated.
+    pub code_action_origin: Option<(super::DocumentId, u64)>,
     /// The context menu's built items + open-time anchor
     /// (context-menu.md), set alongside `cursor_overlay` being
     /// `Some(CursorOverlayKind::ContextMenu)`. `None` whenever the menu is
@@ -1655,6 +1661,7 @@ impl UiState {
             hover_card: None,
             reference_list: None,
             code_action_list: None,
+            code_action_origin: None,
             context_menu: None,
             hover_request: None,
             signature_help: None,

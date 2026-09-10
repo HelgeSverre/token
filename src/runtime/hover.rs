@@ -22,7 +22,13 @@ pub(super) struct HoverDwell {
 
 impl App {
     fn pointer_in_hover_card(&self) -> bool {
-        self.model.ui.hover == HoverRegion::CursorOverlay
+        (self.model.ui.hover == HoverRegion::CursorOverlay
+            || self.model.ui.scrollbar_drag.as_ref().is_some_and(|drag| {
+                matches!(
+                    drag.target,
+                    token::model::ui::ScrollbarTarget::Documentation { .. }
+                )
+            }))
             && self.model.ui.cursor_overlay.is_some_and(|overlay| {
                 matches!(
                     overlay.kind,

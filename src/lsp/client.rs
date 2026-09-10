@@ -47,6 +47,30 @@ pub fn client_capabilities() -> ClientCapabilities {
             ..Default::default()
         }),
         text_document: Some(TextDocumentClientCapabilities {
+            semantic_tokens: Some(lsp_types::SemanticTokensClientCapabilities {
+                dynamic_registration: Some(false),
+                requests: lsp_types::SemanticTokensClientCapabilitiesRequests {
+                    full: Some(lsp_types::SemanticTokensFullOptions::Bool(true)),
+                    range: Some(false),
+                },
+                token_types: ["keyword", "function", "variable", "parameter", "macro"]
+                    .into_iter()
+                    .map(lsp_types::SemanticTokenType::from)
+                    .collect(),
+                token_modifiers: vec![lsp_types::SemanticTokenModifier::DEFAULT_LIBRARY],
+                formats: vec![lsp_types::TokenFormat::RELATIVE],
+                overlapping_token_support: Some(false),
+                multiline_token_support: Some(false),
+                augments_syntax_tokens: Some(true),
+                ..Default::default()
+            }),
+            inlay_hint: Some(lsp_types::InlayHintClientCapabilities {
+                dynamic_registration: Some(false),
+                resolve_support: None,
+            }),
+            code_lens: Some(lsp_types::CodeLensClientCapabilities {
+                dynamic_registration: Some(false),
+            }),
             synchronization: Some(TextDocumentSyncClientCapabilities {
                 dynamic_registration: Some(false),
                 will_save: Some(false),
@@ -1116,6 +1140,25 @@ fn reader_loop(
                 let _ = outbound_tx.send(WorkerCmd::ReplyToServer { id, result });
             } else {
                 // Notification.
+                if server_id.0 == "sema" && method == "sema/evalResult" {
+                    if let Some(output) = message.get("params").and_then(|params| {
+                        serde_json::from_value::<super::document_features::EvalOutput>(
+                            params.clone(),
+                        )
+                        .ok()
+                    }) {
+                        let _ = msg_tx.send(Msg::Lsp(LspMsg::SemaEvalResponse {
+                            server_id: server_id.clone(),
+                            root: root.clone(),
+                            generation,
+                            output: Box::new(output),
+                        }));
+                        if let Some(wake) = wake.as_deref() {
+                            wake();
+                        }
+                    }
+                    continue;
+                }
                 match classify_notification(method) {
                     NotificationAction::Log => {
                         tracing::debug!(
@@ -1347,6 +1390,21 @@ fn reader_loop(
                     generation,
                     request_id: id,
                     result,
+                    abandoned: entry.abandoned,
+                }));
+                if let Some(wake) = wake.as_deref() {
+                    wake();
+                }
+            } else if super::document_features::Feature::ALL
+                .iter()
+                .any(|feature| feature.method() == entry.method)
+            {
+                let _ = msg_tx.send(Msg::Lsp(LspMsg::DocumentFeatureResponse {
+                    server_id: server_id.clone(),
+                    root: root.clone(),
+                    generation,
+                    request_id: id,
+                    result: message.get("result").cloned().unwrap_or(Value::Null),
                     abandoned: entry.abandoned,
                 }));
                 if let Some(wake) = wake.as_deref() {

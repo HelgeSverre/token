@@ -1096,6 +1096,33 @@ pub enum Msg {
 /// added by later phases once there is data to route.
 #[derive(Debug, Clone)]
 pub enum LspMsg {
+    SemaEvalResponse {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        generation: u64,
+        output: Box<crate::lsp::document_features::EvalOutput>,
+    },
+    SemaEvalResolved {
+        document_id: crate::model::DocumentId,
+        revision: u64,
+        output: Box<crate::lsp::document_features::EvalOutput>,
+    },
+    DocumentFeatureResponse {
+        server_id: LspServerId,
+        root: std::path::PathBuf,
+        generation: u64,
+        request_id: i64,
+        result: serde_json::Value,
+        abandoned: bool,
+    },
+    DocumentFeatureResolved {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        language: crate::syntax::LanguageId,
+        feature: crate::lsp::document_features::Feature,
+        result: serde_json::Value,
+        capabilities: Box<lsp_types::ServerCapabilities>,
+    },
     WorkspaceSymbolProviders(Vec<crate::lsp::workspace_symbols::SymbolProvider>),
     WorkspaceSymbolsReady {
         request: crate::lsp::workspace_symbols::SymbolSearchRequest,

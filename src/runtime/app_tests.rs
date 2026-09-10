@@ -3762,6 +3762,33 @@ fn hover_card_grace_allows_pointer_entry_and_expires_outside() {
     app.model.ui.hover = token::model::HoverRegion::CursorOverlay;
     app.update_hover_dwell();
     assert!(app.hover_hide_at.is_none());
+    app.model.ui.scrollbar_drag = Some(token::model::ui::ScrollbarDragState {
+        target: token::model::ui::ScrollbarTarget::Documentation {
+            kind: token::model::CursorOverlayKind::Hover,
+            selected: 0,
+        },
+        axis: token::model::ui::ScrollbarDragAxis::Vertical,
+        grab_offset: 5.0,
+        track_start: 100.0,
+        track_size: 200.0,
+        thumb_size: 50.0,
+        max_scroll: 40,
+    });
+    hover_pointer(&mut app, 12.0, 0.5);
+    assert!(
+        app.hover_hide_at.is_none(),
+        "a captured thumb keeps the card open outside"
+    );
+    app.handle_event(&WindowEvent::MouseInput {
+        device_id: winit::event::DeviceId::dummy(),
+        state: ElementState::Released,
+        button: MouseButton::Left,
+    });
+    assert!(app.model.ui.scrollbar_drag.is_none());
+    assert!(
+        app.hover_hide_at.is_some(),
+        "release resumes the dismissal grace period"
+    );
     hover_pointer(&mut app, 12.0, 0.5);
     app.hover_hide_at = Some(Instant::now() - Duration::from_millis(1));
     assert!(app.check_hover_dwell());

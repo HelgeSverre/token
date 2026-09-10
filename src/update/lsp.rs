@@ -721,6 +721,50 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         // reaching here — mirrors `DefinitionResponseFromServer`.
         LspMsg::HoverResponseFromServer { .. } => None,
 
+        LspMsg::DocumentFeatureResponse { .. } | LspMsg::SemaEvalResponse { .. } => None,
+        LspMsg::SemaEvalResolved {
+            document_id,
+            revision,
+            output,
+        } => {
+            let document = model.editor_area.documents.get_mut(&document_id)?;
+            if document.revision != revision
+                || document.language != crate::syntax::LanguageId::Sema
+                || !crate::lsp::document_features::valid_range(document, output.range)
+            {
+                return None;
+            }
+            if document.lsp_features.revision != revision {
+                document.lsp_features = crate::lsp::document_features::DocumentFeatures {
+                    revision,
+                    ..Default::default()
+                };
+            }
+            let summary = output.summary();
+            document
+                .lsp_features
+                .eval_output
+                .insert(output.range.start.line as usize, summary.clone());
+            model.ui.set_status(summary);
+            Some(Cmd::Redraw)
+        }
+        LspMsg::DocumentFeatureResolved {
+            document_id,
+            revision,
+            language,
+            feature,
+            result,
+            capabilities,
+        } => {
+            let document = model.editor_area.documents.get_mut(&document_id)?;
+            if document.revision != revision || document.language != language {
+                return None;
+            }
+            let mut features = std::mem::take(&mut document.lsp_features);
+            features.apply(document, feature, result, &capabilities);
+            document.lsp_features = features;
+            Some(Cmd::redraw_editor())
+        }
         LspMsg::ShowCodeActions => {
             let doc = model.try_document()?;
             let document_id = doc.id?;
@@ -766,6 +810,14 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             if model.editor().active_cursor().to_position() != cursor {
                 return None;
             }
+            if let Some(document) = model.try_document() {
+                actions.extend(document.lsp_features.lens_actions(document, cursor.line));
+            }
+            let outcome = if actions.is_empty() {
+                outcome
+            } else {
+                ReferencesOutcome::Found
+            };
             let status = match outcome {
                 ReferencesOutcome::StillIndexing => "Language server still indexing…",
                 ReferencesOutcome::NotSupported => "Code actions not supported by this server",
@@ -777,6 +829,7 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                     // Stable sort: preferred first, server order within.
                     actions.sort_by_key(|a| !a.is_preferred);
                     model.ui.code_action_list = Some(actions);
+                    model.ui.code_action_origin = Some((document_id, revision));
                     model.ui.cursor_overlay =
                         Some(CursorOverlayState::new(CursorOverlayKind::CodeActions));
                     return Some(Cmd::Redraw);
@@ -789,6 +842,11 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         LspMsg::CodeActionsResponseFromServer { .. } => None,
 
         LspMsg::ActivateCodeAction { index } => {
+            let stale = model
+                .ui
+                .code_action_origin
+                .take()
+                .is_some_and(|(id, revision)| stale_feature_response(model, id, revision));
             let item = model
                 .ui
                 .code_action_list
@@ -797,6 +855,12 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
                 .cloned();
             model.ui.cursor_overlay = None;
             model.ui.code_action_list = None;
+            if stale {
+                model
+                    .ui
+                    .set_status("Document changed; request code actions again");
+                return Some(Cmd::Redraw);
+            }
             let Some(item) = item else {
                 return Some(Cmd::Redraw);
             };
@@ -2508,6 +2572,83 @@ mod tests {
         let cmd = resolve_code_actions(&mut model, revision + 1, vec![action("Fix", true)]);
         assert!(cmd.is_none());
         assert!(model.ui.cursor_overlay.is_none());
+    }
+
+    #[test]
+    fn sema_code_lens_menu_rejects_activation_after_an_edit() {
+        let (_dir, mut model) = model_with_file();
+        let revision = model.document().revision;
+        let mut item = action("Run", false);
+        item.command = Some(lsp_types::Command::new(
+            "Run".into(),
+            "sema.runTopLevel".into(),
+            None,
+        ));
+        resolve_code_actions(&mut model, revision, vec![item]);
+        model.document_mut().revision += 1;
+        assert!(matches!(
+            update_lsp(&mut model, LspMsg::ActivateCodeAction { index: 0 }),
+            Some(Cmd::Redraw)
+        ));
+        assert!(model.ui.code_action_list.is_none());
+        assert!(model.ui.code_action_origin.is_none());
+        assert!(model
+            .ui
+            .transient_message
+            .as_ref()
+            .unwrap()
+            .text
+            .contains("Document changed"));
+    }
+
+    #[test]
+    fn sema_document_features_reject_old_revisions_and_languages() {
+        use crate::{lsp::document_features::Feature, syntax::LanguageId};
+        let (_dir, mut model) = model_with_file();
+        model.document_mut().language = LanguageId::Sema;
+        let document_id = model.document().id.unwrap();
+        let revision = model.document().revision;
+        for (reply_revision, language) in [
+            (revision + 1, LanguageId::Sema),
+            (revision, LanguageId::Rust),
+        ] {
+            let cmd = update_lsp(
+                &mut model,
+                LspMsg::DocumentFeatureResolved {
+                    document_id,
+                    revision: reply_revision,
+                    language,
+                    feature: Feature::InlayHints,
+                    result: serde_json::json!([{"position":{"line":0,"character":0},"label":"x:"}]),
+                    capabilities: Box::default(),
+                },
+            );
+            assert!(cmd.is_none());
+            assert!(model.document().lsp_features.hints.is_empty());
+        }
+    }
+
+    #[test]
+    fn sema_lenses_open_actions_when_server_has_no_code_action_provider() {
+        use crate::lsp::document_features::{DocumentFeatures, Feature};
+        let (_dir, mut model) = model_with_file();
+        let document = model.document();
+        let document_id = document.id.unwrap();
+        let revision = document.revision;
+        let mut features = DocumentFeatures::default();
+        features.apply(document, Feature::CodeLens, serde_json::json!([{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":12}},"command":{"title":"Run","command":"sema.runTopLevel"}}]), &Default::default());
+        model.document_mut().lsp_features = features;
+        update_lsp(
+            &mut model,
+            LspMsg::CodeActionsResolved {
+                document_id,
+                revision,
+                cursor: Position::new(0, 0),
+                actions: vec![],
+                outcome: ReferencesOutcome::NotSupported,
+            },
+        );
+        assert_eq!(model.ui.code_action_list.as_ref().unwrap()[0].title, "Run");
     }
 
     #[test]

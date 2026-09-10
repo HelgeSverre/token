@@ -42,6 +42,8 @@ use super::lsp_slot::{FeatureSlot, PendingRequest, RequestKey};
 #[path = "hover.rs"]
 mod hover;
 use hover::HoverDwell;
+#[path = "document_features.rs"]
+mod document_features;
 #[path = "references.rs"]
 mod references;
 #[path = "workspace_symbols.rs"]
@@ -399,6 +401,8 @@ use token::model::usages::MAX_REFERENCE_LOCATIONS;
 /// design doc's Process Model (non-`Debug`/`Clone` handles must never
 /// reach `AppModel`, which the automation layer snapshots wholesale).
 struct LspManager {
+    sema_evals: HashMap<token::model::DocumentId, (u64, u64)>,
+    document_features: HashMap<RequestKey, document_features::PendingDocumentFeature>,
     symbols: workspace_symbols::SymbolSearch,
     servers: HashMap<(LspServerId, PathBuf), ServerHandle>,
     detached_roots: Vec<PathBuf>,
@@ -1005,6 +1009,8 @@ struct OpenDocState {
 impl LspManager {
     fn new() -> Self {
         Self {
+            sema_evals: HashMap::new(),
+            document_features: HashMap::new(),
             symbols: workspace_symbols::SymbolSearch::default(),
             servers: HashMap::new(),
             detached_roots: Vec::new(),
@@ -1914,7 +1920,10 @@ impl App {
 
                 // End scrollbar drag if active
                 if self.model.ui.scrollbar_drag.is_some() {
-                    return update(&mut self.model, Msg::Ui(UiMsg::ScrollbarDragEnd));
+                    let redraw = update(&mut self.model, Msg::Ui(UiMsg::ScrollbarDragEnd));
+                    // A documentation drag can end outside the card without
+                    // another mouse move. Resume its normal dismissal grace period.
+                    return self.update_hover_dwell().or(redraw);
                 }
 
                 // End sidebar resize drag if active
@@ -3271,6 +3280,7 @@ impl App {
         }
         messages = self.intercept_definition_replies(messages);
         messages = self.intercept_workspace_symbols(messages);
+        messages = self.intercept_document_features(messages);
         messages = self.intercept_hover_replies(messages);
         messages = self.intercept_signature_help_replies(messages);
         messages = self.intercept_rename_replies(messages);
@@ -3420,6 +3430,16 @@ impl App {
                     // re-`didOpen` them (design doc's "after any restart"
                     // rule).
                     self.resync_open_documents(&server_id, &root);
+                }
+                let documents: Vec<_> = self
+                    .lsp
+                    .open_documents
+                    .iter()
+                    .filter(|(_, open)| open.server_id == server_id && open.root == root)
+                    .map(|(&id, _)| id)
+                    .collect();
+                for document in documents {
+                    self.request_document_features(document);
                 }
             }
             if let Some((document_id, revision, timing, apply_started)) = syntax_completion {
@@ -4066,6 +4086,9 @@ impl App {
             .collect();
         self.lsp.formatting.clear_for_roots(server_id, roots);
         self.lsp.resolve.clear_for_roots(server_id, roots);
+        self.lsp
+            .document_features
+            .retain(|(id, root, _), _| id != server_id || !roots.contains(root));
         for message in reference_outcomes.into_iter().chain(formatting_outcomes) {
             self.emit_lsp_msg(message);
         }
@@ -4254,6 +4277,7 @@ impl App {
                 synced_revision: revision,
             },
         );
+        self.request_document_features(document_id);
     }
 
     /// Whether a `publishDiagnostics` `version` for `uri` is older than
@@ -4309,8 +4333,14 @@ impl App {
         token::update::problems::clamp_problems_selection(&mut self.model);
         let mut any_had_marks = false;
         for (doc_id, _) in affected_docs {
+            self.lsp.sema_evals.remove(&doc_id);
             if let Some(doc) = self.model.editor_area.documents.get_mut(&doc_id) {
                 any_had_marks |= !doc.diagnostics.is_empty();
+                any_had_marks |= doc.lsp_features.semantic.is_some()
+                    || !doc.lsp_features.hints.is_empty()
+                    || !doc.lsp_features.lenses.is_empty()
+                    || !doc.lsp_features.eval_output.is_empty();
+                doc.lsp_features = Default::default();
                 doc.diagnostics.clear();
             }
         }
@@ -4383,6 +4413,8 @@ impl App {
             params,
         });
         state.synced_revision = revision;
+        self.lsp.sema_evals.remove(&document_id);
+        self.request_document_features(document_id);
     }
 
     /// The flush-before-request invariant
@@ -4433,6 +4465,11 @@ impl App {
     /// document is gone, so a `didChange` for it afterward would be
     /// invalid.
     fn lsp_close_document(&mut self, document_id: token::model::editor_area::DocumentId) {
+        self.lsp.sema_evals.remove(&document_id);
+        self.cancel_document_features(document_id);
+        if let Some(document) = self.model.editor_area.documents.get_mut(&document_id) {
+            document.lsp_features = Default::default();
+        }
         self.lsp_change_deadlines.take(document_id);
         // A closed document's menu is gone; a pending completion debounce
         // or in-flight request for it would be answered into nothing.
@@ -4901,11 +4938,21 @@ impl App {
         command: String,
         arguments: Option<Vec<serde_json::Value>>,
     ) {
+        if command == "sema.runTopLevel" {
+            self.flush_lsp_did_change(document_id);
+        }
         let Some(state) = self.lsp.open_documents.get(&document_id) else {
             return;
         };
         let key = (state.server_id.clone(), state.root.clone());
         if let Some(handle) = self.lsp.servers.get(&key) {
+            if command == "sema.runTopLevel" && handle.id.0 == "sema" {
+                if let Some(document) = self.model.editor_area.documents.get(&document_id) {
+                    self.lsp
+                        .sema_evals
+                        .insert(document_id, (document.revision, handle.generation));
+                }
+            }
             handle.begin_request(
                 "workspace/executeCommand",
                 serde_json::json!({ "command": command, "arguments": arguments }),
@@ -5612,6 +5659,7 @@ impl ApplicationHandler for App {
         needs_redraw |= self.check_auto_save(Instant::now());
         self.check_lsp_references_deadlines();
         self.check_lsp_code_action_deadlines();
+        self.sweep_document_features();
         self.check_lsp_completion_debounces();
         self.check_lsp_completion_deadlines();
         self.sync_inline_provider();
@@ -5755,6 +5803,9 @@ impl App {
         }
         if let Some(earliest_deadline) = self.lsp.code_actions.earliest_deadline() {
             next_wake = next_wake.min(earliest_deadline);
+        }
+        if let Some(deadline) = self.document_features_deadline() {
+            next_wake = next_wake.min(deadline);
         }
         if let Some(earliest_deadline) = self.lsp.completion.earliest_deadline() {
             next_wake = next_wake.min(earliest_deadline);
