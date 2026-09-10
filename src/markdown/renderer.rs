@@ -1,6 +1,6 @@
 //! Markdown to HTML renderer using pulldown-cmark
 
-use pulldown_cmark::{html, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
 use super::PreviewTheme;
 use crate::syntax::LanguageId;
@@ -15,7 +15,17 @@ pub fn markdown_to_html(markdown: &str, theme: &PreviewTheme) -> String {
     let parser = Parser::new_ext(markdown, options);
 
     // Add line markers for scroll sync
-    let parser_with_markers = add_line_markers(parser, markdown);
+    let mut diagrams = false;
+    let mut code = false;
+    let parser_with_markers = add_line_markers(parser, markdown).inspect(|event| {
+        if let Event::Start(Tag::CodeBlock(kind)) = event {
+            if matches!(kind, CodeBlockKind::Fenced(info) if info.split_whitespace().next() == Some("mermaid")) {
+                diagrams = true;
+            } else {
+                code = true;
+            }
+        }
+    });
 
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser_with_markers);
@@ -26,18 +36,20 @@ pub fn markdown_to_html(markdown: &str, theme: &PreviewTheme) -> String {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-    <style>{}</style>
+    <style>{highlight_css}</style>
+    <style>{theme_css}</style>
 </head>
 <body>
-    <div id="content">{}</div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script>{}</script>
+    <div id="content">{html_output}</div>
+    <script>{highlight_js}</script>
+    <script>{mermaid_js}</script>
+    <script>{PREVIEW_JS}</script>
 </body>
 </html>"#,
-        generate_css(theme),
-        html_output,
-        PREVIEW_JS
+        theme_css = generate_css(theme),
+        highlight_css = if code { HIGHLIGHT_CSS } else { "" },
+        highlight_js = if code { HIGHLIGHT_JS } else { "" },
+        mermaid_js = if diagrams { MERMAID_JS } else { "" },
     )
 }
 
@@ -303,6 +315,12 @@ del {{
 /// Shared preview behavior: highlighting, Mermaid and source scroll sync.
 const PREVIEW_JS: &str = include_str!("preview.js");
 
+// Self-contained, pinned browser bundles. No CDN, dynamic imports or build-time
+// downloads; ordinary prose previews do not copy/parse these larger assets.
+const MERMAID_JS: &str = include_str!("../../vendor/markdown/mermaid.min.js");
+const HIGHLIGHT_JS: &str = include_str!("../../vendor/markdown/highlight.min.js");
+const HIGHLIGHT_CSS: &str = include_str!("../../vendor/markdown/github-dark.min.css");
+
 /// Add data-line attributes to block-level elements for scroll sync
 fn add_line_markers<'a>(parser: Parser<'a>, markdown: &'a str) -> impl Iterator<Item = Event<'a>> {
     let mut current_line = 1;
@@ -399,6 +417,34 @@ mod tests {
         assert!(html.contains("pre code:not(.language-mermaid)"));
         let raw_html = "<!DOCTYPE html><html><body>Unmodified</body></html>";
         assert_eq!(html_to_preview(raw_html), raw_html);
+    }
+
+    #[test]
+    fn preview_bundles_are_inline_and_only_included_when_needed() {
+        // HTML script/style raw-text elements must not be terminated by a
+        // future upstream bundle. Keep originals byte-identical in vendor/.
+        for script in [MERMAID_JS, HIGHLIGHT_JS, PREVIEW_JS] {
+            assert!(!script.to_ascii_lowercase().contains("</script"));
+        }
+        assert!(!HIGHLIGHT_CSS.to_ascii_lowercase().contains("</style"));
+        let theme = PreviewTheme::default();
+        for (source, diagrams, code) in [
+            ("# Plain prose", false, false),
+            ("```mermaid\nflowchart LR\nA --> B\n```", true, false),
+            ("    let x = 1;", false, true),
+            (
+                "```mermaid\nA --> B\n```\n\n```rust\nfn main() {}\n```",
+                true,
+                true,
+            ),
+        ] {
+            let html = markdown_to_html(source, &theme);
+            assert_eq!(html.contains(MERMAID_JS), diagrams);
+            assert_eq!(html.contains(HIGHLIGHT_JS), code);
+            assert!(!html.contains("<script src="));
+            assert!(!html.contains("<link rel=\"stylesheet\""));
+        }
+        assert!(!PREVIEW_JS.contains("import("));
     }
 
     #[test]

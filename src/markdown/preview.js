@@ -18,10 +18,8 @@ async function renderMermaidDiagrams() {
     const blocks = Array.from(document.querySelectorAll('pre > code.language-mermaid'));
     if (blocks.length === 0) return;
 
-    let mermaid;
+    const mermaid = window.mermaid;
     try {
-        // Pin the renderer; load it only for documents containing diagrams.
-        ({ default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs'));
         const page = getComputedStyle(document.body);
         const code = getComputedStyle(blocks[0].parentElement);
         mermaid.initialize({
@@ -30,6 +28,7 @@ async function renderMermaidDiagrams() {
             suppressErrorRendering: true,
             theme: 'base',
             themeVariables: {
+                fontFamily: page.fontFamily,
                 background: page.backgroundColor,
                 primaryColor: code.backgroundColor,
                 primaryBorderColor: page.color,
@@ -42,7 +41,7 @@ async function renderMermaidDiagrams() {
         });
     } catch (_) {
         blocks.forEach((code) => diagramError(code.parentElement,
-            'Mermaid renderer could not be loaded. Check your connection; the diagram source is left visible.'));
+            'The bundled Mermaid renderer could not be initialized; the diagram source is left visible.'));
         return;
     }
 

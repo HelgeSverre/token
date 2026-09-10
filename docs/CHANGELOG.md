@@ -6,6 +6,13 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Offline Markdown preview
+
+- Bundle Mermaid and Markdown code highlighting with the application. Diagrams
+  and syntax-highlighted code no longer require a CDN connection; ordinary prose
+  previews omit the unused libraries. Invalid diagrams still show their source
+  and an explanation.
+
 ### Windows packaging
 
 - Build Windows installers with WiX instead of the experimental MSI generator,

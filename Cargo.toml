@@ -246,7 +246,7 @@ name = "Token"
 identifier = "no.helgesverre.token"
 icon = ["assets/icon-packaging.png"]
 # cargo-bundle's MSI backend uses resource filenames as MSI identifiers.
-resources = ["Credits.rtf", "assets/Inter_OFL.txt"]
+resources = ["Credits.rtf", "assets/Inter_OFL.txt", "vendor/markdown/Mermaid_LICENSE.txt", "vendor/markdown/Highlight_LICENSE.txt"]
 category = "public.app-category.developer-tools"
 copyright = "Copyright (c) Helge Sverre 2026"
 publisher = "Helge Sverre"
@@ -267,7 +267,7 @@ osx_info_plist_exts = ["assets/macos-info.plist"]
 name = "Token"
 identifier = "no.helgesverre.token"
 icon = ["assets/icon-packaging.png"]
-resources = ["Credits.rtf", "assets/Inter_OFL.txt"]
+resources = ["Credits.rtf", "assets/Inter_OFL.txt", "vendor/markdown/Mermaid_LICENSE.txt", "vendor/markdown/Highlight_LICENSE.txt"]
 category = "public.app-category.developer-tools"
 copyright = "Copyright (c) Helge Sverre 2026"
 publisher = "Helge Sverre"

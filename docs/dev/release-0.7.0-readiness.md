@@ -173,3 +173,23 @@ Its metadata identifies an x64/en-US package built by WiX 3.14.1.8722.
 The verification branch excluded the local version bump and automation-input
 changes. MSI files remain Build workflow artifacts; the release-publishing
 workflow is unchanged. No release tag or publication was made.
+
+## Offline preview follow-up
+
+Markdown now embeds the pinned Mermaid 11.17.2 full browser bundle and
+Highlight.js 11.9.0 with its stylesheet. Library files remain byte-identical to
+their distributions, with provenance/checksums and licenses under
+`vendor/markdown/`. Both licenses are included in archive/app/MSI packaging.
+Prose-only documents omit the libraries; diagram-only documents omit Highlight.js.
+
+The production HTML renderer passed a headless Chrome check with DNS resolution
+disabled and a restrictive network-blocking CSP. Five diagrams (flowchart,
+sequence, state, mindmap, mathematical labels) rendered; one deliberately invalid
+diagram retained its source and explanation. Rust highlighting rendered, with no
+external script/stylesheet elements or blocked resource attempts. The fixture,
+check harness and screenshot are in `target/verification/offline-preview/`.
+Document-authored remote images and raw HTML are outside this renderer-asset check.
+
+The 12 targeted renderer tests, strict lint and full suite passed (2,700 tests,
+seven skipped; two doctests passed, six ignored). Final release-candidate
+verification still needs to include the subsequent safety and Settings work.

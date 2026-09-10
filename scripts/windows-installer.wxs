@@ -30,6 +30,12 @@
             <Component Id="License" Guid="*" Win64="yes">
               <File Source="$(var.SourceDir)/LICENSE.md" KeyPath="yes" />
             </Component>
+            <Component Id="MermaidLicense" Guid="*" Win64="yes">
+              <File Source="$(var.SourceDir)/vendor/markdown/Mermaid_LICENSE.txt" KeyPath="yes" />
+            </Component>
+            <Component Id="HighlightLicense" Guid="*" Win64="yes">
+              <File Source="$(var.SourceDir)/vendor/markdown/Highlight_LICENSE.txt" KeyPath="yes" />
+            </Component>
             <Directory Id="FontLicenses" Name="assets">
               <Component Id="InterLicense" Guid="*" Win64="yes">
                 <File Source="$(var.SourceDir)/assets/Inter_OFL.txt" KeyPath="yes" />
@@ -47,6 +53,8 @@
       <ComponentRef Id="Executable" />
       <ComponentRef Id="Credits" />
       <ComponentRef Id="License" />
+      <ComponentRef Id="MermaidLicense" />
+      <ComponentRef Id="HighlightLicense" />
       <ComponentRef Id="InterLicense" />
       <ComponentRef Id="JetBrainsMonoLicense" />
     </Feature>

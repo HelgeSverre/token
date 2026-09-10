@@ -26,6 +26,8 @@ try {
         @{ Source = "target/$Target/release/token.exe"; Installed = "token.exe" },
         @{ Source = "Credits.rtf"; Installed = "Resources/Credits.rtf" },
         @{ Source = "LICENSE.md"; Installed = "Resources/LICENSE.md" },
+        @{ Source = "vendor/markdown/Mermaid_LICENSE.txt"; Installed = "Resources/Mermaid_LICENSE.txt" },
+        @{ Source = "vendor/markdown/Highlight_LICENSE.txt"; Installed = "Resources/Highlight_LICENSE.txt" },
         @{ Source = "assets/Inter_OFL.txt"; Installed = "Resources/assets/Inter_OFL.txt" },
         @{ Source = "assets/OFL.txt"; Installed = "Resources/assets/OFL.txt" }
     )) {
