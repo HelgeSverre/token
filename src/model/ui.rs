@@ -1482,6 +1482,8 @@ pub struct UiState {
     pub find_selection_drag: Option<FindReplaceField>,
     /// Last command palette state (persisted for quick re-execution)
     pub last_command_palette: Option<CommandPaletteState>,
+    /// A Settings draft temporarily left to inspect the application log.
+    pub(crate) suspended_settings: Option<crate::settings::SettingsState>,
     /// Last find/replace state (persisted for quick re-use)
     pub last_find_replace: Option<FindReplaceState>,
     /// File drag-and-drop state
@@ -1639,6 +1641,7 @@ impl UiState {
             find_bar: None,
             find_selection_drag: None,
             last_command_palette: None,
+            suspended_settings: None,
             last_find_replace: None,
             drop_state: DropState::default(),
             splitter_drag: None,

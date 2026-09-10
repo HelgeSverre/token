@@ -281,6 +281,34 @@ pub enum ModalMsg {
 
 #[derive(Debug, Clone)]
 pub enum SettingsMsg {
+    EndFieldSelection,
+    FieldPointer {
+        row: usize,
+        position: crate::editable::Position,
+        extend: bool,
+    },
+    MoveFieldCursor {
+        down: bool,
+        extend: bool,
+    },
+    UndoField {
+        redo: bool,
+    },
+    FileChosen {
+        session: std::sync::Arc<()>,
+        field: usize,
+        path: Option<std::path::PathBuf>,
+    },
+    ExecutableChecked {
+        session: std::sync::Arc<()>,
+        command: String,
+        status: String,
+    },
+    FormApplied {
+        session: std::sync::Arc<()>,
+        change: Box<crate::settings::forms::SettingsChange>,
+        result: Result<(), String>,
+    },
     CaptureKey(crate::keymap::Keystroke),
     CaptureRejected(String),
     KeymapResult {

@@ -3,6 +3,7 @@ use crate::config::EditorConfig;
 use crate::editable::{EditConstraints, EditableState, StringBuffer};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use std::borrow::Cow;
+pub mod forms;
 pub mod keymap;
 
 /// Categories in the separate Settings page, derived from the form metadata.
@@ -429,6 +430,10 @@ impl Descriptor {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum RowKind {
+    FormField(usize),
+    FormEnabled,
+    FormActions,
+    FormInfo,
     KeymapBase,
     KeymapBinding(Option<usize>, crate::keymap::Command),
     CaptureActions,
@@ -450,6 +455,9 @@ pub(crate) struct SettingRow {
 impl SettingRow {
     pub fn choices(&self) -> &'static [&'static str] {
         match self.kind {
+            RowKind::FormField(_) | RowKind::FormInfo => &[],
+            RowKind::FormEnabled => BOOL_LABELS,
+            RowKind::FormActions => &["Apply & Restart", "Cancel", "Open log"],
             RowKind::KeymapBase => crate::keymap::preferences::BaseKeymap::LABELS,
             RowKind::KeymapBinding(..) => &[],
             RowKind::CaptureActions => &["Save", "Cancel", "Literal"],
@@ -462,6 +470,10 @@ impl SettingRow {
 
     pub fn active(&self, config: &EditorConfig) -> Option<usize> {
         match self.kind {
+            RowKind::FormField(_)
+            | RowKind::FormEnabled
+            | RowKind::FormActions
+            | RowKind::FormInfo => None,
             RowKind::KeymapBase | RowKind::KeymapBinding(..) | RowKind::CaptureActions => None,
             RowKind::Preset(index) => DESCRIPTORS[index].active(config),
             RowKind::LspMaster => Some(usize::from(config.lsp.enabled)),
@@ -552,7 +564,7 @@ fn settings_rows() -> Vec<SettingRow> {
                 section: "LSP",
                 name: format!("{} executable", def.id).into(),
                 description: format!(
-                    "lsp.servers.{}.command · {languages} · opens config.yaml",
+                    "lsp.servers.{}.command · {languages} · configure this server",
                     def.id
                 )
                 .into(),
@@ -571,6 +583,7 @@ fn settings_rows() -> Vec<SettingRow> {
 
 #[derive(Debug, Clone)]
 pub struct SettingsState {
+    pub(crate) form: Option<forms::SettingsForm>,
     pub category: usize,
     pub tab: keymap::SettingsTab,
     pub keymap: keymap::KeymapSettings,
@@ -589,6 +602,7 @@ impl Default for SettingsState {
         let entries = settings_rows();
         let rows = (0..entries.len()).collect();
         Self {
+            form: None,
             category: 0,
             tab: keymap::SettingsTab::General,
             keymap: keymap::KeymapSettings::default(),
@@ -602,7 +616,42 @@ impl Default for SettingsState {
 }
 
 impl SettingsState {
+    pub fn saving(&self) -> bool {
+        self.form
+            .as_ref()
+            .map_or(self.keymap.saving, |form| form.saving)
+    }
+
+    pub fn editing_field(&self) -> bool {
+        self.form
+            .as_ref()
+            .is_some_and(|form| form.focused.is_some() && !form.saving)
+    }
+
+    pub fn selection_drag_row(&self) -> Option<usize> {
+        self.form
+            .as_ref()
+            .filter(|form| form.dragging && !form.saving)
+            .map(|_| self.selected_index)
+    }
+
+    pub(crate) fn focused_input_mut(&mut self) -> Option<&mut EditableState<StringBuffer>> {
+        match &mut self.form {
+            Some(form) if !form.saving => {
+                let index = form.focused?;
+                Some(&mut form.fields.get_mut(index)?.input)
+            }
+            Some(_) => None,
+            None => Some(&mut self.editable),
+        }
+    }
     pub(crate) fn refresh_entries(&mut self) {
+        if let Some(form) = &self.form {
+            self.entries = form.entries();
+            self.rows = (0..self.entries.len()).collect();
+            self.selected_index = self.selected_index.min(self.rows.len().saturating_sub(1));
+            return;
+        }
         self.entries = match self.tab {
             keymap::SettingsTab::General => settings_rows(),
             keymap::SettingsTab::Keymap => self.keymap.entries(),
@@ -611,7 +660,23 @@ impl SettingsState {
     }
     /// Current search input, for read-only automation snapshots.
     pub fn input(&self) -> String {
+        if let Some(form) = &self.form {
+            return form
+                .focused
+                .and_then(|index| form.fields.get(index))
+                .map_or_else(String::new, |field| field.input.text());
+        }
         self.editable.text()
+    }
+
+    /// Persistent feedback for the active explicit-save workflow.
+    pub fn status(&self) -> Option<&str> {
+        self.form
+            .as_ref()
+            .map(|form| form.status.as_str())
+            .or_else(|| {
+                (self.tab == keymap::SettingsTab::Keymap).then_some(self.keymap.status.as_str())
+            })
     }
 
     /// Selected index in filtered-row order.
@@ -627,6 +692,9 @@ impl SettingsState {
     }
 
     pub(crate) fn resolve_rows(&mut self) {
+        if self.form.is_some() {
+            return;
+        }
         if self.tab == keymap::SettingsTab::Keymap && self.keymap.capture.is_some() {
             self.rows = (0..self.entries.len()).collect();
             self.selected_index = 0;

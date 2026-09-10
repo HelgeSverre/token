@@ -1843,6 +1843,7 @@ fn arms_content_drag(target: &HitTarget) -> bool {
     matches!(
         target,
         HitTarget::EditorContent { .. }
+            | HitTarget::ModalField { .. }
             | HitTarget::FindBar {
                 control: Some(token::view::find_bar::Control::Field(_))
             }
@@ -2026,6 +2027,20 @@ fn handle_left_click(
             }
         }
         // Modal handling
+        HitTarget::ModalField { row, position } => EventResult::Consumed {
+            redraw: true,
+            focus: None,
+            cmd: update(
+                model,
+                Msg::Ui(UiMsg::Settings(
+                    token::messages::SettingsMsg::FieldPointer {
+                        row: *row,
+                        position: *position,
+                        extend: event.shift(),
+                    },
+                )),
+            ),
+        },
         HitTarget::ModalScrollbar { geometry } => modal_scrollbar_press(model, geometry, event),
         HitTarget::Modal { inside } => {
             if *inside {
@@ -2831,6 +2846,7 @@ fn handle_middle_click(
         | HitTarget::ModalScrollbar { .. }
         | HitTarget::ModalRow { .. }
         | HitTarget::ModalChoice { .. }
+        | HitTarget::ModalField { .. }
         | HitTarget::ModalTab { .. } => EventResult::consumed_no_redraw(),
 
         // Sidebar targets - consume, no action for middle-click

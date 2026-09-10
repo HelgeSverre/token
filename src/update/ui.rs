@@ -191,7 +191,7 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                 ModalId::UnsavedChanges => return None, // Opened only for a concrete close intention.
                 ModalId::FileConflict => return super::file_change::show_focused(model, true),
                 ModalId::Settings => {
-                    ModalState::Settings(crate::settings::SettingsState::default())
+                    ModalState::Settings(model.ui.suspended_settings.take().unwrap_or_default())
                 }
                 ModalId::CommandPalette => {
                     // Cmd+Shift+A: Search Everywhere, pre-focused on All
@@ -357,7 +357,7 @@ fn scroll_target(
 /// `ThemePicker` has no text input at all and returns `None`.
 fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<StringBuffer>> {
     match modal {
-        ModalState::Settings(state) => Some(&mut state.editable),
+        ModalState::Settings(state) => state.focused_input_mut(),
         ModalState::CommandPalette(state) => Some(&mut state.editable),
         ModalState::GotoLine(state) => Some(&mut state.editable),
         ModalState::RenameSymbol(state) => Some(&mut state.editable),
@@ -378,7 +378,13 @@ fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<Strin
 /// no such side effect.
 fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
     match modal {
-        ModalState::Settings(state) => state.resolve_rows(),
+        ModalState::Settings(state) => {
+            if let Some(form) = &mut state.form {
+                form.changed();
+            } else {
+                state.resolve_rows();
+            }
+        }
         ModalState::CommandPalette(state) => {
             resolve_palette_rows(state, history);
             // Query is shared across tabs — keep the (lazily-populated)
@@ -481,9 +487,17 @@ fn edit_ui_input(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
         ModalMsg::Paste => effect = Some(Cmd::RequestClipboardPaste),
         ModalMsg::PasteText(text) => {
+            let text = if input.constraints.allow_multiline {
+                text.replace("\r\n", "\n").replace('\r', "\n")
+            } else {
+                text
+            };
             let filtered: String = text
                 .chars()
-                .filter(|c| *c != '\n' && *c != '\r' && (!goto || c.is_ascii_digit()))
+                .filter(|c| {
+                    (input.constraints.allow_multiline || (*c != '\n' && *c != '\r'))
+                        && (!goto || c.is_ascii_digit())
+                })
                 .collect();
             input.insert_text(&filtered);
         }
@@ -534,6 +548,10 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         ModalMsg::OpenFindReplace => open_find(model, true),
 
         ModalMsg::Close => {
+            if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.form.is_some())
+            {
+                return super::settings::cancel_form(model);
+            }
             if model.ui.focus == crate::model::FocusTarget::FindBar {
                 return update_ui(model, UiMsg::CloseFind);
             }
@@ -550,14 +568,20 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
 
-        ModalMsg::MoveCursorLeft
-            if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) =>
+        ModalMsg::MoveCursorLeft if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if !state.editing_field()) =>
         {
+            if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.form.is_some())
+            {
+                return super::settings::adjust_form(model);
+            }
             change_setting(model, None, -1)
         }
-        ModalMsg::MoveCursorRight
-            if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) =>
+        ModalMsg::MoveCursorRight if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if !state.editing_field()) =>
         {
+            if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.form.is_some())
+            {
+                return super::settings::adjust_form(model);
+            }
             change_setting(model, None, 1)
         }
         input @ (ModalMsg::SetInput(_)
@@ -583,6 +607,24 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         | ModalMsg::Paste
         | ModalMsg::PasteText(_)) => edit_ui_input(model, input),
 
+        ModalMsg::SelectPrevious if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.editing_field()) => {
+            super::settings::update_settings(
+                model,
+                crate::messages::SettingsMsg::MoveFieldCursor {
+                    down: false,
+                    extend: false,
+                },
+            )
+        }
+        ModalMsg::SelectNext if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.editing_field()) => {
+            super::settings::update_settings(
+                model,
+                crate::messages::SettingsMsg::MoveFieldCursor {
+                    down: true,
+                    extend: false,
+                },
+            )
+        }
         ModalMsg::SelectPrevious => modal_select(model, -1),
 
         ModalMsg::SelectNext => modal_select(model, 1),
@@ -679,11 +721,19 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         }
 
         ModalMsg::NextTab if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) => {
+            if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.form.is_some())
+            {
+                return super::settings::form_focus(model, true);
+            }
             super::settings::switch_tab(model, None)
         }
         ModalMsg::NextTab => cycle_search_tab(model, true),
 
         ModalMsg::PrevTab if matches!(model.ui.active_modal, Some(ModalState::Settings(_))) => {
+            if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.form.is_some())
+            {
+                return super::settings::form_focus(model, false);
+            }
             let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
                 return None;
             };
@@ -702,6 +752,20 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
         ModalMsg::Confirm if model.ui.focus == crate::model::FocusTarget::FindBar => {
             update_modal(model, ModalMsg::FindNext)
+        }
+        ModalMsg::Confirm if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.editing_field()) =>
+        {
+            let multiline = match &mut model.ui.active_modal {
+                Some(ModalState::Settings(state)) => state
+                    .focused_input_mut()
+                    .is_some_and(|input| input.constraints.allow_multiline),
+                _ => false,
+            };
+            if multiline {
+                edit_ui_input(model, ModalMsg::InsertChar('\n'))
+            } else {
+                super::settings::form_focus(model, true)
+            }
         }
         ModalMsg::Confirm => confirm_active_modal(model),
 
@@ -1247,6 +1311,9 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
         return None;
     };
     let row = &state.entries[*state.rows.get(state.selected_index)?];
+    if state.form.is_some() {
+        return super::settings::form_choice(model, explicit, delta);
+    }
     if state.tab == crate::settings::keymap::SettingsTab::Keymap {
         return super::settings::choose_base(model, explicit, delta);
     }
@@ -1272,13 +1339,13 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
             return super::lsp::toggle_lsp_server_enabled(model, id)
         }
         crate::settings::RowKind::Preset(index) => &crate::settings::DESCRIPTORS[index],
-        crate::settings::RowKind::ServerCommand(_) => {
-            model.ui.close_modal();
-            return super::layout::open_config_resource(
-                model,
-                crate::commands::ConfigResource::EditorSettings,
-            );
+        crate::settings::RowKind::ServerCommand(def) => {
+            return super::settings::open_server(model, def)
         }
+        crate::settings::RowKind::FormField(_)
+        | crate::settings::RowKind::FormEnabled
+        | crate::settings::RowKind::FormActions
+        | crate::settings::RowKind::FormInfo => return None,
         crate::settings::RowKind::ServerStatus(_)
         | crate::settings::RowKind::KeymapBase
         | crate::settings::RowKind::KeymapBinding(..)
@@ -1311,31 +1378,35 @@ fn settings_capacity(model: &AppModel) -> usize {
     )
 }
 
-fn settings_scroll_geometry(model: &AppModel) -> Option<(crate::layout::RowListView, Vec<usize>)> {
-    let ModalState::Settings(state) = model.ui.active_modal.as_ref()? else {
+pub(super) fn reveal_settings_selection(model: &mut AppModel) {
+    let Some((viewport, positions)) = settings_scroll_geometry(model) else {
+        return;
+    };
+    if let Some(ModalState::Settings(state)) = &mut model.ui.active_modal {
+        state.scroll_offset_px = viewport.scroll_to_reveal_range_pixels(
+            positions.get(state.selected_index).cloned().unwrap_or(0..1),
+        );
+    }
+}
+
+fn settings_scroll_geometry(
+    model: &AppModel,
+) -> Option<(crate::layout::RowListView, Vec<std::ops::Range<usize>>)> {
+    let ModalState::Settings(_) = model.ui.active_modal.as_ref()? else {
         return None;
     };
-    let (positions, total) =
-        crate::view::overlay_surface::section_positions(&settings_shapes(state));
-    let viewport = crate::view::overlay_surface::settings_scroll_viewport(
+    crate::view::modal::with_modal_overlay_layout(
+        model,
         model.window_size.0 as usize,
         model.window_size.1 as usize,
         model.metrics.scale_factor,
-        total,
-        state.scroll_offset_px,
-    );
-    Some((viewport, positions))
-}
-
-fn settings_shapes(state: &crate::settings::SettingsState) -> Vec<SectionShape> {
-    state
-        .sections()
-        .iter()
-        .map(|(_, range)| SectionShape {
-            has_title: true,
-            len: range.len(),
-        })
-        .collect()
+        |_, layout| {
+            layout
+                .settings_viewport
+                .map(|viewport| (viewport, layout.settings_positions.clone()))
+        },
+    )
+    .flatten()
 }
 
 /// Section shapes for an untitled, single-section list body.
@@ -1483,8 +1554,8 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
         ModalState::Settings(state) => {
             state.selected_index = offset_selection(state.selected_index, state.rows.len(), delta);
             if let Some((viewport, positions)) = settings_geometry {
-                state.scroll_offset_px = viewport.scroll_to_reveal_pixels(
-                    positions.get(state.selected_index).copied().unwrap_or(0),
+                state.scroll_offset_px = viewport.scroll_to_reveal_range_pixels(
+                    positions.get(state.selected_index).cloned().unwrap_or(0..1),
                 );
             }
             None
@@ -1570,6 +1641,10 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
 /// `ModalMsg::PageUp`/`PageDown`: page selection by a full visible page in
 /// whichever list-body modal is active.
 fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
+    if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.editing_field())
+    {
+        return super::settings::page_field(model, forward);
+    }
     let capacity = settings_capacity(model);
     let settings_geometry = settings_scroll_geometry(model);
     let modal = model.ui.active_modal.as_mut()?;
@@ -1584,8 +1659,8 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
                 state.selected_index.saturating_sub(capacity)
             };
             if let Some((viewport, positions)) = settings_geometry {
-                state.scroll_offset_px = viewport.scroll_to_reveal_pixels(
-                    positions.get(state.selected_index).copied().unwrap_or(0),
+                state.scroll_offset_px = viewport.scroll_to_reveal_range_pixels(
+                    positions.get(state.selected_index).cloned().unwrap_or(0..1),
                 );
             }
         }

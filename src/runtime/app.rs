@@ -1463,6 +1463,12 @@ impl App {
                     self.model.cancel_scroll_animations();
                     self.drag.end();
                     self.model.ui.find_selection_drag = None;
+                    update(
+                        &mut self.model,
+                        Msg::Ui(UiMsg::Settings(
+                            token::messages::SettingsMsg::EndFieldSelection,
+                        )),
+                    );
                     self.model.terminal.selection_drag = None;
                     self.model.terminal.hovered_link = None;
                     self.modifiers = ModifiersState::empty();
@@ -1743,6 +1749,32 @@ impl App {
                     }
                     return hover_changed.then_some(Cmd::Redraw);
                 }
+                if let Some(row) = match &self.model.ui.active_modal {
+                    Some(token::model::ModalState::Settings(state)) => state.selection_drag_row(),
+                    _ => None,
+                } {
+                    self.drag.check_threshold(position.x, position.y);
+                    if self.drag.is_active() {
+                        if let Some(position) = token::view::modal::settings_field_position(
+                            &self.model,
+                            row,
+                            position.x,
+                            position.y,
+                        ) {
+                            return update(
+                                &mut self.model,
+                                Msg::Ui(UiMsg::Settings(
+                                    token::messages::SettingsMsg::FieldPointer {
+                                        row,
+                                        position,
+                                        extend: true,
+                                    },
+                                )),
+                            );
+                        }
+                    }
+                    return hover_changed.then_some(Cmd::Redraw);
+                }
                 if self.model.terminal.selection_drag.is_some() {
                     self.drag.check_threshold(position.x, position.y);
                     if self.drag.is_active() {
@@ -1903,6 +1935,12 @@ impl App {
             } => {
                 self.drag.end();
                 update(&mut self.model, Msg::Ui(UiMsg::EndFindSelection));
+                update(
+                    &mut self.model,
+                    Msg::Ui(UiMsg::Settings(
+                        token::messages::SettingsMsg::EndFieldSelection,
+                    )),
+                );
                 update(
                     &mut self.model,
                     Msg::Terminal(token::messages::TerminalMsg::SelectionEnd),
@@ -2376,6 +2414,62 @@ impl App {
         // dispatches several commands (including automation batches).
         self.inline_context.observe(&self.model, Instant::now());
         match cmd {
+            Cmd::ChooseSettingsFile {
+                session,
+                field,
+                current,
+            } => {
+                let tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let mut dialog = rfd::FileDialog::new().set_title("Choose executable");
+                    if let Some(parent) = std::path::Path::new(&current)
+                        .parent()
+                        .filter(|path| path.is_dir())
+                    {
+                        dialog = dialog.set_directory(parent);
+                    }
+                    let path = dialog.pick_file();
+                    let _ = tx.send(Msg::Ui(UiMsg::Settings(
+                        token::messages::SettingsMsg::FileChosen {
+                            session,
+                            field,
+                            path,
+                        },
+                    )));
+                });
+            }
+            Cmd::InspectSettingsExecutable { session, command } => {
+                let tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let status = super::configuration::executable_status(&command);
+                    let _ = tx.send(Msg::Ui(UiMsg::Settings(
+                        token::messages::SettingsMsg::ExecutableChecked {
+                            session,
+                            command,
+                            status,
+                        },
+                    )));
+                });
+            }
+            Cmd::ApplySettingsForm { session, change } => {
+                // Like ordinary preference saves, preserve runtime order. Apply
+                // the narrow change only after persistence succeeds, before any
+                // later event can mutate another setting.
+                let mut config = self.model.config.clone();
+                change.apply(&mut config);
+                let result = config.save().map_err(|error| error.to_string());
+                let effect = update(
+                    &mut self.model,
+                    Msg::Ui(UiMsg::Settings(token::messages::SettingsMsg::FormApplied {
+                        session,
+                        change,
+                        result,
+                    })),
+                );
+                if let Some(effect) = effect {
+                    self.process_cmd(effect);
+                }
+            }
             Cmd::PrepareKeymap { session, save } => {
                 self.enqueue_file_job(super::file_io::FileJob::Keymap { session, save })
             }
@@ -2885,6 +2979,37 @@ impl App {
                 // re-attempt the spawn instead of skipping it forever.
                 self.lsp.missing_servers.retain(|(id, _)| *id != server_id);
                 self.restart_lsp_server(&server_id);
+            }
+            Cmd::LspApplyConfiguration { server_id } => {
+                self.teardown_lsp_server(&server_id);
+                self.lsp
+                    .open_documents
+                    .retain(|_, state| state.server_id != server_id);
+                self.lsp.resync_pending.retain(|(id, _)| *id != server_id);
+                self.lsp
+                    .restart_attempts
+                    .retain(|(id, _), _| *id != server_id);
+                self.lsp
+                    .restart_deadlines
+                    .retain(|(id, _), _| *id != server_id);
+                self.lsp.missing_servers.retain(|(id, _)| *id != server_id);
+                let documents: Vec<_> = self
+                    .model
+                    .editor_area
+                    .documents
+                    .iter()
+                    .filter_map(|(&document_id, document)| {
+                        (lsp::lsp_server_def(document.language)?.id == server_id.0)
+                            .then(|| {
+                                Some((document_id, document.file_path.clone()?, document.language))
+                            })
+                            .flatten()
+                    })
+                    .collect();
+                for (document_id, path, language) in documents {
+                    self.ensure_lsp_server(language, &path);
+                    self.lsp_open_document(document_id, path, language);
+                }
             }
             Cmd::LspDidOpen {
                 document_id,

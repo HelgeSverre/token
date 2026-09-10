@@ -32,10 +32,10 @@ pub trait TextBuffer {
     /// Get line content (without trailing newline)
     fn line(&self, line: usize) -> Option<Cow<'_, str>>;
 
-    /// Convert (line, column) to byte offset
+    /// Convert (line, column) to character offset
     fn position_to_offset(&self, line: usize, column: usize) -> usize;
 
-    /// Convert byte offset to (line, column)
+    /// Convert character offset to (line, column)
     fn offset_to_position(&self, offset: usize) -> (usize, usize);
 
     /// Get slice of text as String (by character indices)
@@ -84,19 +84,26 @@ pub trait TextBufferMut: TextBuffer {
 }
 
 // =============================================================================
-// StringBuffer - for single-line inputs (modals, CSV cells)
+// StringBuffer - for small text fields (modals, CSV cells, settings)
 // =============================================================================
 
-/// TextBuffer implementation wrapping String. Used for single-line inputs.
+/// A small string-backed field. Single-line mode retains literal line breaks
+/// (for example in CSV cells); multiline mode exposes them to cursor navigation.
 #[derive(Debug, Clone, Default)]
 pub struct StringBuffer {
     text: String,
+    multiline: bool,
 }
 
 impl StringBuffer {
     pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn multiline() -> Self {
         Self {
-            text: String::new(),
+            multiline: true,
+            ..Self::default()
         }
     }
 
@@ -104,6 +111,7 @@ impl StringBuffer {
     pub fn from_text(s: &str) -> Self {
         Self {
             text: s.to_string(),
+            multiline: false,
         }
     }
 
@@ -124,16 +132,15 @@ impl StringBuffer {
 
 impl TextBuffer for StringBuffer {
     fn line_count(&self) -> usize {
-        // Single-line buffer always has exactly 1 line
-        1
+        if self.multiline {
+            self.text.bytes().filter(|&ch| ch == b'\n').count() + 1
+        } else {
+            1
+        }
     }
 
     fn line_length(&self, line: usize) -> usize {
-        if line == 0 {
-            self.text.chars().count()
-        } else {
-            0
-        }
+        self.line(line).map_or(0, |text| text.chars().count())
     }
 
     fn len_chars(&self) -> usize {
@@ -145,29 +152,50 @@ impl TextBuffer for StringBuffer {
     }
 
     fn char_at(&self, line: usize, column: usize) -> Option<char> {
-        if line != 0 {
-            return None;
-        }
-        self.text.chars().nth(column)
+        self.line(line)?.chars().nth(column)
     }
 
     fn line(&self, line: usize) -> Option<Cow<'_, str>> {
-        if line == 0 {
-            Some(Cow::Borrowed(&self.text))
+        if self.multiline {
+            self.text.split('\n').nth(line).map(Cow::Borrowed)
         } else {
-            None
+            (line == 0).then_some(Cow::Borrowed(self.text.as_str()))
         }
     }
 
     fn position_to_offset(&self, line: usize, column: usize) -> usize {
-        if line != 0 {
-            return self.len_chars();
+        if !self.multiline {
+            return if line == 0 {
+                column.min(self.len_chars())
+            } else {
+                self.len_chars()
+            };
         }
-        column.min(self.len_chars())
+        let mut offset = 0;
+        for (index, text) in self.text.split('\n').enumerate() {
+            let length = text.chars().count();
+            if index == line {
+                return offset + column.min(length);
+            }
+            offset += length + 1;
+        }
+        self.len_chars()
     }
 
     fn offset_to_position(&self, offset: usize) -> (usize, usize) {
-        (0, offset.min(self.len_chars()))
+        if !self.multiline {
+            return (0, offset.min(self.len_chars()));
+        }
+        self.text
+            .chars()
+            .take(offset)
+            .fold((0, 0), |(line, column), ch| {
+                if ch == '\n' {
+                    (line + 1, 0)
+                } else {
+                    (line, column + 1)
+                }
+            })
     }
 
     fn slice(&self, range: Range<usize>) -> String {
@@ -181,18 +209,14 @@ impl TextBuffer for StringBuffer {
     }
 
     fn first_non_whitespace_column(&self, line: usize) -> usize {
-        if line != 0 {
-            return 0;
-        }
-        self.text.chars().take_while(|c| c.is_whitespace()).count()
+        self.line(line).map_or(0, |text| {
+            text.chars().take_while(|c| c.is_whitespace()).count()
+        })
     }
 
     fn last_non_whitespace_column(&self, line: usize) -> usize {
-        if line != 0 {
-            return 0;
-        }
-        let trimmed = self.text.trim_end();
-        trimmed.chars().count()
+        self.line(line)
+            .map_or(0, |text| text.trim_end().chars().count())
     }
 }
 
@@ -269,6 +293,25 @@ mod tests {
         let buf = StringBuffer::from_text("hello");
         assert_eq!(buf.offset_to_position(3), (0, 3));
         assert_eq!(buf.position_to_offset(0, 3), 3);
+        let mut multiline = StringBuffer::multiline();
+        multiline.set_content("é\n xy\n");
+        assert_eq!(multiline.line_count(), 3);
+        assert_eq!(multiline.line_length(1), 3);
+        assert_eq!(multiline.line(2).as_deref(), Some(""));
+        assert_eq!(multiline.char_at(1, 1), Some('x'));
+        assert_eq!(multiline.position_to_offset(1, 99), 5);
+        assert_eq!(multiline.offset_to_position(99), (2, 0));
+        for offset in 0..=multiline.len_chars() {
+            let (line, column) = multiline.offset_to_position(offset);
+            assert_eq!(multiline.position_to_offset(line, column), offset);
+        }
+        let literal = StringBuffer::from_text(multiline.as_str());
+        assert_eq!(
+            literal.line_count(),
+            1,
+            "CSV fields keep literal separators"
+        );
+        assert_eq!(literal.line_length(0), multiline.len_chars());
     }
 
     #[test]

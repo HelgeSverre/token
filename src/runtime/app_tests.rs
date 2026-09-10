@@ -4787,6 +4787,56 @@ fn configure_fake_rust_analyzer(app: &mut App, dir: &Path, transcript_path: &Pat
     );
 }
 
+#[test]
+fn settings_server_reconfiguration_recovers_missing_process_and_opens_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("main.rs");
+    std::fs::write(&path, "fn main() {}\n").unwrap();
+    let transcript = dir.path().join("transcript.jsonl");
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.document_mut().file_path = Some(path.clone());
+    app.model.document_mut().language = token::syntax::LanguageId::Rust;
+    let server_id = LspServerId::from("rust-analyzer");
+    app.model
+        .config
+        .lsp
+        .servers
+        .entry("rust-analyzer".into())
+        .or_default()
+        .command = Some("/not-an-installed-server".into());
+    app.ensure_lsp_server(token::syntax::LanguageId::Rust, &path);
+    assert!(!app.lsp.missing_servers.is_empty());
+    configure_fake_rust_analyzer(&mut app, dir.path(), &transcript);
+    app.process_cmd(Cmd::LspApplyConfiguration {
+        server_id: server_id.clone(),
+    });
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
+        app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
+            && read_transcript_lines(&transcript)
+                .iter()
+                .any(|line| line.contains("textDocument/didOpen"))
+    }));
+    assert!(app.lsp.missing_servers.is_empty());
+    assert!(app.lsp.resync_pending.is_empty());
+    assert_eq!(
+        read_transcript_lines(&transcript)
+            .iter()
+            .filter(|line| line.contains("textDocument/didOpen"))
+            .count(),
+        1
+    );
+    app.model
+        .config
+        .lsp
+        .servers
+        .get_mut("rust-analyzer")
+        .unwrap()
+        .enabled = Some(false);
+    app.process_cmd(Cmd::LspApplyConfiguration { server_id });
+    assert!(app.lsp.servers.is_empty());
+    assert!(app.lsp.open_documents.is_empty());
+}
+
 fn read_transcript_lines(transcript_path: &Path) -> Vec<String> {
     std::fs::read_to_string(transcript_path)
         .map(|s| s.lines().map(str::to_owned).collect())

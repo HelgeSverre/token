@@ -4,7 +4,6 @@
 //! and proper text display. Used by modals, CSV cell editor, and potentially
 //! other single-line input contexts.
 
-#[cfg(test)]
 use crate::editable::Position;
 use crate::editable::{Cursor, EditableState, Selection, StringBuffer};
 
@@ -35,6 +34,9 @@ pub struct TextFieldOptions {
     pub cursor_visible: bool,
     /// Horizontal scroll offset in characters
     pub scroll_x: usize,
+    /// First visible logical line and number of drawn lines in a text area.
+    pub scroll_y: usize,
+    pub rows: usize,
 }
 
 impl Default for TextFieldOptions {
@@ -50,11 +52,56 @@ impl Default for TextFieldOptions {
             selection_color: 0x40FFFFFF,
             cursor_visible: true,
             scroll_x: 0,
+            scroll_y: 0,
+            rows: 1,
         }
     }
 }
 
 impl TextFieldOptions {
+    /// A multiline field. Signed source geometry also handles a parent form
+    /// scrolling its top above the window; paint, caret and pointer use this
+    /// same projection. The caller clips to the field and parent viewport.
+    pub fn for_text_area(
+        content: &dyn TextFieldContent,
+        rect: crate::model::editor_area::Rect,
+        line_height: usize,
+        char_width: f32,
+    ) -> Self {
+        let line_height = line_height.max(1);
+        let rows = (rect.height.max(0.0) as usize / line_height).max(1);
+        let cursor_line = content
+            .cursors()
+            .get(content.active_cursor_index())
+            .map_or(0, |c| c.line);
+        let mut opts = Self::for_text_box(
+            content,
+            &WidgetRect {
+                x: rect.x.max(0.0) as usize,
+                y: 0,
+                w: rect.width.max(0.0) as usize,
+                h: line_height,
+            },
+            line_height,
+            char_width,
+        );
+        let skipped = (-rect.y / line_height as f32).ceil().max(0.0) as usize;
+        opts.y = (rect.y + (skipped * line_height) as f32).max(0.0) as usize;
+        opts.scroll_y = cursor_line.saturating_sub(rows - 1) + skipped;
+        opts.rows = rows.saturating_sub(skipped);
+        opts
+    }
+
+    /// Character-grid projection shared with field painting and caret geometry.
+    pub fn position_at(&self, x: f64, y: f64) -> Position {
+        Position::new(
+            self.scroll_y
+                + ((y - self.y as f64).max(0.0) / self.height.max(1) as f64).floor() as usize,
+            self.scroll_x
+                + ((x - self.x as f64).max(0.0) / self.char_width.max(1.0) as f64).round() as usize,
+        )
+    }
+
     /// Build the geometry for a modal field input, including the horizontal
     /// scroll needed to keep its active cursor visible. The field box is
     /// inset by `ModalSpacing::input_pad_x` on both sides.
@@ -106,8 +153,12 @@ impl TextFieldOptions {
 ///
 /// This allows uniform rendering of different editable states.
 pub trait TextFieldContent {
-    /// Get the text content for line 0 (single-line inputs)
+    /// Get the field's full text content.
     fn text(&self) -> &str;
+
+    fn is_multiline(&self) -> bool {
+        false
+    }
 
     /// Get all cursors
     fn cursors(&self) -> &[Cursor];
@@ -120,6 +171,9 @@ pub trait TextFieldContent {
 }
 
 impl TextFieldContent for EditableState<StringBuffer> {
+    fn is_multiline(&self) -> bool {
+        self.constraints.allow_multiline
+    }
     fn text(&self) -> &str {
         self.buffer.as_str()
     }
@@ -152,6 +206,9 @@ impl TextFieldRenderer {
         opts: &TextFieldOptions,
     ) -> Option<WidgetRect> {
         let cursor = content.cursors().get(content.active_cursor_index())?;
+        if !(opts.scroll_y..opts.scroll_y + opts.rows).contains(&cursor.line) {
+            return None;
+        }
         let visible_col = cursor.column.saturating_sub(opts.scroll_x);
         let unclamped_x = opts.x + (visible_col as f32 * opts.char_width).round() as usize;
         let width = 2.min(opts.width.max(1));
@@ -159,7 +216,7 @@ impl TextFieldRenderer {
 
         Some(WidgetRect {
             x: unclamped_x.clamp(opts.x, max_x),
-            y: opts.y + usize::from(opts.height > 1),
+            y: opts.y + (cursor.line - opts.scroll_y) * opts.height + usize::from(opts.height > 1),
             w: width,
             h: opts.height.saturating_sub(2).max(1),
         })
@@ -176,49 +233,83 @@ impl TextFieldRenderer {
         let mut painter = painter.with_font(FontRole::Code);
         let text = content.text();
 
-        // 1. Render selection backgrounds
-        for selection in content.selections() {
-            if selection.is_empty() {
-                continue;
-            }
+        for (slot, line) in text
+            .splitn(
+                if content.is_multiline() {
+                    usize::MAX
+                } else {
+                    1
+                },
+                '\n',
+            )
+            .skip(opts.scroll_y)
+            .take(opts.rows)
+            .enumerate()
+        {
+            let line_index = opts.scroll_y + slot;
+            let y = opts.y + slot * opts.height;
+            // Selections are clipped independently on each logical line.
+            for selection in content.selections() {
+                if selection.is_empty() {
+                    continue;
+                }
+                let start = selection.start();
+                let end = selection.end();
+                if line_index < start.line || line_index > end.line {
+                    continue;
+                }
+                let start_col = if line_index == start.line {
+                    start.column
+                } else {
+                    0
+                };
+                let end_col = if line_index == end.line {
+                    end.column
+                } else {
+                    line.chars().count() + 1
+                };
 
-            // For single-line, we only care about column positions
-            let start_col = selection.start().column;
-            let end_col = selection.end().column;
+                // Adjust for horizontal scroll
+                let visible_start = start_col.saturating_sub(opts.scroll_x);
+                let visible_end = end_col.saturating_sub(opts.scroll_x);
 
-            // Adjust for horizontal scroll
-            let visible_start = start_col.saturating_sub(opts.scroll_x);
-            let visible_end = end_col.saturating_sub(opts.scroll_x);
+                if visible_end > visible_start {
+                    let sel_x = opts.x + (visible_start as f32 * opts.char_width).round() as usize;
+                    let sel_width =
+                        ((visible_end - visible_start) as f32 * opts.char_width).round() as usize;
 
-            if visible_end > visible_start {
-                let sel_x = opts.x + (visible_start as f32 * opts.char_width).round() as usize;
-                let sel_width =
-                    ((visible_end - visible_start) as f32 * opts.char_width).round() as usize;
+                    // Clamp to visible width
+                    let clamped_width = sel_width.min(opts.width.saturating_sub(sel_x - opts.x));
 
-                // Clamp to visible width
-                let clamped_width = sel_width.min(opts.width.saturating_sub(sel_x - opts.x));
-
-                if clamped_width > 0 {
-                    frame.fill_rect_px(
-                        sel_x,
-                        opts.y,
-                        clamped_width,
-                        opts.height,
-                        opts.selection_color,
-                    );
+                    if clamped_width > 0 {
+                        frame.fill_rect_px(
+                            sel_x,
+                            y,
+                            clamped_width,
+                            opts.height,
+                            opts.selection_color,
+                        );
+                    }
                 }
             }
+            // Render visible text with the same character grid as pointer input.
+            let max_chars = (opts.width as f32 / opts.char_width).ceil() as usize + 1;
+            let visible_text: String = line
+                .chars()
+                .skip(opts.scroll_x)
+                .take(max_chars)
+                .map(|ch| if ch == '\t' { ' ' } else { ch })
+                .collect();
+
+            painter.draw(frame, opts.x, y, &visible_text, opts.text_color);
         }
-
-        // 2. Render text (with horizontal scroll)
-        let max_chars = (opts.width as f32 / opts.char_width).ceil() as usize + 1;
-        let visible_text: String = text.chars().skip(opts.scroll_x).take(max_chars).collect();
-
-        painter.draw(frame, opts.x, opts.y, &visible_text, opts.text_color);
 
         // 3. Render cursors
         if opts.cursor_visible {
             for (idx, cursor) in content.cursors().iter().enumerate() {
+                if !(opts.scroll_y..opts.scroll_y + opts.rows).contains(&cursor.line) {
+                    continue;
+                }
                 let col = cursor.column.saturating_sub(opts.scroll_x);
                 let cursor_x = opts.x + (col as f32 * opts.char_width).round() as usize;
 
@@ -234,7 +325,7 @@ impl TextFieldRenderer {
                     // 2px wide cursor bar
                     frame.fill_rect_px(
                         cursor_x,
-                        opts.y + 1,
+                        opts.y + (cursor.line - opts.scroll_y) * opts.height + 1,
                         2,
                         opts.height.saturating_sub(2),
                         color,

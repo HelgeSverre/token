@@ -6,6 +6,14 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Language-server setup
+
+- Configure language-server executables, arguments, initialization options and
+  server settings directly in the separate Settings page. Drafts support native
+  file browsing, multiline JSON/YAML validation, executable lookup, live status
+  and an explicit Apply & Restart action; failed saves leave running settings
+  unchanged.
+
 ### Completion preferences
 
 - Add Settings controls for the completion master switch, automatic dropdown,

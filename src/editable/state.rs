@@ -249,9 +249,18 @@ impl<B: TextBuffer> EditableState<B> {
     /// the line length) — the mouse-click primitive. Extending keeps the
     /// selection anchor and moves the head; otherwise the selection collapses.
     pub fn set_cursor_column(&mut self, column: usize, extend_selection: bool) {
+        self.set_cursor_position(Position::new(self.cursor().line, column), extend_selection);
+    }
+
+    /// Place a field cursor at a clamped logical position, preserving the
+    /// selection anchor for shift-click and pointer drags.
+    pub fn set_cursor_position(&mut self, position: Position, extend_selection: bool) {
         let idx = self.active_cursor;
+        self.cursors[idx].line = position
+            .line
+            .min(self.buffer.line_count().saturating_sub(1));
         let line_len = self.buffer.line_length(self.cursors[idx].line);
-        self.cursors[idx].column = column.min(line_len);
+        self.cursors[idx].column = position.column.min(line_len);
         self.cursors[idx].clear_desired_column();
         if extend_selection {
             self.sync_selection_head();

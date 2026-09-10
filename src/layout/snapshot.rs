@@ -195,10 +195,20 @@ impl RowListView {
     /// Reveal a complete row with the smallest pixel movement; do not snap an
     /// already visible row. Oversized rows align at the viewport's top.
     pub fn scroll_to_reveal_pixels(&self, selected: usize) -> usize {
-        let top = selected.min(self.solved.count.saturating_sub(1)) as f32 * self.solved.row_height;
-        let bottom = top + self.solved.row_height;
+        self.scroll_to_reveal_range_pixels(selected..selected.saturating_add(1))
+    }
+
+    /// Reveal a group of layout units, such as a variable-height form field.
+    pub fn scroll_to_reveal_range_pixels(&self, selected: Range<usize>) -> usize {
+        let start = selected.start.min(self.solved.count.saturating_sub(1));
+        let end = selected
+            .end
+            .max(start.saturating_add(1))
+            .min(self.solved.count);
+        let top = start as f32 * self.solved.row_height;
+        let bottom = end as f32 * self.solved.row_height;
         let offset = self.scroll_offset_pixels() as f32;
-        let target = if top < offset || self.solved.row_height > self.rect.height {
+        let target = if top < offset || bottom - top > self.rect.height {
             top
         } else if bottom > offset + self.rect.height {
             bottom - self.rect.height
@@ -322,6 +332,9 @@ mod pixel_scroll_tests {
         assert_eq!(view.row_at_y(200.0), None);
         assert_eq!(view.scroll_to_reveal_pixels(0), 0);
         assert_eq!(view.scroll_to_reveal_pixels(1), 44);
+        assert_eq!(view.scroll_to_reveal_range_pixels(1..3), 72);
+        let tall = RowListView::from_pixel_scroll(Rect::new(0.0, 0.0, 200.0, 180.0), 72.0, 6, 13);
+        assert_eq!(tall.scroll_to_reveal_range_pixels(1..3), 36);
         let bottom = RowListView::from_pixel_scroll(rect, 72.0, 4, usize::MAX);
         assert_eq!(bottom.scroll_offset_pixels(), 188);
         assert_eq!(bottom.drawn_range(), 2..4);

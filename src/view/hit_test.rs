@@ -114,6 +114,10 @@ pub enum HitTarget {
         flat_index: usize,
         choice: usize,
     },
+    ModalField {
+        row: usize,
+        position: crate::editable::Position,
+    },
 
     /// A tab in the Search Everywhere tab bar — click switches tabs
     /// (overlay-surface.md Pointer: "Tab click switches tabs").
@@ -302,7 +306,9 @@ impl HitTarget {
                 control: Some(super::find_bar::Control::Field(_)),
             } => CursorIcon::Text,
             HitTarget::FindBar { control: Some(_) } => CursorIcon::Pointer,
-            HitTarget::EditorContent { .. } | HitTarget::CsvCell { .. } => CursorIcon::Text,
+            HitTarget::EditorContent { .. }
+            | HitTarget::CsvCell { .. }
+            | HitTarget::ModalField { .. } => CursorIcon::Text,
             HitTarget::DockContent {
                 active_panel_id: crate::panel::PanelId::Terminal,
                 ..
@@ -329,6 +335,7 @@ impl HitTarget {
 
         match self {
             HitTarget::FindBar { control } => HoverRegion::FindBar(*control),
+            HitTarget::ModalField { .. } => HoverRegion::Modal,
             HitTarget::Modal { .. }
             | HitTarget::ModalScrollbar { .. }
             | HitTarget::ModalRow { .. }
@@ -450,6 +457,10 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
     // test the point against it.
     super::modal::with_modal_overlay_layout(model, ww, wh, sf, |spec, layout| {
         match super::overlay_surface::hit_test(spec, layout, x, y) {
+            super::overlay_surface::OverlayHit::Input { row, position } => HitTarget::ModalField {
+                row: row.0,
+                position,
+            },
             super::overlay_surface::OverlayHit::Scrollbar => layout
                 .scrollbar
                 .map_or(HitTarget::Modal { inside: true }, |geometry| {
@@ -508,6 +519,7 @@ pub fn hit_test_cursor_overlay(
                 flat_index: Some(flat_index.0),
             }),
             super::overlay_surface::OverlayHit::Inside
+            | super::overlay_surface::OverlayHit::Input { .. }
             | super::overlay_surface::OverlayHit::Tab(_)
             | super::overlay_surface::OverlayHit::Scrollbar
             | super::overlay_surface::OverlayHit::Choice { .. } => {

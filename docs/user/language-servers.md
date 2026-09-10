@@ -11,8 +11,11 @@ Open **Settings** with Cmd+, (Ctrl+, on Windows/Linux), then select **LSP**.
 
 - **Language servers** switches all servers on or off.
 - Each server has its own enabled switch, executable row, and live status.
-- **Configure…** on an executable row opens `config.yaml` in an editor tab.
-  An existing file is preserved; a missing file is initialized with defaults.
+- **Configure…** opens a draft form inside Settings. Edit the executable (or
+  Browse for it), arguments, initialization options, and server settings.
+  **Apply & Restart** saves and reconfigures only that server. Cancel or Escape
+  returns to the settings list without applying the draft. A failed save leaves
+  the running configuration unchanged.
 - The **Editor** category has Mouse hover, Hover delay, and Inlay hints controls.
   Inlay hints are off by default and currently affect Sema's line-end parameter
   annotations. Explicit Run output is independent of this switch.
@@ -21,6 +24,20 @@ Switches save immediately. Status is updated live: **Not started** means no
 process has started, **Missing** means its executable could not be found, and
 **Failed** means startup or repeated restart failed. **Ready** means the server
 initialized; project indexing can still take time.
+
+In the configuration form, Tab/Shift+Tab moves between controls. Text fields use
+the code font and support selection, clipboard operations, undo, and multiline
+editing. Arguments are a JSON/YAML list of strings, for example `["--stdio"]`;
+`[]` means no arguments, and an empty field restores the server's default list.
+Initialization options accept JSON-compatible JSON/YAML; server settings require
+an object. Empty advanced fields use defaults. Syntax is checked before applying,
+but only the server can validate the meaning of its own options.
+
+The form shows the executable found using the application's PATH and the live
+server state. **Open log** opens Token's log for startup details and retains the
+draft; reopen Settings to return to it. Applying retries a previously missing
+server for matching open files, and turning its form switch off stops it. No
+installer is run automatically.
 
 ## Supported servers
 

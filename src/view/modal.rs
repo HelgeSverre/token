@@ -884,6 +884,9 @@ pub(crate) fn with_settings_spec<R>(
         .rows
         .iter()
         .map(|&id| {
+            if let (RowKind::FormInfo, Some(form)) = (state.entries[id].kind, &state.form) {
+                return std::borrow::Cow::Borrowed(form.executable_status.as_str());
+            }
             if matches!(state.entries[id].kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
                 std::borrow::Cow::Borrowed(model.config.theme.as_str())
             } else { state.entries[id].detail(&model.config) }
@@ -917,13 +920,20 @@ pub(crate) fn with_settings_spec<R>(
                     Row {
                         icon: RowIcon::None,
                         label: &entry.name,
-                        detail: if matches!(entry.kind, RowKind::ServerCommand(_))
+                        detail: if matches!(entry.kind, RowKind::ServerCommand(_) | RowKind::FormInfo)
                             || matches!(entry.kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
                             None
                         } else { Some(&details[index]) },
                         detail_style: None,
                         match_indices: &[],
-                        accessory: if matches!(entry.kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
+                        accessory: if let (RowKind::FormField(field), Some(form)) = (entry.kind, &state.form) {
+                            Accessory::SettingInput { content: &form.fields[field].input, focused: form.focused == Some(field) && !form.saving,
+                                browse: form.fields[field].browse, line_height: model.line_height, char_width: model.char_width }
+                        } else if matches!(entry.kind, RowKind::FormInfo) {
+                            Accessory::SettingValue { text: &details[index], action: None }
+                        } else if let (RowKind::FormEnabled, Some(form)) = (entry.kind, &state.form) {
+                            Accessory::Choices { labels: entry.choices(), active: Some(usize::from(form.enabled)) }
+                        } else if matches!(entry.kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
                             Accessory::SettingValue { text: &model.config.theme, action: Some("Choose…") }
                         } else if matches!(entry.kind, RowKind::ServerCommand(_)) {
                             Accessory::SettingValue { text: &details[index], action: Some("Configure…") }
@@ -970,7 +980,12 @@ pub(crate) fn with_settings_spec<R>(
                 .collect::<Vec<_>>()
                 .join(" ")
         })
-        .unwrap_or_else(|| state.editable.text());
+        .unwrap_or_else(|| {
+            state.form.as_ref().map_or_else(
+                || state.editable.text(),
+                |form| format!("{} configuration", form.server.id),
+            )
+        });
     let selected_detail = state.selected_index.min(details.len().saturating_sub(1));
     let spec = OverlaySpec {
         tabs: Some(tabs),
@@ -991,8 +1006,8 @@ pub(crate) fn with_settings_spec<R>(
             } else {
                 "Search settings…"
             },
-            caret: (!capturing).then_some(state.editable.cursor().column),
-            selection: if capturing {
+            caret: (!capturing && state.form.is_none()).then_some(state.editable.cursor().column),
+            selection: if capturing || state.form.is_some() {
                 None
             } else {
                 editable_selection(&state.editable)
@@ -1010,14 +1025,18 @@ pub(crate) fn with_settings_spec<R>(
             ),
         },
         footer: Some(Footer {
-            leading: if keymap_tab {
+            leading: if let Some(form) = &state.form {
+                &form.status
+            } else if keymap_tab {
                 &state.keymap.status
             } else {
                 details
                     .get(selected_detail)
                     .map_or("No matching settings", |detail| detail.as_ref())
             },
-            trailing: if keymap_tab {
+            trailing: if state.form.is_some() {
+                "Tab field · Esc cancel"
+            } else if keymap_tab {
                 ""
             } else {
                 "←→ change · Tab category · Esc close"
@@ -1742,6 +1761,27 @@ pub(crate) fn modal_field_input_rect(
     with_modal_overlay_layout(model, window_width, window_height, scale_factor, |_, l| {
         l.fields.get(field_index).map(|f| f.input)
     })
+    .flatten()
+}
+
+/// Pointer projection for a captured Settings field, using its painted layout
+/// even when the drag leaves the field rectangle.
+pub fn settings_field_position(
+    model: &AppModel,
+    row: usize,
+    x: f64,
+    y: f64,
+) -> Option<crate::editable::Position> {
+    with_modal_overlay_layout(
+        model,
+        model.window_size.0 as usize,
+        model.window_size.1 as usize,
+        model.metrics.scale_factor,
+        |spec, layout| {
+            overlay_surface::settings_field_options(spec, layout, row)
+                .map(|opts| opts.position_at(x, y))
+        },
+    )
     .flatten()
 }
 

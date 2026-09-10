@@ -981,6 +981,19 @@ pub enum Cmd {
     Batch(Vec<Cmd>),
 
     // File dialogs
+    ChooseSettingsFile {
+        session: Arc<()>,
+        field: usize,
+        current: String,
+    },
+    InspectSettingsExecutable {
+        session: Arc<()>,
+        command: String,
+    },
+    ApplySettingsForm {
+        session: Arc<()>,
+        change: Box<crate::settings::forms::SettingsChange>,
+    },
     /// Show native open file dialog
     ShowOpenFileDialog {
         group_id: crate::model::GroupId,
@@ -1106,6 +1119,11 @@ pub enum Cmd {
     /// Kill and respawn every running instance of a server (manual
     /// restart, e.g. from the command palette).
     LspRestartServer {
+        server_id: crate::lsp::LspServerId,
+    },
+    /// Apply a saved server configuration, including enable/disable and
+    /// previously missing servers. Reopen each matching document exactly once.
+    LspApplyConfiguration {
         server_id: crate::lsp::LspServerId,
     },
     /// A matching document gained a file path + language — send
@@ -1435,6 +1453,9 @@ impl Cmd {
             // Preparation completes synchronously in runtime command order and
             // can immediately open a tab or display an error.
             Cmd::SaveConfiguration { .. }
+            | Cmd::ApplySettingsForm { .. }
+            | Cmd::InspectSettingsExecutable { .. }
+            | Cmd::ChooseSettingsFile { .. }
             | Cmd::ReloadConfiguration
             | Cmd::LoadTheme { .. }
             | Cmd::PrepareKeymap { .. } => Damage::Areas(vec![]),
@@ -1444,6 +1465,7 @@ impl Cmd {
             // ServerStateChanged (once it arrives) requests its own redraw.
             Cmd::LspEnsureServer { .. } => Damage::Areas(vec![]),
             Cmd::LspRestartServer { .. } => Damage::Areas(vec![]),
+            Cmd::LspApplyConfiguration { .. } => Damage::Areas(vec![]),
             Cmd::LspDidOpen { .. } => Damage::Areas(vec![]),
             Cmd::LspScheduleDidChange { .. } => Damage::Areas(vec![]),
             Cmd::LspDidSave { .. } => Damage::Areas(vec![]),

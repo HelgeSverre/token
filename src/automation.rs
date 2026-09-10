@@ -716,11 +716,10 @@ fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot>
                 })
                 .collect(),
             selected: state.selected_index(),
-            status: (state.tab == token::settings::keymap::SettingsTab::Keymap)
-                .then(|| state.keymap.status.clone()),
+            status: state.status().map(str::to_owned),
             options: [
                 ("capturing", state.keymap.capture.is_some()),
-                ("saving", state.keymap.saving),
+                ("saving", state.saving()),
                 ("loading", state.keymap.loading),
                 (
                     "literal-next",

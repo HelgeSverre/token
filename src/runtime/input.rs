@@ -981,6 +981,36 @@ fn handle_modal_key(
         shift, alt, logo, ..
     } = modifiers;
 
+    if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.editing_field())
+    {
+        let primary = if cfg!(target_os = "macos") {
+            logo
+        } else {
+            modifiers.ctrl
+        };
+        let message = match &key {
+            Key::Named(NamedKey::ArrowUp) if !alt && !primary => {
+                Some(token::messages::SettingsMsg::MoveFieldCursor {
+                    down: false,
+                    extend: shift,
+                })
+            }
+            Key::Named(NamedKey::ArrowDown) if !alt && !primary => {
+                Some(token::messages::SettingsMsg::MoveFieldCursor {
+                    down: true,
+                    extend: shift,
+                })
+            }
+            Key::Character(text) if primary && text.eq_ignore_ascii_case("z") => {
+                Some(token::messages::SettingsMsg::UndoField { redo: shift })
+            }
+            _ => None,
+        };
+        if let Some(message) = message {
+            return update(model, Msg::Ui(UiMsg::Settings(message)));
+        }
+    }
+
     match key {
         // Escape: close modal
         Key::Named(NamedKey::Escape) => update(model, Msg::Ui(UiMsg::Modal(ModalMsg::Close))),
@@ -1399,6 +1429,71 @@ fn get_binary_placeholder_path(model: &AppModel) -> Option<std::path::PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn settings_form_keyboard_edits_multiline_draft_without_touching_document() {
+        let mut model = AppModel::new(1000, 800, 1.0);
+        let before = model.document().buffer.to_string();
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::ToggleModal(token::model::ModalId::Settings)),
+        );
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::SetInput(
+                "rust-analyzer executable".into(),
+            ))),
+        );
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::ChooseSetting { row: 0, choice: 0 })),
+        );
+        update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::ActivateRow(2))));
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("one\nthree".into()))),
+        );
+        let plain = KeyModifiers::default();
+        let primary = KeyModifiers {
+            logo: cfg!(target_os = "macos"),
+            ctrl: !cfg!(target_os = "macos"),
+            ..plain
+        };
+        let mut press = |key, modifiers, expected: &str| {
+            handle_key(
+                &mut model,
+                key,
+                PhysicalKey::Code(KeyCode::KeyA),
+                modifiers,
+                false,
+            );
+            assert!(
+                matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.input() == expected && state.selected_index() == 2)
+            );
+            assert_eq!(model.document().buffer.to_string(), before);
+        };
+        press(Key::Named(NamedKey::ArrowUp), plain, "one\nthree");
+        press(Key::Character("!".into()), plain, "one!\nthree");
+        press(Key::Character("z".into()), primary, "one\nthree");
+        press(
+            Key::Character("z".into()),
+            KeyModifiers {
+                shift: true,
+                ..primary
+            },
+            "one!\nthree",
+        );
+        press(Key::Named(NamedKey::Enter), plain, "one!\n\nthree");
+        press(
+            Key::Named(NamedKey::ArrowDown),
+            KeyModifiers {
+                shift: true,
+                ..plain
+            },
+            "one!\n\nthree",
+        );
+        press(Key::Named(NamedKey::Backspace), plain, "one!\nthree");
+    }
+
     #[test]
     fn shortcut_keys_do_not_turn_alt_chords_into_double_taps() {
         let mut gesture = super::OptionKeyGesture::default();

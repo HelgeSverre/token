@@ -118,6 +118,32 @@ fn modal_caret_rect(
     // field inputs keep the modal field padding.
     let (content, options): (&dyn super::TextFieldContent, TextFieldOptions) = match modal {
         ModalState::Settings(state) => {
+            if let Some(form) = &state.form {
+                let field = form.focused?;
+                if form.saving {
+                    return None;
+                }
+                return super::modal::with_modal_overlay_layout(
+                    model,
+                    width,
+                    height,
+                    scale_factor,
+                    |spec, layout| {
+                        let opts = super::overlay_surface::settings_field_options(
+                            spec,
+                            layout,
+                            state.selected_index,
+                        )?;
+                        let caret =
+                            super::TextFieldRenderer::caret_rect(&form.fields[field].input, &opts)?;
+                        let viewport = layout.settings_viewport?.rect();
+                        viewport
+                            .contains(caret.x as f32, caret.y as f32)
+                            .then_some(caret)
+                    },
+                )
+                .flatten();
+            }
             let rect = header(model)?;
             (
                 &state.editable,

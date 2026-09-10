@@ -242,7 +242,7 @@ fn lsp_settings_filtered_server_toggle_preserves_other_overrides() {
 }
 
 #[test]
-fn lsp_settings_status_is_read_only_and_configure_opens_the_config_file() {
+fn lsp_settings_status_is_read_only_and_configure_opens_a_draft_form() {
     let mut model = test_model("text", 0, 0);
     open(&mut model);
     modal(&mut model, ModalMsg::SetInput("rust-analyzer".into()));
@@ -273,11 +273,201 @@ fn lsp_settings_status_is_read_only_and_configure_opens_the_config_file() {
         },
     )
     .unwrap();
-    assert!(model.ui.active_modal.is_none());
+    assert!(
+        matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.editing_field())
+    );
     assert!(contains(
         &cmd,
-        |cmd| matches!(cmd, Cmd::PrepareFileOpen(request)
-        if matches!(request.source, token::model::FileOpenSource::Configuration(token::commands::ConfigResource::EditorSettings)))
+        |cmd| matches!(cmd, Cmd::InspectSettingsExecutable { command, .. } if command == "rust-analyzer")
     ));
     assert!(saved(&cmd).is_none());
+    modal(&mut model, ModalMsg::SetInput("/draft/server".into()));
+    let actions = row(&model, "Configuration");
+    modal(&mut model, ModalMsg::ActivateRow(actions));
+    for message in [ModalMsg::MoveCursorLeft, ModalMsg::MoveCursorRight] {
+        let cmd = modal(&mut model, message).unwrap();
+        assert!(pending_form(&cmd).is_none());
+        assert!(matches!(
+            &model.ui.active_modal,
+            Some(ModalState::Settings(_))
+        ));
+    }
+    let cmd = modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: actions,
+            choice: 2,
+        },
+    )
+    .unwrap();
+    assert!(
+        model.ui.active_modal.is_none(),
+        "the log must not open behind Settings"
+    );
+    assert!(contains(&cmd, |cmd| matches!(
+        cmd,
+        Cmd::PrepareFileOpen { .. }
+    )));
+    open(&mut model);
+    let executable = row(&model, "Executable");
+    modal(&mut model, ModalMsg::ActivateRow(executable));
+    assert!(
+        matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.input() == "/draft/server")
+    );
+    modal(&mut model, ModalMsg::Close);
+    assert!(
+        matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if !state.editing_field())
+    );
+    assert_eq!(serde_yaml::to_value(&model.config).unwrap(), before);
+}
+
+fn pending_form(
+    cmd: &Cmd,
+) -> Option<(
+    std::sync::Arc<()>,
+    Box<token::settings::forms::SettingsChange>,
+)> {
+    match cmd {
+        Cmd::ApplySettingsForm { session, change } => Some((session.clone(), change.clone())),
+        Cmd::Batch(commands) => commands.iter().find_map(pending_form),
+        _ => None,
+    }
+}
+
+fn form_input(model: &mut AppModel, name: &str, value: &str) {
+    let index = row(model, name);
+    modal(model, ModalMsg::ActivateRow(index));
+    modal(model, ModalMsg::SetInput(value.into()));
+}
+
+#[test]
+fn settings_server_form_validates_and_applies_only_after_save_success() {
+    use token::messages::SettingsMsg;
+    let mut model = test_model("text", 0, 0);
+    model
+        .config
+        .lsp
+        .servers
+        .entry("gopls".into())
+        .or_default()
+        .command = Some("/keep/gopls".into());
+    let original = serde_yaml::to_value(&model.config).unwrap();
+    open(&mut model);
+    modal(
+        &mut model,
+        ModalMsg::SetInput("rust-analyzer executable".into()),
+    );
+    modal(&mut model, ModalMsg::ChooseSetting { row: 0, choice: 0 });
+    form_input(&mut model, "Executable", "/path with spaces/rust-analyzer");
+    // Ordinary cursor movement must edit the field, not activate another setting.
+    modal(&mut model, ModalMsg::MoveCursorLeft);
+    form_input(
+        &mut model,
+        "Arguments (JSON / YAML list)",
+        r#"["--quiet", "", "a\nb"]"#,
+    );
+    form_input(&mut model, "Initialization options (JSON / YAML)", "{");
+    let actions = row(&model, "Configuration");
+    let invalid = modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: actions,
+            choice: 0,
+        },
+    )
+    .unwrap();
+    assert!(pending_form(&invalid).is_none());
+    assert_eq!(serde_yaml::to_value(&model.config).unwrap(), original);
+    form_input(&mut model, "Initialization options (JSON / YAML)", "");
+    modal(
+        &mut model,
+        ModalMsg::PasteText("check:\r\n  command: clippy\r\n".into()),
+    );
+    for message in [ModalMsg::PageUp, ModalMsg::PageDown] {
+        modal(&mut model, message);
+        assert!(
+            matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.input() == "check:\n  command: clippy\n" && state.editing_field())
+        );
+    }
+    form_input(&mut model, "Server settings (JSON / YAML object)", "[1, 2]");
+    assert!(pending_form(
+        &modal(
+            &mut model,
+            ModalMsg::ChooseSetting {
+                row: actions,
+                choice: 0
+            }
+        )
+        .unwrap()
+    )
+    .is_none());
+    form_input(
+        &mut model,
+        "Server settings (JSON / YAML object)",
+        "cargo:\n  features: all\n",
+    );
+    let cmd = modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: actions,
+            choice: 0,
+        },
+    )
+    .unwrap();
+    let (session, change) = pending_form(&cmd).unwrap();
+    assert_eq!(serde_yaml::to_value(&model.config).unwrap(), original);
+    let failed = update(
+        &mut model,
+        Msg::Ui(UiMsg::Settings(SettingsMsg::FormApplied {
+            session: session.clone(),
+            change: change.clone(),
+            result: Err("read-only configuration".into()),
+        })),
+    )
+    .unwrap();
+    assert!(!contains(&failed, |cmd| matches!(
+        cmd,
+        Cmd::LspApplyConfiguration { .. }
+    )));
+    assert_eq!(serde_yaml::to_value(&model.config).unwrap(), original);
+    let retry = modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: actions,
+            choice: 0,
+        },
+    )
+    .unwrap();
+    assert!(pending_form(&retry).is_some());
+    let applied = update(
+        &mut model,
+        Msg::Ui(UiMsg::Settings(SettingsMsg::FormApplied {
+            session,
+            change,
+            result: Ok(()),
+        })),
+    )
+    .unwrap();
+    assert!(contains(
+        &applied,
+        |cmd| matches!(cmd, Cmd::LspApplyConfiguration { server_id } if server_id.to_string() == "rust-analyzer")
+    ));
+    let server = &model.config.lsp.servers["rust-analyzer"];
+    assert_eq!(
+        server.command.as_deref(),
+        Some("/path with spaces/rust-analyzer")
+    );
+    assert_eq!(server.args.as_ref().unwrap(), &["--quiet", "", "a\nb"]);
+    assert_eq!(
+        server.initialization_options,
+        Some(serde_json::json!({"check":{"command":"clippy"}}))
+    );
+    assert_eq!(
+        server.settings,
+        Some(serde_json::json!({"cargo":{"features":"all"}}))
+    );
+    assert_eq!(
+        model.config.lsp.servers["gopls"].command.as_deref(),
+        Some("/keep/gopls")
+    );
 }

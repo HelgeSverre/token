@@ -11,8 +11,26 @@
 
 #[path = "settings_page.rs"]
 mod settings_page;
-pub(crate) use settings_page::scroll_viewport as settings_scroll_viewport;
 pub use settings_page::visible_count as settings_visible_count;
+
+pub(crate) fn settings_field_options(
+    spec: &OverlaySpec,
+    layout: &OverlayLayout,
+    row_index: usize,
+) -> Option<super::TextFieldOptions> {
+    let Body::List { sections, .. } = &spec.body else {
+        return None;
+    };
+    let rows = flatten_rows(sections);
+    layout.settings_items.iter().find_map(|(display, rect)| {
+        let DisplayRow::Row(row, index) = rows.get(*display)? else {
+            return None;
+        };
+        (index.0 == row_index)
+            .then(|| settings_page::field_options(row, *rect, layout.scale_factor))
+            .flatten()
+    })
+}
 
 use super::frame::{FontRole, Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
@@ -305,6 +323,13 @@ impl MenuItemKind {
 }
 
 pub enum Accessory<'a> {
+    SettingInput {
+        content: &'a crate::editable::EditableState<crate::editable::StringBuffer>,
+        focused: bool,
+        browse: bool,
+        line_height: usize,
+        char_width: f32,
+    },
     /// A configuration value that remains visible in compact forms.
     SettingValue {
         text: &'a str,
@@ -815,6 +840,9 @@ pub struct OverlayLayout {
     pub rows: Vec<WidgetRect>,
     /// Pixel-scrolled form body; painting and hit testing share its clipped range.
     pub settings_viewport: Option<crate::layout::RowListView>,
+    /// Visible form rows retain signed origins for partially scrolled text areas.
+    pub(crate) settings_items: Vec<(usize, Rect)>,
+    pub(crate) settings_positions: Vec<std::ops::Range<usize>>,
     /// One entry per `Body::Fields` field, in order. Empty otherwise.
     pub fields: Vec<FieldLayout>,
     /// The banner zone of a `Body::Zones` body. `None` unless
@@ -1393,6 +1421,8 @@ pub fn layout_measured(
         row_height: row_h,
         rows,
         settings_viewport: None,
+        settings_items: Vec::new(),
+        settings_positions: Vec::new(),
         fields,
         zones_banner,
         zones_code,
@@ -1421,6 +1451,10 @@ pub fn layout_measured(
 /// actually painted).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayHit {
+    Input {
+        row: FlatIndex,
+        position: crate::editable::Position,
+    },
     Scrollbar,
     /// Outside the panel entirely (dismiss on click).
     Outside,
@@ -2470,6 +2504,7 @@ fn render_list(
                                 }
                             }
                         }
+                        Accessory::SettingInput { .. } => {}
                         Accessory::DimText(text) | Accessory::SettingValue { text, .. } => {
                             painter.draw_sized(
                                 frame,
@@ -2689,6 +2724,7 @@ fn accessory_width(
         // Choice widths are solved with the row, not independently measured.
         Accessory::Choices { .. } => 0,
         Accessory::None => 0,
+        Accessory::SettingInput { .. } => 0,
         Accessory::DimText(text) | Accessory::SettingValue { text, .. } => {
             painter.measure_sized(text, meta_size, 0.0).ceil() as usize
         }

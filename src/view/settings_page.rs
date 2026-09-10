@@ -1,6 +1,60 @@
 //! Settings-form presentation for OverlaySurface. Painting and input consume
 //! the same resolved rectangles; metadata and scrolling remain shared.
 use super::*;
+use crate::view::{TextFieldOptions, TextFieldRenderer};
+
+fn item_height(row: &DisplayRow<'_>, sf: f64, viewport_height: usize) -> usize {
+    match row {
+        DisplayRow::Row(
+            Row {
+                accessory:
+                    Accessory::SettingInput {
+                        content,
+                        line_height,
+                        ..
+                    },
+                ..
+            },
+            _,
+        ) => {
+            let lines = if content.constraints.allow_multiline {
+                5
+            } else {
+                1
+            };
+            let minimum = scaled(76.0, sf) + line_height;
+            (scaled(76.0, sf) + lines * line_height).min(viewport_height.max(minimum))
+        }
+        _ => row_height(sf),
+    }
+}
+
+fn input_rect(rect: Rect, sf: f64) -> Rect {
+    Rect::new(
+        rect.x + scaled(8.0, sf) as f32,
+        rect.y + scaled(60.0, sf) as f32,
+        (rect.width - scaled(16.0, sf) as f32).max(0.0),
+        (rect.height - scaled(72.0, sf) as f32).max(0.0),
+    )
+}
+
+pub(super) fn field_options(row: &Row, rect: Rect, sf: f64) -> Option<TextFieldOptions> {
+    let Accessory::SettingInput {
+        content,
+        line_height,
+        char_width,
+        ..
+    } = row.accessory
+    else {
+        return None;
+    };
+    Some(TextFieldOptions::for_text_area(
+        content,
+        input_rect(rect, sf),
+        line_height,
+        char_width,
+    ))
+}
 fn choice_rects_with_budget(
     row: &WidgetRect,
     labels: &[&str],
@@ -109,7 +163,7 @@ pub(crate) fn scroll_viewport(
     width: usize,
     height: usize,
     sf: f64,
-    count: usize,
+    content_height: usize,
     offset: usize,
 ) -> crate::layout::RowListView {
     let p = panel(width, height, sf);
@@ -121,17 +175,15 @@ pub(crate) fn scroll_viewport(
             p.w.saturating_sub(chrome.sidebar) as f32,
             (p.y + p.h).saturating_sub(chrome.body_top + scaled(FOOT, sf)) as f32,
         ),
-        row_height(sf) as f32,
-        count,
+        1.0,
+        content_height,
         offset,
     )
 }
 
 /// Full-row capacity for keyboard Page Up/Down, not pointer scrolling.
 pub fn visible_count(width: usize, height: usize, sf: f64) -> usize {
-    scroll_viewport(width, height, sf, 0, 0)
-        .visible_capacity()
-        .max(1)
+    (scroll_viewport(width, height, sf, 0, 0).visible_capacity() / row_height(sf).max(1)).max(1)
 }
 
 pub(super) fn layout(
@@ -181,24 +233,59 @@ pub(super) fn layout(
                 .collect()
         })
         .unwrap_or_default();
-    let (total, offset) = match &spec.body {
+    let (items, offset) = match &spec.body {
         Body::List {
             sections, scroll, ..
-        } => (flatten_rows(sections).len(), *scroll),
-        _ => (0, 0),
+        } => (flatten_rows(sections), *scroll),
+        _ => (Vec::new(), 0),
     };
+    let mut total = 0;
+    let viewport_height = scroll_viewport(width, height, sf, 0, 0)
+        .rect()
+        .height
+        .max(0.0) as usize;
+    let positions: Vec<_> = items
+        .iter()
+        .map(|item| {
+            let start = total;
+            total += item_height(item, sf, viewport_height);
+            start..total
+        })
+        .collect();
+    out.settings_positions = items
+        .iter()
+        .zip(&positions)
+        .filter_map(|(item, range)| matches!(item, DisplayRow::Row(..)).then_some(range.clone()))
+        .collect();
     let viewport = scroll_viewport(width, height, sf, total, offset);
     let body = viewport.rect();
     out.settings_viewport = Some(viewport);
     out.row_height = row_height(sf);
-    out.rows = viewport
-        .drawn_range()
-        .filter_map(|i| viewport.row_rect(i))
-        .map(|rect| WidgetRect {
-            x: p.x + sidebar + pad,
-            y: rect.y as usize,
-            w: p.w.saturating_sub(sidebar + pad * 2),
-            h: out.row_height,
+    let visible = viewport.drawn_range();
+    out.settings_items = positions
+        .iter()
+        .enumerate()
+        .filter(|(_, range)| range.start < visible.end && range.end > visible.start)
+        .map(|(index, range)| {
+            (
+                index,
+                Rect::new(
+                    (p.x + sidebar + pad) as f32,
+                    body.y + range.start as f32 - viewport.scroll_offset_pixels() as f32,
+                    p.w.saturating_sub(sidebar + pad * 2) as f32,
+                    range.len() as f32,
+                ),
+            )
+        })
+        .collect();
+    out.rows = out
+        .settings_items
+        .iter()
+        .map(|(_, rect)| WidgetRect {
+            x: rect.x as usize,
+            y: rect.y.max(0.0) as usize,
+            w: rect.width as usize,
+            h: rect.height as usize,
         })
         .collect();
     out.footer = Some(WidgetRect {
@@ -330,12 +417,27 @@ pub(super) fn hit_test(
             return OverlayHit::Inside;
         }
         let rows = flatten_rows(sections);
-        let start = viewport.drawn_range().start;
-        for (slot, rect) in layout.rows.iter().enumerate() {
-            if !contains(rect, x, y) {
+        for (rect, (display_index, raw)) in layout.rows.iter().zip(&layout.settings_items) {
+            if !raw.contains(x as f32, y as f32) {
                 continue;
             }
-            if let Some(DisplayRow::Row(row, index)) = rows.get(start + slot) {
+            if let Some(DisplayRow::Row(row, index)) = rows.get(*display_index) {
+                if let Accessory::SettingInput { browse, .. } = row.accessory {
+                    if browse && contains(&action_rect(rect, layout.scale_factor), x, y) {
+                        return OverlayHit::Choice {
+                            row: *index,
+                            choice: 0,
+                        };
+                    }
+                    if input_rect(*raw, layout.scale_factor).contains(x as f32, y as f32) {
+                        if let Some(opts) = field_options(row, *raw, layout.scale_factor) {
+                            return OverlayHit::Input {
+                                row: *index,
+                                position: opts.position_at(x as f64, y as f64),
+                            };
+                        }
+                    }
+                }
                 if matches!(
                     row.accessory,
                     Accessory::SettingValue {
@@ -500,9 +602,8 @@ pub(super) fn render(
     {
         frame.push_clip(viewport.rect());
         let rows = flatten_rows(sections);
-        let start = viewport.drawn_range().start;
-        for (slot, rect) in layout.rows.iter().enumerate() {
-            match rows.get(start + slot) {
+        for (rect, (display_index, raw)) in layout.rows.iter().zip(&layout.settings_items) {
+            match rows.get(*display_index) {
                 Some(DisplayRow::SectionHeader(title)) => {
                     let r = WidgetRect {
                         y: rect.y + scaled(18.0, sf),
@@ -529,10 +630,13 @@ pub(super) fn render(
                     }
                     let compact = rect.w < scaled(400.0, sf);
                     let control = controls(rect, sf);
-                    let reserve = if let Accessory::SettingValue {
-                        action: Some(_), ..
-                    } = row.accessory
-                    {
+                    let reserve = if matches!(
+                        row.accessory,
+                        Accessory::SettingValue {
+                            action: Some(_),
+                            ..
+                        } | Accessory::SettingInput { browse: true, .. }
+                    ) {
                         scaled(120.0, sf)
                     } else if compact {
                         0
@@ -566,7 +670,7 @@ pub(super) fn render(
                         size_px(13.0, sf),
                         colors.text_primary,
                     );
-                    if !compact {
+                    if !compact || matches!(row.accessory, Accessory::SettingInput { .. }) {
                         if let Some(detail) = row.detail {
                             let r = WidgetRect {
                                 y: rect.y + scaled(36.0, sf),
@@ -584,6 +688,43 @@ pub(super) fn render(
                         }
                     }
                     match &row.accessory {
+                        Accessory::SettingInput {
+                            content,
+                            focused,
+                            browse,
+                            ..
+                        } => {
+                            let input = input_rect(*raw, sf);
+                            let bg_y = (input.y - scaled(4.0, sf) as f32).max(0.0) as usize;
+                            frame.fill_rect_px(
+                                input.x as usize - scaled(4.0, sf),
+                                bg_y,
+                                input.width as usize + scaled(8.0, sf),
+                                (input.y + input.height + scaled(4.0, sf) as f32).max(bg_y as f32)
+                                    as usize
+                                    - bg_y,
+                                colors.recessed_wash,
+                            );
+                            if *browse {
+                                text(
+                                    frame,
+                                    painter,
+                                    &action_rect(rect, sf),
+                                    "Browse…",
+                                    size_px(11.0, sf),
+                                    colors.accent_bright,
+                                );
+                            }
+                            if let Some(mut opts) = field_options(row, *raw, sf) {
+                                opts.cursor_visible = cursor && *focused;
+                                opts.text_color = colors.text_primary;
+                                opts.cursor_color = colors.accent_bright;
+                                opts.selection_color = colors.selection_wash;
+                                frame.push_clip(input);
+                                TextFieldRenderer::render(frame, painter, *content, &opts);
+                                frame.pop_clip();
+                            }
+                        }
                         Accessory::SettingValue {
                             text: value,
                             action,
@@ -770,6 +911,96 @@ mod tests {
     use super::*;
 
     #[test]
+    fn settings_form_fields_share_multiline_caret_pointer_and_scrolled_geometry() {
+        use crate::settings::{forms::SettingsForm, SettingsState};
+        for scale in [1.0, 2.0] {
+            let mut model = crate::model::AppModel::new(1000, 740, scale);
+            model.char_width = 8.0 * scale as f32;
+            model.line_height = (20.0 * scale) as usize;
+            let mut form = SettingsForm::language_server(&crate::lsp::RUST_ANALYZER, &model.config);
+            form.fields[2]
+                .input
+                .set_content("{\n  \"check\": {\n    \"command\": \"clippy\"\n  }\n}");
+            form.fields[2]
+                .input
+                .set_cursor_position(crate::editable::Position::new(2, 8), false);
+            form.focused = Some(2);
+            let mut state = SettingsState {
+                form: Some(form),
+                selected_index: 3,
+                ..SettingsState::default()
+            };
+            state.refresh_entries();
+            let mut advanced_hits = 0;
+            let mut advanced_geometry = Vec::new();
+            for offset in [0, 145, 311, 499, 657, 799] {
+                state.scroll_offset_px = (offset as f64 * scale) as usize;
+                crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                    let layout = super::super::layout(spec, 1000, 740, scale);
+                    let viewport = layout.settings_viewport.unwrap();
+                    for (display, raw) in &layout.settings_items {
+                        let Body::List { sections, .. } = &spec.body else {
+                            unreachable!()
+                        };
+                        let flattened = flatten_rows(sections);
+                        let DisplayRow::Row(row, index) = &flattened[*display] else {
+                            continue;
+                        };
+                        let Some(opts) = field_options(row, *raw, scale) else {
+                            continue;
+                        };
+                        let Some(caret) = TextFieldRenderer::caret_rect(
+                            match row.accessory {
+                                Accessory::SettingInput { content, .. } => content,
+                                _ => unreachable!(),
+                            },
+                            &opts,
+                        ) else {
+                            continue;
+                        };
+                        if index.0 == 3 {
+                            advanced_geometry.push((offset, *raw, caret, viewport.rect()));
+                        }
+                        if !viewport.rect().contains(caret.x as f32, caret.y as f32) {
+                            continue;
+                        }
+                        let hit = hit_test(spec, &layout, caret.x, caret.y);
+                        let OverlayHit::Input {
+                            row: actual,
+                            position,
+                        } = hit
+                        else {
+                            panic!("expected field at {caret:?}, got {hit:?}")
+                        };
+                        assert_eq!(actual, *index);
+                        if index.0 == 3 {
+                            advanced_hits += 1;
+                        }
+                        let Accessory::SettingInput { content, .. } = row.accessory else {
+                            unreachable!()
+                        };
+                        assert_eq!(
+                            position,
+                            crate::editable::Position::new(
+                                content.cursor().line,
+                                content.cursor().column
+                            )
+                        );
+                    }
+                    assert_eq!(
+                        viewport.scroll_offset_pixels(),
+                        state.scroll_offset_px.min(viewport.max_scroll_pixels())
+                    );
+                });
+            }
+            assert!(
+                advanced_hits > 0,
+                "the multiline field must be exercised at scale {scale}: {advanced_geometry:?}"
+            );
+        }
+    }
+
+    #[test]
     fn settings_page_is_opaque_even_with_a_translucent_overlay_theme() {
         let font = fontdue::Font::from_bytes(
             include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
@@ -841,13 +1072,21 @@ mod tests {
                         viewport.scroll_offset_pixels(),
                         offset.min(viewport.max_scroll_pixels())
                     );
-                    for (index, rect) in viewport.drawn_range().zip(&layout.rows) {
-                        assert_eq!(rect.y, viewport.row_rect(index).unwrap().y as usize);
+                    // General settings still have uniform rows. Use that independent
+                    // projection to check the form's variable-height layout.
+                    let uniform = crate::layout::RowListView::from_pixel_scroll(
+                        clip,
+                        row_height(scale) as f32,
+                        rows.len(),
+                        offset,
+                    );
+                    for (index, rect) in uniform.drawn_range().zip(&layout.rows) {
+                        assert_eq!(rect.y, uniform.row_rect(index).unwrap().y as usize);
                     }
                     let x = layout.rows[0].x + 1;
                     for y in 0..height as usize {
                         let hit = hit_test(spec, &layout, x, y);
-                        if let Some(index) = viewport.row_at_y(y as f32) {
+                        if let Some(index) = uniform.row_at_y(y as f32) {
                             let expected = match &rows[index] {
                                 DisplayRow::Row(_, index) => OverlayHit::Row(*index),
                                 _ => OverlayHit::Inside,

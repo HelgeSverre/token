@@ -11,6 +11,40 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use token::commands::ConfigResource;
 
+/// Explain the same executable lookup used when spawning a configured server.
+/// This is read-only and never executes the selected program.
+pub(super) fn executable_status(command: &str) -> String {
+    let resolved = token::lsp::client::resolve_command(command);
+    let candidates: Vec<PathBuf> = if resolved.components().count() > 1 || resolved.is_absolute() {
+        vec![resolved]
+    } else {
+        std::env::var_os("PATH")
+            .map(|path| {
+                std::env::split_paths(&path)
+                    .map(|dir| dir.join(&resolved))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    for path in candidates {
+        let Ok(metadata) = fs::metadata(&path) else {
+            continue;
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if metadata.permissions().mode() & 0o111 == 0 {
+                continue;
+            }
+        }
+        return format!("Found: {}", path.display());
+    }
+    "Not found or not executable · install the server or choose an absolute path".into()
+}
+
 /// Startup configuration and histories are effects, not model constructors.
 /// Called on the application preparation thread before any user input exists.
 pub(super) fn load_startup(model: &mut token::AppModel) {

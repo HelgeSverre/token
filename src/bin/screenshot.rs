@@ -246,6 +246,9 @@ fn default_sidebar_visible() -> bool {
 #[derive(Deserialize, Debug)]
 struct ModalConfig {
     id: ModalId,
+    /// Open a registered server's Settings draft without running any effects.
+    #[serde(default)]
+    server: Option<String>,
     /// Settings category label from the shared metadata (for example, LSP).
     #[serde(default)]
     category: Option<String>,
@@ -821,8 +824,25 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) -> Result<()> {
                     Msg::Ui(UiMsg::Modal(ModalMsg::SetInput(input.clone()))),
                 );
             }
-            for _ in 0..config.selected_index.unwrap_or(0).min(100) {
-                token::update::update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)));
+            if let Some(server) = &config.server {
+                let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+                    unreachable!()
+                };
+                let row = state
+                    .filtered_rows()
+                    .position(|(label, _)| label == format!("{server} executable"))
+                    .with_context(|| format!("server {server} not in filtered Settings rows"))?;
+                update(
+                    model,
+                    Msg::Ui(UiMsg::Modal(ModalMsg::ChooseSetting { row, choice: 0 })),
+                );
+                if let Some(row) = config.selected_index {
+                    update(model, Msg::Ui(UiMsg::Modal(ModalMsg::ActivateRow(row))));
+                }
+            } else {
+                for _ in 0..config.selected_index.unwrap_or(0).min(100) {
+                    token::update::update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)));
+                }
             }
             token::update::update(
                 model,

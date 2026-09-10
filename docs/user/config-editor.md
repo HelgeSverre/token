@@ -30,7 +30,7 @@ the **Open Settings** command. Categories appear in the left navigation, with
 compact category buttons in small windows. Search filters the selected category.
 Use Up/Down to select a row, Left/Right to cycle presets, or click a switch or
 preset control. Clicking the row label only selects it.
-Changes save immediately; Escape closes the page without undoing them. The Theme
+Preset changes save immediately; Escape closes the page without undoing them. The Theme
 row opens the existing theme picker.
 
 **Completion** controls the master switch (including manual requests), automatic
@@ -41,7 +41,8 @@ automatic menu leaves manual completion available; turning off the master switch
 disables both dropdown and inline requests. AI suggestions remain off by default
 and require a configured provider.
 
-Tab/Shift+Tab cycles categories, including [Keymap](config-keymap.md#editing-in-settings).
+Tab/Shift+Tab cycles categories, including [Keymap](config-keymap.md#editing-in-settings),
+or moves between controls while a configuration form is open.
 The Keymap category records shortcuts with an explicit Save/Cancel step; its base-preset
 chips save immediately. General controls and keymap overrides use separate files.
 
@@ -55,8 +56,11 @@ matching file open/edit. A server's switch retains its own preference when the
 master switch is Off. Selecting an unchanged choice does not save again.
 
 Executable rows show the configured command or registry default. Their
-**Configure…** buttons open `config.yaml` for path, argument and server-option
-overrides. Live process-state rows remain read-only. Status updates without
+**Configure…** buttons open a draft form for paths, arguments and advanced
+JSON/YAML options, with Browse, executable lookup, live status and Open log.
+Apply & Restart saves and reconfigures that server; Cancel/Escape discards only
+unapplied edits. Validation or save failures keep the draft and leave the live
+configuration unchanged. Live process-state rows remain read-only. Status updates without
 reopening Settings. The existing Language Servers picker remains available.
 The Editor category's **Inlay hints** switch controls Sema line-end parameter
 annotations (`lsp.inlay_hints`, off by default).
