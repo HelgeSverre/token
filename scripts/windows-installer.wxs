@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <!-- Keep UpgradeCode stable across releases. Product/package codes are new
+       for each MSI, so Windows Installer can distinguish successive builds. -->
+  <Product Id="*" Name="Token" Language="1033" Version="$(var.Version)"
+           Manufacturer="Helge Sverre" UpgradeCode="CE4AAA3C-425A-4421-82EC-7242F7D9EC9D">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" Schedule="afterInstallInitialize"
+                  DowngradeErrorMessage="A newer version of Token is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="Token.exe" SourceFile="$(var.Icon)" />
+    <Property Id="ARPPRODUCTICON" Value="Token.exe" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.License)" />
+    <UIRef Id="WixUI_InstallDir" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="Token">
+          <Component Id="Executable" Guid="*" Win64="yes">
+            <File Id="TokenExe" Source="$(var.Executable)" KeyPath="yes">
+              <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Token"
+                        WorkingDirectory="INSTALLDIR" Advertise="yes" Icon="Token.exe" />
+            </File>
+          </Component>
+          <Directory Id="Resources" Name="Resources">
+            <Component Id="Credits" Guid="*" Win64="yes">
+              <File Source="$(var.SourceDir)/Credits.rtf" KeyPath="yes" />
+            </Component>
+            <Component Id="License" Guid="*" Win64="yes">
+              <File Source="$(var.SourceDir)/LICENSE.md" KeyPath="yes" />
+            </Component>
+            <Directory Id="FontLicenses" Name="assets">
+              <Component Id="InterLicense" Guid="*" Win64="yes">
+                <File Source="$(var.SourceDir)/assets/Inter_OFL.txt" KeyPath="yes" />
+              </Component>
+              <Component Id="JetBrainsMonoLicense" Guid="*" Win64="yes">
+                <File Source="$(var.SourceDir)/assets/OFL.txt" KeyPath="yes" />
+              </Component>
+            </Directory>
+          </Directory>
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder" />
+    </Directory>
+    <Feature Id="Token" Title="Token" Level="1">
+      <ComponentRef Id="Executable" />
+      <ComponentRef Id="Credits" />
+      <ComponentRef Id="License" />
+      <ComponentRef Id="InterLicense" />
+      <ComponentRef Id="JetBrainsMonoLicense" />
+    </Feature>
+  </Product>
+</Wix>

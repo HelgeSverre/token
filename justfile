@@ -353,7 +353,7 @@ app:
 bundle-linux: dist icons
     cargo bundle --release --bin token --format deb
 
-# Build a Windows MSI with the Windows/MSVC toolchain (also used by CI).
+# Build a Windows MSI with Windows/MSVC, PowerShell 7 and WiX Toolset 3.14.
 [group('package')]
 bundle-windows:
-    cargo bundle --release --target x86_64-pc-windows-msvc --format msi --bin token
+    pwsh -NoProfile -File scripts/package-windows-msi.ps1

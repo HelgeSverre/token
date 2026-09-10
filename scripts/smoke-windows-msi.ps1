@@ -25,7 +25,9 @@ try {
     foreach ($file in @(
         @{ Source = "target/$Target/release/token.exe"; Installed = "token.exe" },
         @{ Source = "Credits.rtf"; Installed = "Resources/Credits.rtf" },
-        @{ Source = "assets/Inter_OFL.txt"; Installed = "Resources/assets/Inter_OFL.txt" }
+        @{ Source = "LICENSE.md"; Installed = "Resources/LICENSE.md" },
+        @{ Source = "assets/Inter_OFL.txt"; Installed = "Resources/assets/Inter_OFL.txt" },
+        @{ Source = "assets/OFL.txt"; Installed = "Resources/assets/OFL.txt" }
     )) {
         $installed = Join-Path $installDir $file.Installed
         if ((Get-FileHash $file.Source).Hash -ne (Get-FileHash $installed).Hash) {
