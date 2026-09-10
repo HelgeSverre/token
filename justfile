@@ -353,10 +353,7 @@ app:
 bundle-linux: dist icons
     cargo bundle --release --bin token --format deb
 
+# Build a Windows MSI with the Windows/MSVC toolchain (also used by CI).
 [group('package')]
-bundle-windows: dist icons
-    mkdir -p target/bundle/windows
-    cp target/dist/token target/bundle/windows/token.exe 2>/dev/null || cp target/release/token target/bundle/windows/token.exe
-    cp assets/icon.ico target/bundle/windows/ 2>/dev/null || true
-    cp README.md LICENSE.md target/bundle/windows/
-    cd target/bundle && zip -r Token-windows.zip windows/
+bundle-windows:
+    cargo bundle --release --target x86_64-pc-windows-msvc --format msi --bin token
