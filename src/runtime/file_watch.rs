@@ -101,17 +101,44 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
 
-    fn await_path(receiver: &mpsc::Receiver<Msg>, expected: &Path) {
+    fn await_path(receiver: &mpsc::Receiver<Msg>, expected: &Path, stage: &str) {
         let deadline = Instant::now() + Duration::from_secs(5);
+        let mut observed = Vec::new();
         loop {
             let message = receiver
                 .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                .expect("native watcher must report the replacement");
-            if matches!(message, Msg::App(AppMsg::FilesChanged(paths))
-                if paths.iter().any(|path| expected.starts_with(path)))
-            {
-                return;
+                .unwrap_or_else(|error| {
+                    panic!("{stage}: waiting for {expected:?}: {error}; observed {observed:?}")
+                });
+            if let Msg::App(AppMsg::FilesChanged(paths)) = message {
+                if paths.iter().any(|path| path == expected) {
+                    return;
+                }
+                observed.extend(paths);
             }
+        }
+    }
+
+    /// Establish delivery before testing a one-shot rename. FSEvents streams
+    /// restart when subscriptions change; a parent/setup event is not evidence
+    /// that events for the file itself can already reach this receiver.
+    fn await_ready(receiver: &mpsc::Receiver<Msg>, marker: &Path) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut attempt = 0;
+        loop {
+            std::fs::write(marker, attempt.to_string()).unwrap();
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            assert!(!remaining.is_zero(), "watcher not ready for {marker:?}");
+            match receiver.recv_timeout(remaining.min(Duration::from_millis(100))) {
+                Ok(Msg::App(AppMsg::FilesChanged(paths)))
+                    if paths.iter().any(|path| path == marker) =>
+                {
+                    return
+                }
+                Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(error) => panic!("watcher readiness for {marker:?}: {error}"),
+            }
+            attempt += 1;
         }
     }
 
@@ -126,18 +153,22 @@ mod tests {
         let (sender, receiver) = mpsc::channel();
         let mut watcher = DocumentWatcher::new(sender, None).unwrap();
         watcher.sync(std::slice::from_ref(&path));
+        assert!(watcher.roots.contains(&parent));
+        assert!(watcher.roots.contains(&root));
+        await_ready(&receiver, &parent.join("initial-ready"));
         let replacement = parent.join("replacement.txt");
         std::fs::write(&replacement, "replaced").unwrap();
         std::fs::rename(&replacement, &path).unwrap();
-        await_path(&receiver, &path);
+        await_path(&receiver, &path, "atomic file replacement");
 
         // Losing the containing directory must not permanently lose coverage.
         std::fs::rename(&parent, root.join("old-documents")).unwrap();
-        await_path(&receiver, &parent);
+        await_path(&receiver, &parent, "parent rename");
         std::fs::create_dir(&parent).unwrap();
         watcher.rearm_parent(&path);
+        await_ready(&receiver, &parent.join("rearmed-ready"));
         std::fs::write(&path, "recreated").unwrap();
-        await_path(&receiver, &path);
+        await_path(&receiver, &path, "file creation after rearm");
         watcher.sync(&[]);
         assert!(watcher.roots.is_empty());
     }
