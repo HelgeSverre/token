@@ -39,16 +39,27 @@ pub(super) fn prepare_resource(
                 .with_context(|| format!("Creating {}", themes.display()))?;
             Ok(config_dir.to_path_buf())
         }
-        ConfigResource::Keybindings => {
+        ConfigResource::EditorSettings | ConfigResource::Keybindings => {
             fs::create_dir_all(config_dir)
                 .with_context(|| format!("Creating {}", config_dir.display()))?;
-            let path = config_dir.join("keymap.yaml");
+            let (filename, contents) = if resource == ConfigResource::EditorSettings {
+                (
+                    "config.yaml",
+                    serde_yaml::to_string(&token::config::EditorConfig::default())?,
+                )
+            } else {
+                (
+                    "keymap.yaml",
+                    token::keymap::get_default_keymap_yaml().to_owned(),
+                )
+            };
+            let path = config_dir.join(filename);
             // Do not check exists() then truncate: another process may create
-            // the user's keymap between those operations. Existing files (even
+            // the user's settings between those operations. Existing files (even
             // empty ones) are user-owned and must never be replaced here.
             match OpenOptions::new().write(true).create_new(true).open(&path) {
                 Ok(mut file) => file
-                    .write_all(token::keymap::get_default_keymap_yaml().as_bytes())
+                    .write_all(contents.as_bytes())
                     .with_context(|| format!("Writing {}", path.display()))?,
                 Err(error) if error.kind() == ErrorKind::AlreadyExists => {
                     anyhow::ensure!(path.is_file(), "{} is not a file", path.display());
@@ -109,6 +120,22 @@ fn is_log_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opening_editor_settings_creates_defaults_without_replacing_existing_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let resource = ConfigResource::EditorSettings;
+        let path = prepare_resource(resource, Some(dir.path())).unwrap();
+        let config: token::config::EditorConfig =
+            serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(config.lsp.enabled);
+        assert!(!config.lsp.inlay_hints);
+        for content in ["# keep my comments\nlsp:\n  enabled: false\n", ""] {
+            fs::write(&path, content).unwrap();
+            prepare_resource(resource, Some(dir.path())).unwrap();
+            assert_eq!(fs::read_to_string(&path).unwrap(), content);
+        }
+    }
 
     #[test]
     fn config_resource_keymap_creates_defaults_and_preserves_existing_files() {

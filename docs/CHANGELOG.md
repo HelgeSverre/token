@@ -6,6 +6,13 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Language server preferences
+
+- Sema parameter hints are opt-in through the Inlay hints switch in Settings
+  (`lsp.inlay_hints`). Explicit Run results remain visible independently.
+- Language-server executable rows offer Configure buttons that open config.yaml
+  directly, creating a default file only when none exists.
+
 ### Problems panel
 
 - Align file and severity icons in consistently sized cells with clear spacing

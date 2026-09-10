@@ -926,7 +926,7 @@ pub(crate) fn with_settings_spec<R>(
                         accessory: if matches!(entry.kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
                             Accessory::SettingValue { text: &model.config.theme, action: Some("Choose…") }
                         } else if matches!(entry.kind, RowKind::ServerCommand(_)) {
-                            Accessory::SettingValue { text: &details[index], action: None }
+                            Accessory::SettingValue { text: &details[index], action: Some("Configure…") }
                         } else if matches!(entry.kind, RowKind::KeymapBinding(_, _)) {
                             match &bindings[index] {
                                 PaletteAccessory::None => Accessory::None,
@@ -2755,11 +2755,11 @@ mod tests {
             let row = sections
                 .iter()
                 .flat_map(|s| s.rows)
-                .find(|r| r.label == "lsp.servers.rust-analyzer.command")
+                .find(|r| r.label == "rust-analyzer executable")
                 .unwrap();
             assert!(row.detail.is_none());
             assert!(
-                matches!(row.accessory, Accessory::SettingValue { text, action: None } if text == command)
+                matches!(row.accessory, Accessory::SettingValue { text, action: Some("Configure…") } if text == command)
             );
         });
     }

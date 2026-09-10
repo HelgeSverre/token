@@ -46,10 +46,15 @@ server. Disabling stops the affected servers; enabling permits startup on the ne
 matching file open/edit. A server's switch retains its own preference when the
 master switch is Off. Selecting an unchanged choice does not save again.
 
-Command rows show the configured command or registry default and the YAML key to
-edit (`lsp.servers.<id>.command`). They are read-only, as are the live process-state
-rows; Left/Right and Enter cannot change them. Status updates without reopening
-Settings. The existing Language Servers picker remains available.
+Executable rows show the configured command or registry default. Their
+**Configure…** buttons open `config.yaml` for path, argument and server-option
+overrides. Live process-state rows remain read-only. Status updates without
+reopening Settings. The existing Language Servers picker remains available.
+The Editor category's **Inlay hints** switch controls Sema line-end parameter
+annotations (`lsp.inlay_hints`, off by default).
+
+See [Language servers](language-servers.md) for setup, supported executables,
+server-specific settings, quieter-editor options, and troubleshooting.
 
 Go files use `gopls` from your `PATH`. No configuration is needed when it is
 installed; to override its location, set `lsp.servers.gopls.command` in the

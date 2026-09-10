@@ -242,13 +242,13 @@ fn lsp_settings_filtered_server_toggle_preserves_other_overrides() {
 }
 
 #[test]
-fn lsp_settings_read_only_rows_never_save_or_manage_servers() {
+fn lsp_settings_status_is_read_only_and_configure_opens_the_config_file() {
     let mut model = test_model("text", 0, 0);
     open(&mut model);
     modal(&mut model, ModalMsg::SetInput("rust-analyzer".into()));
     let before = serde_yaml::to_value(&model.config).unwrap();
-    for label in ["lsp.servers.rust-analyzer.command", "rust-analyzer status"] {
-        let index = row(&model, label);
+    {
+        let index = row(&model, "rust-analyzer status");
         let cmd = modal(&mut model, ModalMsg::ActivateRow(index)).unwrap();
         assert!(matches!(cmd, Cmd::Redraw));
         for message in [
@@ -264,4 +264,20 @@ fn lsp_settings_read_only_rows_never_save_or_manage_servers() {
         }
     }
     assert_eq!(serde_yaml::to_value(&model.config).unwrap(), before);
+    let index = row(&model, "rust-analyzer executable");
+    let cmd = modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: index,
+            choice: 0,
+        },
+    )
+    .unwrap();
+    assert!(model.ui.active_modal.is_none());
+    assert!(contains(
+        &cmd,
+        |cmd| matches!(cmd, Cmd::PrepareFileOpen(request)
+        if matches!(request.source, token::model::FileOpenSource::Configuration(token::commands::ConfigResource::EditorSettings)))
+    ));
+    assert!(saved(&cmd).is_none());
 }

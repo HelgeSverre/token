@@ -49,6 +49,7 @@ impl std::fmt::Display for FileOpenSource {
             Self::Path(path) => path.display().fmt(f),
             Self::Configuration(resource) => f.write_str(match resource {
                 ConfigResource::Directory => "configuration directory",
+                ConfigResource::EditorSettings => "editor configuration",
                 ConfigResource::Keybindings => "keybindings",
                 ConfigResource::Log => "log file",
                 ConfigResource::InlineStatistics => "inline completion statistics",

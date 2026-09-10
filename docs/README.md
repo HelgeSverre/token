@@ -21,13 +21,14 @@ Start here to understand, use, and contribute to Token.
 
 Configuration and usage guides for end users.
 
-| Document                                  | Description                                                  |
-| ----------------------------------------- | ------------------------------------------------------------ |
-| [config-editor.md](user/config-editor.md) | Editor settings reference                                    |
-| [editorconfig.md](user/editorconfig.md)   | Per-file indentation, line endings, and save cleanup         |
-| [folding.md](user/folding.md)             | Gutter controls, commands, language support, and persistence |
-| [config-keymap.md](user/config-keymap.md) | Keymap configuration reference                               |
-| [config-theme.md](user/config-theme.md)   | Theme configuration reference                                |
+| Document                                        | Description                                                  |
+| ----------------------------------------------- | ------------------------------------------------------------ |
+| [config-editor.md](user/config-editor.md)       | Editor settings reference                                    |
+| [language-servers.md](user/language-servers.md) | Language server setup, preferences, and troubleshooting      |
+| [editorconfig.md](user/editorconfig.md)         | Per-file indentation, line endings, and save cleanup         |
+| [folding.md](user/folding.md)                   | Gutter controls, commands, language support, and persistence |
+| [config-keymap.md](user/config-keymap.md)       | Keymap configuration reference                               |
+| [config-theme.md](user/config-theme.md)         | Theme configuration reference                                |
 
 ---
 

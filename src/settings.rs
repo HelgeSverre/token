@@ -29,6 +29,7 @@ pub(crate) enum Setting {
     StatusFont,
     Hover,
     HoverDelay,
+    InlayHints,
     FormatOnSave,
     AutoReload,
     AutoSave,
@@ -120,6 +121,13 @@ pub(crate) static DESCRIPTORS: &[Descriptor] = &[
         name: "Hover delay",
         description: "hover_delay_ms · tooltip timing",
         labels: &["Fast", "Normal", "Slow"],
+    },
+    Descriptor {
+        setting: Setting::InlayHints,
+        section: "Editor",
+        name: "Inlay hints",
+        description: "lsp.inlay_hints · show Sema parameter hints at line ends",
+        labels: BOOL_LABELS,
     },
     Descriptor {
         setting: Setting::EditorConfig,
@@ -239,6 +247,7 @@ impl Descriptor {
             Setting::IndentGuides => usize::from(config.indent_guides),
             Setting::EditorConfig => usize::from(config.editorconfig),
             Setting::Hover => usize::from(config.hover_on_mouse),
+            Setting::InlayHints => usize::from(config.lsp.inlay_hints),
             Setting::FormatOnSave => usize::from(config.format_on_save),
             Setting::AutoReload => usize::from(config.auto_reload),
             Setting::AutoSave => {
@@ -295,6 +304,7 @@ impl Descriptor {
             Setting::IndentGuides => config.indent_guides = choice != 0,
             Setting::EditorConfig => config.editorconfig = choice != 0,
             Setting::Hover => config.hover_on_mouse = choice != 0,
+            Setting::InlayHints => config.lsp.inlay_hints = choice != 0,
             Setting::FormatOnSave => config.format_on_save = choice != 0,
             Setting::AutoReload => config.auto_reload = choice != 0,
             Setting::AutoSave => config.auto_save.mode = AUTO_SAVE_MODES[choice],
@@ -355,7 +365,8 @@ impl SettingRow {
             RowKind::CaptureActions => &["Save", "Cancel", "Literal"],
             RowKind::Preset(index) => DESCRIPTORS[index].labels,
             RowKind::LspMaster | RowKind::ServerEnabled(_) => BOOL_LABELS,
-            RowKind::ServerCommand(_) | RowKind::ServerStatus(_) => &[],
+            RowKind::ServerCommand(_) => &["Configure…"],
+            RowKind::ServerStatus(_) => &[],
         }
     }
 
@@ -449,9 +460,12 @@ fn settings_rows() -> Vec<SettingRow> {
             SettingRow {
                 kind: RowKind::ServerCommand(def),
                 section: "LSP",
-                name: format!("lsp.servers.{}.command", def.id).into(),
-                description: format!("{} command override · {languages} · read-only", def.id)
-                    .into(),
+                name: format!("{} executable", def.id).into(),
+                description: format!(
+                    "lsp.servers.{}.command · {languages} · opens config.yaml",
+                    def.id
+                )
+                .into(),
             },
             SettingRow {
                 kind: RowKind::ServerStatus(def.id),
@@ -590,12 +604,13 @@ mod tests {
             .zip(state.entries[DESCRIPTORS.len() + 1..].as_chunks::<3>().0)
         {
             assert_eq!(group[0].active(&config), Some(1));
-            assert_eq!(group[1].name, format!("lsp.servers.{}.command", def.id));
+            assert_eq!(group[1].name, format!("{} executable", def.id));
             assert_eq!(
                 group[1].detail(&config),
                 format!("{} (default)", def.command)
             );
-            assert!(group[1].choices().is_empty() && group[2].choices().is_empty());
+            assert_eq!(group[1].choices(), &["Configure…"]);
+            assert!(group[2].choices().is_empty());
             config.lsp.servers.entry(def.id.into()).or_default().command =
                 Some("/an/overridden/command".into());
             assert_eq!(group[1].detail(&config), "/an/overridden/command");

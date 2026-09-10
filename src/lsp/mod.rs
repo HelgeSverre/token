@@ -262,7 +262,7 @@ mod tests {
     fn master_switch_disables_every_server() {
         let config = crate::config::LspConfig {
             enabled: false,
-            servers: Default::default(),
+            ..Default::default()
         };
         assert!(resolve_server(&RUST_ANALYZER, &config).is_none());
     }
@@ -271,7 +271,7 @@ mod tests {
     fn per_server_override_replaces_command_and_args() {
         let mut config = crate::config::LspConfig {
             enabled: true,
-            servers: Default::default(),
+            ..Default::default()
         };
         config.servers.insert(
             "phpantom".to_owned(),
@@ -294,7 +294,7 @@ mod tests {
     fn per_server_enabled_false_disables_just_that_server() {
         let mut config = crate::config::LspConfig {
             enabled: true,
-            servers: Default::default(),
+            ..Default::default()
         };
         config.servers.insert(
             "pyright".to_owned(),
@@ -314,7 +314,7 @@ mod tests {
     fn initialization_options_and_settings_thread_through_resolve() {
         let mut config = crate::config::LspConfig {
             enabled: true,
-            servers: Default::default(),
+            ..Default::default()
         };
         config.servers.insert(
             "pyright".to_owned(),

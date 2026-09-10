@@ -450,6 +450,10 @@ pub struct LspConfig {
     /// per-server settings.
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Display server-provided parameter annotations at line ends (Sema only).
+    /// Kept opt-in so opening a file does not add unsolicited text to the editor.
+    #[serde(default)]
+    pub inlay_hints: bool,
     #[serde(default)]
     pub servers: std::collections::HashMap<String, LspServerOverride>,
 }
@@ -458,6 +462,7 @@ impl Default for LspConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            inlay_hints: false,
             servers: std::collections::HashMap::new(),
         }
     }

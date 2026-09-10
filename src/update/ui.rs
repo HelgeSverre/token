@@ -1265,8 +1265,14 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
             return super::lsp::toggle_lsp_server_enabled(model, id)
         }
         crate::settings::RowKind::Preset(index) => &crate::settings::DESCRIPTORS[index],
-        crate::settings::RowKind::ServerCommand(_)
-        | crate::settings::RowKind::ServerStatus(_)
+        crate::settings::RowKind::ServerCommand(_) => {
+            model.ui.close_modal();
+            return super::layout::open_config_resource(
+                model,
+                crate::commands::ConfigResource::EditorSettings,
+            );
+        }
+        crate::settings::RowKind::ServerStatus(_)
         | crate::settings::RowKind::KeymapBase
         | crate::settings::RowKind::KeymapBinding(..)
         | crate::settings::RowKind::CaptureActions => return None,

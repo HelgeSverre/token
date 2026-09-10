@@ -803,7 +803,13 @@ impl<'a> TextEditorRenderer<'a> {
         {
             return;
         }
-        let hints = features.hints.get(&line.doc_line);
+        let hints = self
+            .model
+            .config
+            .lsp
+            .inlay_hints
+            .then(|| features.hints.get(&line.doc_line))
+            .flatten();
         let output = features.eval_output.get(&line.doc_line);
         if hints.is_none() && output.is_none() {
             return;
@@ -2066,6 +2072,8 @@ mod tests {
                 .lsp_features
                 .hints
                 .insert(0, vec!["x:".into()]);
+            assert_eq!(render_full_editor_group(&model), baseline);
+            model.config.lsp.inlay_hints = true;
             let annotated = render_full_editor_group(&model);
             assert_ne!(
                 annotated, baseline,

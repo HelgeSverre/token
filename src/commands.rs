@@ -922,6 +922,7 @@ pub enum ResolvePurpose {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigResource {
     Directory,
+    EditorSettings,
     Keybindings,
     Log,
     InlineStatistics,
