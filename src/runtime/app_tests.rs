@@ -39,6 +39,45 @@ fn empty_startup_config() -> StartupConfig {
 }
 
 #[test]
+fn closing_window_request_waits_for_real_writer_and_can_be_cancelled() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("save-before-close.txt");
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config.lsp.enabled = false;
+    app.model.config.format_on_save = false;
+    app.model.config.editorconfig = false;
+    app.model.document_mut().file_path = Some(path.clone());
+    app.process_automation_msg(Msg::Document(DocumentMsg::InsertChar('A')));
+    for attempt in 0..2 {
+        let response = send_automation_request(
+            &mut app,
+            AutomationRequest::Input {
+                events: vec![crate::automation::InputEvent::Close],
+            },
+        );
+        assert!(response.ok);
+        assert!(!app.should_quit);
+        assert!(matches!(
+            app.model.ui.active_modal,
+            Some(token::model::ModalState::UnsavedChanges(_))
+        ));
+        app.process_automation_msg(Msg::Ui(UiMsg::Modal(ModalMsg::ActivateRow(attempt))));
+        if attempt == 0 {
+            assert!(app.model.ui.active_modal.is_none());
+            assert!(!path.exists());
+            assert!(!app.should_quit);
+        }
+    }
+    assert!(
+        !app.should_quit,
+        "dispatching a write must not exit the window"
+    );
+    assert!(pump_until(&mut app, Duration::from_secs(5), |app| app.should_quit));
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "A");
+    assert!(!app.model.document().is_modified);
+}
+
+#[test]
 fn auto_save_runtime_focus_loss_saves_both_documents_and_preserves_focus() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);

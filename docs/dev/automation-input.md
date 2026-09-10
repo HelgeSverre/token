@@ -29,6 +29,8 @@ after the whole sequence. Supported events are:
 
 - `focus`: `focused` boolean. This can trigger configured auto-save. Send `true`
   to resume the application's focus lifecycle after a simulated loss.
+- `close`: requests window closing through the native close-event handler. Dirty
+  documents still require Save, Discard or Cancel; it does not force termination.
 - `pointer_move`: finite `x`, `y` in window-local **physical pixels**, not screen
   coordinates or logical points. Coordinates outside the window are allowed for
   captured drags.
@@ -61,7 +63,8 @@ node scripts/smoke-input.mjs target/release/bundle/osx/Token.app/Contents/MacOS/
 
 The script checks fractional scrolling with Find/folding, Find-bar wheel routing,
 both thumb drags and release, capture cancellation on focus loss, editor hit
-testing below Find, and active/background focus-loss saves. Fixtures,
+testing below Find, active/background focus-loss saves, and cancelled window
+closing followed by an ordinary save. Fixtures,
 configuration, and a JSON report stay under `target/verification/input-smoke/`.
 It closes only its own app process. Real trackpad delivery, OS focus switching
 and perceived smoothness still require a physical/native-platform check.

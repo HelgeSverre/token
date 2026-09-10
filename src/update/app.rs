@@ -108,7 +108,7 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             result,
         } => finish_load(model, target, path, identity, result),
 
-        AppMsg::Quit => Some(Cmd::Quit),
+        AppMsg::Quit => super::closing::request(model, crate::model::closing::CloseTarget::Quit),
 
         AppMsg::ReloadConfiguration => Some(Cmd::ReloadConfiguration),
         AppMsg::ThemeLoaded {
@@ -202,18 +202,7 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
         // =====================================================================
         // File Dialog Messages
         // =====================================================================
-        AppMsg::SaveFileAs => {
-            if !can_save_document(model, model.document().id?) {
-                return Some(Cmd::redraw_status_bar());
-            }
-            let target = model
-                .document_mut()
-                .begin_file_request(FileRequestKind::SaveDialog)?;
-            Some(Cmd::ShowSaveFileDialog {
-                suggested_path: target.source_path.clone(),
-                target,
-            })
-        }
+        AppMsg::SaveFileAs => request_save_as(model, model.document().id?),
 
         AppMsg::SaveFileAsDialogResult { target, path } => {
             let doc = model.editor_area.documents.get_mut(&target.document_id)?;
@@ -331,11 +320,23 @@ pub(super) fn save_document(model: &mut AppModel) -> Option<Cmd> {
     let document_id = doc.id?;
     match doc.file_path.clone() {
         Some(path) => request_save(model, document_id, path, SaveReason::Manual),
-        None => {
-            model.ui.set_status("No file path - cannot save");
-            Some(Cmd::redraw_status_bar())
-        }
+        None => request_save_as(model, document_id),
     }
+}
+
+pub(super) fn request_save_as(model: &mut AppModel, document_id: DocumentId) -> Option<Cmd> {
+    if !can_save_document(model, document_id) {
+        return Some(Cmd::redraw_status_bar());
+    }
+    let target = model
+        .editor_area
+        .documents
+        .get_mut(&document_id)?
+        .begin_file_request(FileRequestKind::SaveDialog)?;
+    Some(Cmd::ShowSaveFileDialog {
+        suggested_path: target.source_path.clone(),
+        target,
+    })
 }
 
 /// Prepare a specific document without moving focus or taking its final snapshot

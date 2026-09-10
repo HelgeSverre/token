@@ -1326,6 +1326,10 @@ pub(crate) fn with_modal_overlay_layout<R>(
 
     let modal = model.ui.active_modal.as_ref()?;
     match modal {
+        ModalState::UnsavedChanges(state) => Some(with_unsaved_changes_spec(state, |spec| {
+            let layout = overlay_surface::layout(spec, window_width, window_height, scale_factor);
+            f(spec, &layout)
+        })),
         ModalState::FileConflict(state) => Some(with_file_conflict_spec(state, |spec| {
             let layout = overlay_surface::layout(spec, window_width, window_height, scale_factor);
             f(spec, &layout)
@@ -1564,17 +1568,10 @@ fn with_file_conflict_spec<R>(
     state: &crate::model::FileConflictState,
     f: impl FnOnce(&OverlaySpec) -> R,
 ) -> R {
-    let rows: Vec<_> = state
+    let labels: Vec<_> = state
         .actions()
         .iter()
-        .map(|&action| Row {
-            icon: RowIcon::None,
-            label: state.label(action),
-            match_indices: &[],
-            detail: None,
-            detail_style: None,
-            accessory: Accessory::None,
-        })
+        .map(|&action| state.label(action))
         .collect();
     let title = match &state.observed.content {
         crate::model::DiskContent::Text(_) => "File changed outside Token",
@@ -1583,21 +1580,54 @@ fn with_file_conflict_spec<R>(
             "File could not be checked — local version retained"
         }
     };
+    with_confirmation_spec(
+        title,
+        &state.path.to_string_lossy(),
+        &labels,
+        state.selected_index,
+        f,
+    )
+}
+
+fn with_unsaved_changes_spec<R>(
+    state: &crate::model::UnsavedChangesState,
+    f: impl FnOnce(&OverlaySpec) -> R,
+) -> R {
+    with_confirmation_spec(
+        state.title(),
+        &state.description(),
+        state.actions(),
+        state.selected_index,
+        f,
+    )
+}
+
+/// Confirmation rows use one specification for layout, mouse hits and painting.
+fn with_confirmation_spec<R>(
+    title: &str,
+    description: &str,
+    labels: &[&str],
+    selected: usize,
+    f: impl FnOnce(&OverlaySpec) -> R,
+) -> R {
+    let rows: Vec<_> = labels
+        .iter()
+        .map(|&label| Row {
+            icon: RowIcon::None,
+            label,
+            match_indices: &[],
+            detail: None,
+            detail_style: None,
+            accessory: Accessory::None,
+        })
+        .collect();
     let sections = [Section {
         title: Some(title),
         rows: &rows,
     }];
-    let path = state.path.to_string_lossy();
-    let mut spec = list_shape_spec(
-        (0.6, 420.0, 640.0),
-        None,
-        &sections,
-        state.selected_index,
-        0,
-        true,
-    );
+    let mut spec = list_shape_spec((0.6, 420.0, 640.0), None, &sections, selected, 0, true);
     if let Some(header) = &mut spec.header {
-        header.text = &path;
+        header.text = description;
     }
     spec.footer = Some(Footer {
         leading: "Esc: keep editing",
@@ -1744,6 +1774,19 @@ pub fn render_modals(
     };
 
     match modal {
+        ModalState::UnsavedChanges(state) => with_unsaved_changes_spec(state, |spec| {
+            overlay_surface::render(
+                frame,
+                painter,
+                overlay_mask_cache,
+                &model.theme,
+                spec,
+                window_width,
+                window_height,
+                ctx.scale_factor,
+                false,
+            );
+        }),
         ModalState::FileConflict(state) => with_file_conflict_spec(state, |spec| {
             overlay_surface::render(
                 frame,

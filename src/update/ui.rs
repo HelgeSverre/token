@@ -188,6 +188,7 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             }
             // Open the requested modal
             let state = match modal_id {
+                ModalId::UnsavedChanges => return None, // Opened only for a concrete close intention.
                 ModalId::FileConflict => return super::file_change::show_focused(model, true),
                 ModalId::Settings => {
                     ModalState::Settings(crate::settings::SettingsState::default())
@@ -363,9 +364,10 @@ fn modal_editable_mut(modal: &mut ModalState) -> Option<&mut EditableState<Strin
         ModalState::ThemePicker(_) => None,
         ModalState::FileFinder(state) => Some(&mut state.editable),
         ModalState::RecentFiles(state) => Some(&mut state.editable),
-        ModalState::LspServers(_) | ModalState::LanguagePicker(_) | ModalState::FileConflict(_) => {
-            None
-        }
+        ModalState::LspServers(_)
+        | ModalState::LanguagePicker(_)
+        | ModalState::FileConflict(_)
+        | ModalState::UnsavedChanges(_) => None,
     }
 }
 
@@ -395,7 +397,8 @@ fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
         | ModalState::ThemePicker(_)
         | ModalState::LspServers(_)
         | ModalState::LanguagePicker(_)
-        | ModalState::FileConflict(_) => {}
+        | ModalState::FileConflict(_)
+        | ModalState::UnsavedChanges(_) => {}
     }
 }
 
@@ -880,6 +883,9 @@ fn activate_search_tab(model: &mut AppModel, index: usize) -> Option<Cmd> {
 /// A no-op for `Fields`/no-list contexts.
 fn set_modal_selected_index(modal: &mut ModalState, row: usize) {
     match modal {
+        ModalState::UnsavedChanges(state) => {
+            state.selected_index = row.min(state.actions().len() - 1)
+        }
         ModalState::FileConflict(state) => {
             state.selected_index = row.min(state.actions().len() - 1)
         }
@@ -918,6 +924,7 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
     let modal = model.ui.active_modal.clone();
     if let Some(modal) = modal {
         match modal {
+            ModalState::UnsavedChanges(state) => super::closing::confirm(model, state),
             ModalState::FileConflict(state) => super::file_change::resolve(model, state),
             ModalState::CommandPalette(state) => confirm_search_everywhere(model, state),
             ModalState::Settings(state)
@@ -1536,6 +1543,11 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
             );
             None
         }
+        ModalState::UnsavedChanges(state) => {
+            state.selected_index =
+                offset_selection(state.selected_index, state.actions().len(), delta);
+            None
+        }
         ModalState::FileConflict(state) => {
             state.selected_index =
                 offset_selection(state.selected_index, state.actions().len(), delta);
@@ -1668,6 +1680,13 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
                 forward,
             );
         }
+        ModalState::UnsavedChanges(state) => {
+            state.selected_index = if forward {
+                state.actions().len() - 1
+            } else {
+                0
+            };
+        }
         ModalState::FileConflict(state) => {
             state.selected_index = if forward {
                 state.actions().len() - 1
@@ -1703,7 +1722,9 @@ fn modal_scroll_to(model: &mut AppModel, position: Option<usize>, delta: isize) 
     let capacity = COMMAND_PALETTE_MAX_VISIBLE;
     let modal = model.ui.active_modal.as_mut()?;
     let (scroll, shapes): (&mut usize, Vec<SectionShape>) = match modal {
-        ModalState::Settings(_) | ModalState::FileConflict(_) => return None,
+        ModalState::Settings(_) | ModalState::FileConflict(_) | ModalState::UnsavedChanges(_) => {
+            return None
+        }
         ModalState::CommandPalette(state) => match state.active_tab {
             SearchTab::Commands => {
                 let shapes = commands_tab_shapes(state);

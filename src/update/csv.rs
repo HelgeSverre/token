@@ -415,32 +415,46 @@ fn start_editing_with_char(model: &mut AppModel, ch: char) -> Option<Cmd> {
 /// Confirm edit and sync to document, then move in specified direction
 fn confirm_edit(model: &mut AppModel, row_delta: i32) -> Option<Cmd> {
     let editor_id = model.editor_area.focused_group()?.active_editor_id()?;
-    let editor = model.editor_area.editors.get_mut(&editor_id)?;
-
-    let (edit, delimiter) = {
-        let csv = editor.view_mode.as_csv_mut()?;
-        let delimiter = csv.delimiter;
-        (csv.confirm_edit(), delimiter)
-    };
-
-    let mut sync_cmds = Vec::new();
-    if let Some(cell_edit) = edit {
-        let doc_id = editor.document_id?;
-        if let Some(doc) = model.editor_area.documents.get_mut(&doc_id) {
-            sync_cell_edit_to_document(doc, &cell_edit, delimiter);
-        }
-
-        sync_cmds.extend(schedule_syntax_parse(model, doc_id));
-        sync_cmds.extend(schedule_lsp_did_change(model, doc_id));
-
-        // Keep current column width - already correctly sized from grow-only updates during editing
-    }
-
-    // Move in specified direction after confirming edit
-    if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
-        if let Some(csv) = editor.view_mode.as_csv_mut() {
+    let command = commit_edit(model, editor_id);
+    // Move in specified direction after confirming edit.
+    if let Some(csv) = model
+        .editor_area
+        .editors
+        .get_mut(&editor_id)
+        .and_then(|editor| editor.view_mode.as_csv_mut())
+    {
+        if csv.editing.is_none() {
             csv.move_selection(row_delta, 0);
         }
+    }
+    command.or(Some(Cmd::redraw_editor()))
+}
+
+/// Commit a specific pane's cell buffer without moving focus or its selection.
+pub(super) fn commit_edit(model: &mut AppModel, editor_id: crate::model::EditorId) -> Option<Cmd> {
+    let editor = model.editor_area.editors.get_mut(&editor_id)?;
+    let doc_id = editor.document_id?;
+    let csv = editor.view_mode.as_csv_mut()?;
+    let edit = csv.editing.as_ref()?;
+    let mut sync_cmds = Vec::new();
+    if edit.is_modified() {
+        let cell_edit = CellEdit {
+            position: edit.position,
+            old_value: edit.original.clone(),
+            new_value: edit.buffer(),
+        };
+        let doc = model.editor_area.documents.get_mut(&doc_id)?;
+        if !sync_cell_edit_to_document(doc, &cell_edit, csv.delimiter) {
+            model
+                .ui
+                .set_status("CSV cell no longer matches the document; its edit is retained");
+            return Some(Cmd::Redraw);
+        }
+        csv.confirm_edit();
+        sync_cmds.extend(schedule_syntax_parse(model, doc_id));
+        sync_cmds.extend(schedule_lsp_did_change(model, doc_id));
+    } else {
+        csv.confirm_edit();
     }
 
     sync_cmds.push(Cmd::redraw_editor());
@@ -577,14 +591,14 @@ pub(crate) fn edit_paste_text(model: &mut AppModel, text: String) -> Option<Cmd>
 use crate::model::Document;
 
 /// Sync a cell edit back to the document text buffer
-fn sync_cell_edit_to_document(doc: &mut Document, edit: &CellEdit, delimiter: Delimiter) {
+fn sync_cell_edit_to_document(doc: &mut Document, edit: &CellEdit, delimiter: Delimiter) -> bool {
     let content = doc.buffer.to_string();
 
     let row_range = match find_row_byte_range(&content, edit.position.row) {
         Some(r) => r,
         None => {
             tracing::warn!("Could not find row {} in document", edit.position.row);
-            return;
+            return false;
         }
     };
 
@@ -598,7 +612,7 @@ fn sync_cell_edit_to_document(doc: &mut Document, edit: &CellEdit, delimiter: De
                 edit.position.col,
                 edit.position.row
             );
-            return;
+            return false;
         }
     };
 
@@ -620,6 +634,7 @@ fn sync_cell_edit_to_document(doc: &mut Document, edit: &CellEdit, delimiter: De
 
     doc.is_modified = true;
     doc.revision = doc.revision.wrapping_add(1);
+    true
 }
 
 /// Find byte range of a row in the document (excluding newline)

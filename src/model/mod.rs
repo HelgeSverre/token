@@ -2,6 +2,8 @@
 //!
 //! This module contains all the state types following the Elm Architecture pattern.
 
+pub(crate) mod closing;
+pub use closing::UnsavedChangesState;
 pub mod decorations;
 pub mod document;
 mod file_io;

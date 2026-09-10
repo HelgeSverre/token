@@ -1426,6 +1426,8 @@ impl App {
 
     fn handle_event_inner(&mut self, event: &WindowEvent) -> Option<Cmd> {
         match event {
+            // Titlebar/OS close and Quit use the same unsaved-change guard.
+            WindowEvent::CloseRequested => update(&mut self.model, Msg::App(AppMsg::Quit)),
             WindowEvent::Ime(winit::event::Ime::Preedit(text, _)) => {
                 self.auto_save.composition = (!text.is_empty())
                     .then(|| self.model.editor_area.focused_document_id())
@@ -5530,9 +5532,8 @@ impl ApplicationHandler for App {
         window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        let should_exit = matches!(event, WindowEvent::CloseRequested);
         let should_redraw = if let Some(window) = &self.window {
-            if window_id == window.id() && !should_exit {
+            if window_id == window.id() {
                 if let Some(cmd) = self.handle_event(&event) {
                     let needs_redraw = cmd.needs_redraw();
                     // Accumulate damage from command
@@ -5549,13 +5550,7 @@ impl ApplicationHandler for App {
             false
         };
 
-        if should_exit || self.should_quit {
-            // Window-close (titlebar X / OS gesture) bypasses Cmd::Quit, so
-            // run the same LSP shutdown->exit->kill sequence here.
-            if should_exit {
-                self.process_automation_msg(Msg::Completion(CompletionMsg::DismissInline));
-                self.graceful_lsp_teardown();
-            }
+        if self.should_quit {
             event_loop.exit();
         } else if should_redraw {
             if let Some(window) = &self.window {

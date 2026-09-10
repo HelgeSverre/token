@@ -166,12 +166,20 @@ fn apply_observation(
 }
 
 pub(super) fn show_focused(model: &mut AppModel, explicit: bool) -> Option<Cmd> {
+    show_document(model, model.try_document()?.id?, explicit)
+}
+
+pub(super) fn show_document(
+    model: &mut AppModel,
+    document_id: DocumentId,
+    explicit: bool,
+) -> Option<Cmd> {
     if model.ui.active_modal.is_some()
         || (!explicit && model.ui.focus != crate::model::ui::FocusTarget::Editor)
     {
         return None;
     }
-    let doc = model.try_document()?;
+    let doc = model.editor_area.documents.get(&document_id)?;
     let change = doc.external_change.as_ref()?;
     if change.notified && !explicit {
         return None;
@@ -192,7 +200,13 @@ pub(super) fn show_focused(model: &mut AppModel, explicit: bool) -> Option<Cmd> 
         observed: change.observed.clone(),
         selected_index: 0,
     };
-    model.document_mut().external_change.as_mut()?.notified = true;
+    model
+        .editor_area
+        .documents
+        .get_mut(&document_id)?
+        .external_change
+        .as_mut()?
+        .notified = true;
     model
         .ui
         .open_modal(crate::model::ModalState::FileConflict(state));

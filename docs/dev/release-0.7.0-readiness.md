@@ -79,9 +79,9 @@ just lint
   interaction remain unverified; native computer-use startup was unavailable.
 - Launch the resulting Linux/Windows and Intel macOS packages on those systems.
   Successful cross-compilation/packaging alone is not native interaction coverage.
-- Session restore retains saved-file layout, not unsaved-buffer recovery. The
-  pre-existing lack of a dirty-close/quit confirmation remains a separate safety
-  limitation; opt-in auto-save is not a replacement for either feature.
+- Session restore retains saved-file layout, not unsaved-buffer recovery.
+  Dirty-close/quit confirmation is covered by the unsaved-change follow-up below;
+  crash recovery remains separate from both confirmation and opt-in auto-save.
 
 Local fixtures and rendered checks are under
 `target/verification/release-0.7.0/`; they are not release assets or committed
@@ -193,3 +193,28 @@ Document-authored remote images and raw HTML are outside this renderer-asset che
 The 12 targeted renderer tests, strict lint and full suite passed (2,700 tests,
 seven skipped; two doctests passed, six ignored). Final release-candidate
 verification still needs to include the subsequent safety and Settings work.
+
+## Unsaved-change follow-up
+
+Tab, group, keyboard/menu Quit and native window-close requests now share one
+confirmation gate. Save/Save All waits for the existing asynchronous file pipeline,
+including untitled Save As dialogs. Failed/cancelled saves preserve tabs; changes
+made after confirmation are rechecked. Shared document views avoid unnecessary
+prompts, while pane-local CSV drafts are committed before saving or retained when
+they cannot be applied. Conflicting drafts for the same CSV cell stop closing.
+
+Verification: 2,709 tests passed, seven skipped; two doctests passed, six ignored;
+strict lint and optimized build passed. This includes nine focused safety tests,
+one of which reaches the real writer through the native close-event handler.
+The confirmation uses the same row/layout primitives as file-conflict dialogs;
+its production-renderer screenshot is `target/verification/closing/confirmation.png`.
+
+The updated native-handler smoke passed in
+`target/verification/input-smoke/run-dlDXft/`: fractional scrolling with Find and
+folding, both scrollbar drags, focus/capture, hit testing, active/background
+auto-save, and a cancelled close followed by an ordinary save without exiting.
+An initial concurrent run timed out during window startup; the unchanged release
+binary passed on retry after the full suite finished. No timeouts or host security
+settings were changed. These are synthetic handler checks, not physical trackpad
+or OS focus-delivery coverage. Settings and final cross-platform release gates
+remain pending; no release was published.

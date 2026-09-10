@@ -77,6 +77,8 @@ pub(crate) enum AutomationRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum InputEvent {
+    /// Requests a normal window close; unsaved-change confirmation still applies.
+    Close,
     Focus {
         focused: bool,
     },
@@ -123,6 +125,7 @@ impl InputEvent {
         }
         let device_id = DeviceId::dummy();
         Ok(match self {
+            Self::Close => WindowEvent::CloseRequested,
             Self::Focus { focused } => WindowEvent::Focused(focused),
             Self::PointerMove { x, y } => WindowEvent::CursorMoved {
                 device_id,
@@ -662,6 +665,22 @@ fn find_bar_snapshot(model: &AppModel) -> Option<OverlaySnapshot> {
 
 fn overlay_snapshot(modal: &token::model::ModalState) -> Option<OverlaySnapshot> {
     match modal {
+        token::model::ModalState::UnsavedChanges(state) => Some(OverlaySnapshot {
+            context: "unsaved_changes".to_owned(),
+            query: String::new(),
+            active_tab: None,
+            rows: state
+                .actions()
+                .iter()
+                .map(|&label| OverlayRowSnapshot {
+                    label: label.to_owned(),
+                    section: None,
+                })
+                .collect(),
+            selected: state.selected_index,
+            status: Some(state.description()),
+            options: Vec::new(),
+        }),
         token::model::ModalState::FileConflict(state) => Some(OverlaySnapshot {
             context: "file_conflict".to_owned(),
             query: String::new(),

@@ -6,6 +6,14 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Unsaved-change protection
+
+- Ask to Save, Discard or Cancel before closing unsaved tabs, split groups or the
+  application. Closing waits for successful saves, including Save As for untitled
+  files and pending CSV cell edits. Failed/cancelled saves keep tabs open, and
+  closing one split view does not prompt when another view retains the document.
+- Save opens a Save As dialog for untitled documents.
+
 ### Offline Markdown preview
 
 - Bundle Mermaid and Markdown code highlighting with the application. Diagrams

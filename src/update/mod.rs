@@ -16,6 +16,7 @@
 
 mod app;
 pub mod auto_save;
+mod closing;
 mod completion;
 pub mod context_menu;
 mod csv;
@@ -135,6 +136,7 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let result = update_traced(model, msg);
     #[cfg(not(debug_assertions))]
     let result = update_inner(model, msg);
+    let result = merge_cmds(result, closing::reconcile(model));
     let result = merge_cmds(result, usages::reconcile(model));
     let result = merge_cmds(result, file_change::reconcile(model));
     let result = merge_cmds(result, file_policy::reconcile(model));

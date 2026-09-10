@@ -235,6 +235,37 @@ try {
     "saved second\n",
   );
   checks.push("focus-loss auto-save writes active and background documents");
+  await focus(true);
+  await request({ type: "insert_text", text: "keep unsaved " });
+  current = await input({ kind: "close" });
+  assert.equal(current.overlay?.context, "unsaved_changes");
+  assert.deepEqual(
+    current.overlay.rows.map((row) => row.label),
+    ["Cancel", "Save", "Discard Changes"],
+  );
+  assert(current.modified);
+  assert.equal(
+    await readFile(path.join(fixture, "second.txt"), "utf8"),
+    "saved second\n",
+  );
+  // Replacing the confirmation cancels the close intention. A later ordinary
+  // save must not unexpectedly close this window when its async reply arrives.
+  await action("OpenSettings");
+  await action("OpenSettings");
+  await action("SaveFile");
+  await until(
+    async () => !(await state()).modified,
+    "ordinary save after cancelled closing",
+  );
+  assert.equal(child.exitCode, null);
+  assert(
+    (await readFile(path.join(fixture, "second.txt"), "utf8")).includes(
+      "keep unsaved ",
+    ),
+  );
+  checks.push(
+    "window close protects dirty text; cancelling the intention allows a later save without exiting",
+  );
   const report = {
     binary,
     fixture,

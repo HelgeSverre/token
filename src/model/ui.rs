@@ -80,6 +80,7 @@ pub enum HoverRegion {
 /// Identifies which modal is currently active
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModalId {
+    UnsavedChanges,
     FileConflict,
     Settings,
     /// Command palette (Shift+Cmd+A)
@@ -1038,6 +1039,7 @@ impl RecentFilesState {
 /// Union of all modal states
 #[derive(Debug, Clone)]
 pub enum ModalState {
+    UnsavedChanges(super::UnsavedChangesState),
     FileConflict(super::FileConflictState),
     Settings(crate::settings::SettingsState),
     CommandPalette(CommandPaletteState),
@@ -1054,6 +1056,7 @@ impl ModalState {
     /// Get the modal ID for this state
     pub fn id(&self) -> ModalId {
         match self {
+            ModalState::UnsavedChanges(_) => ModalId::UnsavedChanges,
             ModalState::FileConflict(_) => ModalId::FileConflict,
             ModalState::Settings(_) => ModalId::Settings,
             ModalState::CommandPalette(_) => ModalId::CommandPalette,

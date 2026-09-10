@@ -88,8 +88,22 @@ from the manual `format_on_save` setting.
 Write failures preserve unsaved contents and show `!` in the tab plus **Save
 failed** in the status bar. They do not repeatedly retry the same revision;
 new edits or a successful manual save allow saving again. The writer retains
-its external-change checks. Auto-save does not recover untitled text or edits
-closed before their timer fires, and is not crash recovery.
+its external-change checks. Auto-save does not recover untitled text and is not
+crash recovery.
+
+### Closing unsaved files
+
+Closing an unsaved tab, split group or window asks to **Save**, **Discard Changes**
+or **Cancel**. Multiple affected documents offer Save All and Discard All Changes.
+Save waits for the disk write to succeed; untitled documents open Save As one at a
+time. Cancelling a dialog or a failed write keeps the tabs open. Ordinary Save
+also opens Save As for an untitled document.
+
+Closing one view of a document does not prompt if another view keeps its edits.
+Uncommitted CSV cell text belongs to its pane and is protected separately: Save
+commits it before writing. Conflicting edits to the same cell in two views, or a
+cell removed from the source, stop closing and retain the drafts for review.
+This confirmation is independent of auto-save; it is not crash recovery.
 
 ### Session restore
 

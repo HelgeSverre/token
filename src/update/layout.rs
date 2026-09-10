@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use crate::commands::Cmd;
 use crate::messages::LayoutMsg;
+use crate::model::closing::CloseTarget;
 use crate::model::editor::{TabContent, ViewMode};
 use crate::model::ui::SplitterDragState;
 use crate::model::{
@@ -65,15 +66,11 @@ pub(super) fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd>
             Some(Cmd::Redraw)
         }
 
-        LayoutMsg::CloseGroup(group_id) => {
-            let released_documents = close_group(model, group_id);
-            Some(with_released_documents(Cmd::Redraw, released_documents))
-        }
+        LayoutMsg::CloseGroup(group_id) => request_close_group(model, group_id),
 
         LayoutMsg::CloseFocusedGroup => {
             let group_id = model.editor_area.focused_group_id;
-            let released_documents = close_group(model, group_id);
-            Some(with_released_documents(Cmd::Redraw, released_documents))
+            request_close_group(model, group_id)
         }
 
         LayoutMsg::FocusGroup(group_id) => {
@@ -119,31 +116,14 @@ pub(super) fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd>
         }
 
         LayoutMsg::CloseTab(tab_id) => {
-            let released_documents = close_tab(model, tab_id);
-            ensure_focused_tab_visible(model);
-            Some(with_released_documents(
-                Cmd::redraw_editor(),
-                released_documents,
-            ))
+            super::closing::request(model, CloseTarget::Tabs(vec![tab_id]))
         }
 
         LayoutMsg::CloseOtherTabs { group_id, keep } => {
-            let released_documents = close_other_tabs(model, group_id, Some(keep));
-            ensure_focused_tab_visible(model);
-            Some(with_released_documents(
-                Cmd::redraw_editor(),
-                released_documents,
-            ))
+            request_close_tabs(model, group_id, Some(keep))
         }
 
-        LayoutMsg::CloseAllTabs { group_id } => {
-            let released_documents = close_other_tabs(model, group_id, None);
-            ensure_focused_tab_visible(model);
-            Some(with_released_documents(
-                Cmd::redraw_editor(),
-                released_documents,
-            ))
-        }
+        LayoutMsg::CloseAllTabs { group_id } => request_close_tabs(model, group_id, None),
 
         LayoutMsg::CloseFocusedTab => {
             if let Some(tab) = model
@@ -152,12 +132,7 @@ pub(super) fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd>
                 .and_then(|g| g.active_tab())
             {
                 let tab_id = tab.id;
-                let released_documents = close_tab(model, tab_id);
-                ensure_focused_tab_visible(model);
-                return Some(with_released_documents(
-                    Cmd::redraw_editor(),
-                    released_documents,
-                ));
+                return super::closing::request(model, CloseTarget::Tabs(vec![tab_id]));
             }
             Some(Cmd::redraw_editor())
         }
@@ -1127,44 +1102,51 @@ fn close_tab(model: &mut AppModel, tab_id: TabId) -> Vec<crate::model::editor_ar
     released_documents
 }
 
-/// Close every tab in `group_id` except `keep` (context-menu.md's "Close
-/// Others" / "Close All" — `keep: None` closes every tab). Repeatedly
-/// drives the single-tab `close_tab` (its "don't close the last tab in the
-/// last group" invariant then applies here too: if `group_id` is the only
-/// group, one tab always survives, matching every other close-tab path in
-/// the app rather than introducing a no-tabs-open state this doc doesn't
-/// ask for).
-fn close_other_tabs(
-    model: &mut AppModel,
-    group_id: GroupId,
-    keep: Option<TabId>,
-) -> Vec<crate::model::editor_area::DocumentId> {
-    let mut released = Vec::new();
-    while let Some(next) = model
+fn request_close_group(model: &mut AppModel, group_id: GroupId) -> Option<Cmd> {
+    if model.editor_area.groups.len() <= 1 {
+        return None;
+    }
+    request_close_tabs(model, group_id, None)
+}
+
+/// Capture the tabs, not a future mutable group. Tabs opened while saving survive.
+fn request_close_tabs(model: &mut AppModel, group_id: GroupId, keep: Option<TabId>) -> Option<Cmd> {
+    let tabs = model
         .editor_area
         .groups
-        .get(&group_id)
-        .and_then(|group| group.tabs.iter().map(|t| t.id).find(|id| Some(*id) != keep))
-    {
-        let before = model
-            .editor_area
-            .groups
-            .get(&group_id)
-            .map(|g| g.tabs.len());
-        released.extend(close_tab(model, next));
-        // `close_tab` refuses to remove the last tab in the last group —
-        // stop once it stops making progress, or every candidate is gone.
-        if model
-            .editor_area
-            .groups
-            .get(&group_id)
-            .map(|g| g.tabs.len())
-            == before
-        {
-            break;
-        }
-    }
-    released
+        .get(&group_id)?
+        .tabs
+        .iter()
+        .filter(|tab| Some(tab.id) != keep)
+        .map(|tab| tab.id)
+        .collect();
+    super::closing::request(model, CloseTarget::Tabs(tabs))
+}
+
+/// Called only after the shared close gate approves the captured tabs.
+pub(super) fn close_tabs(model: &mut AppModel, tabs: &[TabId]) -> Cmd {
+    let released = closable_tabs(model, tabs)
+        .into_iter()
+        .flat_map(|tab| close_tab(model, tab))
+        .collect();
+    ensure_focused_tab_visible(model);
+    with_released_documents(Cmd::Redraw, released)
+}
+
+/// Preserve one tab, in the same request order for confirmation and removal.
+pub(super) fn closable_tabs(model: &AppModel, requested: &[TabId]) -> Vec<TabId> {
+    let open: Vec<_> = model
+        .editor_area
+        .groups
+        .values()
+        .flat_map(|group| group.tabs.iter().map(|tab| tab.id))
+        .collect();
+    requested
+        .iter()
+        .copied()
+        .filter(|id| open.contains(id))
+        .take(open.len().saturating_sub(1))
+        .collect()
 }
 
 // ============================================================================
