@@ -4,6 +4,14 @@ All notable changes to rust-editor are documented in this file.
 
 ---
 
+## Unreleased
+
+### Automation
+
+- Add window-local focus, pointer and pixel/line wheel input to the automation
+  bridge, CLI and MCP. State reports shared editor/scrollbar geometry for targeting
+  input without moving the system cursor.
+
 ## v0.7.0 - 2026-09-10
 
 This release adds code folding, pixel scrolling, docked Find and Replace,

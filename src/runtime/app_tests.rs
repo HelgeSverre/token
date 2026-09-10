@@ -52,9 +52,15 @@ fn auto_save_runtime_focus_loss_saves_both_documents_and_preserves_focus() {
     app.model.document_mut().file_path = Some(second.clone());
     app.process_automation_msg(Msg::Document(DocumentMsg::InsertChar('B')));
     let focused = app.model.document().id;
-    if let Some(cmd) = app.handle_event(&WindowEvent::Focused(false)) {
-        app.process_cmd(cmd);
-    }
+    assert!(
+        send_automation_request(
+            &mut app,
+            AutomationRequest::Input {
+                events: vec![crate::automation::InputEvent::Focus { focused: false }],
+            },
+        )
+        .ok
+    );
     assert!(app.check_auto_save(Instant::now()));
     assert!(pump_until(&mut app, Duration::from_secs(5), |app| !app
         .model
@@ -972,6 +978,74 @@ fn soft_wrap_automation_reports_visual_rows_and_preserves_document() {
     assert!(response.ok);
     assert_eq!(app.model.editor().cursors[0].line, 0);
     assert!(app.model.editor().cursors[0].column > 0);
+}
+
+#[test]
+fn automation_input_preserves_pixel_deltas_and_rejects_invalid_coordinates() {
+    use crate::automation::{InputEvent, WheelUnit};
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    app.model.config = token::config::EditorConfig::default();
+    let text = "a line of text\n".repeat(200);
+    app.model.document_mut().buffer = ropey::Rope::from_str(&text);
+    app.model.resize(800, 600);
+    app.process_automation_msg(Msg::Ui(UiMsg::OpenFind { replace: false }));
+    // No renderer in this test; native pointer hit testing is covered by the
+    // release smoke script. Route wheel input to text while Find owns focus.
+    app.model.ui.hover = token::model::HoverRegion::EditorText;
+    let response = send_automation_request(
+        &mut app,
+        AutomationRequest::Input {
+            events: vec![InputEvent::Wheel {
+                x: 0.0,
+                y: -13.5,
+                unit: WheelUnit::Pixels,
+            }],
+        },
+    );
+    assert!(response.ok);
+    let state = response.state.unwrap();
+    assert_eq!(state.viewport_pixel_position.1, 13.5);
+    assert!(!state.scroll_animating);
+    assert!(state.editor_geometry.unwrap().find_bar[3] > 0.0);
+    assert_eq!(app.model.ui.focus, token::model::FocusTarget::FindBar);
+
+    let response = send_automation_request(
+        &mut app,
+        AutomationRequest::Input {
+            events: vec![InputEvent::Wheel {
+                x: 0.0,
+                y: -1.0,
+                unit: WheelUnit::Lines,
+            }],
+        },
+    );
+    assert!(response.state.unwrap().scroll_animating);
+    let response = send_automation_request(
+        &mut app,
+        AutomationRequest::Input {
+            events: vec![InputEvent::Focus { focused: false }],
+        },
+    );
+    assert!(!response.state.unwrap().scroll_animating);
+
+    let previous = app.mouse_position;
+    for x in [f64::NAN, f64::INFINITY, f64::MAX] {
+        let response = send_automation_request(
+            &mut app,
+            AutomationRequest::Input {
+                events: vec![
+                    InputEvent::PointerMove { x: 10.0, y: 5.0 },
+                    InputEvent::PointerMove { x, y: 10.0 },
+                ],
+            },
+        );
+        assert!(!response.ok);
+        assert_eq!(app.mouse_position, previous);
+    }
+    for events in [vec![], vec![InputEvent::Focus { focused: true }; 65]] {
+        assert!(!send_automation_request(&mut app, AutomationRequest::Input { events }).ok);
+    }
+    assert_eq!(app.model.document().buffer.to_string(), text);
 }
 
 /// A fake llama-server answering every `/infill` with `content`.

@@ -44,6 +44,9 @@ Language integration guide: [Adding Tree-sitter languages](feature/adding-langua
 
 ### Behavior Contracts
 
+[Window-local automation input](dev/automation-input.md) documents pointer,
+wheel and focus event injection and the repeatable native smoke check.
+
 These documents define invariants that implementations must preserve:
 
 | Contract                                             | Description                                |

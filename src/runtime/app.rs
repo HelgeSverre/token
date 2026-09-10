@@ -5976,6 +5976,40 @@ impl App {
                         .send(self.automation_response("scrolled"));
                     redraw = true;
                 }
+                AutomationRequest::Input { events } => {
+                    // Validate the whole sequence before dispatching any event.
+                    let events = if events.is_empty() || events.len() > automation::MAX_INPUT_EVENTS
+                    {
+                        Err("input requires 1–64 events")
+                    } else {
+                        events
+                            .into_iter()
+                            .map(|event| {
+                                let event = event.into_window_event()?;
+                                if matches!(event, WindowEvent::MouseInput { .. })
+                                    && self.renderer.is_none()
+                                {
+                                    return Err("pointer buttons require a rendered window");
+                                }
+                                Ok(event)
+                            })
+                            .collect::<Result<Vec<_>, _>>()
+                    };
+                    let response = match events {
+                        Ok(events) => {
+                            for event in events {
+                                if let Some(cmd) = self.handle_event(&event) {
+                                    redraw |= cmd.needs_redraw();
+                                    self.pending_damage.merge(cmd.damage());
+                                    self.process_cmd(cmd);
+                                }
+                            }
+                            self.automation_response("input dispatched")
+                        }
+                        Err(error) => AutomationResponse::error(error),
+                    };
+                    let _ = envelope.response_tx.send(response);
+                }
                 AutomationRequest::SetOverlayInput { text } => {
                     if self.model.ui.active_modal.is_some()
                         || self.model.ui.focus == token::model::FocusTarget::FindBar

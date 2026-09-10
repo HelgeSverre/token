@@ -36,6 +36,12 @@ struct ScrollParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct InputParams {
+    events: Vec<automation::InputEvent>,
+    instance: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct ProfileParams {
     frames: usize,
     instance: Option<u32>,
@@ -208,6 +214,16 @@ impl TokenMcp {
         Parameters(ScrollParams { lines, instance }): Parameters<ScrollParams>,
     ) -> CallToolResult {
         response(target(instance), AutomationRequest::Scroll { lines }).await
+    }
+
+    #[tool(
+        description = "Dispatch 1–64 window-local focus, pointer or wheel events through Token's native handler without interleaving native input. Group move+wheel or move+press in one call. Inspect editor_geometry for physical-pixel targets. Does not move the OS cursor or switch apps; focus loss can trigger configured auto-save. Use an explicit instance."
+    )]
+    async fn input(
+        &self,
+        Parameters(InputParams { events, instance }): Parameters<InputParams>,
+    ) -> CallToolResult {
+        response(target(instance), AutomationRequest::Input { events }).await
     }
 
     #[tool(

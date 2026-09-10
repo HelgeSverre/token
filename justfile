@@ -84,6 +84,11 @@ test filter="":
 test-one name:
     cargo nextest run {{ name }}
 
+# Synthetic native-handler smoke checks in an isolated window (macOS/Linux).
+[group('check')]
+smoke-input: release
+    node scripts/smoke-input.mjs
+
 [group('check')]
 test-verbose filter="":
     cargo test {{ filter }} -- --nocapture

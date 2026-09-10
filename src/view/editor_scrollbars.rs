@@ -121,8 +121,8 @@ fn overview_mark_color(model: &AppModel, mark: Mark) -> u32 {
     }
 }
 
-/// Physical-pixel extents shared by scrollbar painting and hit testing.
-pub(super) fn scrollbar_states(
+/// Physical-pixel extents shared by scrollbar painting, hit testing and automation.
+pub fn scrollbar_states(
     model: &AppModel,
     editor: &EditorState,
     document: &Document,

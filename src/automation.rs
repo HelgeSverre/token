@@ -18,6 +18,7 @@ pub(crate) const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_MESSAGE_SIZE: ByteSize = ByteSize::mebibytes(4);
 const MAX_DOCUMENT_SIZE: ByteSize = ByteSize::mebibytes(3);
+pub(crate) const MAX_INPUT_EVENTS: usize = 64;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -47,6 +48,10 @@ pub(crate) enum AutomationRequest {
     Scroll {
         lines: i32,
     },
+    /// A bounded sequence dispatched without interleaving native input.
+    Input {
+        events: Vec<InputEvent>,
+    },
     ProfileFrames {
         frames: usize,
     },
@@ -65,6 +70,89 @@ pub(crate) enum AutomationRequest {
         #[serde(default)]
         wait: bool,
     },
+}
+
+/// Window-local input: does not move the OS cursor or switch applications.
+/// Coordinates and pixel deltas use physical pixels, as reported by state.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum InputEvent {
+    Focus {
+        focused: bool,
+    },
+    PointerMove {
+        x: f64,
+        y: f64,
+    },
+    PointerButton {
+        button: InputButton,
+        pressed: bool,
+    },
+    /// Positive deltas scroll toward the start, matching winit wheel events.
+    Wheel {
+        x: f64,
+        y: f64,
+        unit: WheelUnit,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum InputButton {
+    Left,
+    Right,
+    Middle,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum WheelUnit {
+    Pixels,
+    Lines,
+}
+
+impl InputEvent {
+    pub(crate) fn into_window_event(self) -> Result<winit::event::WindowEvent, &'static str> {
+        use winit::event::{
+            DeviceId, ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
+        };
+        if let Self::PointerMove { x, y } | Self::Wheel { x, y, .. } = &self {
+            if !(*x as f32).is_finite() || !(*y as f32).is_finite() {
+                return Err("input coordinates and deltas must be finite and fit in f32");
+            }
+        }
+        let device_id = DeviceId::dummy();
+        Ok(match self {
+            Self::Focus { focused } => WindowEvent::Focused(focused),
+            Self::PointerMove { x, y } => WindowEvent::CursorMoved {
+                device_id,
+                position: winit::dpi::PhysicalPosition::new(x, y),
+            },
+            Self::PointerButton { button, pressed } => WindowEvent::MouseInput {
+                device_id,
+                state: if pressed {
+                    ElementState::Pressed
+                } else {
+                    ElementState::Released
+                },
+                button: match button {
+                    InputButton::Left => MouseButton::Left,
+                    InputButton::Right => MouseButton::Right,
+                    InputButton::Middle => MouseButton::Middle,
+                },
+            },
+            Self::Wheel { x, y, unit } => WindowEvent::MouseWheel {
+                device_id,
+                delta: match unit {
+                    WheelUnit::Pixels => {
+                        MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition::new(x, y))
+                    }
+                    WheelUnit::Lines => MouseScrollDelta::LineDelta(x as f32, y as f32),
+                },
+                phase: TouchPhase::Moved,
+            },
+        })
+    }
 }
 
 /// One path in an `OpenPaths` request; `line`/`column` are 1-indexed.
@@ -139,6 +227,11 @@ pub(crate) struct EditorSnapshot {
     pub viewport_left_column: usize,
     pub viewport_pixel_position: (f64, f64),
     pub scroll_animating: bool,
+    /// Focused plain-text pane geometry; absent for special document tabs.
+    #[serde(default)]
+    pub editor_geometry: Option<EditorGeometrySnapshot>,
+    #[serde(default)]
+    pub scrollbar_dragging: bool,
     pub soft_wrap: bool,
     pub visual_row_count: usize,
     /// The active overlay (command palette, etc.), if one is open —
@@ -177,6 +270,56 @@ pub(crate) struct EditorSnapshot {
     /// The context menu (context-menu.md), if open — `None` when
     /// `ui.cursor_overlay`'s kind isn't `ContextMenu`.
     pub context_menu: Option<ContextMenuSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct EditorGeometrySnapshot {
+    /// Rectangles are [x, y, width, height] in window-local physical pixels.
+    pub content: [f32; 4],
+    pub find_bar: [f32; 4],
+    pub text_start_x: usize,
+    pub vertical_scrollbar: Option<ScrollbarSnapshot>,
+    pub horizontal_scrollbar: Option<ScrollbarSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ScrollbarSnapshot {
+    pub track: [f32; 4],
+    pub thumb: [f32; 4],
+}
+
+fn rect_snapshot(rect: token::model::Rect) -> [f32; 4] {
+    [rect.x, rect.y, rect.width, rect.height]
+}
+
+fn editor_geometry_snapshot(model: &AppModel) -> Option<EditorGeometrySnapshot> {
+    use token::view::{
+        editor_scrollbars::scrollbar_states, geometry::GroupLayout, scrollbar::ScrollbarGeometry,
+    };
+    let editor = model.editor();
+    if !editor.is_plain_text_mode() {
+        return None;
+    }
+    let layout = GroupLayout::new(model.editor_area.focused_group()?, model, model.char_width);
+    let scrollbar = |geometry: ScrollbarGeometry| {
+        (model.config.show_scrollbar && geometry.needed).then(|| ScrollbarSnapshot {
+            track: rect_snapshot(geometry.track_rect),
+            thumb: rect_snapshot(geometry.thumb_rect),
+        })
+    };
+    let (vertical, horizontal) = scrollbar_states(model, editor, model.document(), &layout);
+    Some(EditorGeometrySnapshot {
+        content: rect_snapshot(layout.content_rect),
+        find_bar: rect_snapshot(layout.find_bar_rect),
+        text_start_x: layout.text_start_x,
+        vertical_scrollbar: layout
+            .v_scrollbar_rect(model.metrics.scrollbar_width)
+            .and_then(|track| scrollbar(ScrollbarGeometry::vertical(track, &vertical))),
+        horizontal_scrollbar: layout
+            .h_scrollbar_rect(model.metrics.scrollbar_width)
+            .filter(|_| !editor.soft_wrap)
+            .and_then(|track| scrollbar(ScrollbarGeometry::horizontal(track, &horizontal))),
+    })
 }
 
 /// A read-only view of the open context menu, for automation to drive
@@ -840,6 +983,8 @@ impl EditorSnapshot {
             viewport_top_line: viewport.top_line,
             viewport_pixel_position: model.editor().pixel_scroll_position(),
             scroll_animating: viewport.animation.is_some(),
+            editor_geometry: editor_geometry_snapshot(model),
+            scrollbar_dragging: model.ui.scrollbar_drag.is_some(),
             viewport_left_column: viewport.left_column,
             soft_wrap: model.editor().soft_wrap,
             visual_row_count: model.editor().viewport_map(document).row_count(),
@@ -1505,6 +1650,10 @@ fn parse_cli(mut args: impl Iterator<Item = String>) -> Result<(Target, CliComma
         "scroll" => AutomationRequest::Scroll {
             lines: parse_arg(args.next(), "lines")?,
         },
+        "input" => AutomationRequest::Input {
+            events: serde_json::from_str(&args.next().ok_or("missing input event array JSON")?)
+                .map_err(|error| format!("invalid input events: {error}"))?,
+        },
         "profile" => AutomationRequest::ProfileFrames {
             frames: parse_arg(args.next(), "frames")?,
         },
@@ -1519,7 +1668,7 @@ fn parse_cli(mut args: impl Iterator<Item = String>) -> Result<(Target, CliComma
         },
         _ => {
             return Err(format!(
-            "unknown automation command `{command}`; use instances, state, document, actions, text, cursor, selection, action, scroll, profile, syntax-profile, overlay-input, or open (prefix with --instance <id> to pick an editor)"
+            "unknown automation command `{command}`; use instances, state, document, actions, text, cursor, selection, action, scroll, input, profile, syntax-profile, overlay-input, or open (prefix with --instance <id> to pick an editor)"
         ))
         }
     };

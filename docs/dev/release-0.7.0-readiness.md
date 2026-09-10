@@ -66,15 +66,17 @@ just lint
 
 ## Before publishing
 
-- Obtain green hosted CI and all four packaging jobs on the final non-release
-  source revision; then recheck the exact release candidate if source changes.
-  The source checks are [CI](https://github.com/HelgeSverre/token/actions/runs/34483137098)
-  and [Build](https://github.com/HelgeSverre/token/actions/runs/34483137003) at
-  `38e94bf`; they were started by pushing the non-release commits to `main`.
-- Perform a controlled physical focus-loss auto-save check, trackpad scrolling
-  with folding/Find, scrollbar dragging, and LSP Configure pointer interaction.
-  Native computer-use startup failed for both Token and Finder in this session;
-  semantic automation does not substitute for these OS/pointer checks.
+- [Hosted CI](https://github.com/HelgeSverre/token/actions/runs/34483137098)
+  passed on `38e94bf`. [Packaging](https://github.com/HelgeSverre/token/actions/runs/34483137003)
+  passed for Linux and both macOS targets. Windows compiled, but MSI generation
+  failed because cargo-bundle rejected `Inter-OFL.txt` as a Component `KeyPath`.
+  Windows also warned that the 512-pixel icon exceeded the ICO encoder's
+  256-pixel limit. Resolve these packaging issues and recheck the final source
+  revision before publishing.
+- The input-handler checks below now cover focus-loss saving, scrolling, drag
+  capture and Find hit testing through the running app's bridge. OS event
+  delivery, perceived trackpad smoothness and native LSP Configure pointer
+  interaction remain unverified; native computer-use startup was unavailable.
 - Launch the resulting Linux/Windows and Intel macOS packages on those systems.
   Successful cross-compilation/packaging alone is not native interaction coverage.
 - Session restore retains saved-file layout, not unsaved-buffer recovery. The
@@ -84,3 +86,29 @@ just lint
 Local fixtures and rendered checks are under
 `target/verification/release-0.7.0/`; they are not release assets or committed
 source. No temporary Cargo target directory was used.
+
+## Automation input follow-up
+
+The [input bridge](automation-input.md) now accepts bounded event sequences and
+uses the actual window-event handler plus shared editor/scrollbar geometry.
+An initial single-event API allowed real mouse movement to replace the pointer
+between automation calls: the trace showed a move to Find at `(525, 55.5)` followed
+by a wheel event at the native position `(304.39, 309.11)` over editor text.
+Grouping move+wheel/press in one dispatch addresses that demonstrated race
+without suppressing native input or bypassing hit testing.
+
+`just smoke-input` passed, followed by three consecutive successful repeats.
+Each verified fractional pixel scrolling with Find/folding, Find-bar wheel
+routing, both scrollbar drags and release, capture cancellation on focus loss,
+text hit testing below Find, and active/background focus-loss saves with disk
+readback. The existing save test now enters through the bridge; one additional
+test covers pixel/line behavior, invalid-sequence rejection and bounds. Final
+local tests: **2,699 passed**, seven skipped; two doctests passed, six ignored;
+strict Clippy passed. MCP initialization and tools/list exposed the new typed
+`input` schema successfully. These additions remain local with the release
+preparation; hosted results above predate them.
+
+The rebuilt macOS `.app` also passed the same complete smoke check. Its local
+JSON report is `target/verification/input-smoke/run-k7tiNB/report.json`. All five
+final-API runs exited normally; the native mouse-interleaving failures above
+were from the superseded single-event API, not retried into a passing result.
