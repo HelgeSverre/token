@@ -1,0 +1,1785 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Token · Settings prototype</title>
+    <style>
+      @font-face {
+        font-family: Inter;
+        src: url("../assets/Inter-Regular.ttf");
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "JetBrains Mono";
+        src: url("../assets/JetBrainsMono.ttf");
+        font-display: swap;
+      }
+      :root {
+        color-scheme: dark;
+        --desk: #111214;
+        --bg: #181818;
+        --rail: #1b1b1c;
+        --chrome: #222325;
+        --field: #111214;
+        --raised: #2a2d31;
+        --hover: #292b2e;
+        --selected: #273447;
+        --line: #34373b;
+        --soft-line: #2a2c2f;
+        --text: #d7dae0;
+        --bright: #fffef8;
+        --muted: #969da8;
+        --faint: #767d86;
+        --accent: #80aeff;
+        --primary: #336dc2;
+        --green: #8cad80;
+        --red: #ee9999;
+        --amber: #dfbd83;
+        --shadow: #0005;
+        --ui: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+        --code: "JetBrains Mono", ui-monospace, Menlo, monospace;
+      }
+      [data-theme="light"] {
+        color-scheme: light;
+        --desk: #e4e5e7;
+        --bg: #fafafa;
+        --rail: #f2f2f3;
+        --chrome: #eceef0;
+        --field: #fff;
+        --raised: #f3f4f5;
+        --hover: #e8ebef;
+        --selected: #e3ebf7;
+        --line: #cdd1d6;
+        --soft-line: #e4e6e9;
+        --text: #373b42;
+        --bright: #202329;
+        --muted: #656d78;
+        --faint: #757d86;
+        --accent: #275dae;
+        --primary: #336dc2;
+        --green: #497740;
+        --red: #b83f3f;
+        --amber: #8b622c;
+        --shadow: #252c381a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: var(--desk);
+        color: var(--text);
+        font: 13px/1.5 var(--ui);
+        -webkit-font-smoothing: antialiased;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      button,
+      input,
+      select,
+      textarea,
+      summary,
+      a {
+        outline-offset: 3px;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+      }
+      button {
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        background: var(--raised);
+        padding: 5px 11px;
+        min-height: 29px;
+      }
+      button:hover:not(:disabled) {
+        background: var(--hover);
+        border-color: var(--faint);
+      }
+      button.primary {
+        background: var(--primary);
+        color: #fff;
+        border-color: var(--primary);
+      }
+      button.primary:hover:not(:disabled) {
+        background: #3d7cda;
+        border-color: #3d7cda;
+      }
+      button.quiet {
+        background: transparent;
+        border-color: transparent;
+        color: var(--muted);
+      }
+      button.quiet:hover:not(:disabled) {
+        color: var(--text);
+        background: var(--hover);
+        border-color: transparent;
+      }
+      button.danger {
+        color: var(--red);
+      }
+      input:not([type="checkbox"]),
+      textarea,
+      select {
+        min-width: 0;
+        max-width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        padding: 6px 9px;
+        background: var(--field);
+        font-family: var(--code);
+        font-size: 12px;
+      }
+      input:not([type="checkbox"]),
+      select {
+        height: 33px;
+      }
+      textarea {
+        width: 100%;
+        resize: vertical;
+        line-height: 1.65;
+        min-height: 57px;
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--faint);
+      }
+      input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        margin: 0;
+        accent-color: var(--primary);
+        flex: none;
+      }
+      .check {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        cursor: pointer;
+      }
+      code,
+      pre,
+      .mono {
+        font-family: var(--code);
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 500;
+        color: var(--bright);
+        letter-spacing: -0.45px;
+      }
+      h2 {
+        font-size: 16px;
+        font-weight: 500;
+        color: var(--bright);
+      }
+      h3 {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--bright);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .small {
+        font-size: 11px;
+      }
+      .grow {
+        flex: 1;
+      }
+      .prototype {
+        max-width: 1240px;
+        margin: 0 auto;
+      }
+      .harness {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        margin: 0 0 15px;
+        color: var(--muted);
+        font-size: 11px;
+        flex-wrap: wrap;
+      }
+      .harness strong {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .harness label {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .harness select {
+        font: inherit;
+        height: 27px;
+        padding: 2px 6px;
+      }
+      .harness button {
+        min-height: 27px;
+        font-size: 11px;
+        padding: 3px 8px;
+      }
+      .window {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 18px 60px var(--shadow);
+        background: var(--bg);
+        height: 800px;
+        min-height: 580px;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+      .titlebar {
+        background: var(--chrome);
+        height: 32px;
+        flex: none;
+        position: relative;
+        display: flex;
+        align-items: center;
+        padding: 0 13px;
+        border-bottom: 1px solid var(--soft-line);
+      }
+      .traffic {
+        display: flex;
+        gap: 7px;
+      }
+      .traffic i {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #65666a;
+      }
+      .titlebar .title {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .settings-head {
+        background: var(--chrome);
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+        height: 49px;
+        flex: none;
+        gap: 24px;
+        border-bottom: 1px solid var(--line);
+      }
+      .settings-head strong {
+        width: 145px;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--bright);
+      }
+      .crumb {
+        color: var(--muted);
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 13px;
+      }
+      .crumb span:first-child {
+        color: var(--faint);
+      }
+      .settings-head .scope {
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .settings-body {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 169px minmax(0, 1fr);
+        min-height: 0;
+      }
+      .nav {
+        background: var(--rail);
+        border-right: 1px solid var(--line);
+        padding: 16px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .nav button {
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        text-align: left;
+        padding: 8px 12px;
+        position: relative;
+        border-radius: 3px;
+      }
+      .nav button:hover {
+        background: var(--hover);
+      }
+      .nav button[aria-current="page"] {
+        color: var(--bright);
+        background: var(--hover);
+      }
+      .nav button[aria-current="page"]::before {
+        content: "";
+        position: absolute;
+        width: 2px;
+        background: var(--accent);
+        left: -8px;
+        top: 8px;
+        bottom: 8px;
+      }
+      .nav .nav-label {
+        margin: 18px 12px 7px;
+        color: var(--faint);
+        font-size: 10px;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+      }
+      .nav .nav-label:first-child {
+        margin-top: 0;
+      }
+      .nav .nav-foot {
+        margin: auto 12px 0;
+        padding-top: 20px;
+        color: var(--faint);
+        font-size: 11px;
+      }
+      .page {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+      }
+      .page-head {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        padding: 24px 26px 20px;
+        flex: none;
+      }
+      .page-head p {
+        color: var(--muted);
+        margin-top: 4px;
+        font-size: 12px;
+      }
+      .page-head button {
+        margin-left: auto;
+        flex: none;
+      }
+      .master-line {
+        margin: 0 26px 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 12px;
+      }
+      .master-line .muted {
+        font-size: 11px;
+      }
+      .manager {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 221px minmax(0, 1fr);
+        border-top: 1px solid var(--line);
+      }
+      .entry-list {
+        border-right: 1px solid var(--line);
+        overflow: auto;
+        padding: 12px 8px;
+        background: var(--rail);
+      }
+      .list-caption {
+        display: flex;
+        justify-content: space-between;
+        padding: 0 9px 10px;
+        color: var(--faint);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+      }
+      .entry {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: 1px solid transparent;
+        background: transparent;
+        padding: 11px 10px;
+        margin-bottom: 3px;
+        border-radius: 3px;
+      }
+      .entry:hover:not(:disabled) {
+        background: var(--hover);
+        border-color: transparent;
+      }
+      .entry[aria-current="true"] {
+        background: var(--selected);
+        border-color: transparent;
+      }
+      .entry-name {
+        font-family: var(--code);
+        font-size: 12px;
+        display: block;
+        overflow-wrap: anywhere;
+      }
+      .entry-sub {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 5px;
+        gap: 6px;
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .entry-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        flex: none;
+      }
+      .dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--muted);
+        display: inline-block;
+      }
+      .dot.ready {
+        background: var(--green);
+      }
+      .dot.missing {
+        background: var(--amber);
+      }
+      .detail {
+        overflow: auto;
+        min-width: 0;
+        padding: 22px 26px 30px;
+      }
+      .detail-head {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding-bottom: 22px;
+      }
+      .detail-head .check {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .detail-head p {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .form-row {
+        display: grid;
+        grid-template-columns: 111px minmax(0, 1fr);
+        gap: 13px;
+        padding: 0 0 18px;
+        align-items: start;
+      }
+      .form-row > label,
+      .form-label {
+        padding-top: 7px;
+        color: var(--text);
+        font-size: 12px;
+      }
+      .field {
+        min-width: 0;
+      }
+      .field > input,
+      .field > select {
+        width: 100%;
+      }
+      .help {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        margin-top: 5px;
+        line-height: 1.5;
+      }
+      .input-action {
+        display: flex;
+        gap: 7px;
+      }
+      .input-action input {
+        width: 100%;
+      }
+      .input-action button {
+        flex: none;
+        font-size: 11px;
+      }
+      .language-chips {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .language-chip {
+        display: inline-flex;
+        align-items: center;
+        background: var(--raised);
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        padding-left: 8px;
+        font-size: 11px;
+        min-height: 27px;
+      }
+      .language-chip button {
+        border: 0;
+        background: transparent;
+        padding: 0 7px;
+        min-height: 25px;
+        color: var(--muted);
+      }
+      .language-chips select {
+        font-family: var(--ui);
+        font-size: 11px;
+        height: 28px;
+        width: 115px;
+      }
+      .preset-row {
+        padding: 12px;
+        background: var(--chrome);
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        margin-bottom: 23px;
+      }
+      .preset-row label {
+        display: block;
+        font-size: 11px;
+        margin-bottom: 6px;
+      }
+      .preset-row select {
+        width: 100%;
+        font-family: var(--ui);
+      }
+      .status-block {
+        margin: 0 0 20px;
+        padding: 12px 0;
+        border-top: 1px solid var(--soft-line);
+        border-bottom: 1px solid var(--soft-line);
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .status-block .status-text {
+        font-size: 12px;
+      }
+      .status-block button {
+        margin-left: auto;
+        flex: none;
+        font-size: 11px;
+      }
+      .status-block small {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        margin-top: 3px;
+      }
+      .good {
+        color: var(--green);
+      }
+      .warning {
+        color: var(--amber);
+      }
+      details {
+        border-bottom: 1px solid var(--soft-line);
+        margin-bottom: 18px;
+      }
+      summary {
+        color: var(--text);
+        cursor: pointer;
+        font-size: 12px;
+        padding: 4px 0 16px;
+      }
+      summary span {
+        color: var(--muted);
+        font-size: 11px;
+        margin-left: 9px;
+      }
+      details[open] > .advanced {
+        padding: 5px 0 2px;
+      }
+      .advanced textarea {
+        min-height: 92px;
+      }
+      .detail-actions {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .detail-actions button {
+        font-size: 11px;
+        padding-left: 0;
+        padding-right: 8px;
+      }
+      .settings-foot {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        background: var(--chrome);
+        border-top: 1px solid var(--line);
+        padding: 10px 20px;
+        min-height: 51px;
+        flex: none;
+      }
+      #feedback {
+        color: var(--muted);
+        font-size: 11px;
+        margin-right: auto;
+        overflow-wrap: anywhere;
+      }
+      #feedback.error {
+        color: var(--red);
+      }
+      .settings-foot button {
+        min-width: 74px;
+        font-size: 12px;
+      }
+      .empty {
+        margin: auto;
+        max-width: 350px;
+        padding: 40px 25px;
+        text-align: center;
+      }
+      .empty h2 {
+        margin-bottom: 8px;
+      }
+      .empty p {
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 18px;
+      }
+      .preferences {
+        overflow: auto;
+        padding: 0 26px 30px;
+      }
+      .preference-row {
+        display: flex;
+        gap: 25px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 0;
+        border-bottom: 1px solid var(--soft-line);
+      }
+      .preference-row p {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .preference-row select {
+        width: 175px;
+        flex: none;
+      }
+      .preference-row input[type="number"] {
+        width: 76px;
+      }
+      .preferences h3 {
+        margin-top: 22px;
+      }
+      .keyboard-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 13px 0;
+        border-bottom: 1px solid var(--soft-line);
+      }
+      kbd {
+        color: var(--muted);
+        font: 12px var(--code);
+      }
+      .prototype-note {
+        display: flex;
+        gap: 20px;
+        justify-content: space-between;
+        margin: 15px 3px 0;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .prototype-note a {
+        color: var(--muted);
+        text-underline-offset: 3px;
+      }
+      dialog {
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        box-shadow: 0 20px 60px var(--shadow);
+        padding: 0;
+        width: min(540px, calc(100vw - 40px));
+      }
+      dialog::backdrop {
+        background: #0007;
+      }
+      .dialog-body {
+        padding: 24px;
+      }
+      .dialog-body h2 {
+        margin-bottom: 10px;
+      }
+      .dialog-body p {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .dialog-body input {
+        margin-top: 16px;
+        width: 100%;
+      }
+      .dialog-body pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        max-height: 50vh;
+        overflow: auto;
+        padding: 14px;
+        background: var(--field);
+        border: 1px solid var(--line);
+        font-size: 11px;
+      }
+      .dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 24px;
+        background: var(--chrome);
+        border-top: 1px solid var(--line);
+      }
+      .window.narrow {
+        max-width: 940px;
+        margin-inline: auto;
+      }
+      @media (max-width: 1080px) {
+        .settings-body {
+          grid-template-columns: 165px minmax(0, 1fr);
+        }
+        .settings-head strong {
+          width: 141px;
+        }
+        .manager {
+          grid-template-columns: 182px minmax(0, 1fr);
+        }
+        .detail {
+          padding: 20px;
+        }
+        .form-row {
+          grid-template-columns: 90px minmax(0, 1fr);
+          gap: 10px;
+        }
+        .entry-sub {
+          flex-wrap: wrap;
+        }
+      }
+      @media (max-width: 800px) {
+        body {
+          padding: 12px;
+        }
+        .settings-body {
+          grid-template-columns: 128px minmax(0, 1fr);
+        }
+        .settings-head strong {
+          width: 104px;
+        }
+        .settings-head .scope {
+          display: none;
+        }
+        .manager {
+          grid-template-columns: 155px minmax(0, 1fr);
+        }
+        .page-head {
+          padding: 20px 18px 17px;
+          flex-wrap: wrap;
+        }
+        .page-head h1 {
+          font-size: 18px;
+        }
+        .page-head button {
+          margin-left: 0;
+        }
+        .master-line {
+          margin-inline: 18px;
+          flex-wrap: wrap;
+        }
+        .master-line .muted {
+          display: none;
+        }
+        .detail {
+          padding: 18px;
+        }
+        .form-row {
+          display: block;
+        }
+        .form-row > label,
+        .form-label {
+          display: block;
+          padding: 0 0 6px;
+        }
+        .nav button {
+          font-size: 11px;
+          padding-inline: 8px;
+        }
+        .status-block {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 9px;
+        }
+        .status-block button {
+          margin-left: 0;
+        }
+        .prototype-note {
+          flex-direction: column;
+          gap: 6px;
+        }
+      }
+      @media (max-width: 580px) {
+        .window {
+          height: auto;
+          min-height: 800px;
+        }
+        .settings-body {
+          display: flex;
+          flex-direction: column;
+        }
+        .nav {
+          flex-direction: row;
+          flex-wrap: wrap;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+          padding: 8px;
+        }
+        .nav .nav-label,
+        .nav-foot {
+          display: none;
+        }
+        .nav button[aria-current="page"]::before {
+          display: none;
+        }
+        .settings-head {
+          padding-inline: 14px;
+          gap: 10px;
+        }
+        .settings-head strong {
+          width: auto;
+        }
+        .crumb {
+          gap: 10px;
+        }
+        .manager {
+          display: block;
+        }
+        .entry-list {
+          display: flex;
+          gap: 4px;
+          overflow-x: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+        .list-caption {
+          display: none;
+        }
+        .entry {
+          min-width: 145px;
+          width: 145px;
+          flex: none;
+        }
+        .detail {
+          overflow: visible;
+        }
+        .settings-foot {
+          flex-wrap: wrap;
+          padding: 12px 14px;
+        }
+        #feedback {
+          flex-basis: 100%;
+        }
+        .preference-row {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 9px;
+        }
+        .prototype-note span:last-child {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="prototype">
+      <header class="harness" aria-label="Prototype controls">
+        <strong>Token / Settings</strong><span>Interaction prototype · 01</span
+        ><span class="grow"></span>
+        <label
+          >Preview
+          <select id="scenario">
+            <option value="lsp">Language servers</option>
+            <option value="add">Add a server</option>
+            <option value="empty">No servers</option>
+            <option value="missing">Missing executable</option>
+            <option value="ai">AI completion</option>
+            <option value="editor">Editor</option>
+          </select></label
+        >
+        <label
+          >Theme
+          <select id="theme">
+            <option value="dark">Fleet dark</option>
+            <option value="light">Light</option>
+          </select></label
+        >
+        <button id="reset" type="button">Reset demo</button>
+      </header>
+      <div class="window" id="window">
+        <div class="titlebar">
+          <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+          <span class="title">Token</span>
+        </div>
+        <header class="settings-head">
+          <strong>Settings</strong>
+          <div class="crumb">
+            <span aria-hidden="true">/</span
+            ><span id="crumb">Language servers</span>
+          </div>
+          <span class="scope">User settings</span>
+        </header>
+        <div class="settings-body">
+          <nav class="nav" aria-label="Settings categories">
+            <span class="nav-label">Preferences</span>
+            <button type="button" data-page="appearance">Appearance</button>
+            <button type="button" data-page="editor">Editor</button>
+            <span class="nav-label">Code assistance</span>
+            <button type="button" data-page="lsp" aria-current="page">
+              Language servers
+            </button>
+            <button type="button" data-page="ai">AI completion</button>
+            <span class="nav-label">Input</span>
+            <button type="button" data-page="keys">Keymap</button>
+            <div class="nav-foot">Token 0.7<br />Preferences concept</div>
+          </nav>
+          <main class="page" id="page"></main>
+        </div>
+        <footer class="settings-foot">
+          <span id="feedback" role="status" aria-live="polite"
+            >No unsaved changes</span
+          ><button id="remove" type="button" class="quiet danger" hidden>
+            Remove…</button
+          ><button id="cancel" type="button" disabled>Cancel</button
+          ><button id="save" type="button" class="primary" disabled>
+            Save
+          </button>
+        </footer>
+      </div>
+      <footer class="prototype-note">
+        <span
+          >Prototype only. Changes live in this tab; checks and browsing are
+          simulated. Reload to reset.</span
+        ><span
+          ><a href="?view=lsp">Servers</a> · <a href="?view=add">Add</a> ·
+          <a href="?view=empty">Empty</a> · <a href="?view=ai">AI</a></span
+        >
+      </footer>
+    </div>
+    <dialog id="dialog" aria-labelledby="dialog-title">
+      <div class="dialog-body" id="dialog-body"></div>
+      <div class="dialog-actions" id="dialog-actions"></div>
+    </dialog>
+    <script>
+      (() => {
+        "use strict";
+        const $ = (id) => document.getElementById(id);
+        const esc = (value) =>
+          String(value ?? "").replace(
+            /[&<>"']/g,
+            (c) =>
+              ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              })[c],
+          );
+        const clone = (value) => JSON.parse(JSON.stringify(value));
+        const languages = [
+          "Rust",
+          "Go",
+          "Python",
+          "JavaScript",
+          "TypeScript",
+          "TSX",
+          "JSX",
+          "C",
+          "C++",
+          "Lua",
+          "Sema",
+          "PHP",
+          "HTML",
+          "CSS",
+          "JSON",
+          "YAML",
+          "Zig",
+        ];
+        // Presets create ordinary records. No record retains a link to its preset.
+        const presets = {
+          rust: {
+            name: "rust-analyzer",
+            command: "rust-analyzer",
+            args: "",
+            languages: ["Rust"],
+            markers: "Cargo.toml",
+          },
+          go: {
+            name: "gopls",
+            command: "gopls",
+            args: "",
+            languages: ["Go"],
+            markers: "go.work\ngo.mod",
+          },
+          python: {
+            name: "pyright",
+            command: "pyright-langserver",
+            args: "--stdio",
+            languages: ["Python"],
+            markers: "pyproject.toml",
+          },
+          typescript: {
+            name: "typescript-language-server",
+            command: "typescript-language-server",
+            args: "--stdio",
+            languages: ["JavaScript", "TypeScript", "TSX", "JSX"],
+            markers: "package.json",
+          },
+          clang: {
+            name: "clangd",
+            command: "clangd",
+            args: "--background-index",
+            languages: ["C", "C++"],
+            markers: "compile_commands.json\n.git",
+          },
+          lua: {
+            name: "lua-language-server",
+            command: "lua-language-server",
+            args: "",
+            languages: ["Lua"],
+            markers: ".luarc.json\n.git",
+          },
+          sema: {
+            name: "sema",
+            command: "sema",
+            args: "lsp",
+            languages: ["Sema"],
+            markers: "sema.toml",
+          },
+        };
+        const blankServer = () => ({
+          name: "",
+          command: "",
+          args: "",
+          languages: [],
+          markers: "",
+          initialization: "{}",
+          settings: "{}",
+          enabled: true,
+          status: "Not checked",
+        });
+        const blankProvider = () => ({
+          name: "",
+          transport: "Ollama",
+          url: "http://127.0.0.1:11434",
+          model: "",
+          keyEnv: "",
+          prompt: "Native",
+          tokens: "128",
+          timeout: "5000",
+          context: "None",
+          use: false,
+        });
+        let records,
+          providers,
+          preferences,
+          selected,
+          draft,
+          original,
+          page,
+          notice,
+          dirty,
+          serial = 10,
+          checking = false;
+        let globalLsp = true,
+          globalAi = false;
+        const names = {
+          appearance: "Appearance",
+          editor: "Editor",
+          lsp: "Language servers",
+          ai: "AI completion",
+          keys: "Keyboard shortcuts",
+        };
+        function resetData() {
+          records = [
+            { ...blankServer(), ...presets.go, uid: 1, status: "Not started" },
+            { ...blankServer(), ...presets.lua, uid: 2, status: "Missing" },
+            { ...blankServer(), ...presets.rust, uid: 3, status: "Ready" },
+            {
+              ...blankServer(),
+              ...presets.sema,
+              uid: 4,
+              status: "Not started",
+              enabled: false,
+            },
+          ];
+          providers = [
+            {
+              ...blankProvider(),
+              uid: 5,
+              name: "local-ollama",
+              model: "qwen2.5-coder:7b",
+              prompt: "Qwen",
+              use: true,
+            },
+          ];
+          preferences = {
+            uiFont: "Inter",
+            codeFont: "JetBrains Mono",
+            fontSize: "14",
+            theme: "dark",
+            indent: "Spaces",
+            tabWidth: "4",
+            autoSave: "Off",
+            hover: true,
+            hints: false,
+            completion: true,
+          };
+          globalLsp = true;
+          globalAi = false;
+          dirty = false;
+          notice = "";
+          checking = false;
+        }
+        function collection() {
+          return page === "ai" ? providers : records;
+        }
+        function selectRecord(uid) {
+          selected = uid;
+          const record = collection().find((item) => item.uid === uid);
+          draft = record ? clone(record) : null;
+          original = clone(draft);
+          dirty = false;
+          notice = "";
+          checking = false;
+          render();
+        }
+        function setPage(next) {
+          page = next;
+          notice = "";
+          dirty = false;
+          checking = false;
+          if (page === "lsp" || page === "ai") {
+            const items = collection();
+            selectRecord(
+              page === "lsp" && items.some((item) => item.uid === 3)
+                ? 3
+                : (items[0]?.uid ?? null),
+            );
+          } else {
+            draft = clone(preferences);
+            original = clone(draft);
+            selected = null;
+            render();
+          }
+        }
+        function feedback(text = notice) {
+          $("feedback").textContent =
+            text ||
+            (dirty
+              ? "Unsaved changes · applies only after saving"
+              : "No unsaved changes");
+          $("feedback").classList.remove("error");
+          $("save").disabled = !dirty;
+          $("cancel").disabled = !dirty;
+        }
+        function change() {
+          dirty = JSON.stringify(draft) !== JSON.stringify(original);
+          notice = "";
+          feedback();
+        }
+        function error(message) {
+          $("feedback").textContent = message;
+          $("feedback").classList.add("error");
+        }
+        function dialog(title, content, actions) {
+          if ($("dialog").open) $("dialog").close();
+          $("dialog-body").innerHTML =
+            `<h2 id="dialog-title">${esc(title)}</h2>${content}`;
+          $("dialog-actions").replaceChildren();
+          for (const action of actions) {
+            const button = document.createElement("button");
+            button.textContent = action.label;
+            button.className = action.className || "";
+            button.onclick = () => {
+              $("dialog").close();
+              action.run?.();
+            };
+            $("dialog-actions").append(button);
+          }
+          $("dialog").showModal();
+        }
+        function navigate(run) {
+          if (!dirty) {
+            run();
+            return;
+          }
+          dialog(
+            "Discard unsaved changes?",
+            "<p>Your edits have not been applied. Keep editing, or discard this draft.</p>",
+            [
+              { label: "Keep editing" },
+              { label: "Discard changes", className: "danger", run },
+            ],
+          );
+        }
+        function startNew() {
+          selected = null;
+          draft = page === "ai" ? blankProvider() : blankServer();
+          original = null;
+          dirty = true;
+          notice = "";
+          checking = false;
+          render();
+          $("record-name")?.focus();
+        }
+        function input(key, id, placeholder = "", type = "text") {
+          return `<input id="${id}" data-field="${key}" type="${type}" value="${esc(draft[key])}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false">`;
+        }
+        function textarea(key, id, rows = 2) {
+          return `<textarea id="${id}" data-field="${key}" rows="${rows}" spellcheck="false">${esc(draft[key])}</textarea>`;
+        }
+        function select(key, id, options) {
+          return `<select id="${id}" data-field="${key}">${options.map((value) => `<option${draft[key] === value ? " selected" : ""}>${esc(value)}</option>`).join("")}</select>`;
+        }
+        function row(label, id, control, help = "") {
+          return `<div class="form-row"><label for="${id}">${label}</label><div class="field">${control}${help ? `<small class="help">${help}</small>` : ""}</div></div>`;
+        }
+        function listStatus(item) {
+          if (page === "ai") return item.use ? "Selected" : item.transport;
+          return !globalLsp
+            ? "LSP off"
+            : !item.enabled
+              ? "Disabled"
+              : item.status;
+        }
+        function manager() {
+          const ai = page === "ai",
+            items = collection();
+          return `<div class="page-head"><div><h1>${names[page]}</h1><p>${ai ? "Connect a provider. Keep suggestions on your terms." : "Choose which servers Token uses, and how they run."}</p></div><button id="add" class="primary">+ Add ${ai ? "provider" : "server"}</button></div>
+      <div class="master-line"><label class="check"><input id="master" type="checkbox"${(ai ? globalAi : globalLsp) ? " checked" : ""}>${ai ? "Enable inline AI suggestions" : "Enable language servers"}</label><span class="muted">${ai ? "Off by default. Selecting a provider does not enable suggestions." : "Completion, diagnostics and navigation"}</span></div>
+      <div class="manager"><div class="entry-list" aria-label="${ai ? "Providers" : "Language servers"}"><div class="list-caption"><span>${ai ? "Providers" : "Configured servers"}</span><span>${items.length}</span></div>${items
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(
+          (item) =>
+            `<button class="entry" data-entry="${item.uid}" aria-current="${item.uid === selected}"><span class="entry-name">${esc(item.name)}</span><span class="entry-sub"><span>${esc(ai ? item.model || item.transport : item.languages.join(", ") || "No languages")}</span><span class="entry-status"><i class="dot ${listStatus(item) === "Ready" ? "ready" : listStatus(item) === "Missing" ? "missing" : ""}" aria-hidden="true"></i>${esc(listStatus(item))}</span></span></button>`,
+        )
+        .join(
+          "",
+        )}${!selected && draft ? `<button class="entry" aria-current="true" disabled><span class="entry-name">New ${ai ? "provider" : "server"}</span><span class="entry-sub">Unsaved draft</span></button>` : ""}</div>
+      ${draft ? `<section class="detail" aria-label="${ai ? "Provider" : "Server"} configuration">${ai ? providerForm() : serverForm()}</section>` : `<div class="empty"><h2>No ${ai ? "providers" : "language servers"} configured</h2><p>${ai ? "Add a local or hosted provider. Suggestions stay off until you enable them." : "Start from a preset or enter any installed language server. Every entry can be edited or removed."}</p><button class="primary" id="empty-add">+ Add ${ai ? "provider" : "server"}</button></div>`}</div>`;
+        }
+        function serverForm() {
+          return `<div class="detail-head"><div><h2>${selected ? esc(draft.name) : "Add language server"}</h2><p>${selected ? "Server configuration" : "A preset is a starting point, not a special server type."}</p></div><label class="check"><input data-field="enabled" type="checkbox"${draft.enabled ? " checked" : ""}>Enabled</label></div>
+      ${
+        !selected
+          ? `<div class="preset-row"><label for="preset">Start from</label><select id="preset"><option value="">Blank configuration</option>${Object.entries(
+              presets,
+            )
+              .map(
+                ([id, p]) =>
+                  `<option value="${id}">${esc(p.languages.join(" / "))} · ${esc(p.name)}</option>`,
+              )
+              .join("")}</select></div>`
+          : ""
+      }
+      ${row("Name", "record-name", input("name", "record-name", "e.g. clangd"))}
+      ${row("Executable", "command", `<div class="input-action">${input("command", "command", "Command or absolute path")}<button id="browse" type="button">Browse…</button></div>`, "A command on PATH or an absolute path. No shell expansion.")}
+      ${row("Arguments", "args", textarea("args", "args"), "One argument per line. Leave empty for no arguments.")}
+      <div class="form-row"><span class="form-label" id="languages-label">Languages</span><div class="field"><div class="language-chips" id="languages" role="group" aria-labelledby="languages-label"></div><small class="help">Files in these languages will use this server.</small></div></div>
+      <div class="status-block"><div id="check-result" aria-live="polite"><span class="status-text ${draft.status === "Missing" ? "warning" : draft.status === "Ready" ? "good" : ""}">${draft.status === "Missing" ? "Executable not found" : draft.status === "Ready" ? "Ready" : "Setup not checked"}</span><small>${draft.status === "Ready" ? "Connected in this example workspace" : draft.status === "Missing" ? "Update the path, then check again." : "Check the executable and server handshake."}</small></div><button id="check-setup" type="button">Check setup</button></div>
+      <details id="advanced"><summary>Advanced<span>Project roots and server options</span></summary><div class="advanced">
+        ${row("Root markers", "markers", textarea("markers", "markers"), "One filename per line, for example Cargo.toml or .git.")}
+        ${row("Initialization", "initialization", textarea("initialization", "initialization", 4), "JSON sent when the server starts.")}
+        ${row("Server settings", "server-settings", textarea("settings", "server-settings", 4), "JSON returned when the server asks for configuration.")}
+      </div></details>
+      <div class="detail-actions"><button class="quiet" id="view-config">View configuration</button></div>`;
+        }
+        function providerForm() {
+          return `<div class="detail-head"><div><h2>${selected ? esc(draft.name) : "Add AI provider"}</h2><p>Use the same configuration flow for local and hosted services.</p></div></div>
+      ${row("Name", "record-name", input("name", "record-name", "e.g. local-ollama"))}
+      ${row("Transport", "transport", select("transport", "transport", ["Ollama", "llama.cpp", "OpenAI-compatible", "Mistral FIM", "Tabby"]))}
+      ${row("Base URL", "url", input("url", "url", "http://127.0.0.1:11434", "url"))}
+      ${row("Model", "model", input("model", "model", "Model served by this endpoint"))}
+      ${row("API key variable", "key-env", input("keyEnv", "key-env", "e.g. MISTRAL_API_KEY"), "Environment-variable name, not the secret itself.")}
+      <div class="form-row"><span class="form-label">Selection</span><div class="field"><label class="check"><input type="checkbox" data-field="use"${draft.use ? " checked" : ""}>Use this provider for inline suggestions</label><small class="help">Does not turn suggestions on.</small></div></div>
+      <div class="status-block"><div id="check-result" aria-live="polite"><span class="status-text">Not checked</span><small>A check would contact the configured provider.</small></div><button id="check-setup">Check connection</button></div>
+      <details id="advanced"><summary>Advanced<span>Generation and source context</span></summary><div class="advanced">
+        ${row("Prompt format", "prompt", select("prompt", "prompt", ["Native", "Infer", "Qwen", "StarCoder", "CodeLlama", "DeepSeek", "Codestral", "Mellum"]))}
+        ${row("Output tokens", "tokens", input("tokens", "tokens", "", "number"))}
+        ${row("Timeout (ms)", "timeout", input("timeout", "timeout", "", "number"))}
+        ${row("Extra context", "context", select("context", "context", ["None", "Recent files", "Workspace"]), "Extra code is only sent if you opt in.")}
+      </div></details><div class="detail-actions"><button class="quiet" id="view-config">View configuration</button></div>`;
+        }
+        function prefs() {
+          const pref = (title, help, control) =>
+            `<div class="preference-row"><div><h3>${title}</h3><p>${help}</p></div>${control}</div>`;
+          const checkbox = (key, label) =>
+            `<input type="checkbox" data-field="${key}" aria-label="${label}"${draft[key] ? " checked" : ""}>`;
+          let body;
+          if (page === "appearance")
+            body =
+              pref(
+                "UI font",
+                "Labels, menus and documentation prose.",
+                select("uiFont", "ui-font", ["Inter", "System"]),
+              ) +
+              pref(
+                "Code font",
+                "Editor, tabs, file explorer and all text inputs.",
+                select("codeFont", "code-font", ["JetBrains Mono", "Menlo"]),
+              ) +
+              pref(
+                "Editor font size",
+                "Text size in pixels.",
+                input("fontSize", "font-size", "", "number"),
+              );
+          else if (page === "editor")
+            body =
+              pref(
+                "Indent using",
+                "Default for files without an EditorConfig rule.",
+                select("indent", "indent", ["Spaces", "Tabs"]),
+              ) +
+              pref(
+                "Tab width",
+                "Number of columns per tab.",
+                select("tabWidth", "tab-width", ["2", "4", "8"]),
+              ) +
+              pref(
+                "Auto-save",
+                "Keep unsaved buffers until you explicitly save.",
+                select("autoSave", "auto-save", ["Off", "On focus loss"]),
+              ) +
+              "<h3>Code assistance</h3>" +
+              pref(
+                "Completion dropdown",
+                "Suggest relevant completions as you type.",
+                checkbox("completion", "Completion dropdown"),
+              ) +
+              pref(
+                "Hover documentation",
+                "Show documentation after a short pointer pause.",
+                checkbox("hover", "Hover documentation"),
+              ) +
+              pref(
+                "Inlay hints",
+                "Display parameter hints alongside the code.",
+                checkbox("hints", "Inlay hints"),
+              );
+          else
+            body =
+              [
+                ["Open Settings", "⌘ ,"],
+                ["Command palette", "⇧ ⌘ P"],
+                ["Go to definition", "⌘ B"],
+                ["Code actions", "⌥ ↵"],
+                ["Quick documentation", "F1"],
+              ]
+                .map(
+                  ([name, key]) =>
+                    `<div class="keyboard-row"><span>${name}</span><kbd>${key}</kbd></div>`,
+                )
+                .join("") +
+              '<p class="help">Read-only context for this prototype. This pass focuses on server configuration.</p>';
+          return `<div class="page-head"><div><h1>${names[page]}</h1><p>${page === "keys" ? "Your shortcuts, in one place." : "Simple controls, without turning every value into a row of buttons."}</p></div></div><section class="preferences">${body}</section>`;
+        }
+        function renderLanguages() {
+          if (!$("languages")) return;
+          $("languages").innerHTML =
+            draft.languages
+              .map(
+                (language) =>
+                  `<span class="language-chip">${esc(language)}<button type="button" data-remove-language="${esc(language)}" aria-label="Remove ${esc(language)}">×</button></span>`,
+              )
+              .join("") +
+            `<select id="add-language" aria-label="Add language"><option value="">+ Language</option>${languages
+              .filter((language) => !draft.languages.includes(language))
+              .map((language) => `<option>${esc(language)}</option>`)
+              .join("")}</select>`;
+          $("add-language").onchange = (event) => {
+            if (event.target.value) draft.languages.push(event.target.value);
+            change();
+            renderLanguages();
+          };
+          $("languages")
+            .querySelectorAll("[data-remove-language]")
+            .forEach(
+              (button) =>
+                (button.onclick = () => {
+                  draft.languages = draft.languages.filter(
+                    (language) => language !== button.dataset.removeLanguage,
+                  );
+                  change();
+                  renderLanguages();
+                }),
+            );
+        }
+        function render() {
+          $("crumb").textContent = names[page];
+          $("remove").hidden = !((page === "lsp" || page === "ai") && selected);
+          $("remove").textContent =
+            `Remove ${page === "ai" ? "provider" : "server"}…`;
+          document.querySelectorAll("[data-page]").forEach((button) => {
+            if (button.dataset.page === page)
+              button.setAttribute("aria-current", "page");
+            else button.removeAttribute("aria-current");
+          });
+          $("page").innerHTML =
+            page === "lsp" || page === "ai" ? manager() : prefs();
+          $("page")
+            .querySelectorAll("[data-field]")
+            .forEach((field) => {
+              field.addEventListener("input", () => {
+                draft[field.dataset.field] =
+                  field.type === "checkbox" ? field.checked : field.value;
+                change();
+              });
+            });
+          $("page")
+            .querySelectorAll("[data-entry]")
+            .forEach(
+              (button) =>
+                (button.onclick = () =>
+                  navigate(() => selectRecord(Number(button.dataset.entry)))),
+            );
+          for (const id of ["add", "empty-add"])
+            if ($(id)) $(id).onclick = () => navigate(startNew);
+          if ($("master"))
+            $("master").onchange = (event) => {
+              if (page === "ai") globalAi = event.target.checked;
+              else globalLsp = event.target.checked;
+              notice = `${page === "ai" ? "AI suggestions" : "Language servers"} ${event.target.checked ? "enabled" : "disabled"} in this demo`;
+              // The master preference is immediate; a server/provider draft stays intact.
+              render();
+            };
+          if ($("preset"))
+            $("preset").onchange = (event) => {
+              const preset = event.target.value;
+              draft = {
+                ...blankServer(),
+                ...(presets[preset] ? clone(presets[preset]) : {}),
+              };
+              change();
+              render();
+              $("preset").value = preset;
+              $("record-name").focus();
+            };
+          if ($("browse"))
+            $("browse").onclick = () =>
+              dialog(
+                "Choose executable",
+                `<p>Simulated file chooser. Enter the absolute path you want to try.</p><input id="browse-path" aria-label="Executable path" value="${esc(draft.command.startsWith("/") ? draft.command : "/opt/homebrew/bin/" + (draft.command || "clangd"))}" spellcheck="false">`,
+                [
+                  { label: "Cancel" },
+                  {
+                    label: "Choose",
+                    className: "primary",
+                    run: () => {
+                      draft.command = $("browse-path").value;
+                      change();
+                      render();
+                    },
+                  },
+                ],
+              );
+          if ($("check-setup")) $("check-setup").onclick = checkSetup;
+          if (!$("remove").hidden)
+            $("remove").onclick = () =>
+              dialog(
+                `Remove ${draft.name}?`,
+                "<p>This removes the configuration, including an entry originally created from a preset. It will not silently return. You can add it again later.</p>",
+                [
+                  { label: "Cancel" },
+                  {
+                    label: "Remove",
+                    className: "danger",
+                    run: () => {
+                      if (page === "ai")
+                        providers = providers.filter(
+                          (item) => item.uid !== selected,
+                        );
+                      else
+                        records = records.filter(
+                          (item) => item.uid !== selected,
+                        );
+                      selectRecord(collection()[0]?.uid ?? null);
+                      notice = "Configuration removed in this demo";
+                      feedback();
+                    },
+                  },
+                ],
+              );
+          if ($("view-config")) $("view-config").onclick = showConfig;
+          renderLanguages();
+          feedback();
+        }
+        function checkSetup() {
+          if (checking) return;
+          const command = page === "ai" ? draft.url : draft.command;
+          if (!command.trim()) {
+            error(
+              page === "ai"
+                ? "Enter a base URL first."
+                : "Enter an executable first.",
+            );
+            return;
+          }
+          checking = true;
+          const checkedDraft = draft;
+          $("check-setup").disabled = true;
+          $("check-result").innerHTML =
+            '<span class="status-text">Checking…</span><small>Simulated check · no process or network request</small>';
+          setTimeout(() => {
+            if (draft !== checkedDraft || !$("check-result")) return;
+            checking = false;
+            $("check-setup").disabled = false;
+            const missing =
+              /missing|not-found/i.test(command) ||
+              command === "lua-language-server";
+            $("check-result").innerHTML =
+              `<span class="status-text ${missing ? "warning" : "good"}">${missing ? "Executable not found" : page === "ai" ? "Provider responded" : "Executable found · handshake successful"}</span><small>${missing ? "Try an absolute executable path, then check again. Simulated result." : "Simulated success. Your actual setup has not been checked."}</small>`;
+          }, 450);
+        }
+        function validate() {
+          if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(draft.name))
+            return "Name must start with a letter or number; use letters, numbers, dots, dashes or underscores.";
+          if (
+            collection().some(
+              (item) => item.uid !== selected && item.name === draft.name,
+            )
+          )
+            return "That name already exists. Choose another name.";
+          if (page === "lsp") {
+            if (!draft.command.trim()) return "Enter an executable.";
+            if (!draft.languages.length) return "Choose at least one language.";
+            const conflict = records.find(
+              (item) =>
+                item.uid !== selected &&
+                item.enabled &&
+                draft.enabled &&
+                item.languages.some((language) =>
+                  draft.languages.includes(language),
+                ),
+            );
+            if (conflict)
+              return `A language is already assigned to ${conflict.name}. Disable that entry or change its language assignments first.`;
+            for (const key of ["initialization", "settings"]) {
+              try {
+                const value = JSON.parse(draft[key] || "{}");
+                if (
+                  key === "settings" &&
+                  (!value || Array.isArray(value) || typeof value !== "object")
+                )
+                  return "Server settings must be a JSON object.";
+              } catch {
+                return `${key === "settings" ? "Server settings" : "Initialization options"} must be valid JSON.`;
+              }
+            }
+          } else {
+            try {
+              const url = new URL(draft.url);
+              if (
+                !["http:", "https:"].includes(url.protocol) ||
+                url.username ||
+                url.password ||
+                url.search ||
+                url.hash
+              )
+                return "Use an HTTP(S) base URL without credentials, query or fragment.";
+            } catch {
+              return "Enter a valid HTTP(S) base URL.";
+            }
+            if (
+              !["llama.cpp", "Tabby"].includes(draft.transport) &&
+              !draft.model.trim()
+            )
+              return "This transport needs a model name.";
+            if (draft.keyEnv && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(draft.keyEnv))
+              return "Enter an environment-variable name, not an API key.";
+            if (draft.transport === "Mistral FIM" && !draft.keyEnv)
+              return "Mistral FIM needs an API-key environment variable.";
+            if (
+              ![draft.tokens, draft.timeout].every(
+                (value) => /^\d+$/.test(value) && Number(value) > 0,
+              )
+            )
+              return "Token and timeout limits must be positive whole numbers.";
+          }
+          return null;
+        }
+        function save() {
+          if (!dirty) return;
+          if (page !== "lsp" && page !== "ai") {
+            preferences = clone(draft);
+            original = clone(draft);
+            dirty = false;
+            notice = "Preferences saved in this demo";
+            feedback();
+            return;
+          }
+          const invalid = validate();
+          if (invalid) {
+            error(invalid);
+            return;
+          }
+          const item = { ...clone(draft), uid: selected ?? ++serial };
+          if (page === "ai" && item.use)
+            providers.forEach((provider) => (provider.use = false));
+          const items = collection(),
+            index = items.findIndex((record) => record.uid === selected);
+          if (index < 0) items.push(item);
+          else items[index] = item;
+          selectRecord(item.uid);
+          notice =
+            page === "ai"
+              ? "Provider saved · inline enablement unchanged"
+              : "Server saved · affected documents would reconnect";
+          feedback();
+        }
+        function lines(text) {
+          return text
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+        }
+        function showConfig() {
+          let value;
+          if (page === "lsp")
+            value = {
+              lsp: {
+                servers: {
+                  [draft.name || "new-server"]: {
+                    enabled: draft.enabled,
+                    command: draft.command,
+                    args: lines(draft.args),
+                    languages: draft.languages.map((language) =>
+                      language.toLowerCase(),
+                    ),
+                    root_markers: lines(draft.markers),
+                    initialization_options: draft.initialization,
+                    settings: draft.settings,
+                  },
+                },
+              },
+            };
+          else
+            value = {
+              completion: {
+                inline: { enabled: globalAi, provider: draft.name },
+                providers: {
+                  [draft.name || "new-provider"]: {
+                    transport: draft.transport,
+                    url: draft.url,
+                    model: draft.model,
+                    api_key_env: draft.keyEnv || null,
+                    prompt_format: draft.prompt,
+                    context: draft.context,
+                  },
+                },
+              },
+            };
+          dialog(
+            "Configuration preview",
+            `<p>Draft values, for discussing the flow. This is not a config-file export.</p><pre>${esc(JSON.stringify(value, null, 2))}</pre>`,
+            [{ label: "Done" }],
+          );
+        }
+        document
+          .querySelectorAll("[data-page]")
+          .forEach(
+            (button) =>
+              (button.onclick = () =>
+                navigate(() => setPage(button.dataset.page))),
+          );
+        $("save").onclick = save;
+        $("cancel").onclick = () =>
+          navigate(() => {
+            if (page === "lsp" || page === "ai")
+              selectRecord(selected ?? collection()[0]?.uid ?? null);
+            else {
+              draft = clone(preferences);
+              original = clone(draft);
+              dirty = false;
+              notice = "";
+              render();
+            }
+          });
+        $("theme").onchange = (event) =>
+          (document.documentElement.dataset.theme = event.target.value);
+        function scenario(value) {
+          resetData();
+          if (value === "empty") records = [];
+          setPage(["ai", "editor"].includes(value) ? value : "lsp");
+          if (value === "add") startNew();
+          if (value === "missing") selectRecord(2);
+          $("scenario").value = value;
+        }
+        $("scenario").onchange = (event) =>
+          navigate(() => scenario(event.target.value));
+        $("reset").onclick = () =>
+          navigate(() => scenario($("scenario").value));
+        document.addEventListener("keydown", (event) => {
+          if (
+            (event.metaKey || event.ctrlKey) &&
+            event.key.toLowerCase() === "s"
+          ) {
+            event.preventDefault();
+            if (!$("dialog").open) save();
+          }
+          if (event.key === "Escape" && !$("dialog").open && dirty)
+            $("cancel").click();
+        });
+        const params = new URLSearchParams(location.search);
+        if (params.get("theme") === "light") {
+          $("theme").value = "light";
+          document.documentElement.dataset.theme = "light";
+        }
+        scenario(
+          ["lsp", "add", "empty", "missing", "ai", "editor"].includes(
+            params.get("view"),
+          )
+            ? params.get("view")
+            : "lsp",
+        );
+      })();
+    </script>
+  </body>
+</html>
