@@ -23,7 +23,7 @@ pub struct GalleryLayout {
     pub search: Rect,
     pub theme: Rect,
     pub width_toggle: Rect,
-    pub categories: Vec<Rect>,
+    pub categories: Vec<WidgetRect>,
     pub viewport: Rect,
     pub scrollbar: ScrollbarGeometry,
     pub rows: Vec<GalleryRow>,
@@ -119,13 +119,17 @@ impl GalleryLayout {
             search: Rect::new(24.0 * s, 76.0 * s, (w - 380.0 * s).max(80.0 * s), 34.0 * s),
             theme: Rect::new(w - 336.0 * s, 76.0 * s, 180.0 * s, 34.0 * s),
             width_toggle: Rect::new(w - 144.0 * s, 76.0 * s, 120.0 * s, 34.0 * s),
-            categories: CATEGORIES
-                .iter()
-                .enumerate()
-                .map(|(i, _)| {
-                    Rect::new(16.0 * s, (148.0 + i as f32 * 40.0) * s, 154.0 * s, 32.0 * s)
-                })
-                .collect(),
+            categories: super::section_navigation::section_rects(
+                WidgetRect {
+                    x: (16.0 * s) as usize,
+                    y: (148.0 * s) as usize,
+                    w: (154.0 * s) as usize,
+                    h: 0,
+                },
+                CATEGORIES.len(),
+                1,
+                scale,
+            ),
             viewport,
             scrollbar,
             rows,
@@ -256,24 +260,24 @@ impl GalleryRenderer {
                 },
             );
         }
-        for (i, rect) in layout.categories.iter().enumerate() {
-            render_button(
-                &mut frame,
-                &mut painter,
-                theme,
-                *rect,
-                CATEGORIES[i],
-                ButtonStyle {
-                    state: if i == state.category {
-                        ButtonState::Selected
-                    } else {
-                        ButtonState::Normal
-                    },
-                    text_size: Some((13.0 * scale) as f32),
-                    ..Default::default()
-                },
-            );
+        super::section_navigation::SectionNavigation {
+            rows: &layout.categories,
+            divider: Some(WidgetRect {
+                x: px(180.0),
+                y: px(144.0),
+                w: px(1.0),
+                h: layout.viewport.height as usize,
+            }),
+            selected: state.category,
+            scale,
         }
+        .render(
+            &mut frame,
+            &mut painter,
+            &mut self.masks,
+            theme,
+            CATEGORIES.iter().copied(),
+        );
         frame.push_clip(layout.viewport);
         for row in &layout.rows {
             let rect = row.rect;

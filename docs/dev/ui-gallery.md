@@ -76,6 +76,9 @@ as Token. Run `just ui-gallery --help` for options.
   specimens.
 - `src/view/text_field.rs`: shared code-font field content/selection/caret.
 - `src/view/scrollbar.rs`: gallery and application scrollbar geometry/painting.
+- `src/view/section_navigation.rs`: Settings and gallery category navigation;
+  shared row/grid spacing, active state, label truncation and optional divider.
+  The gallery sidebar is itself a live use of this component.
 
 Theme colors come from the current resolved palette. New optional YAML keys
 `ui.button.background_selected` and `ui.button.foreground_disabled` separate

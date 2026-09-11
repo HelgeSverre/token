@@ -90,7 +90,9 @@ impl App {
             self.drag = Some(y - layout.scrollbar.thumb_rect.y);
         } else if layout.scrollbar.needed && layout.scrollbar.hits_track(x, y) {
             self.state.scroll = layout.scrollbar.position_from_track_click(y) as f64;
-        } else if let Some(category) = layout.categories.iter().position(|r| r.contains(x, y)) {
+        } else if let Some(category) =
+            token::view::section_navigation::section_at(&layout.categories, x, y)
+        {
             self.state.category = category;
             self.state.scroll = 0.0;
         } else if layout.width_toggle.contains(x, y) {

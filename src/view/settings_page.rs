@@ -1,6 +1,7 @@
 //! Settings-form presentation for OverlaySurface. Painting and input consume
 //! the same resolved rectangles; metadata and scrolling remain shared.
 use super::*;
+use crate::view::section_navigation::ROW_STEP as NAV_STEP;
 use crate::view::{TextFieldOptions, TextFieldRenderer};
 
 fn item_height(
@@ -192,7 +193,6 @@ fn preset_rects(row: &WidgetRect, labels: &[&str], scale_factor: f64) -> Vec<Wid
 const ROW: f32 = 56.0;
 const TOP: f32 = 49.0;
 const FOOT: f32 = 52.0;
-const NAV_STEP: f32 = 33.0;
 
 fn row_height(scale: f64) -> usize {
     scaled(ROW, scale)
@@ -377,28 +377,27 @@ pub(super) fn layout(
         .tabs
         .as_ref()
         .map(|tabs| {
-            tabs.tabs
-                .iter()
-                .enumerate()
-                .map(|(i, _)| {
-                    if sidebar > 0 {
-                        WidgetRect {
-                            x: p.x + pad / 2,
-                            y: nav_top + i * scaled(NAV_STEP, sf),
-                            w: sidebar - pad,
-                            h: scaled(28.0, sf),
-                        }
-                    } else {
-                        let w = p.w.saturating_sub(pad * 2) / chrome.nav_columns;
-                        WidgetRect {
-                            x: p.x + pad + (i % chrome.nav_columns) * w,
-                            y: nav_top + (i / chrome.nav_columns) * scaled(NAV_STEP, sf),
-                            w,
-                            h: scaled(28.0, sf),
-                        }
-                    }
-                })
-                .collect()
+            let bounds = if sidebar > 0 {
+                WidgetRect {
+                    x: p.x + pad / 2,
+                    y: nav_top,
+                    w: sidebar - pad,
+                    h: 0,
+                }
+            } else {
+                WidgetRect {
+                    x: p.x + pad,
+                    y: nav_top,
+                    w: p.w.saturating_sub(pad * 2),
+                    h: 0,
+                }
+            };
+            crate::view::section_navigation::section_rects(
+                bounds,
+                tabs.tabs.len(),
+                chrome.nav_columns,
+                sf,
+            )
         })
         .unwrap_or_default();
     let (items, offset) = match &spec.body {
@@ -623,7 +622,9 @@ pub(super) fn hit_test(
         }
         return OverlayHit::Inside;
     }
-    if let Some(index) = layout.tab_rects.iter().position(|r| contains(r, x, y)) {
+    if let Some(index) =
+        crate::view::section_navigation::section_at(&layout.tab_rects, x as f32, y as f32)
+    {
         return OverlayHit::Tab(index);
     }
     if let (Body::List { sections, .. }, Some(viewport)) = (&spec.body, layout.settings_viewport) {
@@ -877,47 +878,25 @@ pub(super) fn render(
         );
     }
     let chrome = chrome(&p, sf);
-    if chrome.sidebar > 0 {
-        frame.fill_rect_px(
-            p.x + chrome.sidebar,
-            chrome.nav_top,
-            scaled(1.0, sf),
-            (p.y + p.h).saturating_sub(chrome.nav_top + scaled(FOOT, sf)),
-            colors.hairline,
-        );
-    }
     if let Some(tabs) = &spec.tabs {
-        for (i, (r, (label, _))) in layout.tab_rects.iter().zip(tabs.tabs).enumerate() {
-            if i == tabs.active {
-                frame.fill_rounded_rect(
-                    r.x,
-                    r.y,
-                    r.w,
-                    r.h,
-                    scaled(2.0, sf),
-                    colors.keycap_bg,
-                    masks,
-                );
-            }
-            let label_rect = WidgetRect {
-                x: r.x + scaled(10.0, sf),
-                y: r.y + scaled(7.0, sf),
-                w: r.w.saturating_sub(scaled(20.0, sf)),
-                h: r.h,
-            };
-            text(
-                frame,
-                painter,
-                &label_rect,
-                label,
-                size_px(12.0, sf),
-                if i == tabs.active {
-                    colors.text_bright
-                } else {
-                    colors.text_dim
-                },
-            );
+        crate::view::section_navigation::SectionNavigation {
+            rows: &layout.tab_rects,
+            divider: (chrome.sidebar > 0).then(|| WidgetRect {
+                x: p.x + chrome.sidebar,
+                y: chrome.nav_top,
+                w: scaled(1.0, sf),
+                h: (p.y + p.h).saturating_sub(chrome.nav_top + scaled(FOOT, sf)),
+            }),
+            selected: tabs.active,
+            scale: sf,
         }
+        .render(
+            frame,
+            painter,
+            masks,
+            theme,
+            tabs.tabs.iter().map(|(label, _)| *label),
+        );
     }
     if let Some(collection) = collection(spec) {
         let manager = manager_rects(&p, sf);
