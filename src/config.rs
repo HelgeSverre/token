@@ -382,6 +382,18 @@ pub struct LocalServerConfig {
     pub gpu_layers: Option<u32>,
 }
 
+impl Default for LocalServerConfig {
+    fn default() -> Self {
+        Self {
+            executable: Default::default(),
+            model_path: Default::default(),
+            startup_timeout_ms: default_server_startup_ms(),
+            context_size: default_server_context_size(),
+            gpu_layers: None,
+        }
+    }
+}
+
 fn default_server_startup_ms() -> u64 {
     120_000
 }

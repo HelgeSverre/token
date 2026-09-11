@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use reqwest::{Client, Url};
 use token::completion::provider::ProviderError;
-use token::config::{ProviderConfig, TransportKind};
+use token::config::ProviderConfig;
 use tokio::process::{Child, Command};
 use tokio::time::Instant;
 
@@ -143,36 +143,13 @@ impl InlineServer {
 }
 
 fn command(config: &ProviderConfig) -> Result<(Command, Url), ProviderError> {
+    token::completion::fim::validate_config(config)?;
     let invalid = |message| ProviderError::Configuration(message);
     let local = config
         .local_server
         .as_ref()
         .ok_or_else(|| invalid("missing local_server"))?;
     let mut url = Url::parse(&config.url).map_err(|_| invalid("invalid local server URL"))?;
-    if config.transport != TransportKind::LlamaCpp
-        || url.scheme() != "http"
-        || url.host_str() != Some("127.0.0.1")
-        || url.port() == Some(0)
-        || url.path() != "/"
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(invalid(
-            "local_server requires llama_cpp and an http://127.0.0.1:PORT base URL",
-        ));
-    }
-    if !local.executable.is_absolute() || !local.model_path.is_absolute() {
-        return Err(invalid(
-            "local_server executable and model_path must be absolute paths",
-        ));
-    }
-    if !(1..=600_000).contains(&local.startup_timeout_ms) || local.context_size == 0 {
-        return Err(invalid(
-            "local_server needs startup_timeout_ms: 1..600000 and positive context_size",
-        ));
-    }
     let mut command = Command::new(&local.executable);
     command
         .arg("--model")
@@ -215,6 +192,7 @@ fn command(config: &ProviderConfig) -> Result<(Command, Url), ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use token::config::TransportKind;
 
     #[test]
     fn managed_configuration_is_opt_in_round_trips_and_stays_local() {

@@ -17,6 +17,94 @@ use crate::util::byte_size::ByteSize;
 const RESPONSE_LIMIT: ByteSize = ByteSize::mebibytes(1);
 const CREDENTIAL_LIMIT: ByteSize = ByteSize::kibibytes(4);
 
+/// Validate a draft without reading credentials, doing I/O, or creating a client.
+/// Settings and the runtime intentionally use the same provider constraints.
+pub fn validate_config(config: &ProviderConfig) -> Result<(), ProviderError> {
+    prepare_config(config).map(|_| ())
+}
+
+struct PreparedConfig {
+    url: Url,
+    prompt: Option<PromptTemplate>,
+}
+
+fn prepare_config(config: &ProviderConfig) -> Result<PreparedConfig, ProviderError> {
+    config.context.limits()?;
+    if config.n == 0 || usize::from(config.n) > MAX_ALTERNATIVES {
+        return Err(ProviderError::Configuration("n must be between 1 and 8"));
+    }
+    if config.prompt_format != PromptFormat::Native
+        && !matches!(
+            config.transport,
+            TransportKind::Ollama | TransportKind::OpenAiCompat
+        )
+    {
+        return Err(ProviderError::Configuration(
+            "raw prompt_format requires ollama or open_ai_compat",
+        ));
+    }
+    let prompt = config.prompt_format.resolve(config.model.as_deref())?;
+    if config.n > 1 && config.transport != TransportKind::OpenAiCompat {
+        return Err(ProviderError::Configuration(
+            "n > 1 requires open_ai_compat",
+        ));
+    }
+    if config.timeout_ms == 0 || config.max_tokens == 0 {
+        return Err(ProviderError::Configuration(
+            "timeout_ms and max_tokens must be positive",
+        ));
+    }
+    if !matches!(
+        config.transport,
+        TransportKind::LlamaCpp | TransportKind::Tabby
+    ) && config
+        .model
+        .as_deref()
+        .is_none_or(|model| model.trim().is_empty())
+    {
+        return Err(ProviderError::Configuration(
+            "this transport requires a model",
+        ));
+    }
+    let url = Url::parse(&config.url)
+        .map_err(|_| ProviderError::Configuration("expected an HTTP(S) base URL"))?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(ProviderError::Configuration(
+            "use an HTTP(S) base URL without credentials, query, or fragment",
+        ));
+    }
+    validate_authorization(config, &url)?;
+    if let Some(local) = &config.local_server {
+        if config.transport != TransportKind::LlamaCpp
+            || url.scheme() != "http"
+            || url.host_str() != Some("127.0.0.1")
+            || url.port() == Some(0)
+            || url.path() != "/"
+        {
+            return Err(ProviderError::Configuration(
+                "local_server requires llama_cpp and an http://127.0.0.1:PORT base URL",
+            ));
+        }
+        if !local.executable.is_absolute() || !local.model_path.is_absolute() {
+            return Err(ProviderError::Configuration(
+                "local_server executable and model_path must be absolute paths",
+            ));
+        }
+        if !(1..=600_000).contains(&local.startup_timeout_ms) || local.context_size == 0 {
+            return Err(ProviderError::Configuration(
+                "local_server needs startup_timeout_ms: 1..600000 and positive context_size",
+            ));
+        }
+    }
+    Ok(PreparedConfig { url, prompt })
+}
+
 pub fn client() -> Result<Client, ProviderError> {
     Ok(Client::builder()
         // Never follow a redirect carrying document context to another endpoint.
@@ -45,56 +133,7 @@ impl FimProvider {
         config: ProviderConfig,
         lookup: impl FnOnce(&str) -> Option<String>,
     ) -> Result<Self, ProviderError> {
-        config.context.limits()?;
-        if config.n == 0 || usize::from(config.n) > MAX_ALTERNATIVES {
-            return Err(ProviderError::Configuration("n must be between 1 and 8"));
-        }
-        if config.prompt_format != PromptFormat::Native
-            && !matches!(
-                config.transport,
-                TransportKind::Ollama | TransportKind::OpenAiCompat
-            )
-        {
-            return Err(ProviderError::Configuration(
-                "raw prompt_format requires ollama or open_ai_compat",
-            ));
-        }
-        let prompt = config.prompt_format.resolve(config.model.as_deref())?;
-        if config.n > 1 && config.transport != TransportKind::OpenAiCompat {
-            return Err(ProviderError::Configuration(
-                "n > 1 requires open_ai_compat",
-            ));
-        }
-        if config.timeout_ms == 0 || config.max_tokens == 0 {
-            return Err(ProviderError::Configuration(
-                "timeout_ms and max_tokens must be positive",
-            ));
-        }
-        if !matches!(
-            config.transport,
-            TransportKind::LlamaCpp | TransportKind::Tabby
-        ) && config
-            .model
-            .as_deref()
-            .is_none_or(|model| model.trim().is_empty())
-        {
-            return Err(ProviderError::Configuration(
-                "this transport requires a model",
-            ));
-        }
-        let mut url = Url::parse(&config.url)
-            .map_err(|_| ProviderError::Configuration("expected an HTTP(S) base URL"))?;
-        if !matches!(url.scheme(), "http" | "https")
-            || url.host_str().is_none()
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
-            return Err(ProviderError::Configuration(
-                "use an HTTP(S) base URL without credentials, query, or fragment",
-            ));
-        }
+        let PreparedConfig { mut url, prompt } = prepare_config(&config)?;
         let authorization = authorization(&config, &url, lookup)?;
         let base = url.path().trim_end_matches('/');
         let route = match config.transport {
@@ -327,18 +366,14 @@ fn choices<T: serde::de::DeserializeOwned>(
     Ok(choices.into_iter().take(MAX_ALTERNATIVES).collect())
 }
 
-fn authorization(
-    config: &ProviderConfig,
-    url: &Url,
-    lookup: impl FnOnce(&str) -> Option<String>,
-) -> Result<Option<HeaderValue>, ProviderError> {
+fn validate_authorization(config: &ProviderConfig, url: &Url) -> Result<(), ProviderError> {
     let Some(name) = config.api_key_env.as_deref() else {
         return if config.transport == TransportKind::MistralFim {
             Err(ProviderError::Configuration(
                 "Mistral FIM requires api_key_env",
             ))
         } else {
-            Ok(None)
+            Ok(())
         };
     };
     if !name
@@ -364,6 +399,18 @@ fn authorization(
             "credentials require HTTPS except on loopback",
         ));
     }
+    Ok(())
+}
+
+fn authorization(
+    config: &ProviderConfig,
+    url: &Url,
+    lookup: impl FnOnce(&str) -> Option<String>,
+) -> Result<Option<HeaderValue>, ProviderError> {
+    validate_authorization(config, url)?;
+    let Some(name) = config.api_key_env.as_deref() else {
+        return Ok(None);
+    };
     let key = lookup(name)
         .filter(|key| !key.is_empty())
         .ok_or(ProviderError::Configuration(
@@ -973,6 +1020,12 @@ mod tests {
     #[test]
     fn credentials_are_validated_before_network_and_never_echoed() {
         let config = hosted_config(TransportKind::MistralFim, "https://example.invalid".into());
+        // A Settings draft can reference an unset variable. Runtime construction
+        // still requires an actual credential before making any request.
+        assert!(validate_config(&config).is_ok());
+        assert!(
+            FimProvider::with_environment(client().unwrap(), config.clone(), |_| None).is_err()
+        );
         let url = Url::parse(&config.url).unwrap();
         for key in [
             None,

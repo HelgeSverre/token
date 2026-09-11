@@ -33,11 +33,11 @@ pub enum ContextStrategy {
     },
 }
 
-fn default_max_chunks() -> usize {
+pub(crate) fn default_max_chunks() -> usize {
     8
 }
 
-fn default_chunk_lines() -> usize {
+pub(crate) fn default_chunk_lines() -> usize {
     64
 }
 
