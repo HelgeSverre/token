@@ -5,6 +5,96 @@ event handler as winit. It exercises hover dismissal, pointer routing, hit
 testing, drag capture, wheel conversion and focus-loss auto-save. It does not
 move the system cursor, activate another app, or manufacture OS device events.
 
+## JavaScript helper for isolated native checks
+
+Maintained Node scripts should use
+[`scripts/lib/token-automation.mjs`](../../scripts/lib/token-automation.mjs)
+instead of copying socket framing, temporary configuration, process lifecycle,
+or polling loops. It has no dependencies and intentionally requires either an
+explicit socket path or an isolated app it starts itself.
+
+`startIsolatedToken` is the normal choice for macOS/Linux smoke checks. It
+creates a fixture, configuration directory, and short Unix socket beneath
+`target/verification/<name>/`; therefore it neither changes the user's Token
+configuration nor attaches destructive input to a developer's open window.
+The lifecycle helper is Unix-only. Use Token's CLI or MCP bridge for Windows
+automation until the loopback endpoint gains an equivalent helper.
+
+```js
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  createPointer,
+  inputEvent,
+  startIsolatedToken,
+  until,
+} from "./lib/token-automation.mjs";
+
+const repositoryRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+
+const run = await startIsolatedToken({
+  root: repositoryRoot,
+  binary: path.join(repositoryRoot, "target/debug/token"),
+  name: "my-check",
+  configYaml: `
+lsp:
+  enabled: false
+auto_save:
+  mode: on_focus_loss
+session:
+  restore: false
+  save_on_exit: false
+`,
+  files: { "example.rs": "fn main() {}\n" },
+  openFiles: ["example.rs"],
+});
+
+try {
+  const initial = await run.waitForStartup();
+  const { client } = run;
+  await client.setCursor(0, 3);
+  await client.insertText("pub ");
+
+  const pointer = createPointer(client);
+  await pointer.move(initial.editor_geometry.text_start_x + 8, 120);
+  await pointer.wheel(0, -13.5); // physical pixel delta
+  await client.input([inputEvent.focus(false)]);
+
+  await until(async () => !(await client.state()).modified, {
+    label: "focus-loss save",
+  });
+} finally {
+  await run.stop(); // only stops the child that this script started
+}
+```
+
+The public building blocks are deliberately small:
+
+- `createTokenClient({ socketPath, timeoutMs })` sends one JSON request to one
+  explicit Unix socket. `request` returns the full protocol reply;
+  `state()`, `document()`, and `actions()` return their respective payloads.
+  Mutation conveniences include `insertText`, `setCursor`, `setSelection`,
+  `action`, `scroll`, `setOverlayInput`, and `openPaths`.
+- `inputEvent` constructs validated focus, pointer, button, wheel, and close
+  events. `createPointer(client)` retains a window-local pointer position and
+  batches move/button or move/wheel events atomically. `rectCenter` accepts the
+  `[x, y, width, height]` rectangles returned in editor geometry.
+- `until(check, { label, timeoutMs, intervalMs })` bounds polling and a hung
+  check. A check should return `false` while it is still waiting; unexpected
+  errors fail immediately rather than being retried invisibly. It cannot cancel
+  an already-running check, so keep checks free of delayed destructive work.
+
+All client calls have a finite timeout (five seconds by default), including
+`openPaths(paths, { wait: true })`; pick an explicit, finite `timeoutMs` when a
+script intentionally waits longer. Automation responses acknowledge dispatch rather
+than completion of asynchronous work, so poll state and inspect the isolated
+fixture when asserting saves or server work. The helper does not simulate OS
+keyboard input, modifiers, application activation, real trackpad momentum, or
+system cursor movement.
+
 Use semantic actions for ordinary commands. Use input when the interaction path
 itself matters. Each request accepts 1–64 events, validates them all first, then
 dispatches them without interleaving native input. Group a move and its button or

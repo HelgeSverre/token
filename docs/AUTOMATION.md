@@ -4,6 +4,10 @@ Token exposes its real update and render loop through a local automation endpoin
 The interface is intended for deterministic tests, performance measurements, and
 MCP clients; it does not move the system cursor.
 
+For maintained JavaScript native-smoke scripts, use the small isolated-fixture
+helper documented in [window-local automation input](dev/automation-input.md)
+rather than copying the socket protocol.
+
 Start the editor with a deterministic Rust document:
 
 ```bash

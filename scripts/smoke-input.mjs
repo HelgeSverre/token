@@ -1,27 +1,21 @@
 // Run from any directory: node scripts/smoke-input.mjs [path/to/token]
 // Uses an isolated native window and fixture/config files under target/.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { setTimeout as delay } from "node:timers/promises";
+import {
+  createPointer,
+  inputEvent,
+  rectCenter,
+  startIsolatedToken,
+  until,
+} from "./lib/token-automation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const binary = path.resolve(
   process.argv[2] ?? path.join(root, "target/release/token"),
 );
-const base = path.join(root, "target/verification/input-smoke");
-await mkdir(base, { recursive: true });
-const fixture = await mkdtemp(path.join(base, "run-"));
-// Keep the Unix socket path short enough for sockaddr_un on macOS.
-const socket = path.join(fixture, "s");
-const config = path.join(fixture, "config");
-await mkdir(path.join(config, "token-editor"), { recursive: true });
-await writeFile(
-  path.join(config, "token-editor/config.yaml"),
-  `
+const configYaml = `
 lsp:
   enabled: false
 hover_on_mouse: false
@@ -30,118 +24,56 @@ auto_save:
 session:
   restore: false
   save_on_exit: false
-`,
-);
+`;
 const source = Array.from(
   { length: 80 },
   (_, i) =>
     `fn sample_${i}() { // ${"wide ".repeat(60)}\n    let message = "hello";\n    println!("{message}");\n}\n`,
 ).join("\n");
-await writeFile(path.join(fixture, "scroll.rs"), source);
-await writeFile(path.join(fixture, "first.txt"), "first\n");
-await writeFile(path.join(fixture, "second.txt"), "second\n");
-const child = spawn(
+const run = await startIsolatedToken({
+  root,
   binary,
-  ["--foreground", "--new-window", fixture, path.join(fixture, "scroll.rs")],
-  {
-    cwd: root,
-    env: {
-      ...process.env,
-      XDG_CONFIG_HOME: config,
-      TOKEN_AUTOMATION_SOCKET: socket,
-    },
-    stdio: ["ignore", "ignore", "pipe"],
+  name: "input-smoke",
+  configYaml,
+  files: {
+    "scroll.rs": source,
+    "first.txt": "first\n",
+    "second.txt": "second\n",
   },
-);
-let stderr = "";
-child.stderr.on("data", (chunk) => {
-  stderr = (stderr + chunk).slice(-16000);
+  openFiles: ["scroll.rs"],
 });
-const exited = new Promise((resolve) => {
-  child.on("error", (error) => resolve({ error: error.message }));
-  child.on("exit", (code, signal) => resolve({ code, signal }));
-});
-
-function request(body) {
-  return new Promise((resolve, reject) => {
-    const client = net.createConnection(socket);
-    let data = "";
-    client.setTimeout(5000, () =>
-      client.destroy(new Error("automation timed out")),
-    );
-    client.on("error", reject);
-    client.on("connect", () => client.write(JSON.stringify(body) + "\n"));
-    client.on("data", (chunk) => {
-      data += chunk;
-      if (!data.includes("\n")) return;
-      client.end();
-      try {
-        const response = JSON.parse(data);
-        assert(response.ok, response.message);
-        resolve(response.state);
-      } catch (error) {
-        reject(error);
-      }
-    });
-    client.on("end", () => {
-      if (!data.includes("\n"))
-        reject(new Error("automation closed without a reply"));
-    });
-  });
-}
-const state = () => request({ type: "state" });
-const input = (...events) => request({ type: "input", events });
-const action = (name) => request({ type: "execute_action", name });
-let pointer;
-const move = (x, y) => {
-  pointer = { kind: "pointer_move", x, y };
-  return input(pointer);
-};
-// Target and action share one dispatch, independent of native pointer motion.
-const button = (pressed) =>
-  input(pointer, { kind: "pointer_button", button: "left", pressed });
-const wheel = (x, y) => input(pointer, { kind: "wheel", x, y, unit: "pixels" });
-const focus = (focused) => input({ kind: "focus", focused });
-const center = ([x, y, width, height]) => [x + width / 2, y + height / 2];
+const { child, client, fixture } = run;
+const pointer = createPointer(client);
+const state = () => client.state();
+const action = (name) => client.action(name);
+const move = (x, y) => pointer.move(x, y);
+const button = (pressed) => pointer.button(pressed);
+const wheel = (x, y) => pointer.wheel(x, y);
+const focus = (focused) => client.input([inputEvent.focus(focused)]);
 const checks = [];
-async function until(check, label, timeout = 10000) {
-  const end = Date.now() + timeout;
-  while (Date.now() < end) {
-    if (await check()) return;
-    await delay(100);
-  }
-  throw new Error(`Timed out: ${label}`);
-}
 
 try {
-  await until(
-    async () => {
-      if (child.exitCode !== null) throw new Error(`Token exited: ${stderr}`);
-      try {
-        return (await state()).editor_geometry;
-      } catch (error) {
-        if (error.code === "ENOENT" || error.code === "ECONNREFUSED")
-          return false;
-        throw error;
-      }
-    },
-    "native window startup",
-    60000,
-  );
+  await run.waitForStartup({
+    timeoutMs: 60000,
+    ready: (snapshot) => snapshot.editor_geometry,
+  });
   const initial = await state();
   // Syntax parsing is asynchronous; wait for actual collapse, not a fixed delay.
   await until(
     async () =>
       (await action("CollapseAllFolds")).visual_row_count <
       initial.visual_row_count,
-    "fold candidates",
+    { label: "fold candidates" },
   );
   await action("ToggleFindReplace");
-  await request({ type: "set_overlay_input", text: "message" });
-  await until(async () => {
-    const status = (await state()).overlay?.status;
-    return status === "160 matches" || status?.endsWith(" of 160");
-  }, "Find results");
+  await client.setOverlayInput("message");
+  await until(
+    async () => {
+      const status = (await state()).overlay?.status;
+      return status === "160 matches" || status?.endsWith(" of 160");
+    },
+    { label: "Find results" },
+  );
   let current = await state();
   assert(current.editor_geometry.find_bar[3] > 0);
   assert(current.visual_row_count < initial.visual_row_count);
@@ -156,7 +88,7 @@ try {
     assert(!current.scroll_animating);
   }
   checks.push("fractional pixel wheel with Find and folding");
-  await move(...center(geometry.find_bar));
+  await move(...rectCenter(geometry.find_bar));
   const beforeFindWheel = current.viewport_pixel_position;
   assert.deepEqual(
     (await wheel(0, -19)).viewport_pixel_position,
@@ -171,7 +103,7 @@ try {
     current = await state();
     const scrollbar = current.editor_geometry[name];
     assert(scrollbar, `${name} is present`);
-    const start = center(scrollbar.thumb);
+    const start = rectCenter(scrollbar.thumb);
     await move(...start);
     assert((await button(true)).scrollbar_dragging, `${name} captured`);
     const end = [...start];
@@ -190,7 +122,7 @@ try {
     checks.push(`${name} thumb drag, release and post-release motion`);
   }
   current = await state();
-  await move(...center(current.editor_geometry.vertical_scrollbar.thumb));
+  await move(...rectCenter(current.editor_geometry.vertical_scrollbar.thumb));
   const recapture = await button(true);
   assert(
     recapture.scrollbar_dragging,
@@ -200,7 +132,7 @@ try {
   await focus(true);
   checks.push("focus loss releases scrollbar capture");
 
-  current = await request({ type: "set_cursor", line: 0, column: 0 });
+  current = await client.setCursor(0, 0);
   await move(
     current.editor_geometry.text_start_x + 1,
     current.editor_geometry.content[1] + 1,
@@ -213,56 +145,37 @@ try {
 
   await focus(true);
   for (const name of ["first.txt", "second.txt"]) {
-    await request({
-      type: "open_paths",
-      paths: [{ path: path.join(fixture, name) }],
-      wait: false,
-    });
-    await request({ type: "insert_text", text: "saved " });
-    assert.equal(
-      await readFile(path.join(fixture, name), "utf8"),
-      name.replace(".txt", "\n"),
-    );
+    await client.openPaths([{ path: path.join(fixture, name) }]);
+    await client.insertText("saved ");
+    assert.equal(await run.readFixture(name), name.replace(".txt", "\n"));
   }
   await focus(false);
-  await until(async () => !(await state()).modified, "focus-loss save");
-  assert.equal(
-    await readFile(path.join(fixture, "first.txt"), "utf8"),
-    "saved first\n",
-  );
-  assert.equal(
-    await readFile(path.join(fixture, "second.txt"), "utf8"),
-    "saved second\n",
-  );
+  await until(async () => !(await state()).modified, {
+    label: "focus-loss save",
+  });
+  assert.equal(await run.readFixture("first.txt"), "saved first\n");
+  assert.equal(await run.readFixture("second.txt"), "saved second\n");
   checks.push("focus-loss auto-save writes active and background documents");
   await focus(true);
-  await request({ type: "insert_text", text: "keep unsaved " });
-  current = await input({ kind: "close" });
+  await client.insertText("keep unsaved ");
+  current = await client.input([inputEvent.close()]);
   assert.equal(current.overlay?.context, "unsaved_changes");
   assert.deepEqual(
     current.overlay.rows.map((row) => row.label),
     ["Cancel", "Save", "Discard Changes"],
   );
   assert(current.modified);
-  assert.equal(
-    await readFile(path.join(fixture, "second.txt"), "utf8"),
-    "saved second\n",
-  );
+  assert.equal(await run.readFixture("second.txt"), "saved second\n");
   // Replacing the confirmation cancels the close intention. A later ordinary
   // save must not unexpectedly close this window when its async reply arrives.
   await action("OpenSettings");
   await action("OpenSettings");
   await action("SaveFile");
-  await until(
-    async () => !(await state()).modified,
-    "ordinary save after cancelled closing",
-  );
+  await until(async () => !(await state()).modified, {
+    label: "ordinary save after cancelled closing",
+  });
   assert.equal(child.exitCode, null);
-  assert(
-    (await readFile(path.join(fixture, "second.txt"), "utf8")).includes(
-      "keep unsaved ",
-    ),
-  );
+  assert((await run.readFixture("second.txt")).includes("keep unsaved "));
   checks.push(
     "window close protects dirty text; cancelling the intention allows a later save without exiting",
   );
@@ -273,25 +186,14 @@ try {
     limitation:
       "Synthetic native-handler input, not OS app switching or physical trackpad delivery.",
   };
-  await writeFile(
-    path.join(fixture, "report.json"),
-    JSON.stringify(report, null, 2) + "\n",
-  );
+  await run.writeFixture("report.json", JSON.stringify(report, null, 2) + "\n");
   console.log(JSON.stringify(report, null, 2));
 } finally {
   try {
-    await action("Quit");
-  } catch {
-    /* startup failure or already exited */
-  }
-  const result = await Promise.race([exited, delay(5000).then(() => null)]);
-  if (!result) {
-    child.kill();
+    await run.stop();
+  } catch (error) {
     process.exitCode = 1;
-    console.error("Token did not quit within five seconds");
-  } else if (result.error || result.code !== 0) {
-    process.exitCode = 1;
-    console.error("Token exited abnormally:", result);
+    console.error(error);
   }
-  if (stderr) await writeFile(path.join(fixture, "stderr.log"), stderr);
+  if (run.stderr) await run.writeFixture("stderr.log", run.stderr);
 }

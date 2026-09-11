@@ -19,6 +19,11 @@ just run                # Release build with representative sample files
 Use `just --list` for profiling, benchmarks, packaging, and other less common
 workflows. Prefer repository recipes over invented Cargo command combinations.
 
+For JavaScript automation scripts, reuse `scripts/lib/token-automation.mjs`.
+See [the automation guide](docs/dev/automation-input.md) for the shared client,
+isolated native fixtures, and input limitations. Keep generated artifacts under
+`target/verification/`.
+
 ## Architecture
 
 The application follows an Elm-style flow:
