@@ -588,7 +588,7 @@ impl EditorArea {
         if let Some(existing_pid) = group.attached_preview {
             if let Some(preview) = self.previews.get_mut(&existing_pid) {
                 preview.document_id = doc_id;
-                preview.last_revision = 0;
+                preview.invalidate();
                 preview.scroll_offset = 0;
             }
             return Some(existing_pid);
@@ -687,7 +687,7 @@ impl EditorArea {
                 // Retarget the preview to the new document
                 if let Some(preview) = self.previews.get_mut(&preview_id) {
                     preview.document_id = new_doc_id;
-                    preview.last_revision = 0; // Force refresh
+                    preview.invalidate();
                     preview.scroll_offset = 0;
                 }
             } else {

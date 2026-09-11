@@ -143,7 +143,7 @@ pub(super) fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd>
                     group.active_tab_index = (group.active_tab_index + 1) % group.tabs.len();
                 }
             }
-            close_preview_if_not_markdown(model);
+            reconcile_focused_preview(model);
             ensure_focused_tab_visible(model);
             on_focused_document_changed(model)
         }
@@ -158,7 +158,7 @@ pub(super) fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd>
                     };
                 }
             }
-            close_preview_if_not_markdown(model);
+            reconcile_focused_preview(model);
             ensure_focused_tab_visible(model);
             on_focused_document_changed(model)
         }
@@ -169,7 +169,7 @@ pub(super) fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd>
                     group.active_tab_index = index;
                 }
             }
-            close_preview_if_not_markdown(model);
+            reconcile_focused_preview(model);
             ensure_focused_tab_visible(model);
             on_focused_document_changed(model)
         }
@@ -334,6 +334,7 @@ fn new_tab_in_focused_group(model: &mut AppModel) {
         group.tabs.push(tab);
         group.active_tab_index = group.tabs.len() - 1;
     }
+    model.editor_area.on_group_active_tab_changed(group_id);
 }
 
 /// Capture the target group and post-open action before starting disk work.
@@ -695,6 +696,7 @@ fn install_file_tab(
                 .groups
                 .get_mut(&group_id)?
                 .active_tab_index = index;
+            model.editor_area.on_group_active_tab_changed(group_id);
         }
         return Some((editor_id, false));
     }
@@ -737,6 +739,7 @@ fn install_file_tab(
     });
     if activate {
         group.active_tab_index = group.tabs.len() - 1;
+        model.editor_area.on_group_active_tab_changed(group_id);
     }
     Some((editor_id, true))
 }
@@ -1029,7 +1032,12 @@ fn move_tab(model: &mut AppModel, tab_id: TabId, to_group: GroupId) {
         && model.editor_area.groups.len() > 1
     {
         close_group(model, source_group_id);
+    } else {
+        model
+            .editor_area
+            .on_group_active_tab_changed(source_group_id);
     }
+    model.editor_area.on_group_active_tab_changed(to_group);
 }
 
 /// Close a specific tab
@@ -1428,9 +1436,8 @@ fn restore_container_ratios_by_splitter(
     )
 }
 
-/// Close preview pane if the focused group's active tab changed.
-/// Called when switching tabs to ensure preview stays relevant.
-fn close_preview_if_not_markdown(model: &mut AppModel) {
+/// Follow the active supported document, or close an incompatible preview.
+fn reconcile_focused_preview(model: &mut AppModel) {
     let group_id = model.editor_area.focused_group_id;
     model.editor_area.on_group_active_tab_changed(group_id);
 }
@@ -1481,6 +1488,100 @@ mod tests {
         crate::update::finish_test_file_opens(model, cmd)
     }
     use crate::messages::LayoutMsg;
+
+    #[test]
+    fn preview_follows_zero_revision_opens_switches_and_explicit_refresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.md");
+        std::fs::write(&a, "# First").unwrap();
+        std::fs::write(&b, "# Second").unwrap();
+        let mut model =
+            AppModel::with_document(800, 600, 1.0, Document::from_file(a.clone()).unwrap());
+        let a_id = model.editor_area.focused_document_id().unwrap();
+        let pid = model.editor_area.open_preview_for_focused_group().unwrap();
+        let preview = model.editor_area.preview_mut(pid).unwrap();
+        assert!(preview.needs_refresh(0));
+        preview.mark_rendered(a_id, 0);
+        assert!(!preview.needs_refresh(0));
+
+        open_fixture_layout(&mut model, LayoutMsg::OpenFileInNewTab(b.clone()));
+        let b_id = model.editor_area.focused_document_id().unwrap();
+        assert_ne!(a_id, b_id);
+        assert_eq!(model.document().revision, 0);
+        let preview = model.editor_area.preview_mut(pid).unwrap();
+        assert_eq!(preview.document_id, b_id);
+        assert!(preview.needs_refresh(0));
+        preview.mark_rendered(b_id, 0);
+
+        update_layout(&mut model, LayoutMsg::SwitchToTab(0));
+        let preview = model.editor_area.preview_mut(pid).unwrap();
+        assert_eq!(preview.document_id, a_id);
+        assert!(preview.needs_refresh(0));
+        preview.mark_rendered(a_id, 0);
+        assert!(!preview.needs_refresh(0));
+        assert!(super::super::preview::update_preview(
+            &mut model,
+            crate::messages::PreviewMsg::Refresh
+        )
+        .is_some());
+        assert!(model.editor_area.preview(pid).unwrap().needs_refresh(0));
+
+        open_fixture_layout(&mut model, LayoutMsg::OpenFileInNewTab(b));
+        let preview = model.editor_area.preview_mut(pid).unwrap();
+        assert_eq!(preview.document_id, b_id);
+        preview.mark_rendered(b_id, 0);
+        assert!(!preview.needs_refresh(0));
+        assert!(preview.needs_refresh(1), "live edits must still invalidate");
+        // Identity is part of the stamp even if an activation caller forgets invalidation.
+        preview.document_id = a_id;
+        assert!(preview.needs_refresh(0));
+    }
+
+    #[test]
+    fn preview_activation_is_group_local_and_background_opens_do_not_retarget() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.html");
+        std::fs::write(&a, "# First").unwrap();
+        std::fs::write(&b, "<h1>Second</h1>").unwrap();
+        let mut model = AppModel::with_document(800, 600, 1.0, Document::from_file(a).unwrap());
+        let group_a = model.editor_area.focused_group_id;
+        let a_id = model.editor_area.focused_document_id().unwrap();
+        let preview_a = model.editor_area.open_preview_for_focused_group().unwrap();
+        split_focused_group(&mut model, SplitDirection::Vertical);
+        let group_b = model.editor_area.focused_group_id;
+        let preview_b = model.editor_area.open_preview_for_focused_group().unwrap();
+        open_fixture_layout(&mut model, LayoutMsg::OpenFileInNewTab(b));
+        let b_id = model.editor_area.focused_document_id().unwrap();
+        assert_eq!(
+            model.editor_area.preview(preview_a).unwrap().document_id,
+            a_id
+        );
+        assert_eq!(
+            model.editor_area.preview(preview_b).unwrap().document_id,
+            b_id
+        );
+        install_file_tab(&mut model, group_a, b_id, None, false).unwrap();
+        assert_eq!(
+            model.editor_area.preview(preview_a).unwrap().document_id,
+            a_id
+        );
+        let tab = model.editor_area.groups[&group_b].active_tab().unwrap().id;
+        move_tab(&mut model, tab, group_a);
+        assert_eq!(
+            model.editor_area.preview(preview_a).unwrap().document_id,
+            b_id
+        );
+        assert_eq!(
+            model.editor_area.preview(preview_b).unwrap().document_id,
+            a_id
+        );
+        model.editor_area.focused_group_id = group_a;
+        update_layout(&mut model, LayoutMsg::NewTab);
+        assert!(model.editor_area.preview(preview_a).is_none());
+        assert!(model.editor_area.preview(preview_b).is_some());
+    }
 
     /// Opening a file already open in another split group must never
     /// steal focus into that group — it opens/reuses the document in the

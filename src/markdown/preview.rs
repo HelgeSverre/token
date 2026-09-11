@@ -14,7 +14,7 @@ pub struct PreviewPane {
     pub scroll_offset: usize,
     pub scroll_sync_enabled: bool,
     pub rect: Rect,
-    pub last_revision: u64,
+    rendered: Option<(DocumentId, u64)>,
 }
 
 /// A rendered line in the preview (for native text rendering)
@@ -65,11 +65,21 @@ impl PreviewPane {
             scroll_offset: 0,
             scroll_sync_enabled: true,
             rect: Rect::default(),
-            last_revision: 0,
+            rendered: None,
         }
     }
 
     pub fn needs_refresh(&self, document_revision: u64) -> bool {
-        self.last_revision != document_revision
+        self.rendered != Some((self.document_id, document_revision))
+    }
+
+    /// Force a content submission even when the document has not changed.
+    pub fn invalidate(&mut self) {
+        self.rendered = None;
+    }
+
+    /// Record a successful submission, not merely a requested redraw.
+    pub fn mark_rendered(&mut self, document_id: DocumentId, revision: u64) {
+        self.rendered = Some((document_id, revision));
     }
 }

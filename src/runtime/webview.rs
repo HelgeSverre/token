@@ -100,17 +100,28 @@ impl WebviewManager {
     }
 
     /// Update webview content
-    pub fn update_content(&mut self, preview_id: PreviewId, content: PreviewContent) {
+    pub fn update_content(
+        &mut self,
+        preview_id: PreviewId,
+        content: PreviewContent,
+    ) -> anyhow::Result<()> {
+        let webview = self
+            .webviews
+            .get(&preview_id)
+            .ok_or_else(|| anyhow::anyhow!("Preview webview {preview_id:?} is missing"))?;
         // Update stored content
-        if let Ok(mut state) = self.protocol_state.write() {
+        {
+            let mut state = self
+                .protocol_state
+                .write()
+                .map_err(|_| anyhow::anyhow!("Preview content lock is poisoned"))?;
             state.contents.insert(preview_id, content);
         }
 
         // Reload the webview to pick up new content
-        if let Some(webview) = self.webviews.get(&preview_id) {
-            let url = format!("token://preview-{}/index.html", preview_id.0);
-            let _ = webview.load_url(&url);
-        }
+        let url = format!("token://preview-{}/index.html", preview_id.0);
+        webview.load_url(&url)?;
+        Ok(())
     }
 
     /// Update webview bounds (position and size)
@@ -310,6 +321,16 @@ fn to_wry_rect(bounds: token::model::editor_area::Rect, scale_factor: f64) -> Re
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn updating_missing_preview_reports_failure_without_storing_content() {
+        let mut manager = super::WebviewManager::new();
+        let id = token::model::editor_area::PreviewId(42);
+        assert!(manager
+            .update_content(id, super::PreviewContent::Html("<h1>test</h1>".into()))
+            .is_err());
+        assert!(manager.protocol_state.read().unwrap().contents.is_empty());
+    }
+
     use super::*;
     use token::model::editor_area::Rect as EditorRect;
     use wry::dpi::{LogicalPosition, LogicalSize};

@@ -6,6 +6,12 @@ All notable changes to Token are documented in this file.
 
 ## Unreleased
 
+### Preview
+
+- Refresh Markdown and HTML previews when switching to unedited documents,
+  opening or reactivating files, and moving tabs between groups. Explicit Refresh
+  now reloads unchanged content; failed webview updates remain eligible for retry.
+
 ### Theming
 
 - Allow themes to style selected buttons independently of pressed buttons with

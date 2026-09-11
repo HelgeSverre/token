@@ -30,7 +30,11 @@ pub(super) fn update_preview(model: &mut AppModel, msg: PreviewMsg) -> Option<Cm
                 None
             }
         }
-        PreviewMsg::Refresh => Some(Cmd::Redraw),
+        PreviewMsg::Refresh => {
+            let preview = model.editor_area.preview_for_group_mut(group_id)?;
+            preview.invalidate();
+            Some(Cmd::Redraw)
+        }
         PreviewMsg::ScrollToLine(line) => {
             if let Some(preview) = model.editor_area.preview_for_group_mut(group_id) {
                 if preview.scroll_sync_enabled {

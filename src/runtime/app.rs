@@ -2217,6 +2217,7 @@ impl App {
 
         struct PreviewUpdate {
             preview_id: PreviewId,
+            document_id: token::model::DocumentId,
             rect: token::model::editor_area::Rect,
             content: Option<PreviewContent>,
             doc_revision: u64,
@@ -2265,6 +2266,7 @@ impl App {
 
                 Some(PreviewUpdate {
                     preview_id,
+                    document_id: preview.document_id,
                     rect: webview_rect,
                     content,
                     doc_revision: document.revision,
@@ -2301,9 +2303,9 @@ impl App {
                         continue;
                     }
                 }
-                // Update last_revision after successful creation
+                // Only acknowledge content successfully submitted to the webview.
                 if let Some(preview) = self.model.editor_area.preview_mut(update.preview_id) {
-                    preview.last_revision = update.doc_revision;
+                    preview.mark_rendered(update.document_id, update.doc_revision);
                 }
             } else {
                 // Update existing webview bounds
@@ -2313,12 +2315,17 @@ impl App {
                 // Update content if revision changed
                 if update.needs_content_update {
                     if let Some(content) = update.content {
-                        self.webview_manager
-                            .update_content(update.preview_id, content);
+                        if let Err(error) = self
+                            .webview_manager
+                            .update_content(update.preview_id, content)
+                        {
+                            tracing::error!(%error, "Failed to update preview content");
+                            continue;
+                        }
                     }
-                    // Update last_revision after content update
+                    // Failed submissions remain invalid for the next refresh.
                     if let Some(preview) = self.model.editor_area.preview_mut(update.preview_id) {
-                        preview.last_revision = update.doc_revision;
+                        preview.mark_rendered(update.document_id, update.doc_revision);
                     }
                 }
             }
