@@ -1901,6 +1901,25 @@ mod tests {
         assert!(pty_rx.try_recv().is_err());
     }
 
+    #[test]
+    fn terminal_option_backspace_writes_meta_delete_to_active_session() {
+        let (mut model, pty_rx) = focused_terminal_model();
+
+        let cmd = handle_key(
+            &mut model,
+            Key::Named(NamedKey::Backspace),
+            PhysicalKey::Code(KeyCode::Backspace),
+            KeyModifiers {
+                alt: true,
+                ..KeyModifiers::default()
+            },
+            false,
+        );
+
+        assert!(matches!(cmd, Some(Cmd::Redraw)));
+        assert_eq!(pty_rx.try_recv().unwrap(), b"\x1b\x7f".to_vec());
+    }
+
     // =========================================================================
     // Cursor-anchored popups (overlay-surface.md Phase 5)
     // =========================================================================
