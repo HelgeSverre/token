@@ -1,10 +1,17 @@
 # Changelog
 
-All notable changes to rust-editor are documented in this file.
+All notable changes to Token are documented in this file.
 
 ---
 
-## Unreleased
+## v0.7.0 - 2026-09-11
+
+This release introduces language-server code assistance and optional AI inline
+completions, with editable server/provider configuration in Settings. It adds
+code folding, pixel scrolling, docked Find and Replace, EditorConfig, auto-save,
+saved-file session restore, and protection for unsaved or externally changed
+files. Terminal tabs, selection and links, themed documentation cards, separate
+UI/code fonts, Go/Sema support, and offline Mermaid previews are included.
 
 ### Completion
 
@@ -23,6 +30,9 @@ All notable changes to rust-editor are documented in this file.
 
 ### Language-server setup
 
+- Sema parameter hints are opt-in through the Inlay hints switch in Settings
+  (`lsp.inlay_hints`). Explicit Run results remain visible independently.
+
 - Treat preset language servers as ordinary saved entries: their IDs can be
   edited and entries removed without hidden defaults restoring them. Migrate
   older override configurations to a complete catalog while preserving routing.
@@ -38,8 +48,8 @@ All notable changes to rust-editor are documented in this file.
 - Configure language-server executables, arguments, initialization options and
   server settings directly in the separate Settings page. Drafts support native
   file browsing, multiline JSON/YAML validation, executable lookup, live status
-  and an explicit Apply & Restart action; failed saves leave running settings
-  unchanged.
+  and a Save action that reconfigures affected servers; failed saves leave
+  running settings unchanged.
 
 ### Completion preferences
 
@@ -81,20 +91,6 @@ All notable changes to rust-editor are documented in this file.
 - Add window-local focus, pointer and pixel/line wheel input to the automation
   bridge, CLI and MCP. State reports shared editor/scrollbar geometry for targeting
   input without moving the system cursor.
-
-## v0.7.0 - 2026-09-10
-
-This release adds code folding, pixel scrolling, docked Find and Replace,
-auto-save and EditorConfig, saved-file session restore, external-file protection,
-terminal tabs and selection, richer documentation cards, and Go/Sema language
-support. It also improves completion relevance, Settings, fonts, and rendering.
-
-### Language server preferences
-
-- Sema parameter hints are opt-in through the Inlay hints switch in Settings
-  (`lsp.inlay_hints`). Explicit Run results remain visible independently.
-- Language-server executable rows offer Configure buttons that open config.yaml
-  directly, creating a default file only when none exists.
 
 ### Problems panel
 
@@ -419,12 +415,11 @@ support. It also improves completion relevance, Settings, fonts, and rendering.
 - Consolidated vertical/horizontal scrollbar messages and pointer-position math.
   Drag capture ends on release, focus loss, modal changes and window resizing.
 
-### Settings design correction
+### Settings page
 
-- Restored the separate Settings page: category navigation, spacious preference
-  rows, descriptions beneath labels, right-aligned controls and boolean switches.
-  Small windows use compact categories. The command-palette-style replacement
-  is removed; keybinding controls live in the page's Keymap category.
+- Settings remains a separate preferences page with category navigation, compact
+  rows, descriptions, checkboxes and choice controls. Language servers and AI
+  providers use two-pane record editors; keybindings live in the Keymap category.
 
 ### Performance
 
@@ -627,15 +622,12 @@ support. It also improves completion relevance, Settings, fonts, and rendering.
   never stored as resolved values in editor configuration. Authenticated remote
   endpoints require HTTPS; redirects remain disabled.
 
-- Settings now includes LSP master/per-server switches, read-only command
-  overrides with their YAML keys, and live server states. Switches share the
-  existing configuration/lifecycle effects; unchanged choices do not save.
-  Process-state updates refresh an open Settings or Language Servers modal
-  without changing the query or selection.
+- Settings and the Language Servers picker show live server states. Process
+  updates refresh their status without changing the query or selection.
   Shared overlay rows keep a gap between their text and right-hand accessories.
 
-- Added searchable Settings (`Cmd+,` / “Open Settings”) on the shared modal
-  surface. Preset chips support keyboard cycling and direct clicks, save changes
+- Added searchable Settings (`Cmd+,` / “Open Settings”) as a separate preferences
+  page. General preset controls support keyboard cycling and clicks, save changes
   immediately, and leave hand-written off-preset values untouched until a choice
   is made. Theme selection opens the existing picker. Cursor blink “Off” keeps a
   steady caret without a zero-delay event-loop wake cycle.
@@ -775,10 +767,9 @@ support. It also improves completion relevance, Settings, fonts, and rendering.
   limit are shown explicitly. Late responses do not steal focus or reopen a
   closed panel.
 
-- Markdown preview renders fenced `mermaid` diagrams, using the preview theme
-  and a pinned, on-demand Mermaid renderer. Loading requires a connection to
-  jsDelivr; offline/loading failures and invalid syntax keep the source visible
-  with an explanation. Other code fences retain syntax highlighting. See
+- Markdown preview renders fenced `mermaid` diagrams using the preview theme
+  and the bundled renderer. Invalid syntax keeps the source visible with an
+  explanation. Other code fences retain syntax highlighting. See
   `samples/mermaid.md`, including diagram-local spacing for self-loop labels.
 
 - **Cancelable inline providers:** Ollama `/api/generate` joins llama.cpp
@@ -820,13 +811,11 @@ support. It also improves completion relevance, Settings, fonts, and rendering.
   `inline_suggestion` in the automation `state` snapshot, and an
   `inline_suggestion` field in screenshot scenarios.
 
-- **Find options, match count, and selection scope** (find-enhancements
-  Phases 5 and 7): the Find label row shows "3 of 42", "No matches", or the
-  regex error; the footer lists the case, whole-word, regex, and selection
-  options with their keys and a check when on. ⌥⌘C, ⌥⌘W, ⌥⌘R, and ⌥⌘L toggle
-  them inside the modal. Selection scope captures the primary selection when
-  switched on and restricts navigation, highlights, replace, and replace-all
-  to it; reopening the modal re-captures the scope from the live selection.
+- **Find options, match count, and selection scope:** the docked Find bar shows
+  "3 of 42", "No matches", or the regex error, with case, whole-word, regex,
+  and selection-scope controls. Selection scope captures the primary selection
+  when switched on and restricts navigation, highlights, replace, and replace-all
+  to it.
   The automation overlay snapshot reports `status` and `options`, and
   screenshot scenarios accept `whole_word` and `use_regex`.
 

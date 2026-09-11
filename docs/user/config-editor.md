@@ -28,7 +28,7 @@ rest of the page to section boundaries.
 Open the separate Settings page with `Cmd+,` (`Ctrl+,` on Windows/Linux) or
 the **Open Settings** command. Categories appear in the left navigation, with
 compact category buttons in small windows. Search filters the selected category.
-Use Up/Down to select a row, Left/Right to cycle presets, or click a switch or
+Use Up/Down to select a row, Left/Right to cycle presets, or click a checkbox or
 preset control. Clicking the row label only selects it.
 Preset changes save immediately; Escape closes the page without undoing them. The Theme
 row opens the existing theme picker.

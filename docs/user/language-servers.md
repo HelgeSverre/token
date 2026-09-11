@@ -73,7 +73,7 @@ Server IDs, not language names, are the keys under `lsp.servers`.
 
 ## Add a custom server
 
-In **Settings → LSP → Add language server…**:
+In **Settings → Language servers → + Add**:
 
 1. Choose an unused ID such as `clangd` or `lua-language-server`.
 2. Choose the installed executable and its argument list. Token communicates over
@@ -84,8 +84,9 @@ In **Settings → LSP → Add language server…**:
    for example `[compile_commands.json, .git]`. An open workspace takes precedence;
    otherwise the nearest matching ancestor is used, falling back to the file's
    directory. `[]` and an empty field both mean no markers.
-5. **Save** validates and saves the entry. It then appears alongside the
-   other entries with its own Configure button, enabled switch, and live status.
+5. **Save** validates and saves the entry. It then appears in the left-hand
+   list alongside the other servers. Select it to edit its fields, enabled
+   checkbox and live status in the adjacent form.
 
 Only one server is chosen per language; Settings rejects overlapping enabled
 assignments. Disable the previous server or remove its language assignment
