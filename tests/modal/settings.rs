@@ -341,6 +341,114 @@ fn form_input(model: &mut AppModel, name: &str, value: &str) {
 }
 
 #[test]
+fn settings_provider_save_and_selection_require_success_without_enabling_ai() {
+    use token::messages::SettingsMsg;
+    let mut model = test_model("text", 0, 0);
+    let original = serde_yaml::to_value(&model.config).unwrap();
+    open(&mut model);
+    let add = row(&model, "AI providers");
+    modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: add,
+            choice: 0,
+        },
+    );
+    form_input(&mut model, "Provider ID", "my-model");
+    let transport = row(&model, "Transport");
+    modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: transport,
+            choice: 1,
+        },
+    );
+    form_input(&mut model, "Base URL", "http://127.0.0.1:11434");
+    form_input(&mut model, "Model", "qwen2.5-coder");
+    let context = row(&model, "Extra source context");
+    modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: context,
+            choice: 1,
+        },
+    );
+    form_input(&mut model, "Maximum context chunks", "4");
+    let actions = row(&model, "Configuration");
+    let cmd = modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: actions,
+            choice: 2,
+        },
+    )
+    .unwrap();
+    let (session, change) = pending_form(&cmd).unwrap();
+    assert_eq!(serde_yaml::to_value(&model.config).unwrap(), original);
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::Settings(SettingsMsg::FormApplied {
+            session: session.clone(),
+            change: change.clone(),
+            result: Err("read-only config".into()),
+        })),
+    );
+    assert_eq!(serde_yaml::to_value(&model.config).unwrap(), original);
+    let retry = modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: actions,
+            choice: 2,
+        },
+    )
+    .unwrap();
+    let (session, change) = pending_form(&retry).unwrap();
+    update(
+        &mut model,
+        Msg::Ui(UiMsg::Settings(SettingsMsg::FormApplied {
+            session,
+            change,
+            result: Ok(()),
+        })),
+    );
+    assert_eq!(model.config.completion.inline.provider, "my-model");
+    assert!(!model.config.completion.inline.enabled);
+    assert_eq!(
+        model.config.completion.providers["my-model"]
+            .model
+            .as_deref(),
+        Some("qwen2.5-coder")
+    );
+    assert_eq!(
+        model.config.completion.providers["my-model"]
+            .context
+            .limits()
+            .unwrap(),
+        Some((4, 64))
+    );
+    // Applying a saved form again edits that ID rather than rejecting it as a duplicate.
+    form_input(&mut model, "Maximum output tokens", "256");
+    let actions = row(&model, "Configuration");
+    let saved = modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: actions,
+            choice: 0,
+        },
+    )
+    .unwrap();
+    let (_, change) = pending_form(&saved).unwrap();
+    let mut separate = model.config.clone();
+    separate.completion.inline.provider = "another-provider".into();
+    change.apply(&mut separate);
+    assert_eq!(
+        separate.completion.inline.provider, "another-provider",
+        "Save is not Save & Use"
+    );
+    assert_eq!(separate.completion.providers["my-model"].max_tokens, 256);
+}
+
+#[test]
 fn settings_adds_a_custom_server_without_overwriting_existing_configuration() {
     use token::messages::SettingsMsg;
     let mut model = test_model("text", 0, 0);

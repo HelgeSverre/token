@@ -252,6 +252,9 @@ struct ModalConfig {
     /// Open the custom language-server creation form in Settings.
     #[serde(default)]
     new_server: bool,
+    /// Open the AI-provider creation form in Settings.
+    #[serde(default)]
+    new_provider: bool,
     /// Settings category label from the shared metadata (for example, LSP).
     #[serde(default)]
     category: Option<String>,
@@ -827,13 +830,23 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) -> Result<()> {
                     Msg::Ui(UiMsg::Modal(ModalMsg::SetInput(input.clone()))),
                 );
             }
-            if config.new_server || config.server.is_some() {
+            if config.new_server || config.server.is_some() || config.new_provider {
                 anyhow::ensure!(
-                    !(config.new_server && config.server.is_some()),
-                    "choose server or new_server, not both"
+                    usize::from(config.new_server)
+                        + usize::from(config.server.is_some())
+                        + usize::from(config.new_provider)
+                        == 1,
+                    "choose only one of server, new_server or new_provider"
                 );
                 let label = config.server.as_ref().map_or_else(
-                    || "Custom language server".to_owned(),
+                    || {
+                        if config.new_provider {
+                            "AI providers"
+                        } else {
+                            "Custom language server"
+                        }
+                        .to_owned()
+                    },
                     |server| format!("{server} executable"),
                 );
                 let Some(ModalState::Settings(state)) = &model.ui.active_modal else {

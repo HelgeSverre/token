@@ -21,6 +21,14 @@ pub enum ButtonState {
     Pressed,
 }
 
+/// Optional label sizing lets dense toolbars/forms share the standard button.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ButtonStyle {
+    pub state: ButtonState,
+    pub focused: bool,
+    pub text_size: Option<f32>,
+}
+
 /// Render a button with centered text label
 ///
 /// The button rect defines the full clickable/visual area.
@@ -31,17 +39,16 @@ pub fn render_button(
     theme: &Theme,
     rect: Rect,
     label: &str,
-    state: ButtonState,
-    focused: bool,
+    style: ButtonStyle,
 ) {
     let btn = &theme.button;
 
-    let (bg, border) = match state {
+    let (bg, border) = match style.state {
         ButtonState::Normal => (btn.background.to_argb_u32(), btn.border.to_argb_u32()),
         ButtonState::Hovered => (btn.background_hover.to_argb_u32(), btn.border.to_argb_u32()),
         ButtonState::Pressed => (
             btn.background_pressed.to_argb_u32(),
-            btn.border.to_argb_u32(),
+            btn.focus_ring.to_argb_u32(),
         ),
     };
     let fg = btn.foreground.to_argb_u32();
@@ -59,17 +66,31 @@ pub fn render_button(
     // lost against the button's own border), and draw it unconditionally
     // regardless of button size so small buttons still get a visible focus
     // indicator.
-    if focused {
+    if style.focused {
         let focus_color = btn.focus_ring.to_argb_u32();
         draw_focus_ring(frame, x, y, w, h, focus_color);
     }
 
     // Center the label text
-    let line_height = painter.line_height();
-    let text_w = painter.measure_width(label).round() as usize;
+    let line_height = style.text_size.map_or_else(
+        || painter.line_height(),
+        |size| painter.line_height_for_size(size),
+    );
+    let text_w = match style.text_size {
+        Some(size) => painter.measure_sized(label, size, 0.0),
+        None => painter.measure_width(label),
+    }
+    .round() as usize;
     let text_x = x + w.saturating_sub(text_w) / 2;
     let text_y = y + h.saturating_sub(line_height) / 2;
-    painter.draw(frame, text_x, text_y, label, fg);
+    frame.push_clip(rect);
+    match style.text_size {
+        Some(size) => {
+            painter.draw_sized(frame, text_x, text_y, label, size, 0.0, fg);
+        }
+        None => painter.draw(frame, text_x, text_y, label, fg),
+    }
+    frame.pop_clip();
 }
 
 /// Draw a focus ring just outside the given rect (an "outset" ring), rather

@@ -84,6 +84,11 @@ pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarge
         _ => None,
     };
     let previous_modal = model.ui.modal_hover_row;
+    let previous_choice = model.ui.modal_hover_choice;
+    model.ui.modal_hover_choice = match target {
+        Some(HitTarget::ModalChoice { flat_index, choice }) => Some((*flat_index, *choice)),
+        _ => None,
+    };
     let previous_close = model.ui.modal_close_hovered;
     model.ui.modal_close_hovered = matches!(target, Some(HitTarget::ModalClose));
     let previous_terminal = model.terminal.hovered_tab;
@@ -115,6 +120,7 @@ pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarge
         }
         || previous_terminal != model.terminal.hovered_tab
         || previous_modal != model.ui.modal_hover_row
+        || previous_choice != model.ui.modal_hover_choice
         || previous_close != model.ui.modal_close_hovered
         || previous_popup
             != model
@@ -827,6 +833,18 @@ mod tests {
             assert_eq!(model.ui.cursor_overlay.unwrap().hover_row, None);
             assert!(!update_hover_target(&mut model, None));
         }
+        // Moving between two choices in one Settings row also needs repaint.
+        for choice in [0, 1] {
+            let target = HitTarget::ModalChoice {
+                flat_index: 2,
+                choice,
+            };
+            assert!(update_hover_target(&mut model, Some(&target)));
+            assert_eq!(model.ui.modal_hover_choice, Some((2, choice)));
+            assert!(!update_hover_target(&mut model, Some(&target)));
+        }
+        assert!(update_hover_target(&mut model, None));
+        assert_eq!(model.ui.modal_hover_choice, None);
     }
 
     use std::sync::mpsc;

@@ -87,8 +87,11 @@ pub fn render_binary_placeholder(
         &model.theme,
         bp_layout.button_rect,
         btn_label,
-        btn_state,
-        focused,
+        button::ButtonStyle {
+            state: btn_state,
+            focused,
+            ..Default::default()
+        },
     );
 }
 

@@ -366,14 +366,16 @@ pub(crate) fn render(frame: &mut Frame, painter: &mut TextPainter, model: &AppMo
             &model.theme,
             rect,
             label,
-            if active {
-                ButtonState::Pressed
-            } else if hovered {
-                ButtonState::Hovered
-            } else {
-                ButtonState::Normal
+            crate::view::button::ButtonStyle {
+                state: if active {
+                    ButtonState::Pressed
+                } else if hovered {
+                    ButtonState::Hovered
+                } else {
+                    ButtonState::Normal
+                },
+                ..Default::default()
             },
-            false,
         );
         frame.pop_clip();
     }

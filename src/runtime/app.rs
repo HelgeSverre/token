@@ -2421,7 +2421,7 @@ impl App {
             } => {
                 let tx = self.msg_tx.clone();
                 std::thread::spawn(move || {
-                    let mut dialog = rfd::FileDialog::new().set_title("Choose executable");
+                    let mut dialog = rfd::FileDialog::new().set_title("Choose file");
                     if let Some(parent) = std::path::Path::new(&current)
                         .parent()
                         .filter(|path| path.is_dir())

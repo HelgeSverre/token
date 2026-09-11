@@ -460,8 +460,26 @@ a cooperative 50 ms parsing/traversal budget on the existing worker. Exact cache
 hits are checked against fresh local context; partial replay matches the
 normalized text that was shown, including tabs/spaces.
 
-Ghost-text suggestions from a local [llama.cpp](https://github.com/ggml-org/llama.cpp)
-server. Off until you point Token at one:
+Ghost-text suggestions are off by default. In **Settings → Completion**, choose
+**Add AI provider…**, enter a unique name, and select your service's transport.
+Existing providers have a **Configure…** action in the same category.
+
+The form exposes the base URL, model, API-key environment-variable name (never
+the key itself), token/request limits, prompt format, extra source context, and
+managed local llama-server options. **Save** updates that provider without
+changing the current selection; **Save & Use** also selects it for inline
+completion. Neither action turns suggestions on: enable **AI inline suggestions**
+separately. Extra context and managed process startup remain opt-in. Cancel or
+the **‹ Settings** breadcrumb returns without applying the draft.
+
+Validation checks configuration, not connectivity, installed files, or whether
+the credential variable is currently set. Install servers/models yourself and
+ensure the variable is available to the Token process. Provider removal and a
+connection-test button are not yet exposed in Settings; edit `config.yaml` to
+remove an entry. The configuration file remains available for every option.
+
+For example, connect to a local
+[llama.cpp](https://github.com/ggml-org/llama.cpp) server:
 
 ```yaml
 completion:

@@ -130,7 +130,17 @@ pub(crate) fn render_tabs(
         } else {
             ButtonState::Normal
         };
-        render_button(frame, painter, &model.theme, rect, label, state, false);
+        render_button(
+            frame,
+            painter,
+            &model.theme,
+            rect,
+            label,
+            crate::view::button::ButtonStyle {
+                state,
+                ..Default::default()
+            },
+        );
     }
     if let Some(view) = chrome.rect(UiKey::TerminalTabViewport) {
         frame.push_clip(view);

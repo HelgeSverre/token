@@ -1343,6 +1343,12 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
     }
     let descriptor = match row.kind.clone() {
         crate::settings::RowKind::AddServer => return super::settings::open_server(model, None),
+        crate::settings::RowKind::AddProvider => {
+            return super::settings::open_provider(model, None)
+        }
+        crate::settings::RowKind::Provider(id) => {
+            return super::settings::open_provider(model, Some(&id))
+        }
         crate::settings::RowKind::LspMaster => {
             let effect = super::lsp::toggle_lsp_enabled(model);
             return super::merge_cmds(effect, Some(Cmd::Redraw));
@@ -1355,6 +1361,7 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
             return super::settings::open_server(model, Some(&id))
         }
         crate::settings::RowKind::FormField(_)
+        | crate::settings::RowKind::FormChoice(_)
         | crate::settings::RowKind::FormEnabled
         | crate::settings::RowKind::FormActions
         | crate::settings::RowKind::FormInfo => return None,

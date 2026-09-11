@@ -8,8 +8,10 @@ All notable changes to rust-editor are documented in this file.
 
 ### Settings polish
 
-- Integrate the Settings footer as a lighter, full-width bar and use the shared
-  themed Close button with pointer-hover feedback.
+- Make Settings more compact, with matching full-width header/footer bars,
+  breadcrumb navigation for configuration subpages, and shared square buttons
+  with pointer-hover feedback. Remove the header Close button; Escape still
+  closes Settings. Long option groups wrap instead of squeezing their labels.
 
 ### Language-server setup
 
@@ -24,6 +26,12 @@ All notable changes to rust-editor are documented in this file.
   unchanged.
 
 ### Completion preferences
+
+- Add and configure AI providers directly in Settings, including transport,
+  endpoint, model, credential-variable name, generation limits, prompt format,
+  extra source context, and managed local llama-server paths/options. Save & Use
+  selects a provider without enabling inline suggestions; invalid drafts or
+  failed saves leave live configuration unchanged.
 
 - Add Settings controls for the completion master switch, automatic dropdown,
   local word policy and minimum candidate length, AI inline suggestions, request

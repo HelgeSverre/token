@@ -207,10 +207,11 @@ pub fn header_pad_x(scale_factor: f64) -> usize {
 pub use crate::layout::anchor::WidthRule;
 
 pub enum Anchor {
-    /// Spacious preferences page with category navigation.
+    /// Preferences page with category navigation and optional subpage breadcrumb.
     Settings {
         width: WidthRule,
-        close_hovered: bool,
+        subpage: bool,
+        hovered_choice: Option<(usize, usize)>,
     },
     /// Centered X; Y follows the Chrome table's `min(h/4, Y)` class. Dims
     /// the backdrop at `dim_alpha`.

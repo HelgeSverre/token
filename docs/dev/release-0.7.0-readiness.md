@@ -265,3 +265,40 @@ test deadlines or host security settings were changed.
 Full AI-provider forms, code/UI font selectors and final exact-candidate native
 and hosted release verification remain separate pending work. These Settings
 changes do not authorize a release tag or publication.
+
+## Compact Settings and AI-provider forms
+
+Settings now uses compact rows and category navigation, matching full-width
+header/footer surfaces, and the shared square button renderer. The header Close
+button is removed; Escape keeps its existing behavior. Configuration subpages
+show a breadcrumb back to Settings instead of a search-field-shaped title.
+Long option groups wrap using the same rectangles for sizing, paint and hit
+testing. Per-choice hover tracking repaints when the pointer moves between
+controls within a row.
+
+Completion preferences now support adding and editing all existing AI-provider
+transports, prompt formats, generation limits, optional extra source context and
+managed llama-server paths/options. Save and Save & Use are separate; neither
+enables inline suggestions. Draft validation shares runtime constraints without
+reading credentials, launching a process or making a network request. Failed
+saves do not alter live configuration. Removal and connection testing are not
+exposed by this form yet.
+
+Production-renderer before/after captures are in
+`target/verification/settings-redesign/`. The final captures include the main
+page, existing LSP configuration, a new AI provider, and a compact 2×-scale LSP
+form. These verify rendered layout, not native file dialogs or physical pointer
+delivery. All build and verification artifacts remain under the regular
+`target/` directory.
+
+The broad run passed 2,620 tests before failing one stale runtime test that
+selected a multiline field by row number (98 cases were not run; seven skipped).
+That test now finds the Arguments field by metadata and passed on rerun. All
+Settings geometry and modal tests in the broad run passed. Strict all-target,
+all-feature lint and formatting passed. Logs are in the same verification
+directory; this is not a claim of a clean complete suite on the final tree.
+
+The subsequent approved design reference is `prototypes/settings.html`: a
+collection list beside the editable form, with persistent actions and ordinary
+editable server records created from optional presets. Native implementation
+of that design supersedes the initial compact-layout direction described above.

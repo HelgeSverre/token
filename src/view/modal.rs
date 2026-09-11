@@ -933,6 +933,10 @@ pub(crate) fn with_settings_spec<R>(
                             Accessory::SettingValue { text: &details[index], action: None }
                         } else if let (RowKind::FormEnabled, Some(form)) = (entry.kind.clone(), &state.form) {
                             Accessory::Choices { labels: entry.choices(), active: Some(usize::from(form.enabled)) }
+                        } else if let (RowKind::FormChoice(index), Some(form)) = (entry.kind.clone(), &state.form) {
+                            Accessory::Choices { labels: form.choices[index].labels, active: Some(form.choices[index].active) }
+                        } else if let (RowKind::FormActions, Some(form)) = (entry.kind.clone(), &state.form) {
+                            Accessory::Choices { labels: form.actions(), active: None }
                         } else if matches!(entry.kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
                             Accessory::SettingValue { text: &model.config.theme, action: Some("Choose…") }
                         } else if matches!(entry.kind, RowKind::ServerCommand(_)) {
@@ -964,7 +968,7 @@ pub(crate) fn with_settings_spec<R>(
         .iter()
         .zip(&row_groups)
         .map(|((title, _), rows)| Section {
-            title: Some(title),
+            title: state.form.is_none().then_some(*title),
             rows,
         })
         .collect();
@@ -981,21 +985,17 @@ pub(crate) fn with_settings_spec<R>(
                 .join(" ")
         })
         .unwrap_or_else(|| {
-            state.form.as_ref().map_or_else(
-                || state.editable.text(),
-                |form| {
-                    form.server.as_ref().map_or_else(
-                        || "Add language server".into(),
-                        |id| format!("{id} configuration"),
-                    )
-                },
-            )
+            state
+                .form
+                .as_ref()
+                .map_or_else(|| state.editable.text(), |form| form.title())
         });
     let selected_detail = state.selected_index.min(details.len().saturating_sub(1));
     let spec = OverlaySpec {
         tabs: Some(tabs),
         anchor: Anchor::Settings {
-            close_hovered: model.ui.modal_close_hovered,
+            subpage: state.form.is_some(),
+            hovered_choice: model.ui.modal_hover_choice,
             width: WidthRule {
                 pct: 0.95,
                 min: 0.0,

@@ -5,12 +5,18 @@ use super::{RowKind, SettingRow};
 use crate::config::{EditorConfig, LspServerOverride};
 use crate::editable::{EditConstraints, EditableState, StringBuffer};
 use crate::syntax::LanguageId;
+mod provider;
 
 #[derive(Debug, Clone)]
 pub enum SettingsChange {
     LanguageServer {
         id: String,
         value: LspServerOverride,
+    },
+    InlineProvider {
+        id: String,
+        value: crate::config::ProviderConfig,
+        select: bool,
     },
 }
 
@@ -20,12 +26,27 @@ impl SettingsChange {
             Self::LanguageServer { id, value } => {
                 config.lsp.servers.insert(id.clone(), value.clone());
             }
+            Self::InlineProvider { id, value, select } => {
+                config
+                    .completion
+                    .providers
+                    .insert(id.clone(), value.clone());
+                if *select {
+                    config.completion.inline.provider.clone_from(id);
+                }
+            }
         }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FormError {
+    #[error("Choose a unique provider ID using letters, digits, dashes, underscores or dots")]
+    ProviderId,
+    #[error("{0}: enter a valid whole number")]
+    Number(&'static str),
+    #[error(transparent)]
+    Provider(#[from] crate::completion::provider::ProviderError),
     #[error("Choose a unique server ID using letters, digits, dashes, underscores or dots")]
     ServerId,
     #[error("At least one supported language is required")]
@@ -87,14 +108,29 @@ impl FormField {
 #[derive(Debug, Clone)]
 pub(crate) struct SettingsForm {
     pub session: Arc<()>,
-    pub server: Option<String>,
+    pub kind: FormKind,
     pub fields: Vec<FormField>,
+    pub choices: Vec<FormChoice>,
     pub enabled: bool,
     pub focused: Option<usize>,
     pub dragging: bool,
     pub saving: bool,
     pub status: String,
     pub executable_status: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum FormKind {
+    LanguageServer(Option<String>),
+    InlineProvider(Option<String>),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct FormChoice {
+    pub label: &'static str,
+    pub help: &'static str,
+    pub labels: &'static [&'static str],
+    pub active: usize,
 }
 
 fn json_text(value: Option<&serde_json::Value>) -> String {
@@ -104,9 +140,46 @@ fn json_text(value: Option<&serde_json::Value>) -> String {
 }
 
 impl SettingsForm {
+    pub fn title(&self) -> String {
+        match &self.kind {
+            FormKind::LanguageServer(Some(id)) | FormKind::InlineProvider(Some(id)) => {
+                format!("{id} configuration")
+            }
+            FormKind::LanguageServer(None) => "Add language server".into(),
+            FormKind::InlineProvider(None) => "Add AI provider".into(),
+        }
+    }
+
+    pub fn actions(&self) -> &'static [&'static str] {
+        match self.kind {
+            FormKind::LanguageServer(_) => &["Apply & Restart", "Cancel", "Open log"],
+            FormKind::InlineProvider(_) => &["Save", "Cancel", "Save & Use"],
+        }
+    }
+
+    pub fn executable_field(&self) -> Option<usize> {
+        match self.kind {
+            FormKind::LanguageServer(_) => Some(0),
+            FormKind::InlineProvider(_) => None,
+        }
+    }
+
+    pub fn applied(&mut self, change: &SettingsChange) {
+        match change {
+            SettingsChange::LanguageServer { id, .. } => {
+                self.kind = FormKind::LanguageServer(Some(id.clone()));
+                self.fields.truncate(6);
+            }
+            SettingsChange::InlineProvider { id, .. } => {
+                self.kind = FormKind::InlineProvider(Some(id.clone()))
+            }
+        }
+        self.focused = None;
+    }
+
     pub fn changed(&mut self) {
         self.status = "Draft · changes have not been applied".into();
-        if self.focused == Some(0) {
+        if self.focused.is_some() && self.focused == self.executable_field() {
             self.executable_status = "Executable changed · checked again when applied".into();
         }
     }
@@ -148,7 +221,7 @@ impl SettingsForm {
         );
         executable.browse = true;
         let mut form = Self {
-            session: Arc::new(()), server: id.map(str::to_owned),
+            session: Arc::new(()), kind: FormKind::LanguageServer(id.map(str::to_owned)), choices: Vec::new(),
             fields: vec![
                 executable,
                 FormField::new("Arguments (JSON / YAML list)", "A list of strings, not a shell command; [] means no arguments; empty uses defaults", &json_text(Some(&serde_json::json!(args))), true),
@@ -175,6 +248,13 @@ impl SettingsForm {
     }
 
     pub fn entries(&self) -> Vec<SettingRow> {
+        match &self.kind {
+            FormKind::LanguageServer(server) => self.server_entries(server.as_deref()),
+            FormKind::InlineProvider(id) => self.provider_entries(id.as_deref()),
+        }
+    }
+
+    fn server_entries(&self, server: Option<&str>) -> Vec<SettingRow> {
         let section = "Server configuration";
         let mut rows = vec![SettingRow {
             kind: RowKind::FormEnabled,
@@ -184,8 +264,7 @@ impl SettingsForm {
                 .into(),
         }];
         rows.extend(
-            (self
-                .server
+            (server
                 .is_none()
                 .then_some(6)
                 .into_iter()
@@ -206,9 +285,9 @@ impl SettingsForm {
             name: "Resolved executable".into(),
             description: "The application's PATH may differ from an interactive shell".into(),
         });
-        if let Some(id) = &self.server {
+        if let Some(id) = server {
             rows.push(SettingRow {
-                kind: RowKind::ServerStatus(id.clone()),
+                kind: RowKind::ServerStatus(id.into()),
                 section,
                 name: "Live server status".into(),
                 description: "Current process state; open a matching document to start the server"
@@ -225,15 +304,25 @@ impl SettingsForm {
     }
 
     pub fn change(&self, config: &EditorConfig) -> Result<SettingsChange, FormError> {
-        let id = self
-            .server
-            .clone()
+        match &self.kind {
+            FormKind::LanguageServer(server) => self.server_change(server.as_deref(), config),
+            FormKind::InlineProvider(id) => self.provider_change(id.as_deref(), config),
+        }
+    }
+
+    fn server_change(
+        &self,
+        server: Option<&str>,
+        config: &EditorConfig,
+    ) -> Result<SettingsChange, FormError> {
+        let id = server
+            .map(str::to_owned)
             .unwrap_or_else(|| self.fields[6].input.text());
         if !id.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
             || !id
                 .bytes()
                 .all(|ch| ch.is_ascii_alphanumeric() || b"-_.".contains(&ch))
-            || (self.server.is_none()
+            || (server.is_none()
                 && (crate::lsp::server_def_by_id(&id).is_some()
                     || config.lsp.servers.contains_key(&id)))
         {

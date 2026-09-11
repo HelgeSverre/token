@@ -1447,7 +1447,17 @@ mod tests {
             &mut model,
             Msg::Ui(UiMsg::Modal(ModalMsg::ChooseSetting { row: 0, choice: 0 })),
         );
-        update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::ActivateRow(2))));
+        let arguments_row = match &model.ui.active_modal {
+            Some(ModalState::Settings(state)) => state
+                .filtered_rows()
+                .position(|(name, _)| name == "Arguments (JSON / YAML list)")
+                .expect("the server form exposes its multiline arguments field"),
+            _ => panic!("expected Settings"),
+        };
+        update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::ActivateRow(arguments_row))),
+        );
         update(
             &mut model,
             Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("one\nthree".into()))),
@@ -1467,7 +1477,7 @@ mod tests {
                 false,
             );
             assert!(
-                matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.input() == expected && state.selected_index() == 2)
+                matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.input() == expected && state.selected_index() == arguments_row)
             );
             assert_eq!(model.document().buffer.to_string(), before);
         };

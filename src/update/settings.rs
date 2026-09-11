@@ -4,6 +4,7 @@ use crate::keymap::preferences::{BaseKeymap, KeymapChange, KeymapSave, MAX_CAPTU
 use crate::keymap::{KeyCode, Keymap, Modifiers};
 use crate::messages::SettingsMsg;
 use crate::model::{AppModel, ModalState};
+use crate::settings::forms::{FormKind, SettingsChange, SettingsForm};
 use crate::settings::{
     keymap::{Capture, SettingsTab},
     RowKind, SettingsState,
@@ -18,20 +19,35 @@ fn state_mut(ui: &mut crate::model::UiState) -> Option<&mut SettingsState> {
 }
 
 pub(super) fn open_server(model: &mut AppModel, id: Option<&str>) -> Option<Cmd> {
-    let form = crate::settings::forms::SettingsForm::language_server(id, &model.config);
+    open_form(model, SettingsForm::language_server(id, &model.config))
+}
+
+pub(super) fn open_provider(model: &mut AppModel, id: Option<&str>) -> Option<Cmd> {
+    open_form(model, SettingsForm::inline_provider(id, &model.config))
+}
+
+fn open_form(model: &mut AppModel, form: SettingsForm) -> Option<Cmd> {
     let mut commands = vec![Cmd::Redraw];
-    let command = form.fields[0].input.text();
-    if !command.is_empty() {
+    if let Some(command) = form
+        .executable_field()
+        .map(|index| form.fields[index].input.text())
+        .filter(|command| !command.is_empty())
+    {
         commands.push(Cmd::InspectSettingsExecutable {
             session: Arc::clone(&form.session),
             command,
         });
     }
     let state = state_mut(&mut model.ui)?;
+    let focused = form.focused;
     state.form = Some(form);
-    state.selected_index = 1;
     state.scroll_offset_px = 0;
     state.refresh_entries(&model.config);
+    state.selected_index = state
+        .entries
+        .iter()
+        .position(|row| matches!(row.kind, RowKind::FormField(index) if Some(index) == focused))
+        .unwrap_or(0);
     super::ui::reveal_settings_selection(model);
     Some(Cmd::Batch(commands))
 }
@@ -62,6 +78,24 @@ pub(super) fn form_choice(
         return Some(Cmd::Redraw);
     }
     match kind {
+        RowKind::FormChoice(index) => {
+            let value = form.choices.get_mut(index)?;
+            let choice = choice.unwrap_or_else(|| {
+                (value.active as isize + delta).rem_euclid(value.labels.len() as isize) as usize
+            });
+            if choice >= value.labels.len() {
+                return None;
+            }
+            value.active = choice;
+            form.focused = None;
+            form.changed();
+            state.refresh_entries(&model.config);
+            state.selected_index = state
+                .entries
+                .iter()
+                .position(|row| matches!(row.kind, RowKind::FormChoice(i) if i == index))
+                .unwrap_or(0);
+        }
         RowKind::FormEnabled => {
             if choice.is_some_and(|choice| choice > 1) {
                 return None;
@@ -86,21 +120,27 @@ pub(super) fn form_choice(
         }
         RowKind::FormActions => {
             form.focused = None;
-            match choice.unwrap_or(if delta < 0 { 1 } else { 0 }) {
-                0 => match form.change(&model.config) {
-                    Ok(change) => {
-                        form.saving = true;
-                        form.status = "Saving configuration…".into();
-                        return Some(Cmd::Batch(vec![
-                            Cmd::ApplySettingsForm {
-                                session: Arc::clone(&form.session),
-                                change: Box::new(change),
-                            },
-                            Cmd::Redraw,
-                        ]));
+            let action = choice.unwrap_or(if delta < 0 { 1 } else { 0 });
+            match action {
+                0 | 2 if action == 0 || matches!(form.kind, FormKind::InlineProvider(_)) => {
+                    match form.change(&model.config) {
+                        Ok(mut change) => {
+                            if let SettingsChange::InlineProvider { select, .. } = &mut change {
+                                *select = action == 2;
+                            }
+                            form.saving = true;
+                            form.status = "Saving configuration…".into();
+                            return Some(Cmd::Batch(vec![
+                                Cmd::ApplySettingsForm {
+                                    session: Arc::clone(&form.session),
+                                    change: Box::new(change),
+                                },
+                                Cmd::Redraw,
+                            ]));
+                        }
+                        Err(error) => form.status = error.to_string(),
                     }
-                    Err(error) => form.status = error.to_string(),
-                },
+                }
                 1 => return cancel_form(model),
                 2 => {
                     if let Some(ModalState::Settings(mut state)) = model.ui.active_modal.take() {
@@ -133,7 +173,7 @@ pub(super) fn adjust_form(model: &mut AppModel) -> Option<Cmd> {
             .entries
             .get(*state.rows.get(state.selected_index)?)?
             .kind,
-        RowKind::FormEnabled
+        RowKind::FormEnabled | RowKind::FormChoice(_)
     ) {
         form_choice(model, None, 1)
     } else {
@@ -153,7 +193,10 @@ pub(super) fn form_focus(model: &mut AppModel, forward: bool) -> Option<Cmd> {
             .rem_euclid(state.rows.len() as isize) as usize;
         if matches!(
             state.entries[state.rows[state.selected_index]].kind,
-            RowKind::FormField(_) | RowKind::FormEnabled | RowKind::FormActions
+            RowKind::FormField(_)
+                | RowKind::FormEnabled
+                | RowKind::FormChoice(_)
+                | RowKind::FormActions
         ) {
             break;
         }
@@ -417,10 +460,11 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                     state.selected_index = row;
                 }
                 form.changed();
-                return Some(Cmd::Batch(vec![
-                    Cmd::InspectSettingsExecutable { session, command },
-                    Cmd::Redraw,
-                ]));
+                let mut commands = vec![Cmd::Redraw];
+                if form.executable_field() == Some(field) {
+                    commands.push(Cmd::InspectSettingsExecutable { session, command });
+                }
+                return Some(Cmd::Batch(commands));
             }
             Some(Cmd::Redraw)
         }
@@ -430,7 +474,11 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             status,
         } => {
             let form = state_mut(&mut model.ui)?.form.as_mut()?;
-            if !Arc::ptr_eq(&form.session, &session) || form.fields[0].input.text() != command {
+            if !Arc::ptr_eq(&form.session, &session)
+                || form
+                    .executable_field()
+                    .is_none_or(|index| form.fields[index].input.text() != command)
+            {
                 return None;
             }
             form.executable_status = status;
@@ -451,11 +499,7 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             {
                 form.saving = false;
                 if success {
-                    let crate::settings::forms::SettingsChange::LanguageServer { id, .. } =
-                        change.as_ref();
-                    form.server = Some(id.clone());
-                    form.fields.truncate(6);
-                    form.focused = None;
+                    form.applied(&change);
                 }
                 form.status = match result {
                     Ok(()) => "Saved · the configuration is applied".into(),
@@ -463,21 +507,29 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                 };
             }
             if success {
-                let crate::settings::forms::SettingsChange::LanguageServer { id, .. } = *change;
                 if let Some(state) = state_mut(&mut model.ui) {
                     state.refresh_entries(&model.config);
                 }
-                let mut commands = vec![
-                    Cmd::LspApplyConfiguration {
-                        server_id: id.into(),
-                    },
-                    Cmd::Redraw,
-                ];
-                if let Some(form) = state_mut(&mut model.ui).and_then(|state| state.form.as_ref()) {
-                    commands.push(Cmd::InspectSettingsExecutable {
-                        session: Arc::clone(&form.session),
-                        command: form.fields[0].input.text(),
-                    });
+                let mut commands = vec![Cmd::Redraw];
+                match *change {
+                    SettingsChange::LanguageServer { id, .. } => {
+                        commands.push(Cmd::LspApplyConfiguration {
+                            server_id: id.into(),
+                        });
+                        if let Some(form) =
+                            state_mut(&mut model.ui).and_then(|state| state.form.as_ref())
+                        {
+                            if let Some(index) = form.executable_field() {
+                                commands.push(Cmd::InspectSettingsExecutable {
+                                    session: Arc::clone(&form.session),
+                                    command: form.fields[index].input.text(),
+                                });
+                            }
+                        }
+                    }
+                    SettingsChange::InlineProvider { .. } => {
+                        commands.extend(super::inline::dismiss(model))
+                    }
                 }
                 Some(Cmd::Batch(commands))
             } else {

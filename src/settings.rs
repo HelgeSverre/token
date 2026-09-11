@@ -431,7 +431,10 @@ impl Descriptor {
 #[derive(Debug, Clone)]
 pub(crate) enum RowKind {
     AddServer,
+    AddProvider,
+    Provider(String),
     FormField(usize),
+    FormChoice(usize),
     FormEnabled,
     FormActions,
     FormInfo,
@@ -457,7 +460,9 @@ impl SettingRow {
     pub fn choices(&self) -> &'static [&'static str] {
         match self.kind {
             RowKind::AddServer => &["Add language server…"],
-            RowKind::FormField(_) | RowKind::FormInfo => &[],
+            RowKind::AddProvider => &["Add AI provider…"],
+            RowKind::Provider(_) => &["Configure…"],
+            RowKind::FormField(_) | RowKind::FormChoice(_) | RowKind::FormInfo => &[],
             RowKind::FormEnabled => BOOL_LABELS,
             RowKind::FormActions => &["Apply & Restart", "Cancel", "Open log"],
             RowKind::KeymapBase => crate::keymap::preferences::BaseKeymap::LABELS,
@@ -472,8 +477,9 @@ impl SettingRow {
 
     pub fn active(&self, config: &EditorConfig) -> Option<usize> {
         match &self.kind {
-            RowKind::AddServer => None,
+            RowKind::AddServer | RowKind::AddProvider | RowKind::Provider(_) => None,
             RowKind::FormField(_)
+            | RowKind::FormChoice(_)
             | RowKind::FormEnabled
             | RowKind::FormActions
             | RowKind::FormInfo => None,
@@ -550,6 +556,28 @@ fn settings_rows(config: &EditorConfig) -> Vec<SettingRow> {
             description: d.description.into(),
         })
         .collect();
+    rows.push(SettingRow {
+        kind: RowKind::AddProvider,
+        section: "Completion",
+        name: "AI providers".into(),
+        description: "Connect an existing service or manage a local llama-server model".into(),
+    });
+    let mut providers: Vec<_> = config.completion.providers.keys().collect();
+    providers.sort_unstable();
+    for id in providers {
+        rows.push(SettingRow {
+            kind: RowKind::Provider(id.clone()),
+            section: "Completion",
+            name: format!("{id} AI provider").into(),
+            description: if *id == config.completion.inline.provider {
+                "Selected for inline completion · inline suggestions have a separate enable switch"
+                    .into()
+            } else {
+                "Configure this provider; choose Save & Use to select it for inline completion"
+                    .into()
+            },
+        });
+    }
     rows.push(SettingRow {
         kind: RowKind::LspMaster,
         section: "LSP",
@@ -772,14 +800,16 @@ mod tests {
     #[test]
     fn lsp_settings_rows_follow_registry_and_resolve_current_command_values() {
         let state = SettingsState::default();
-        assert_eq!(
-            state.rows.len(),
-            DESCRIPTORS.len() + 2 + 3 * crate::lsp::all_server_defs().len()
-        );
+        let lsp_rows: Vec<_> = state
+            .entries
+            .iter()
+            .filter(|row| row.section == "LSP")
+            .collect();
+        assert_eq!(lsp_rows.len(), 2 + 3 * crate::lsp::all_server_defs().len());
         let mut config = EditorConfig::default();
         for (def, group) in crate::lsp::all_server_defs()
             .iter()
-            .zip(state.entries[DESCRIPTORS.len() + 2..].as_chunks::<3>().0)
+            .zip(lsp_rows[2..].as_chunks::<3>().0)
         {
             assert_eq!(group[0].active(&config), Some(1));
             assert_eq!(group[1].name, format!("{} executable", def.id));
