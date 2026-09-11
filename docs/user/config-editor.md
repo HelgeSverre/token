@@ -50,15 +50,16 @@ The file accepts values outside the offered presets. Such values show no active
 chip and stay unchanged until you choose a preset. Saves preserve unknown YAML
 keys, but not comments or formatting.
 
-The LSP section includes a master switch and an enabled switch for each registered
-server, plus **Add language server…** for custom executables, languages, arguments
-and root markers. Server switches update matching open files immediately.
+The **Language servers** category includes a master switch and a list of editable
+servers, plus **+ Add** for custom executables, languages, arguments and root
+markers. The master switch applies immediately; each record's enabled checkbox
+is applied with **Save**.
 A server's switch retains its own preference when the
 master switch is Off. Selecting an unchanged choice does not save again.
 
 Executable rows show the saved command. Presets become ordinary editable records
 when configuration is initialized or migrated. Their
-**Configure…** buttons open a draft form for paths, arguments and advanced
+list entries open an adjacent draft editor for paths, arguments and advanced
 JSON/YAML options, with Browse, executable lookup, live status and Open log.
 Save saves that server and rebinds documents affected by its language
 assignments; Cancel/Escape discards only
@@ -461,23 +462,25 @@ a cooperative 50 ms parsing/traversal budget on the existing worker. Exact cache
 hits are checked against fresh local context; partial replay matches the
 normalized text that was shown, including tabs/spaces.
 
-Ghost-text suggestions are off by default. In **Settings → Completion**, choose
-**Add AI provider…**, enter a unique name, and select your service's transport.
-Existing providers have a **Configure…** action in the same category.
+Ghost-text suggestions are off by default. In **Settings → AI completion**, choose
+**+ Add**, enter a unique name, and select your service's transport.
+Select an existing provider from the list to edit it alongside the list.
 
 The form exposes the base URL, model, API-key environment-variable name (never
 the key itself), token/request limits, prompt format, extra source context, and
 managed local llama-server options. **Save** updates that provider without
 changing the current selection; **Save & Use** also selects it for inline
 completion. Neither action turns suggestions on: enable **AI inline suggestions**
-separately. Extra context and managed process startup remain opt-in. Cancel or
-the **‹ Settings** breadcrumb returns without applying the draft.
+separately. Extra context and managed process startup remain opt-in. Expand
+**Advanced** for generation limits and local-process options. Cancel restores
+the saved record without applying the draft.
 
 Validation checks configuration, not connectivity, installed files, or whether
 the credential variable is currently set. Install servers/models yourself and
-ensure the variable is available to the Token process. Provider removal and a
-connection-test button are not yet exposed in Settings; edit `config.yaml` to
-remove an entry. The configuration file remains available for every option.
+ensure the variable is available to the Token process. **Remove** requires
+confirmation; removing the selected provider also disables inline suggestions.
+A connection-test button is not yet exposed. The configuration file remains
+available for every option.
 
 For example, connect to a local
 [llama.cpp](https://github.com/ggml-org/llama.cpp) server:

@@ -162,7 +162,7 @@ impl SettingsForm {
                 FormChoice { label: "Manage local llama-server", help: "Launch the executable on demand; requires llama.cpp at http://127.0.0.1:PORT", labels: &["Off", "On"], active: usize::from(value.local_server.is_some()) },
             ],
             enabled: false, focused: Some(if id.is_some() { Field::Url as usize } else { Field::Id as usize }), dragging: false, saving: false,
-            status: "Draft · Save & Use selects this provider without enabling inline suggestions".into(), executable_status: String::new(), remove_pending: false,
+            status: "Draft · Save & Use selects this provider without enabling inline suggestions".into(), executable_status: String::new(), remove_pending: false, records_scroll: 0, advanced: false, dirty: false, open_select: None, select_cursor: 0, preset: None,
         }
     }
 
@@ -173,37 +173,44 @@ impl SettingsForm {
         kinds.push(field(Field::Id));
         kinds.push(RowKind::FormChoice(TRANSPORT));
         kinds.extend([Field::Url, Field::Model, Field::KeyEnv].map(field));
-        kinds.push(RowKind::FormChoice(PROMPT));
-        kinds.extend(
-            [
-                Field::MaxTokens,
-                Field::Timeout,
-                Field::Alternatives,
-                Field::KeepAlive,
-            ]
-            .map(field),
-        );
-        kinds.push(RowKind::FormChoice(CONTEXT));
-        if self.choices[CONTEXT].active != 0 {
-            kinds.extend([Field::Chunks, Field::Lines].map(field));
-        }
-        kinds.push(RowKind::FormChoice(MANAGED));
-        if self.choices[MANAGED].active != 0 {
+        kinds.push(RowKind::FormAdvanced);
+        if self.advanced {
+            kinds.push(RowKind::FormChoice(PROMPT));
             kinds.extend(
                 [
-                    Field::Executable,
-                    Field::ModelPath,
-                    Field::Startup,
-                    Field::ContextSize,
-                    Field::GpuLayers,
+                    Field::MaxTokens,
+                    Field::Timeout,
+                    Field::Alternatives,
+                    Field::KeepAlive,
                 ]
                 .map(field),
             );
+            kinds.push(RowKind::FormChoice(CONTEXT));
+            if self.choices[CONTEXT].active != 0 {
+                kinds.extend([Field::Chunks, Field::Lines].map(field));
+            }
+            kinds.push(RowKind::FormChoice(MANAGED));
+            if self.choices[MANAGED].active != 0 {
+                kinds.extend(
+                    [
+                        Field::Executable,
+                        Field::ModelPath,
+                        Field::Startup,
+                        Field::ContextSize,
+                        Field::GpuLayers,
+                    ]
+                    .map(field),
+                );
+            }
         }
         let mut rows: Vec<_> = kinds
             .into_iter()
             .filter_map(|kind| {
                 let (label, help) = match kind {
+                    RowKind::FormAdvanced => (
+                        "Advanced",
+                        "Generation limits, prompt format, context and local process settings",
+                    ),
                     RowKind::FormField(index) => {
                         (self.fields[index].label, self.fields[index].help)
                     }

@@ -315,6 +315,16 @@ fn scroll_target(
 ) -> Option<Cmd> {
     use crate::model::ui::{ScrollbarDragAxis, ScrollbarTarget};
     match (target, axis) {
+        (ScrollbarTarget::SettingsRecords, ScrollbarDragAxis::Vertical) => {
+            let Some(ModalState::Settings(state)) = &mut model.ui.active_modal else {
+                model.ui.scrollbar_drag = None;
+                return None;
+            };
+            let form = state.form.as_mut()?;
+            form.records_scroll = position;
+            Some(Cmd::Redraw)
+        }
+        (ScrollbarTarget::SettingsRecords, _) => None,
         (ScrollbarTarget::Editor(editor_id), axis) => {
             let editor = model.editor_area.editors.get(&editor_id)?;
             let (x, y) = editor.pixel_scroll_position();
@@ -520,6 +530,15 @@ fn edit_ui_input(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 
 /// Handle dialog and docked-find input messages.
 fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
+    if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.form.as_ref().is_some_and(|form| form.open_select.is_some()))
+    {
+        match msg {
+            ModalMsg::SelectPrevious => return super::settings::select_key(model, -1, false),
+            ModalMsg::SelectNext => return super::settings::select_key(model, 1, false),
+            ModalMsg::Confirm => return super::settings::select_key(model, 0, true),
+            _ => {}
+        }
+    }
     // Changing the modal's query/category/selection invalidates captured geometry.
     model.ui.scrollbar_drag = None;
     if super::settings::capturing(model) {
@@ -554,7 +573,14 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
         ModalMsg::OpenFindReplace => open_find(model, true),
 
         ModalMsg::Close => {
-            if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.form.is_some())
+            if let Some(ModalState::Settings(state)) = &mut model.ui.active_modal {
+                if let Some(form) = &mut state.form {
+                    if form.open_select.take().is_some() {
+                        return Some(Cmd::Redraw);
+                    }
+                }
+            }
+            if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.form.as_ref().is_some_and(|form| form.dirty || form.saving))
             {
                 return super::settings::cancel_form(model);
             }
@@ -1363,6 +1389,8 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
         crate::settings::RowKind::FormField(_)
         | crate::settings::RowKind::FormChoice(_)
         | crate::settings::RowKind::FormEnabled
+        | crate::settings::RowKind::FormAdvanced
+        | crate::settings::RowKind::FormPreset
         | crate::settings::RowKind::FormActions
         | crate::settings::RowKind::FormInfo => return None,
         crate::settings::RowKind::ServerStatus(_)

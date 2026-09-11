@@ -85,6 +85,11 @@ pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarge
     };
     let previous_modal = model.ui.modal_hover_row;
     let previous_choice = model.ui.modal_hover_choice;
+    let previous_settings = model.ui.settings_hover_action;
+    model.ui.settings_hover_action = match target {
+        Some(HitTarget::SettingsAction(action)) => Some(*action),
+        _ => None,
+    };
     model.ui.modal_hover_choice = match target {
         Some(HitTarget::ModalChoice { flat_index, choice }) => Some((*flat_index, *choice)),
         _ => None,
@@ -121,6 +126,7 @@ pub(super) fn update_hover_target(model: &mut AppModel, target: Option<&HitTarge
         || previous_terminal != model.terminal.hovered_tab
         || previous_modal != model.ui.modal_hover_row
         || previous_choice != model.ui.modal_hover_choice
+        || previous_settings != model.ui.settings_hover_action
         || previous_close != model.ui.modal_close_hovered
         || previous_popup
             != model
@@ -2048,6 +2054,19 @@ fn handle_left_click(
             }
         }
         // Modal handling
+        HitTarget::SettingsRecordsScrollbar { geometry } => {
+            overlay_scrollbar_press(model, ScrollbarTarget::SettingsRecords, geometry, event)
+        }
+        HitTarget::SettingsAction(action) => EventResult::Consumed {
+            redraw: true,
+            focus: None,
+            cmd: update(
+                model,
+                Msg::Ui(UiMsg::Settings(
+                    token::messages::SettingsMsg::CollectionAction(*action),
+                )),
+            ),
+        },
         HitTarget::ModalField { row, position } => EventResult::Consumed {
             redraw: true,
             focus: None,
@@ -2864,6 +2883,8 @@ fn handle_middle_click(
 
         // Modal - consume, no action
         HitTarget::FindBar { .. }
+        | HitTarget::SettingsRecordsScrollbar { .. }
+        | HitTarget::SettingsAction(_)
         | HitTarget::ModalClose
         | HitTarget::Modal { .. }
         | HitTarget::ModalScrollbar { .. }
@@ -3198,6 +3219,22 @@ fn scroll_hovered_region(
         // (overlay-surface.md Pointer: "Scroll wheel moves the viewport by
         // 3 rows without moving selection").
         HoverRegion::Modal => {
+            if let Some((x, y)) = mouse_position {
+                if let Some(viewport) = token::view::hit_test::settings_records_at(
+                    model,
+                    token::view::hit_test::Point::new(x, y),
+                ) {
+                    return update(
+                        model,
+                        Msg::Ui(UiMsg::Settings(
+                            token::messages::SettingsMsg::ScrollRecords {
+                                delta: v_delta as isize,
+                                max: viewport.max_scroll_pixels(),
+                            },
+                        )),
+                    );
+                }
+            }
             if v_delta == 0 {
                 return None;
             }

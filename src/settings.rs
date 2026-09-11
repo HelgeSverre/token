@@ -15,7 +15,7 @@ pub fn categories() -> Vec<Option<&'static str>> {
             categories.push(category);
         }
     }
-    categories.extend([Some("LSP"), Some("Keymap")]);
+    categories.extend([Some("LSP"), Some("AI"), Some("Keymap")]);
     categories
 }
 
@@ -436,6 +436,8 @@ pub(crate) enum RowKind {
     FormField(usize),
     FormChoice(usize),
     FormEnabled,
+    FormAdvanced,
+    FormPreset,
     FormActions,
     FormInfo,
     KeymapBase,
@@ -464,6 +466,8 @@ impl SettingRow {
             RowKind::Provider(_) => &["Configure…"],
             RowKind::FormField(_) | RowKind::FormChoice(_) | RowKind::FormInfo => &[],
             RowKind::FormEnabled => BOOL_LABELS,
+            RowKind::FormAdvanced => &["Show"],
+            RowKind::FormPreset => &[],
             // Form-owned actions depend on the draft's kind and confirmation state.
             RowKind::FormActions => &[],
             RowKind::KeymapBase => crate::keymap::preferences::BaseKeymap::LABELS,
@@ -482,6 +486,8 @@ impl SettingRow {
             RowKind::FormField(_)
             | RowKind::FormChoice(_)
             | RowKind::FormEnabled
+            | RowKind::FormAdvanced
+            | RowKind::FormPreset
             | RowKind::FormActions
             | RowKind::FormInfo => None,
             RowKind::KeymapBase | RowKind::KeymapBinding(..) | RowKind::CaptureActions => None,
@@ -556,7 +562,7 @@ fn settings_rows(config: &EditorConfig) -> Vec<SettingRow> {
         .collect();
     rows.push(SettingRow {
         kind: RowKind::AddProvider,
-        section: "Completion",
+        section: "AI",
         name: "AI providers".into(),
         description: "Connect an existing service or manage a local llama-server model".into(),
     });
@@ -565,7 +571,7 @@ fn settings_rows(config: &EditorConfig) -> Vec<SettingRow> {
     for id in providers {
         rows.push(SettingRow {
             kind: RowKind::Provider(id.clone()),
-            section: "Completion",
+            section: "AI",
             name: format!("{id} AI provider").into(),
             description: if *id == config.completion.inline.provider {
                 "Selected for inline completion · inline suggestions have a separate enable switch"

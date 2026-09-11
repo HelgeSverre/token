@@ -91,6 +91,10 @@ impl MouseEvent {
 /// future use (e.g., context menus, detailed click handling).
 #[derive(Clone, Debug)]
 pub enum HitTarget {
+    SettingsRecordsScrollbar {
+        geometry: super::scrollbar::ScrollbarGeometry,
+    },
+    SettingsAction(crate::messages::SettingsCollectionAction),
     ModalClose,
     FindBar {
         control: Option<super::find_bar::Control>,
@@ -296,6 +300,19 @@ pub enum HitTarget {
     },
 }
 
+/// Record-list wheel routing uses the same measured viewport as paint and clicks.
+pub fn settings_records_at(model: &AppModel, point: Point) -> Option<crate::layout::RowListView> {
+    super::modal::with_modal_overlay_layout(
+        model,
+        model.window_size.0 as usize,
+        model.window_size.1 as usize,
+        model.metrics.scale_factor,
+        |_, layout| layout.settings_records_viewport,
+    )
+    .flatten()
+    .filter(|viewport| viewport.rect().contains(point.x as f32, point.y as f32))
+}
+
 impl HitTarget {
     /// Get the appropriate mouse cursor icon for this hit target
     pub fn cursor_icon(&self) -> winit::window::CursorIcon {
@@ -339,6 +356,8 @@ impl HitTarget {
             HitTarget::FindBar { control } => HoverRegion::FindBar(*control),
             HitTarget::ModalField { .. } => HoverRegion::Modal,
             HitTarget::ModalClose
+            | HitTarget::SettingsRecordsScrollbar { .. }
+            | HitTarget::SettingsAction(_)
             | HitTarget::Modal { .. }
             | HitTarget::ModalScrollbar { .. }
             | HitTarget::ModalRow { .. }
@@ -460,6 +479,14 @@ pub fn hit_test_modal(model: &AppModel, pt: Point) -> Option<HitTarget> {
     // test the point against it.
     super::modal::with_modal_overlay_layout(model, ww, wh, sf, |spec, layout| {
         match super::overlay_surface::hit_test(spec, layout, x, y) {
+            super::overlay_surface::OverlayHit::SettingsRecordsScrollbar => layout
+                .settings_records_scrollbar
+                .map_or(HitTarget::Modal { inside: true }, |geometry| {
+                    HitTarget::SettingsRecordsScrollbar { geometry }
+                }),
+            super::overlay_surface::OverlayHit::SettingsAction(action) => {
+                HitTarget::SettingsAction(action)
+            }
             super::overlay_surface::OverlayHit::Input { row, position } => HitTarget::ModalField {
                 row: row.0,
                 position,
@@ -525,6 +552,8 @@ pub fn hit_test_cursor_overlay(
             }),
             super::overlay_surface::OverlayHit::Inside
             | super::overlay_surface::OverlayHit::Input { .. }
+            | super::overlay_surface::OverlayHit::SettingsRecordsScrollbar
+            | super::overlay_surface::OverlayHit::SettingsAction(_)
             | super::overlay_surface::OverlayHit::Tab(_)
             | super::overlay_surface::OverlayHit::Scrollbar
             | super::overlay_surface::OverlayHit::Choice { .. } => {

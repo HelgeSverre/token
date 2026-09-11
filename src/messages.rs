@@ -281,6 +281,11 @@ pub enum ModalMsg {
 
 #[derive(Debug, Clone)]
 pub enum SettingsMsg {
+    CollectionAction(SettingsCollectionAction),
+    ScrollRecords {
+        delta: isize,
+        max: usize,
+    },
     EndFieldSelection,
     FieldPointer {
         row: usize,
@@ -316,6 +321,15 @@ pub enum SettingsMsg {
         saved: bool,
         result: Result<Box<crate::keymap::preferences::KeymapSnapshot>, String>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsCollectionAction {
+    ToggleMaster,
+    ToggleSelect(usize),
+    CloseSelect,
+    Select(usize),
+    Add,
 }
 
 /// UI-specific messages (status bar, cursor blink, modals)

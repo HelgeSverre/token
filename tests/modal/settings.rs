@@ -38,9 +38,14 @@ fn settings_page_category_navigation_filters_without_changing_preferences() {
             panic!("settings page");
         };
         assert_eq!(state.category, index);
+        let section = match category {
+            Some("LSP") => Some("Server configuration"),
+            Some("AI") => Some("AI provider"),
+            other => *other,
+        };
         assert!(state
             .filtered_rows()
-            .all(|(_, section)| Some(section) == *category));
+            .all(|(_, actual)| Some(actual) == section));
     }
     modal(&mut model, ModalMsg::ActivateTab(0));
     modal(&mut model, ModalMsg::PrevTab);
@@ -335,9 +340,69 @@ fn pending_form(
 }
 
 fn form_input(model: &mut AppModel, name: &str, value: &str) {
+    if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if !state.filtered_rows().any(|(label, _)| label == name))
+    {
+        let advanced = row(model, "Advanced");
+        modal(
+            model,
+            ModalMsg::ChooseSetting {
+                row: advanced,
+                choice: 0,
+            },
+        );
+    }
     let index = row(model, name);
     modal(model, ModalMsg::ActivateRow(index));
     modal(model, ModalMsg::SetInput(value.into()));
+}
+
+#[test]
+fn settings_collection_presets_are_drafts_and_cancel_keeps_the_editor() {
+    use token::messages::{SettingsCollectionAction as Action, SettingsMsg};
+    let mut model = test_model("text", 0, 0);
+    open(&mut model);
+    let category = token::settings::categories()
+        .iter()
+        .position(|category| *category == Some("LSP"))
+        .unwrap();
+    modal(&mut model, ModalMsg::ActivateTab(category));
+    let original = serde_yaml::to_value(&model.config).unwrap();
+    let action = |model: &mut AppModel, action| {
+        update(
+            model,
+            Msg::Ui(UiMsg::Settings(SettingsMsg::CollectionAction(action))),
+        )
+    };
+    action(&mut model, Action::Add);
+    let preset = row(&model, "Start from");
+    action(&mut model, Action::ToggleSelect(preset));
+    modal(&mut model, ModalMsg::SelectNext);
+    modal(&mut model, ModalMsg::Confirm);
+    let id = row(&model, "Server ID");
+    modal(&mut model, ModalMsg::ActivateRow(id));
+    assert!(
+        matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.input() == format!("{}-2", token::lsp::all_server_defs()[0].id))
+    );
+    assert_eq!(serde_yaml::to_value(&model.config).unwrap(), original);
+    // A different record must not silently replace the unsaved preset draft.
+    action(&mut model, Action::Select(0));
+    assert!(
+        matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.filtered_rows().any(|(label, _)| label == "Start from"))
+    );
+    let actions = row(&model, "Configuration");
+    modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: actions,
+            choice: 1,
+        },
+    );
+    action(&mut model, Action::Select(0));
+    assert!(
+        matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.filtered_rows().any(|(label, _)| label == "Executable"))
+    );
+    modal(&mut model, ModalMsg::Close);
+    assert!(model.ui.active_modal.is_none());
 }
 
 #[test]
@@ -365,6 +430,14 @@ fn settings_provider_save_and_selection_require_success_without_enabling_ai() {
     );
     form_input(&mut model, "Base URL", "http://127.0.0.1:11434");
     form_input(&mut model, "Model", "qwen2.5-coder");
+    let advanced = row(&model, "Advanced");
+    modal(
+        &mut model,
+        ModalMsg::ChooseSetting {
+            row: advanced,
+            choice: 0,
+        },
+    );
     let context = row(&model, "Extra source context");
     modal(
         &mut model,
@@ -508,6 +581,7 @@ fn settings_adds_a_custom_server_without_overwriting_existing_configuration() {
         Some(&["compile_commands.json".into(), ".git".into()][..])
     );
     modal(&mut model, ModalMsg::Close);
+    open(&mut model);
     let configure = row(&model, "clangd executable");
     modal(
         &mut model,

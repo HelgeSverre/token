@@ -220,6 +220,12 @@ pub(crate) struct SettingsForm {
     pub status: String,
     pub executable_status: String,
     pub remove_pending: bool,
+    pub records_scroll: usize,
+    pub advanced: bool,
+    pub dirty: bool,
+    pub open_select: Option<usize>,
+    pub select_cursor: usize,
+    pub preset: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -285,6 +291,7 @@ impl SettingsForm {
     }
 
     pub fn applied(&mut self, change: &SettingsChange) {
+        self.dirty = false;
         match change {
             SettingsChange::LanguageServer { id, .. } => {
                 self.kind = FormKind::LanguageServer(Some(id.clone()));
@@ -298,6 +305,7 @@ impl SettingsForm {
     }
 
     pub fn changed(&mut self) {
+        self.dirty = true;
         self.remove_pending = false;
         self.status = "Draft · changes have not been applied".into();
         if self.focused.is_some() && self.focused == self.executable_field() {
@@ -370,6 +378,12 @@ impl SettingsForm {
             status: "Draft · Save applies this server; Cancel leaves it unchanged".into(),
             executable_status: "Checking executable…".into(),
             remove_pending: false,
+            records_scroll: 0,
+            advanced: false,
+            dirty: false,
+            open_select: None,
+            select_cursor: 0,
+            preset: None,
         };
         form.fields.push(FormField::new(
             "Server ID",
@@ -396,18 +410,37 @@ impl SettingsForm {
         let mut rows = vec![SettingRow {
             kind: RowKind::FormEnabled,
             section,
-            name: "Server enabled".into(),
+            name: server.unwrap_or("New language server").to_owned().into(),
             description: "Only one enabled server can be assigned to each language".into(),
         }];
-        rows.extend([6, 0, 4, 1, 5, 2, 3].into_iter().map(|index| {
-            let field = &self.fields[index];
-            SettingRow {
-                kind: RowKind::FormField(index),
+        if server.is_none() {
+            rows.push(SettingRow {
+                kind: RowKind::FormPreset,
                 section,
-                name: field.label.into(),
-                description: field.help.into(),
-            }
-        }));
+                name: "Start from".into(),
+                description: "A preset fills the draft; every saved entry remains fully editable"
+                    .into(),
+            });
+        }
+        let fields = |indices: &[usize]| {
+            indices
+                .iter()
+                .map(|&index| {
+                    let field = &self.fields[index];
+                    SettingRow {
+                        kind: RowKind::FormField(index),
+                        section,
+                        name: field.label.into(),
+                        description: field.help.into(),
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        rows.extend(fields(&[6, 0, 4, 1]));
+        rows.push(SettingRow { kind: RowKind::FormAdvanced, section, name: "Advanced".into(), description: "Project root discovery, initialization options and server-specific settings".into() });
+        if self.advanced {
+            rows.extend(fields(&[5, 2, 3]));
+        }
         rows.push(SettingRow {
             kind: RowKind::FormInfo,
             section,

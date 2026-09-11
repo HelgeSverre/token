@@ -7,19 +7,21 @@ downloaded automatically. Syntax highlighting works without a language server.
 
 ## Start in Settings
 
-Open **Settings** with Cmd+, (Ctrl+, on Windows/Linux), then select **LSP**.
+Open **Settings** with Cmd+, (Ctrl+, on Windows/Linux), then select **Language servers**.
 
-- **Language servers** switches all servers on or off.
-- **Add language server…** registers another installed server; it is not limited
+- **Enable language servers** switches all servers on or off.
+- **+ Add** registers another installed server; it is not limited
   to the built-in entries. Choose a unique ID, executable, arguments, languages,
   and optional project-root markers.
-- Each server has its own enabled switch, executable row, and live status.
-- **Configure…** opens a draft form inside Settings. Edit the executable (or
+- Select a server in the left-hand list to edit it alongside the list.
+  Every server has its own enabled checkbox and live status.
+- Edit the executable (or
   Browse for it), arguments, initialization options, and server settings.
   **Save** saves that server's configuration and rebinds matching open
   documents. If language assignments change, the affected previous servers are
-  also restarted; unrelated servers are left alone. Cancel or Escape
-  returns to the settings list without applying the draft. A failed save leaves
+  also restarted; unrelated servers are left alone. Cancel restores the saved
+  record without leaving the editor. Escape discards a modified draft, then
+  closes Settings when the draft is clean. A failed save leaves
   the running configuration unchanged.
 - Edit **Server ID** to rename any entry, including a preset-created one.
   **Remove** asks for confirmation before saving the removal. Removed entries
@@ -29,7 +31,9 @@ Open **Settings** with Cmd+, (Ctrl+, on Windows/Linux), then select **LSP**.
   Inlay hints are off by default and currently affect Sema's line-end parameter
   annotations. Explicit Run output is independent of this switch.
 
-Switches save immediately. Status is updated live: **Not started** means no
+The page-wide enable switch saves immediately; controls inside the record editor
+are applied with **Save**. **Advanced** reveals root markers, initialization
+options and server-specific settings. Status is updated live: **Not started** means no
 process has started, **Missing** means its executable could not be found, and
 **Failed** means startup or repeated restart failed. **Ready** means the server
 initialized; project indexing can still take time.

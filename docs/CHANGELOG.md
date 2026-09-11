@@ -8,6 +8,9 @@ All notable changes to rust-editor are documented in this file.
 
 ### Settings polish
 
+- Organize language servers and AI providers into a two-pane list and editor,
+  with Add/preset creation, compact dropdowns, collapsed advanced fields,
+  independent list scrolling, and fixed Save/Cancel actions.
 - Make Settings more compact, with matching full-width header/footer bars,
   breadcrumb navigation for configuration subpages, and shared square buttons
   with pointer-hover feedback. Remove the header Close button; Escape still

@@ -1356,6 +1356,7 @@ pub struct TabDragState {
 /// The surface whose viewport a scrollbar controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollbarTarget {
+    SettingsRecords,
     Editor(crate::model::editor_area::EditorId),
     Modal(ModalId),
     Documentation {
@@ -1517,6 +1518,7 @@ pub struct UiState {
     pub modal_hover_row: Option<usize>,
     /// Exact form control under the pointer: (flat row, choice index).
     pub modal_hover_choice: Option<(usize, usize)>,
+    pub settings_hover_action: Option<crate::messages::SettingsCollectionAction>,
     pub modal_close_hovered: bool,
     /// Cursor-anchored popup (completion/hover/debug demo), if one is open.
     /// Distinct from `active_modal` — see `CursorOverlayState`.
@@ -1658,6 +1660,7 @@ impl UiState {
             previous_cursor_lines: Vec::new(),
             modal_hover_row: None,
             modal_hover_choice: None,
+            settings_hover_action: None,
             modal_close_hovered: false,
             cursor_overlay: None,
             completion_menu: None,
@@ -1710,6 +1713,7 @@ impl UiState {
         self.focus = FocusTarget::Modal;
         self.modal_hover_row = None;
         self.modal_hover_choice = None;
+        self.settings_hover_action = None;
         self.modal_close_hovered = false;
     }
 
@@ -1721,6 +1725,7 @@ impl UiState {
         self.focus = FocusTarget::Editor;
         self.modal_hover_row = None;
         self.modal_hover_choice = None;
+        self.settings_hover_action = None;
         self.modal_close_hovered = false;
     }
 

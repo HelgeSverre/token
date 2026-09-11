@@ -206,13 +206,34 @@ pub fn header_pad_x(scale_factor: f64) -> usize {
 /// one implementation; re-exported here for existing consumers.)
 pub use crate::layout::anchor::WidthRule;
 
-pub enum Anchor {
+pub struct SettingsRecord<'a> {
+    pub id: &'a str,
+    pub detail: String,
+    pub enabled: bool,
+}
+
+pub struct SettingsCollection<'a> {
+    pub enable_label: &'static str,
+    pub select_cursor: usize,
+    pub hovered: Option<crate::messages::SettingsCollectionAction>,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub records: Vec<SettingsRecord<'a>>,
+    pub selected: Option<&'a str>,
+    pub scroll: usize,
+    pub advanced: bool,
+    pub enabled: bool,
+    pub open_select: Option<usize>,
+}
+
+pub enum Anchor<'a> {
     /// Preferences page with category navigation and optional subpage breadcrumb.
     Settings {
         width: WidthRule,
         subpage: bool,
         hovered_choice: Option<(usize, usize)>,
         actions_row: Option<usize>,
+        collection: Option<SettingsCollection<'a>>,
     },
     /// Centered X; Y follows the Chrome table's `min(h/4, Y)` class. Dims
     /// the backdrop at `dim_alpha`.
@@ -240,7 +261,7 @@ pub enum Anchor {
     },
 }
 
-impl Anchor {
+impl Anchor<'_> {
     fn width(&self) -> &WidthRule {
         match self {
             Anchor::Centered { width, .. }
@@ -592,7 +613,7 @@ impl DocumentationViewport {
 }
 
 pub struct OverlaySpec<'a> {
-    pub anchor: Anchor,
+    pub anchor: Anchor<'a>,
     /// Search Everywhere only — `None` for every other context.
     pub tabs: Option<TabBar<'a>>,
     /// `None` for `Fields`/`Zones` contexts, which have no header row —
@@ -845,6 +866,8 @@ pub struct OverlayLayout {
     pub rows: Vec<WidgetRect>,
     /// Pixel-scrolled form body; painting and hit testing share its clipped range.
     pub settings_viewport: Option<crate::layout::RowListView>,
+    pub settings_records_viewport: Option<crate::layout::RowListView>,
+    pub settings_records_scrollbar: Option<ScrollbarGeometry>,
     /// Visible form rows retain signed origins for partially scrolled text areas.
     pub(crate) settings_items: Vec<(usize, Rect)>,
     pub(crate) settings_positions: Vec<std::ops::Range<usize>>,
@@ -1426,6 +1449,8 @@ pub fn layout_measured(
         row_height: row_h,
         rows,
         settings_viewport: None,
+        settings_records_viewport: None,
+        settings_records_scrollbar: None,
         settings_items: Vec::new(),
         settings_positions: Vec::new(),
         fields,
@@ -1456,6 +1481,8 @@ pub fn layout_measured(
 /// actually painted).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayHit {
+    SettingsRecordsScrollbar,
+    SettingsAction(crate::messages::SettingsCollectionAction),
     Close,
     Input {
         row: FlatIndex,
@@ -1483,6 +1510,17 @@ pub enum OverlayHit {
 
 /// Hit-test a point (physical px) against a laid-out `OverlaySpec`.
 pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) -> OverlayHit {
+    if matches!(&spec.anchor, Anchor::Settings {collection: Some(collection), ..} if collection.open_select.is_some())
+    {
+        return settings_page::hit_test(spec, layout, x, y);
+    }
+    if layout
+        .settings_records_scrollbar
+        .as_ref()
+        .is_some_and(|bar| bar.needed && bar.hits_track(x as f32, y as f32))
+    {
+        return OverlayHit::SettingsRecordsScrollbar;
+    }
     if layout
         .scrollbar
         .as_ref()

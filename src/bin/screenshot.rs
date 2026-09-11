@@ -1616,9 +1616,10 @@ mod tests {
                         panic!("Settings page");
                     };
                     assert_eq!(token::settings::categories()[state.category], Some("LSP"));
+                    assert!(state.filtered_rows().any(|(label, _)| label == "gopls"));
                     assert!(state
                         .filtered_rows()
-                        .any(|(label, _)| label == "gopls enabled"));
+                        .any(|(label, _)| label == "Executable"));
                 }
                 _ => unreachable!(),
             }

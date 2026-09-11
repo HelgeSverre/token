@@ -860,13 +860,20 @@ pub(crate) fn with_settings_spec<R>(
 ) -> R {
     use crate::settings::{keymap::SettingsTab, RowKind};
     let keymap_tab = state.tab == SettingsTab::Keymap;
+    let preset_labels: Vec<_> = std::iter::once("Custom server")
+        .chain(crate::lsp::all_server_defs().iter().map(|preset| preset.id))
+        .collect();
     let capturing = state.keymap.capture.is_some();
     let categories = crate::settings::categories();
     let tab_labels: Vec<_> = categories
         .iter()
         .map(|category| {
             (
-                category.unwrap_or("All Settings"),
+                match category {
+                    Some("LSP") => "Language servers",
+                    Some("AI") => "AI completion",
+                    _ => category.unwrap_or("All Settings"),
+                },
                 overlay_surface::TabCount::Hidden,
             )
         })
@@ -931,6 +938,10 @@ pub(crate) fn with_settings_spec<R>(
                                 browse: form.fields[field].browse, line_height: model.line_height, char_width: model.char_width }
                         } else if matches!(entry.kind, RowKind::FormInfo) {
                             Accessory::SettingValue { text: &details[index], action: None }
+                        } else if let (RowKind::FormPreset, Some(form)) = (entry.kind.clone(), &state.form) {
+                            Accessory::Choices { labels: &preset_labels, active: Some(form.preset.map_or(0, |index| index + 1)) }
+                        } else if let (RowKind::FormAdvanced, Some(form)) = (entry.kind.clone(), &state.form) {
+                            Accessory::Choices { labels: if form.advanced { &["Hide"] } else { &["Show"] }, active: None }
                         } else if let (RowKind::FormEnabled, Some(form)) = (entry.kind.clone(), &state.form) {
                             Accessory::Choices { labels: entry.choices(), active: Some(usize::from(form.enabled)) }
                         } else if let (RowKind::FormChoice(index), Some(form)) = (entry.kind.clone(), &state.form) {
@@ -994,6 +1005,73 @@ pub(crate) fn with_settings_spec<R>(
     let spec = OverlaySpec {
         tabs: Some(tabs),
         anchor: Anchor::Settings {
+            collection: state.form.as_ref().map(|form| {
+                use crate::settings::forms::FormKind;
+                use overlay_surface::{SettingsCollection, SettingsRecord};
+                let (title, description, selected, records) = match &form.kind {
+                    FormKind::LanguageServer(id) => (
+                        "Language servers",
+                        "Connect installed language servers to your files.",
+                        id.as_deref(),
+                        crate::lsp::server_ids(&model.config.lsp)
+                            .into_iter()
+                            .map(|id| SettingsRecord {
+                                id,
+                                detail: crate::lsp::configured_languages(id, &model.config.lsp)
+                                    .iter()
+                                    .map(|language| language.display_name())
+                                    .collect::<Vec<_>>()
+                                    .join(", "),
+                                enabled: model.config.lsp.servers[id].enabled != Some(false),
+                            })
+                            .collect(),
+                    ),
+                    FormKind::InlineProvider(id) => {
+                        let mut ids = model
+                            .config
+                            .completion
+                            .providers
+                            .keys()
+                            .map(String::as_str)
+                            .collect::<Vec<_>>();
+                        ids.sort();
+                        (
+                            "AI completion",
+                            "Configure providers for optional inline suggestions.",
+                            id.as_deref(),
+                            ids.into_iter()
+                                .map(|id| SettingsRecord {
+                                    id,
+                                    detail: model.config.completion.providers[id]
+                                        .model
+                                        .clone()
+                                        .unwrap_or_else(|| "No model selected".into()),
+                                    enabled: model.config.completion.inline.provider == id,
+                                })
+                                .collect(),
+                        )
+                    }
+                };
+                SettingsCollection {
+                    enable_label: match form.kind {
+                        FormKind::LanguageServer(_) => "Enable language servers",
+                        FormKind::InlineProvider(_) => "Enable inline suggestions",
+                    },
+                    select_cursor: form.select_cursor,
+                    hovered: model.ui.settings_hover_action,
+                    title,
+                    description,
+                    records,
+                    selected,
+                    scroll: form.records_scroll,
+                    advanced: form.advanced,
+                    enabled: match form.kind {
+                        FormKind::LanguageServer(_) => model.config.lsp.enabled,
+                        FormKind::InlineProvider(_) => model.config.completion.inline.enabled,
+                    },
+                    open_select: form.open_select,
+                }
+            }),
             actions_row: state.form.as_ref().and_then(|_| {
                 state
                     .rows

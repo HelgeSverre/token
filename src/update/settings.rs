@@ -27,6 +27,9 @@ pub(super) fn open_provider(model: &mut AppModel, id: Option<&str>) -> Option<Cm
 }
 
 fn open_form(model: &mut AppModel, form: SettingsForm) -> Option<Cmd> {
+    model.ui.scrollbar_drag = None;
+    model.ui.settings_hover_action = None;
+    model.ui.modal_hover_choice = None;
     let mut commands = vec![Cmd::Redraw];
     if let Some(command) = form
         .executable_field()
@@ -39,6 +42,14 @@ fn open_form(model: &mut AppModel, form: SettingsForm) -> Option<Cmd> {
         });
     }
     let state = state_mut(&mut model.ui)?;
+    let category = match form.kind {
+        FormKind::LanguageServer(_) => "LSP",
+        FormKind::InlineProvider(_) => "AI",
+    };
+    state.category = crate::settings::categories()
+        .iter()
+        .position(|value| *value == Some(category))
+        .unwrap_or(state.category);
     let focused = form.focused;
     state.form = Some(form);
     state.scroll_offset_px = 0;
@@ -57,9 +68,15 @@ pub(super) fn cancel_form(model: &mut AppModel) -> Option<Cmd> {
     if state.form.as_ref().is_some_and(|form| form.saving) {
         return Some(Cmd::Redraw);
     }
-    state.form = None;
-    state.refresh_entries(&model.config);
-    Some(Cmd::Redraw)
+    let kind = state.form.as_ref()?.kind.clone();
+    let command = match kind {
+        FormKind::LanguageServer(id) => open_server(model, id.as_deref()),
+        FormKind::InlineProvider(id) => open_provider(model, id.as_deref()),
+    };
+    if let Some(form) = state_mut(&mut model.ui).and_then(|state| state.form.as_mut()) {
+        form.focused = None;
+    }
+    command
 }
 
 pub(super) fn form_choice(
@@ -77,7 +94,46 @@ pub(super) fn form_choice(
     if form.saving {
         return Some(Cmd::Redraw);
     }
+    form.open_select = None;
     match kind {
+        RowKind::FormPreset => {
+            if !matches!(form.kind, FormKind::LanguageServer(None)) {
+                return None;
+            }
+            let selected = choice.unwrap_or_else(|| {
+                (form.preset.map_or(0, |index| index + 1) as isize + delta)
+                    .rem_euclid((crate::lsp::all_server_defs().len() + 1) as isize)
+                    as usize
+            });
+            let preset = match selected.checked_sub(1) {
+                Some(index) => Some(crate::lsp::all_server_defs().get(index)?),
+                None => None,
+            };
+            let mut config = model.config.clone();
+            let mut id = preset
+                .map_or("custom-server", |preset| preset.id)
+                .to_owned();
+            let base = id.clone();
+            let mut suffix = 2;
+            while config.lsp.servers.contains_key(&id) {
+                id = format!("{base}-{suffix}");
+                suffix += 1;
+            }
+            config.lsp.servers.insert(
+                id.clone(),
+                preset.map_or_else(Default::default, |preset| preset.configuration()),
+            );
+            let mut draft = SettingsForm::language_server(Some(&id), &config);
+            draft.kind = FormKind::LanguageServer(None);
+            draft.preset = selected.checked_sub(1);
+            draft.changed();
+            return open_form(model, draft);
+        }
+        RowKind::FormAdvanced => {
+            form.advanced = !form.advanced;
+            form.focused = None;
+            state.refresh_entries(&model.config);
+        }
         RowKind::FormChoice(index) => {
             let value = form.choices.get_mut(index)?;
             let choice = choice.unwrap_or_else(|| {
@@ -191,6 +247,26 @@ pub(super) fn form_choice(
     Some(Cmd::Redraw)
 }
 
+pub(super) fn select_key(model: &mut AppModel, delta: isize, confirm: bool) -> Option<Cmd> {
+    let state = state_mut(&mut model.ui)?;
+    let form = state.form.as_mut()?;
+    let row = form.open_select?;
+    let count = match state.entries.get(*state.rows.get(row)?)?.kind {
+        RowKind::FormChoice(index) => form.choices.get(index)?.labels.len(),
+        RowKind::FormPreset => crate::lsp::all_server_defs().len() + 1,
+        _ => return None,
+    };
+    if confirm {
+        let choice = form.select_cursor;
+        state.selected_index = row;
+        form_choice(model, Some(choice), 0)
+    } else {
+        form.select_cursor =
+            (form.select_cursor as isize + delta).rem_euclid(count as isize) as usize;
+        Some(Cmd::Redraw)
+    }
+}
+
 pub(super) fn adjust_form(model: &mut AppModel) -> Option<Cmd> {
     let state = state_mut(&mut model.ui)?;
     if matches!(
@@ -198,7 +274,7 @@ pub(super) fn adjust_form(model: &mut AppModel) -> Option<Cmd> {
             .entries
             .get(*state.rows.get(state.selected_index)?)?
             .kind,
-        RowKind::FormEnabled | RowKind::FormChoice(_)
+        RowKind::FormEnabled | RowKind::FormChoice(_) | RowKind::FormPreset | RowKind::FormAdvanced
     ) {
         form_choice(model, None, 1)
     } else {
@@ -212,6 +288,7 @@ pub(super) fn form_focus(model: &mut AppModel, forward: bool) -> Option<Cmd> {
     if form.saving {
         return Some(Cmd::Redraw);
     }
+    form.open_select = None;
     // Include the enable switch and action row in keyboard traversal.
     for _ in 0..state.rows.len() {
         state.selected_index = (state.selected_index as isize + if forward { 1 } else { -1 })
@@ -220,6 +297,8 @@ pub(super) fn form_focus(model: &mut AppModel, forward: bool) -> Option<Cmd> {
             state.entries[state.rows[state.selected_index]].kind,
             RowKind::FormField(_)
                 | RowKind::FormEnabled
+                | RowKind::FormAdvanced
+                | RowKind::FormPreset
                 | RowKind::FormChoice(_)
                 | RowKind::FormActions
         ) {
@@ -266,14 +345,17 @@ pub(super) fn capturing(model: &AppModel) -> bool {
 
 pub(super) fn switch_tab(model: &mut AppModel, index: Option<usize>) -> Option<Cmd> {
     let state = state_mut(&mut model.ui)?;
-    if let Some(form) = &mut state.form {
-        form.status = "Save or Cancel this draft before changing categories".into();
-        return Some(Cmd::Redraw);
-    }
     let categories = crate::settings::categories();
     if state.keymap.capture.is_some() || index.is_some_and(|i| i >= categories.len()) {
         return Some(Cmd::Redraw);
     }
+    if let Some(form) = &mut state.form {
+        if form.dirty || form.saving {
+            form.status = "Save or Cancel this draft before changing categories".into();
+            return Some(Cmd::Redraw);
+        }
+    }
+    state.form = None;
     state.category = index.unwrap_or((state.category + 1) % categories.len());
     state.tab = if categories[state.category] == Some("Keymap") {
         SettingsTab::Keymap
@@ -282,6 +364,19 @@ pub(super) fn switch_tab(model: &mut AppModel, index: Option<usize>) -> Option<C
     };
     state.editable.set_content("");
     state.refresh_entries(&model.config);
+    match categories[state.category] {
+        Some("LSP") => {
+            let id = crate::lsp::server_ids(&model.config.lsp)
+                .first()
+                .map(|id| (*id).to_owned());
+            return open_server(model, id.as_deref());
+        }
+        Some("AI") => {
+            let id = model.config.completion.providers.keys().min().cloned();
+            return open_provider(model, id.as_deref());
+        }
+        _ => {}
+    }
     if state.tab == SettingsTab::Keymap && state.keymap.snapshot.is_none() && !state.keymap.loading
     {
         state.keymap.loading = true;
@@ -416,6 +511,90 @@ pub(super) fn capture_action(model: &mut AppModel, action: usize) -> Option<Cmd>
 
 pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<Cmd> {
     match msg {
+        SettingsMsg::ScrollRecords { delta, max } => {
+            let form = state_mut(&mut model.ui)?.form.as_mut()?;
+            form.records_scroll = form.records_scroll.saturating_add_signed(delta).min(max);
+            Some(Cmd::Redraw)
+        }
+        SettingsMsg::CollectionAction(action) => {
+            use crate::messages::SettingsCollectionAction;
+            let form = state_mut(&mut model.ui)?.form.as_mut()?;
+            if form.saving {
+                return Some(Cmd::Redraw);
+            }
+            match action {
+                SettingsCollectionAction::ToggleSelect(row) => {
+                    let state = state_mut(&mut model.ui)?;
+                    let kind = &state.entries.get(*state.rows.get(row)?)?.kind;
+                    let form = state.form.as_mut()?;
+                    form.select_cursor = match kind {
+                        RowKind::FormChoice(index) => form.choices.get(*index)?.active,
+                        RowKind::FormPreset => form.preset.map_or(0, |index| index + 1),
+                        _ => return None,
+                    };
+                    form.open_select = (form.open_select != Some(row)).then_some(row);
+                    form.focused = None;
+                    state_mut(&mut model.ui)?.selected_index = row;
+                    return Some(Cmd::Redraw);
+                }
+                SettingsCollectionAction::CloseSelect => {
+                    form.open_select = None;
+                    return Some(Cmd::Redraw);
+                }
+                SettingsCollectionAction::ToggleMaster => {
+                    return match form.kind {
+                        FormKind::LanguageServer(_) => Some(Cmd::Batch(vec![
+                            super::lsp::toggle_lsp_enabled(model)?,
+                            Cmd::Redraw,
+                        ])),
+                        FormKind::InlineProvider(_) => {
+                            model.config.completion.inline.enabled =
+                                !model.config.completion.inline.enabled;
+                            Some(Cmd::Batch(vec![
+                                Cmd::SaveConfiguration {
+                                    config: Box::new(model.config.clone()),
+                                },
+                                Cmd::Redraw,
+                            ]))
+                        }
+                    };
+                }
+                _ => {}
+            }
+            if form.dirty {
+                form.status = "Save or Cancel this draft before selecting another entry".into();
+                return Some(Cmd::Redraw);
+            }
+            let kind = form.kind.clone();
+            let ids = match kind {
+                FormKind::LanguageServer(_) => crate::lsp::server_ids(&model.config.lsp)
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>(),
+                FormKind::InlineProvider(_) => {
+                    let mut ids = model
+                        .config
+                        .completion
+                        .providers
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    ids.sort();
+                    ids
+                }
+            };
+            let id = match action {
+                SettingsCollectionAction::Select(index) => Some(ids.get(index)?.as_str()),
+                SettingsCollectionAction::Add => None,
+                SettingsCollectionAction::ToggleMaster
+                | SettingsCollectionAction::ToggleSelect(_)
+                | SettingsCollectionAction::CloseSelect => return None,
+            };
+            match kind {
+                FormKind::LanguageServer(_) => open_server(model, id),
+                FormKind::InlineProvider(_) => open_provider(model, id),
+            }
+        }
         SettingsMsg::EndFieldSelection => {
             state_mut(&mut model.ui)?.form.as_mut()?.dragging = false;
             None
@@ -532,6 +711,13 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                 };
             }
             if success {
+                let removed_current = state_mut(&mut model.ui).is_some_and(|state| {
+                    matches!(*change, SettingsChange::Remove { .. })
+                        && state
+                            .form
+                            .as_ref()
+                            .is_some_and(|form| Arc::ptr_eq(&form.session, &session))
+                });
                 if let Some(state) = state_mut(&mut model.ui) {
                     if matches!(*change, SettingsChange::Remove { .. })
                         && state
@@ -544,6 +730,12 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                     state.refresh_entries(&model.config);
                 }
                 let mut commands = vec![Cmd::Redraw];
+                if removed_current {
+                    let category = state_mut(&mut model.ui).map(|state| state.category);
+                    if let Some(command) = switch_tab(model, category) {
+                        commands.push(command);
+                    }
+                }
                 match *change {
                     SettingsChange::LanguageServer {
                         id, previous_id, ..

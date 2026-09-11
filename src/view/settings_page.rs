@@ -3,7 +3,13 @@
 use super::*;
 use crate::view::{TextFieldOptions, TextFieldRenderer};
 
-fn item_height(row: &DisplayRow<'_>, sf: f64, viewport_height: usize, width: usize) -> usize {
+fn item_height(
+    row: &DisplayRow<'_>,
+    sf: f64,
+    viewport_height: usize,
+    width: usize,
+    form: bool,
+) -> usize {
     match row {
         DisplayRow::Row(
             Row {
@@ -40,6 +46,9 @@ fn item_height(row: &DisplayRow<'_>, sf: f64, viewport_height: usize, width: usi
             },
             _,
         ) => {
+            if form {
+                return row_height(sf);
+            }
             let rect = WidgetRect {
                 x: 0,
                 y: 0,
@@ -58,7 +67,7 @@ fn item_height(row: &DisplayRow<'_>, sf: f64, viewport_height: usize, width: usi
 
 fn input_rect(rect: Rect, sf: f64, browse: bool) -> Rect {
     if rect.width >= scaled(440.0, sf) as f32 {
-        let label = scaled(150.0, sf) as f32;
+        let label = scaled(124.0, sf) as f32;
         let action = if browse {
             scaled(120.0, sf) as f32
         } else {
@@ -99,6 +108,129 @@ pub(super) fn field_options(row: &Row, rect: Rect, sf: f64) -> Option<TextFieldO
 }
 fn choice_width(label: &str, sf: f64) -> usize {
     scaled(label.chars().count() as f32 * 7.0 + 16.0, sf)
+}
+
+fn is_checkbox(labels: &[&str]) -> bool {
+    labels == ["Off", "On"]
+}
+
+fn is_disclosure(labels: &[&str]) -> bool {
+    labels == ["Show"] || labels == ["Hide"]
+}
+
+fn checkbox_rect(row: &WidgetRect, sf: f64) -> WidgetRect {
+    let size = scaled(14.0, sf);
+    WidgetRect {
+        x: row.x + row.w.saturating_sub(size + scaled(4.0, sf)),
+        y: row.y + scaled(10.0, sf),
+        w: size,
+        h: size,
+    }
+}
+
+fn select_rect(row: &WidgetRect, sf: f64) -> WidgetRect {
+    let inset = if row.w >= scaled(440.0, sf) {
+        scaled(124.0, sf)
+    } else {
+        0
+    };
+    WidgetRect {
+        x: row.x + inset,
+        y: row.y + scaled(if inset == 0 { 26.0 } else { 4.0 }, sf),
+        w: row.w.saturating_sub(inset),
+        h: scaled(29.0, sf),
+    }
+}
+
+/// Dropdown options share one layout for painting and pointer selection.
+fn select_options<'a>(
+    spec: &'a OverlaySpec,
+    layout: &OverlayLayout,
+) -> Vec<(FlatIndex, usize, &'a str, WidgetRect)> {
+    let Some(index) = collection(spec).and_then(|collection| collection.open_select) else {
+        return Vec::new();
+    };
+    let Body::List { sections, .. } = &spec.body else {
+        return Vec::new();
+    };
+    let rows = flatten_rows(sections);
+    let Some((rect, labels)) =
+        layout
+            .rows
+            .iter()
+            .zip(&layout.settings_items)
+            .find_map(|(rect, (display, _))| match rows.get(*display) {
+                Some(DisplayRow::Row(
+                    Row {
+                        accessory: Accessory::Choices { labels, .. },
+                        ..
+                    },
+                    row,
+                )) if row.0 == index => Some((rect, labels)),
+                _ => None,
+            })
+    else {
+        return Vec::new();
+    };
+    let sf = layout.scale_factor;
+    let anchor = select_rect(rect, sf);
+    let bottom = layout
+        .footer
+        .map_or(layout.panel.y + layout.panel.h, |footer| footer.y);
+    let height = scaled(28.0, sf).min(bottom.saturating_sub(layout.panel.y) / labels.len().max(1));
+    let total = height * labels.len();
+    let y = (anchor.y + anchor.h)
+        .min(bottom.saturating_sub(total))
+        .max(layout.panel.y);
+    labels
+        .iter()
+        .enumerate()
+        .map(|(choice, label)| {
+            (
+                FlatIndex(index),
+                choice,
+                *label,
+                WidgetRect {
+                    x: anchor.x,
+                    y: y + choice * height,
+                    w: anchor.w,
+                    h: height,
+                },
+            )
+        })
+        .collect()
+}
+
+fn draw_checkbox(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    rect: WidgetRect,
+    enabled: bool,
+    colors: &Palette,
+    sf: f64,
+) {
+    frame.draw_bordered_rect(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        if enabled {
+            colors.accent
+        } else {
+            colors.recessed_wash
+        },
+        colors.hairline,
+    );
+    if enabled {
+        text(
+            frame,
+            painter,
+            &rect,
+            "✓",
+            size_px(12.0, sf),
+            colors.text_bright,
+        );
+    }
 }
 
 fn preset_rects(row: &WidgetRect, labels: &[&str], scale_factor: f64) -> Vec<WidgetRect> {
@@ -164,9 +296,9 @@ fn preset_rects(row: &WidgetRect, labels: &[&str], scale_factor: f64) -> Vec<Wid
 }
 
 const ROW: f32 = 56.0;
-const TOP: f32 = 56.0;
-const FOOT: f32 = 44.0;
-const NAV_STEP: f32 = 30.0;
+const TOP: f32 = 49.0;
+const FOOT: f32 = 52.0;
+const NAV_STEP: f32 = 33.0;
 
 fn row_height(scale: f64) -> usize {
     scaled(ROW, scale)
@@ -204,7 +336,7 @@ fn chrome(p: &WidgetRect, sf: f64) -> Chrome {
     let sidebar = if wide(p, sf)
         && p.h.saturating_sub(top + scaled(FOOT, sf)) >= categories * scaled(NAV_STEP, sf)
     {
-        scaled(180.0, sf)
+        scaled(169.0, sf)
     } else {
         0
     };
@@ -229,6 +361,64 @@ fn chrome(p: &WidgetRect, sf: f64) -> Chrome {
             },
         header_y: p.y + scaled(12.0, sf),
         header_h: scaled(30.0, sf),
+    }
+}
+
+fn collection<'a>(spec: &'a OverlaySpec) -> Option<&'a SettingsCollection<'a>> {
+    match &spec.anchor {
+        Anchor::Settings { collection, .. } => collection.as_ref(),
+        _ => None,
+    }
+}
+
+struct ManagerRects {
+    heading: WidgetRect,
+    add: WidgetRect,
+    master: WidgetRect,
+    records: Rect,
+    detail: Rect,
+}
+
+fn manager_rects(p: &WidgetRect, sf: f64) -> ManagerRects {
+    let chrome = chrome(p, sf);
+    let x = p.x + chrome.sidebar;
+    let w = p.w.saturating_sub(chrome.sidebar);
+    let top = chrome.body_top;
+    let heading_h = scaled(104.0, sf);
+    let rail = scaled(221.0, sf).min(w / 3);
+    let bottom = p.y + p.h.saturating_sub(scaled(FOOT, sf));
+    let body_y = (top + heading_h).min(bottom);
+    ManagerRects {
+        master: WidgetRect {
+            x: x + scaled(26.0, sf),
+            y: top + scaled(77.0, sf),
+            w: scaled(14.0, sf),
+            h: scaled(14.0, sf),
+        },
+        heading: WidgetRect {
+            x: x + scaled(26.0, sf),
+            y: top + scaled(22.0, sf),
+            w: w.saturating_sub(scaled(150.0, sf)),
+            h: heading_h,
+        },
+        add: WidgetRect {
+            x: x + w.saturating_sub(scaled(100.0, sf)),
+            y: top + scaled(24.0, sf),
+            w: scaled(74.0, sf),
+            h: scaled(29.0, sf),
+        },
+        records: Rect::new(
+            x as f32,
+            body_y as f32,
+            rail as f32,
+            bottom.saturating_sub(body_y) as f32,
+        ),
+        detail: Rect::new(
+            (x + rail) as f32,
+            body_y as f32,
+            w.saturating_sub(rail) as f32,
+            bottom.saturating_sub(body_y) as f32,
+        ),
     }
 }
 
@@ -270,7 +460,17 @@ pub(super) fn layout(
     let p = panel(width, height, sf);
     let pad = scaled(16.0, sf).min(p.w / 8);
     let chrome = chrome(&p, sf);
+    let manager = collection(spec).map(|_| manager_rects(&p, sf));
+    let content_pad = if manager.is_some() {
+        scaled(26.0, sf)
+    } else {
+        pad
+    };
     let sidebar = chrome.sidebar;
+    let detail_sidebar = sidebar
+        + manager
+            .as_ref()
+            .map_or(0, |rects| rects.records.width as usize);
     let nav_top = chrome.nav_top;
     out.panel = p;
     out.header = Some(WidgetRect {
@@ -313,9 +513,17 @@ pub(super) fn layout(
         } => (flatten_rows(sections), *scroll),
         _ => (Vec::new(), 0),
     };
-    let mut total = 0;
-    let viewport_height = scroll_viewport(width, height, sf, 0, 0)
-        .rect()
+    let mut total = if manager.is_some() {
+        scaled(16.0, sf)
+    } else {
+        0
+    };
+    let viewport_height = manager
+        .as_ref()
+        .map_or_else(
+            || scroll_viewport(width, height, sf, 0, 0).rect(),
+            |manager| manager.detail,
+        )
         .height
         .max(0.0) as usize;
     let positions: Vec<_> = items
@@ -327,7 +535,8 @@ pub(super) fn layout(
                 item,
                 sf,
                 viewport_height,
-                p.w.saturating_sub(sidebar + pad * 2),
+                p.w.saturating_sub(detail_sidebar + content_pad * 2),
+                manager.is_some(),
             ); }
             start..total
         })
@@ -337,7 +546,35 @@ pub(super) fn layout(
         .zip(&positions)
         .filter_map(|(item, range)| matches!(item, DisplayRow::Row(..)).then_some(range.clone()))
         .collect();
-    let viewport = scroll_viewport(width, height, sf, total, offset);
+    let viewport = if let (Some(rects), Some(records)) = (&manager, collection(spec)) {
+        let record_view = crate::layout::RowListView::from_pixel_scroll(
+            rects.records,
+            scaled(64.0, sf) as f32,
+            records.records.len(),
+            records.scroll,
+        );
+        let rect = rects.records;
+        out.settings_records_scrollbar = (record_view.max_scroll_pixels() > 0).then(|| {
+            list_scrollbar(
+                WidgetRect {
+                    x: rect.x as usize,
+                    y: rect.y as usize,
+                    w: rect.width as usize,
+                    h: rect.height as usize,
+                },
+                ScrollbarState::new(
+                    record_view.content_height_pixels(),
+                    rect.height as usize,
+                    record_view.scroll_offset_pixels(),
+                ),
+                sf,
+            )
+        });
+        out.settings_records_viewport = Some(record_view);
+        crate::layout::RowListView::from_pixel_scroll(rects.detail, 1.0, total, offset)
+    } else {
+        scroll_viewport(width, height, sf, total, offset)
+    };
     let body = viewport.rect();
     out.settings_viewport = Some(viewport);
     out.row_height = row_height(sf);
@@ -352,9 +589,9 @@ pub(super) fn layout(
             (
                 index,
                 Rect::new(
-                    (p.x + sidebar + pad) as f32,
+                    (p.x + detail_sidebar + content_pad) as f32,
                     body.y + range.start as f32 - viewport.scroll_offset_pixels() as f32,
-                    p.w.saturating_sub(sidebar + pad * 2) as f32,
+                    p.w.saturating_sub(detail_sidebar + content_pad * 2) as f32,
                     range.len() as f32,
                 ),
             )
@@ -457,13 +694,44 @@ pub(super) fn hit_test(
 ) -> OverlayHit {
     // On a draft, the Settings breadcrumb returns to the main page. There is
     // no header close button; Escape retains the modal's normal close action.
-    if matches!(spec.anchor, Anchor::Settings { subpage: true, .. })
+    if collection(spec).is_none()
+        && matches!(spec.anchor, Anchor::Settings { subpage: true, .. })
         && contains(&breadcrumb_rect(&layout.panel, layout.scale_factor), x, y)
     {
         return OverlayHit::Close;
     }
     if !contains(&layout.panel, x, y) {
         return OverlayHit::Outside;
+    }
+    if collection(spec).is_some_and(|collection| collection.open_select.is_some()) {
+        for (row, choice, _, rect) in select_options(spec, layout) {
+            if contains(&rect, x, y) {
+                return OverlayHit::Choice { row, choice };
+            }
+        }
+        return OverlayHit::SettingsAction(crate::messages::SettingsCollectionAction::CloseSelect);
+    }
+    if collection(spec).is_some() {
+        let manager = manager_rects(&layout.panel, layout.scale_factor);
+        if contains(&manager.master, x, y) {
+            return OverlayHit::SettingsAction(
+                crate::messages::SettingsCollectionAction::ToggleMaster,
+            );
+        }
+        if contains(&manager.add, x, y) {
+            return OverlayHit::SettingsAction(crate::messages::SettingsCollectionAction::Add);
+        }
+        if let Some(viewport) = layout.settings_records_viewport {
+            if viewport.rect().contains(x as f32, y as f32) {
+                return viewport
+                    .row_at_y(y as f32)
+                    .map_or(OverlayHit::Inside, |index| {
+                        OverlayHit::SettingsAction(
+                            crate::messages::SettingsCollectionAction::Select(index),
+                        )
+                    });
+            }
+        }
     }
     if layout
         .footer
@@ -519,7 +787,30 @@ pub(super) fn hit_test(
                         choice: 0,
                     };
                 }
-                if let Accessory::Choices { labels, .. } = &row.accessory {
+                if let Accessory::Choices { labels, active } = &row.accessory {
+                    if collection(spec).is_some() && is_disclosure(labels) {
+                        return OverlayHit::Choice {
+                            row: *index,
+                            choice: 0,
+                        };
+                    }
+                    if is_checkbox(labels) {
+                        if contains(&checkbox_rect(rect, layout.scale_factor), x, y) {
+                            return OverlayHit::Choice {
+                                row: *index,
+                                choice: usize::from(*active != Some(1)),
+                            };
+                        }
+                        return OverlayHit::Row(*index);
+                    }
+                    if collection(spec).is_some() && labels.len() > 1 {
+                        if contains(&select_rect(rect, layout.scale_factor), x, y) {
+                            return OverlayHit::SettingsAction(
+                                crate::messages::SettingsCollectionAction::ToggleSelect(index.0),
+                            );
+                        }
+                        return OverlayHit::Row(*index);
+                    }
                     for (choice, r) in preset_rects(rect, labels, layout.scale_factor)
                         .iter()
                         .enumerate()
@@ -575,6 +866,51 @@ fn settings_button(
     );
 }
 
+fn select_button(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    colors: &Palette,
+    rect: WidgetRect,
+    label: &str,
+    open: bool,
+    sf: f64,
+) {
+    frame.draw_bordered_rect(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        colors.recessed_wash,
+        if open { colors.accent } else { colors.hairline },
+    );
+    let label_rect = WidgetRect {
+        x: rect.x + scaled(8.0, sf),
+        y: rect.y + scaled(7.0, sf),
+        w: rect.w.saturating_sub(scaled(32.0, sf)),
+        ..rect
+    };
+    text(
+        frame,
+        painter,
+        &label_rect,
+        label,
+        size_px(12.0, sf),
+        colors.text_primary,
+    );
+    text(
+        frame,
+        painter,
+        &WidgetRect {
+            x: rect.x + rect.w.saturating_sub(scaled(20.0, sf)),
+            w: scaled(14.0, sf),
+            ..label_rect
+        },
+        "▾",
+        size_px(12.0, sf),
+        colors.text_dim,
+    );
+}
+
 /// Fixed form actions use the same row/action identifiers as keyboard input.
 /// This geometry is shared by painting and pointer hit testing.
 fn footer_actions<'a>(
@@ -609,7 +945,6 @@ fn footer_actions<'a>(
     labels
         .iter()
         .enumerate()
-        .rev()
         .filter(|(_, label)| !label.is_empty())
         .map(|(choice, label)| {
             let w = choice_width(label, sf);
@@ -668,7 +1003,11 @@ pub(super) fn render(
         frame,
         painter,
         &title,
-        if subpage { "‹ Settings" } else { "Settings" },
+        if subpage && collection(spec).is_none() {
+            "‹ Settings"
+        } else {
+            "Settings"
+        },
         size_px(14.0, sf),
         colors.text_bright,
     );
@@ -696,7 +1035,10 @@ pub(super) fn render(
             frame,
             painter,
             &rect,
-            &format!("› {}", header.text),
+            &collection(spec).map_or_else(
+                || format!("› {}", header.text),
+                |collection| format!("Preferences  /  {}", collection.title),
+            ),
             size_px(13.0, sf),
             colors.text_primary,
         );
@@ -744,6 +1086,173 @@ pub(super) fn render(
             );
         }
     }
+    if let Some(collection) = collection(spec) {
+        let manager = manager_rects(&p, sf);
+        draw_checkbox(
+            frame,
+            painter,
+            manager.master,
+            collection.enabled,
+            colors,
+            sf,
+        );
+        text(
+            frame,
+            painter,
+            &WidgetRect {
+                x: manager.master.x + scaled(23.0, sf),
+                y: manager.master.y,
+                w: manager.heading.w,
+                h: manager.master.h,
+            },
+            collection.enable_label,
+            size_px(12.0, sf),
+            colors.text_primary,
+        );
+        text(
+            frame,
+            painter,
+            &manager.heading,
+            collection.title,
+            size_px(20.0, sf),
+            colors.text_bright,
+        );
+        text(
+            frame,
+            painter,
+            &WidgetRect {
+                y: manager.heading.y + scaled(31.0, sf),
+                ..manager.heading
+            },
+            collection.description,
+            size_px(12.0, sf),
+            colors.text_dim,
+        );
+        settings_button(
+            frame,
+            painter,
+            theme,
+            manager.add,
+            "+ Add",
+            if collection.hovered == Some(crate::messages::SettingsCollectionAction::Add) {
+                crate::view::button::ButtonState::Hovered
+            } else {
+                crate::view::button::ButtonState::Normal
+            },
+            sf,
+        );
+        let rect = manager.records;
+        frame.fill_rect_px(
+            rect.x as usize,
+            rect.y as usize,
+            rect.width as usize,
+            rect.height as usize,
+            colors.panel_secondary | 0xFF00_0000,
+        );
+        frame.fill_rect_px(
+            rect.x as usize,
+            rect.y as usize,
+            (rect.width + manager.detail.width) as usize,
+            scaled(1.0, sf),
+            colors.hairline,
+        );
+        frame.fill_rect_px(
+            (rect.x + rect.width) as usize,
+            rect.y as usize,
+            scaled(1.0, sf),
+            rect.height as usize,
+            colors.hairline,
+        );
+        if let Some(viewport) = layout.settings_records_viewport {
+            frame.push_clip(viewport.rect());
+            if collection.records.is_empty() {
+                text(
+                    frame,
+                    painter,
+                    &WidgetRect {
+                        x: rect.x as usize + scaled(18.0, sf),
+                        y: rect.y as usize + scaled(22.0, sf),
+                        w: (rect.width as usize).saturating_sub(scaled(36.0, sf)),
+                        h: scaled(20.0, sf),
+                    },
+                    "No saved entries yet",
+                    size_px(11.0, sf),
+                    colors.text_dim,
+                );
+            }
+            for index in viewport.drawn_range() {
+                let Some(record) = collection.records.get(index) else {
+                    continue;
+                };
+                let Some(rect) = viewport.row_rect(index) else {
+                    continue;
+                };
+                let r = WidgetRect {
+                    x: rect.x as usize + scaled(8.0, sf),
+                    y: rect.y.max(0.0) as usize + scaled(6.0, sf),
+                    w: (rect.width as usize).saturating_sub(scaled(16.0, sf)),
+                    h: scaled(52.0, sf),
+                };
+                if collection.selected == Some(record.id)
+                    || collection.hovered
+                        == Some(crate::messages::SettingsCollectionAction::Select(index))
+                {
+                    frame.fill_rounded_rect(
+                        r.x,
+                        r.y,
+                        r.w,
+                        r.h,
+                        scaled(3.0, sf),
+                        if collection.selected == Some(record.id) {
+                            colors.selection_wash
+                        } else {
+                            colors.keycap_bg
+                        },
+                        masks,
+                    );
+                }
+                text(
+                    frame,
+                    &mut painter.with_font(crate::view::FontRole::Code),
+                    &WidgetRect {
+                        x: r.x + scaled(10.0, sf),
+                        y: r.y + scaled(8.0, sf),
+                        w: r.w.saturating_sub(scaled(20.0, sf)),
+                        ..r
+                    },
+                    record.id,
+                    size_px(12.0, sf),
+                    colors.text_primary,
+                );
+                text(
+                    frame,
+                    painter,
+                    &WidgetRect {
+                        x: r.x + scaled(10.0, sf),
+                        y: r.y + scaled(30.0, sf),
+                        w: r.w.saturating_sub(scaled(20.0, sf)),
+                        ..r
+                    },
+                    &record.detail,
+                    size_px(10.0, sf),
+                    colors.text_dim,
+                );
+                if record.enabled {
+                    frame.fill_rect_px(
+                        r.x + r.w.saturating_sub(scaled(9.0, sf)),
+                        r.y + scaled(12.0, sf),
+                        scaled(3.0, sf),
+                        scaled(3.0, sf),
+                        colors.accent_bright,
+                    );
+                }
+            }
+            frame.pop_clip();
+        }
+        if let Some(bar) = &layout.settings_records_scrollbar {
+            render_scrollbar(frame, bar, false, &ScrollbarColors::from(&theme.scrollbar));
+        }
+    }
     if let (
         Body::List {
             sections, selected, ..
@@ -770,6 +1279,8 @@ pub(super) fn render(
                     );
                 }
                 Some(DisplayRow::Row(row, index)) => {
+                    let disclosure = collection(spec).is_some()
+                        && matches!(&row.accessory, Accessory::Choices {labels, ..} if is_disclosure(labels));
                     let button_state = |choice, active| {
                         use crate::view::button::ButtonState;
                         if active {
@@ -821,8 +1332,11 @@ pub(super) fn render(
                     let label = WidgetRect {
                         x: rect.x,
                         y: rect.y + scaled(8.0, sf),
-                        w: if horizontal_field {
-                            scaled(140.0, sf)
+                        w: if horizontal_field
+                            || (collection(spec).is_some()
+                                && matches!(&row.accessory, Accessory::Choices {labels, ..} if labels.len() > 1 && !is_checkbox(labels)))
+                        {
+                            scaled(114.0, sf)
                         } else {
                             rect.w.saturating_sub(reserve)
                         },
@@ -832,11 +1346,22 @@ pub(super) fn render(
                         frame,
                         painter,
                         &label,
-                        row.label,
+                        if disclosure {
+                            if collection(spec).is_some_and(|collection| collection.advanced) {
+                                "▾  Advanced"
+                            } else {
+                                "▸  Advanced"
+                            }
+                        } else if horizontal_field {
+                            row.label.split(" (JSON").next().unwrap_or(row.label)
+                        } else {
+                            row.label
+                        },
                         size_px(12.0, sf),
                         colors.text_primary,
                     );
-                    if !horizontal_field
+                    if collection(spec).is_none()
+                        && !horizontal_field
                         && (!compact || matches!(row.accessory, Accessory::SettingInput { .. }))
                     {
                         if let Some(detail) = row.detail {
@@ -864,7 +1389,7 @@ pub(super) fn render(
                         } => {
                             let input = input_rect(*raw, sf, *browse);
                             let bg_y = (input.y - scaled(4.0, sf) as f32).max(0.0) as usize;
-                            frame.fill_rect_px(
+                            frame.draw_bordered_rect(
                                 input.x as usize - scaled(4.0, sf),
                                 bg_y,
                                 input.width as usize + scaled(8.0, sf),
@@ -872,6 +1397,11 @@ pub(super) fn render(
                                     as usize
                                     - bg_y,
                                 colors.recessed_wash,
+                                if *focused {
+                                    colors.accent
+                                } else {
+                                    colors.hairline
+                                },
                             );
                             if *browse {
                                 settings_button(
@@ -921,16 +1451,39 @@ pub(super) fn render(
                             }
                         }
                         Accessory::Choices { labels, active } => {
-                            for (i, r) in preset_rects(rect, labels, sf).iter().enumerate() {
-                                settings_button(
+                            if disclosure {
+                                // The entire disclosure row is interactive.
+                            } else if is_checkbox(labels) {
+                                let r = checkbox_rect(rect, sf);
+                                draw_checkbox(frame, painter, r, *active == Some(1), colors, sf);
+                            } else if collection(spec).is_some() && labels.len() > 1 {
+                                let r = select_rect(rect, sf);
+                                select_button(
                                     frame,
                                     painter,
-                                    theme,
-                                    *r,
-                                    labels[i],
-                                    button_state(i, *active == Some(i)),
+                                    colors,
+                                    r,
+                                    active
+                                        .and_then(|index| labels.get(index))
+                                        .copied()
+                                        .unwrap_or("Select…"),
+                                    collection(spec).is_some_and(|collection| {
+                                        collection.open_select == Some(index.0)
+                                    }),
                                     sf,
                                 );
+                            } else {
+                                for (i, r) in preset_rects(rect, labels, sf).iter().enumerate() {
+                                    settings_button(
+                                        frame,
+                                        painter,
+                                        theme,
+                                        *r,
+                                        labels[i],
+                                        button_state(i, *active == Some(i)),
+                                        sf,
+                                    );
+                                }
                             }
                         }
                         Accessory::Keycaps(steps) => {
@@ -985,13 +1538,15 @@ pub(super) fn render(
                         }
                         _ => {}
                     }
-                    frame.fill_rect_px(
-                        rect.x,
-                        rect.y + rect.h - scaled(1.0, sf),
-                        rect.w,
-                        scaled(1.0, sf),
-                        colors.hairline,
-                    );
+                    if collection(spec).is_none() {
+                        frame.fill_rect_px(
+                            rect.x,
+                            rect.y + rect.h - scaled(1.0, sf),
+                            rect.w,
+                            scaled(1.0, sf),
+                            colors.hairline,
+                        );
+                    }
                 }
                 _ => {}
             }
@@ -1015,6 +1570,23 @@ pub(super) fn render(
         frame.pop_clip();
     }
     render_list_scrollbar(frame, layout, colors);
+    for (row, choice, label, rect) in select_options(spec, layout) {
+        let hovered = matches!(spec.anchor, Anchor::Settings {hovered_choice: Some((r,c)), ..} if r == row.0 && c == choice)
+            || collection(spec).is_some_and(|collection| collection.select_cursor == choice);
+        settings_button(
+            frame,
+            painter,
+            theme,
+            rect,
+            label,
+            if hovered {
+                crate::view::button::ButtonState::Hovered
+            } else {
+                crate::view::button::ButtonState::Normal
+            },
+            sf,
+        );
+    }
     if let (Some(footer), Some(rect)) = (&spec.footer, layout.footer) {
         let actions = footer_actions(spec, layout);
         let text_width = actions
@@ -1052,6 +1624,8 @@ pub(super) fn render(
             let state = if matches!(spec.anchor, Anchor::Settings { hovered_choice: Some((r, c)), .. } if r == row.0 && c == choice)
             {
                 ButtonState::Hovered
+            } else if choice == 0 {
+                ButtonState::Pressed
             } else {
                 ButtonState::Normal
             };
@@ -1063,6 +1637,70 @@ pub(super) fn render(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn settings_collection_dropdown_and_record_targets_match_layout() {
+        use crate::settings::{forms::SettingsForm, SettingsState};
+        for (width, height, scale) in [(1200, 900, 1.0), (700, 600, 1.0), (1200, 900, 2.0)] {
+            let model = crate::model::AppModel::new(width, height, scale);
+            let mut state = SettingsState {
+                form: Some(SettingsForm::inline_provider(None, &model.config)),
+                ..SettingsState::default()
+            };
+            state.refresh_entries(&model.config);
+            let index = state
+                .entries
+                .iter()
+                .position(|row| matches!(row.kind, crate::settings::RowKind::FormChoice(0)))
+                .unwrap();
+            state.form.as_mut().unwrap().open_select = Some(index);
+            crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                let layout = super::super::layout(spec, width as usize, height as usize, scale);
+                let options = select_options(spec, &layout);
+                assert_eq!(options.len(), 5);
+                for (row, choice, _, rect) in options {
+                    assert_eq!(
+                        super::super::hit_test(
+                            spec,
+                            &layout,
+                            rect.x + rect.w / 2,
+                            rect.y + rect.h / 2
+                        ),
+                        OverlayHit::Choice { row, choice }
+                    );
+                    assert!(rect.y + rect.h <= layout.footer.unwrap().y);
+                }
+            });
+            state.form = Some(SettingsForm::language_server(
+                Some("rust-analyzer"),
+                &model.config,
+            ));
+            state.refresh_entries(&model.config);
+            crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                let layout = super::super::layout(spec, width as usize, height as usize, scale);
+                let viewport = layout.settings_records_viewport.unwrap();
+                for index in viewport.drawn_range() {
+                    let rect = viewport.row_rect(index).unwrap();
+                    if !viewport
+                        .rect()
+                        .contains(rect.x + 10.0, rect.y + rect.height / 2.0)
+                    {
+                        continue;
+                    }
+                    assert_eq!(
+                        hit_test(
+                            spec,
+                            &layout,
+                            (rect.x + 10.0) as usize,
+                            (rect.y + rect.height / 2.0) as usize
+                        ),
+                        OverlayHit::SettingsAction(
+                            crate::messages::SettingsCollectionAction::Select(index)
+                        )
+                    );
+                }
+            });
+        }
+    }
     use super::*;
 
     #[test]
@@ -1124,6 +1762,7 @@ mod tests {
                     sf,
                     scaled(600.0, sf),
                     width,
+                    false,
                 );
                 let rect = WidgetRect {
                     x: 20,
@@ -1162,6 +1801,7 @@ mod tests {
             model.char_width = 8.0 * scale as f32;
             model.line_height = (20.0 * scale) as usize;
             let mut form = SettingsForm::language_server(Some("rust-analyzer"), &model.config);
+            form.advanced = true;
             form.fields[2]
                 .input
                 .set_content("{\n  \"check\": {\n    \"command\": \"clippy\"\n  }\n}");
@@ -1191,7 +1831,7 @@ mod tests {
                     let back = breadcrumb_rect(&layout.panel, scale);
                     assert_eq!(
                         hit_test(spec, &layout, back.x + back.w / 2, back.y + back.h / 2),
-                        OverlayHit::Close
+                        OverlayHit::Inside
                     );
                     let viewport = layout.settings_viewport.unwrap();
                     for (display, raw) in &layout.settings_items {
@@ -1526,7 +2166,7 @@ mod tests {
                     let control = if query == "Theme" {
                         action_rect(row, scale)
                     } else {
-                        preset_rects(row, &["Off", "On"], scale)[0]
+                        checkbox_rect(row, scale)
                     };
                     assert!(matches!(
                         hit_test(

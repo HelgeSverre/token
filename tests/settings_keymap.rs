@@ -205,7 +205,7 @@ fn settings_keymap_background_reply_preserves_general_tab_selection() {
     open_keymap(&mut model);
     modal(&mut model, ModalMsg::ChooseSetting { row: 0, choice: 1 });
     let session = state(&model).keymap.session.clone();
-    modal(&mut model, ModalMsg::PrevTab);
+    modal(&mut model, ModalMsg::ActivateTab(0));
     modal(&mut model, ModalMsg::SelectNext);
     assert_eq!(state(&model).selected_index(), 1);
     update(
