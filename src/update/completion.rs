@@ -2115,6 +2115,75 @@ mod tests {
         assert!(!visible.contains(&"unrelated"));
     }
     #[test]
+    fn accepting_php_completion_refreshes_brackets_in_each_pane() {
+        use crate::messages::LayoutMsg;
+        use crate::model::{Position, SplitDirection};
+
+        // sample.oop.php:71, after deleting `currency` and typing a prefix.
+        let empty = "        return new self((int) round($amount * 100), $);";
+        for (prefix, enabled) in [("cur", true), ("curr", true), ("curr", false)] {
+            let mut model = model_with_text(empty);
+            model.config.bracket_matching = enabled;
+            place_cursor(&mut model, 0, 53);
+            type_str(&mut model, prefix);
+            let stale = model.editor().matched_brackets;
+            if enabled {
+                assert_eq!(stale.unwrap().0, Position::new(0, 53 + prefix.len()));
+            }
+            let peer = model.editor().id.unwrap();
+            update(
+                &mut model,
+                Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Horizontal)),
+            );
+            place_cursor(&mut model, 0, 53 + prefix.len());
+            super::super::editor::compute_matched_brackets(&mut model);
+            let doc = model.document();
+            let raw = serde_json::from_value(serde_json::json!({
+                "label": "currency",
+                "textEdit": {
+                    "range": {
+                        "start": {"line": 0, "character": 53},
+                        "end": {"line": 0, "character": 53 + prefix.len()}
+                    },
+                    "newText": "currency"
+                }
+            }))
+            .unwrap();
+            let items = crate::completion::lsp::items_to_menu_items(
+                vec![raw],
+                &crate::lsp::LspServerId::from("php"),
+                std::path::Path::new("."),
+                None,
+            );
+            model.ui.completion_menu = Some(CompletionMenuState {
+                document_id: doc.id.unwrap(),
+                revision: doc.revision,
+                query_start: Cursor::at(0, 53),
+                query: prefix.into(),
+                items,
+                filtered: vec![(0, 0, Vec::new())],
+                is_incomplete: false,
+                pending_resolve: None,
+                context: Default::default(),
+                selection_changed: false,
+            });
+            model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Completion));
+            update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+
+            assert_eq!(
+                model.document().buffer.to_string(),
+                empty.replace("$)", "$currency)")
+            );
+            let expected = enabled.then_some((Position::new(0, 61), Position::new(0, 23)));
+            for editor in [model.editor(), &model.editor_area.editors[&peer]] {
+                assert_eq!(*editor.active_cursor(), Cursor::at(0, 61));
+                assert!(editor.selections[0].is_empty());
+                assert_eq!(editor.matched_brackets, expected);
+            }
+        }
+    }
+
+    #[test]
     fn accepting_a_plain_lsp_item_inserts_its_text() {
         let mut model = model_with_text("value_vector\n\n");
         open_menu_with_lsp_response(&mut model, &["vacuum"]);

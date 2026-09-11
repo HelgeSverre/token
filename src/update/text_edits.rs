@@ -484,6 +484,18 @@ pub(crate) fn apply_planned_edits(
             editor.clear_selection_history();
         }
     }
+    // Completion can place its caret after the mapped positions are restored.
+    // Refresh every affected pane only once those final positions are known.
+    for id in &editor_ids {
+        if let Some(editor) = model.editor_area.editors.get_mut(id) {
+            editor.matched_brackets =
+                if model.config.bracket_matching && editor.is_plain_text_mode() {
+                    super::editor::matched_brackets_at(doc, editor.active_cursor())
+                } else {
+                    None
+                };
+        }
+    }
     let editors_after = editor_ids
         .iter()
         .map(|id| EditorEditState::capture(*id, &model.editor_area.editors[id]))

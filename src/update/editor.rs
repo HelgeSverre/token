@@ -1048,13 +1048,18 @@ pub(crate) fn lines_covered_by_all_cursors(model: &AppModel) -> Vec<usize> {
 /// Checks the character at and before the cursor for bracket characters,
 /// then scans forward/backward tracking nesting to find the match.
 pub(crate) fn compute_matched_brackets(model: &mut AppModel) {
-    if !model.config.bracket_matching {
-        model.editor_mut().matched_brackets = None;
-        return;
-    }
+    model.editor_mut().matched_brackets = if model.config.bracket_matching {
+        matched_brackets_at(model.document(), model.editor().active_cursor())
+    } else {
+        None
+    };
+}
 
-    let cursor = *model.editor().active_cursor();
-    let doc = model.document();
+/// Derive bracket decoration from the current buffer and final caret position.
+pub(crate) fn matched_brackets_at(
+    doc: &crate::model::Document,
+    cursor: &Cursor,
+) -> Option<(Position, Position)> {
     let total_chars = doc.buffer.len_chars();
 
     // Check char at cursor and char before cursor
@@ -1071,31 +1076,14 @@ pub(crate) fn compute_matched_brackets(model: &mut AppModel) {
     };
 
     // Try char at cursor first, then char before cursor
-    let (bracket_char, bracket_offset) = if let Some(ch) = char_at {
-        if is_bracket(ch) {
-            (ch, at_offset)
-        } else if let Some(ch) = char_before {
-            if is_bracket(ch) {
-                (ch, at_offset - 1)
-            } else {
-                model.editor_mut().matched_brackets = None;
-                return;
-            }
-        } else {
-            model.editor_mut().matched_brackets = None;
-            return;
-        }
-    } else if let Some(ch) = char_before {
-        if is_bracket(ch) {
-            (ch, at_offset - 1)
-        } else {
-            model.editor_mut().matched_brackets = None;
-            return;
-        }
-    } else {
-        model.editor_mut().matched_brackets = None;
-        return;
-    };
+    let (bracket_char, bracket_offset) = char_at
+        .filter(|&ch| is_bracket(ch))
+        .map(|ch| (ch, at_offset))
+        .or_else(|| {
+            char_before
+                .filter(|&ch| is_bracket(ch))
+                .map(|ch| (ch, at_offset - 1))
+        })?;
 
     let match_offset = if is_opening_bracket(bracket_char) {
         let close = matching_bracket(bracket_char);
@@ -1105,11 +1093,11 @@ pub(crate) fn compute_matched_brackets(model: &mut AppModel) {
         find_matching_backward(doc, open, bracket_char, bracket_offset)
     };
 
-    model.editor_mut().matched_brackets = match_offset.map(|m_offset| {
+    match_offset.map(|m_offset| {
         let (line_a, col_a) = doc.offset_to_cursor(bracket_offset);
         let (line_b, col_b) = doc.offset_to_cursor(m_offset);
         (Position::new(line_a, col_a), Position::new(line_b, col_b))
-    });
+    })
 }
 
 fn is_bracket(ch: char) -> bool {

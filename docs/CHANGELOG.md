@@ -6,6 +6,11 @@ All notable changes to rust-editor are documented in this file.
 
 ## Unreleased
 
+### Completion
+
+- Refresh bracket highlights after accepting completions and applying text edits,
+  including split views, so stale highlights do not appear as selected letters.
+
 ### Settings polish
 
 - Organize language servers and AI providers into a two-pane list and editor,
