@@ -409,6 +409,21 @@ pub fn render_dock(
     scene.render(frame, painter, model, chrome);
 }
 
+/// Paint the same dock header and borders without its content.
+#[cfg(feature = "ui-gallery")]
+pub(crate) fn render_dock_chrome(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    position: crate::panel::DockPosition,
+    chrome: &LayoutSnapshot,
+) {
+    if let Some(scene) = DockPaneScene::resolve(model, position, chrome) {
+        scene.render_chrome(frame);
+        scene.render_header(frame, &mut painter.with_font(FontRole::Code));
+    }
+}
+
 /// Render the outline panel showing document symbols as a tree
 pub fn render_outline_panel(
     frame: &mut Frame,

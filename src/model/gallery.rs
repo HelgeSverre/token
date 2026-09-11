@@ -8,8 +8,22 @@ pub const CATEGORIES: &[&str] = &[
     "Selection",
     "Forms",
     "Menus & rows",
-    "Surfaces",
+    "Structure",
+    "Tabs & panels",
 ];
+
+#[derive(Clone, Copy)]
+pub enum ChromePreview {
+    DocumentTabs,
+    DocumentOverflow,
+    DocumentDrag,
+    DockTabs,
+    TerminalTabs,
+    TerminalOverflow,
+    TerminalExited,
+    BottomPanel,
+    RightPanel,
+}
 
 #[derive(Clone, Copy)]
 pub enum Preview {
@@ -28,15 +42,32 @@ pub enum Preview {
     SearchField,
     FormValidation,
     Checkbox(bool),
-    Select { open: bool },
+    Select {
+        open: bool,
+    },
     SelectOptions,
     ChoiceGroup,
-    Disclosure { expanded: bool },
-    MenuRows { hover: bool },
+    Disclosure {
+        expanded: bool,
+    },
+    MenuRows {
+        hover: bool,
+    },
     ListRow,
     Panel,
     Secondary,
     Recessed,
+    Chrome(ChromePreview),
+    OverlayTabs,
+    Scrollbar {
+        horizontal: bool,
+        hovered: bool,
+        fits: bool,
+        end: bool,
+    },
+    Splitter {
+        horizontal: bool,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -49,6 +80,162 @@ pub struct Specimen {
 }
 
 pub const SPECIMENS: &[Specimen] = &[
+    Specimen {
+        id: "terminal-tabs.exited",
+        preview: Preview::Chrome(ChromePreview::TerminalExited),
+        category: 7,
+        source: "panels/terminal.rs · reveal_active_tab + render_tabs",
+        tokens: "sidebar / selected exited session / actions",
+    },
+    Specimen {
+        id: "document-tabs.states",
+        preview: Preview::Chrome(ChromePreview::DocumentTabs),
+        category: 7,
+        source: "view/document_tabs.rs + layout/editor.rs",
+        tokens: "tab_bar active / inactive / save-error (!) ",
+    },
+    Specimen {
+        id: "document-tabs.overflow",
+        preview: Preview::Chrome(ChromePreview::DocumentOverflow),
+        category: 7,
+        source: "view/document_tabs.rs + layout/editor.rs",
+        tokens: "tab_bar / title clipping / horizontal scroll",
+    },
+    Specimen {
+        id: "document-tab.drag-ghost",
+        preview: Preview::Chrome(ChromePreview::DocumentDrag),
+        category: 7,
+        source: "view/mod.rs · render_tab_drag_ghost",
+        tokens: "tab_bar active / border / translucent ghost",
+    },
+    Specimen {
+        id: "dock-tabs.active",
+        preview: Preview::Chrome(ChromePreview::DockTabs),
+        category: 7,
+        source: "view/panels.rs · DockPaneScene",
+        tokens: "sidebar selection / text / border",
+    },
+    Specimen {
+        id: "terminal-tabs.states",
+        preview: Preview::Chrome(ChromePreview::TerminalTabs),
+        category: 7,
+        source: "panels/terminal.rs · render_tabs",
+        tokens: "sidebar / active / hovered / exited / actions",
+    },
+    Specimen {
+        id: "terminal-tabs.overflow",
+        preview: Preview::Chrome(ChromePreview::TerminalOverflow),
+        category: 7,
+        source: "panels/terminal.rs + layout/chrome.rs",
+        tokens: "sidebar / tab viewport / horizontal scroll",
+    },
+    Specimen {
+        id: "overlay-tabs.counts",
+        preview: Preview::OverlayTabs,
+        category: 7,
+        source: "view/overlay_surface.rs · TabBar",
+        tokens: "overlay / active underline / pending / unavailable",
+    },
+    Specimen {
+        id: "panel.bottom-empty",
+        preview: Preview::Chrome(ChromePreview::BottomPanel),
+        category: 7,
+        source: "view/panels.rs · render_dock",
+        tokens: "sidebar / header / border / empty Problems",
+    },
+    Specimen {
+        id: "panel.right-empty",
+        preview: Preview::Chrome(ChromePreview::RightPanel),
+        category: 7,
+        source: "view/panels.rs · render_dock",
+        tokens: "sidebar / header / border / empty Outline",
+    },
+    Specimen {
+        id: "scrollbar.vertical",
+        preview: Preview::Scrollbar {
+            horizontal: false,
+            hovered: false,
+            fits: false,
+            end: false,
+        },
+        category: 6,
+        source: "view/scrollbar.rs",
+        tokens: "scrollbar track / thumb / thumb_hover",
+    },
+    Specimen {
+        id: "scrollbar.vertical-hovered",
+        preview: Preview::Scrollbar {
+            horizontal: false,
+            hovered: true,
+            fits: false,
+            end: false,
+        },
+        category: 6,
+        source: "view/scrollbar.rs",
+        tokens: "scrollbar track / thumb / thumb_hover",
+    },
+    Specimen {
+        id: "scrollbar.vertical-end",
+        preview: Preview::Scrollbar {
+            horizontal: false,
+            hovered: false,
+            fits: false,
+            end: true,
+        },
+        category: 6,
+        source: "view/scrollbar.rs",
+        tokens: "scrollbar track / thumb / thumb_hover",
+    },
+    Specimen {
+        id: "scrollbar.content-fits",
+        preview: Preview::Scrollbar {
+            horizontal: false,
+            hovered: false,
+            fits: true,
+            end: false,
+        },
+        category: 6,
+        source: "view/scrollbar.rs",
+        tokens: "scrollbar track / thumb / thumb_hover",
+    },
+    Specimen {
+        id: "scrollbar.horizontal",
+        preview: Preview::Scrollbar {
+            horizontal: true,
+            hovered: false,
+            fits: false,
+            end: false,
+        },
+        category: 6,
+        source: "view/scrollbar.rs",
+        tokens: "scrollbar track / thumb / thumb_hover",
+    },
+    Specimen {
+        id: "scrollbar.horizontal-hovered",
+        preview: Preview::Scrollbar {
+            horizontal: true,
+            hovered: true,
+            fits: false,
+            end: false,
+        },
+        category: 6,
+        source: "view/scrollbar.rs",
+        tokens: "scrollbar track / thumb / thumb_hover",
+    },
+    Specimen {
+        id: "splitter.horizontal",
+        preview: Preview::Splitter { horizontal: true },
+        category: 6,
+        source: "view/mod.rs · render_splitters",
+        tokens: "splitter background / horizontal boundary",
+    },
+    Specimen {
+        id: "splitter.vertical",
+        preview: Preview::Splitter { horizontal: false },
+        category: 6,
+        source: "view/mod.rs · render_splitters",
+        tokens: "splitter background / vertical boundary",
+    },
     Specimen {
         id: "button.normal",
         preview: Preview::ButtonNormal,

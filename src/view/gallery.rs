@@ -68,6 +68,20 @@ fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
         Preview::ListRow => (popup_width, 56.0),
         Preview::FormValidation => (popup_width, 96.0),
         Preview::MenuRows { .. } => (popup_width, 80.0),
+        Preview::Chrome(
+            crate::model::gallery::ChromePreview::BottomPanel
+            | crate::model::gallery::ChromePreview::RightPanel,
+        ) => (popup_width, 140.0),
+        Preview::Chrome(crate::model::gallery::ChromePreview::DocumentDrag) => (popup_width, 48.0),
+        Preview::Chrome(_) => (popup_width, 32.0),
+        Preview::OverlayTabs => (popup_width, 56.0),
+        Preview::Scrollbar {
+            horizontal: true, ..
+        } => (field_width, 12.0),
+        Preview::Scrollbar {
+            horizontal: false, ..
+        } => (field_width, 96.0),
+        Preview::Splitter { .. } => (field_width, 72.0),
     }
 }
 
@@ -466,6 +480,90 @@ fn paint_specimen(
     let masks = &mut *context.masks;
     use crate::model::gallery::Preview;
     match spec.preview {
+        Preview::Chrome(kind) => {
+            super::gallery_chrome::render(frame, painter, theme, rect, scale, kind)
+        }
+        Preview::OverlayTabs => {
+            let tabs = [
+                ("Files", overlay_surface::TabCount::N(12)),
+                ("Commands", overlay_surface::TabCount::Pending),
+                ("Symbols", overlay_surface::TabCount::Unavailable),
+            ];
+            let overlay = OverlaySpec {
+                tabs: Some(overlay_surface::TabBar {
+                    tabs: &tabs,
+                    active: 0,
+                }),
+                anchor: menu_anchor(rect, scale),
+                header: None,
+                body: Body::List {
+                    sections: &[],
+                    selected: FlatIndex(0),
+                    scroll: 0,
+                    max_visible: 1,
+                },
+                footer: None,
+                hover_row: None,
+                docs: None,
+            };
+            render_overlay(frame, painter, masks, theme, &overlay, size, scale);
+        }
+        Preview::Scrollbar {
+            horizontal,
+            hovered,
+            fits,
+            end,
+        } => {
+            let state =
+                ScrollbarState::new(if fits { 10 } else { 100 }, 10, if end { 90 } else { 25 });
+            let geometry = if horizontal {
+                ScrollbarGeometry::horizontal(rect, &state)
+            } else {
+                ScrollbarGeometry::vertical(
+                    Rect::new(rect.x, rect.y, 12.0 * scale as f32, rect.height),
+                    &state,
+                )
+            };
+            render_scrollbar(
+                frame,
+                &geometry,
+                hovered,
+                &ScrollbarColors::from(&theme.scrollbar),
+            );
+        }
+        Preview::Splitter { horizontal } => {
+            frame.fill_rect(rect, theme.editor.background.to_argb_u32());
+            let mut model = crate::model::AppModel::new(1, 1, scale);
+            model.theme = theme.clone();
+            let boundary = if horizontal {
+                Rect::new(
+                    rect.x,
+                    rect.y + rect.height / 2.0,
+                    rect.width,
+                    model.metrics.splitter_width,
+                )
+            } else {
+                Rect::new(
+                    rect.x + rect.width / 2.0,
+                    rect.y,
+                    model.metrics.splitter_width,
+                    rect.height,
+                )
+            };
+            super::Renderer::render_splitters(
+                frame,
+                &[crate::model::editor_area::SplitterBar {
+                    direction: if horizontal {
+                        crate::model::editor_area::SplitDirection::Horizontal
+                    } else {
+                        crate::model::editor_area::SplitDirection::Vertical
+                    },
+                    rect: boundary,
+                    index: 0,
+                }],
+                &model,
+            );
+        }
         Preview::ButtonNormal
         | Preview::ButtonHovered
         | Preview::ButtonPressed
@@ -831,6 +929,47 @@ fn render_overlay(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chrome_specimens_render_at_compact_width_and_hidpi() {
+        let mut renderer = GalleryRenderer::new().unwrap();
+        let theme = Theme::default_dark();
+        for scale in [1.0, 2.0] {
+            for spec in crate::model::gallery::SPECIMENS.iter().filter(|s| {
+                matches!(
+                    s.preview,
+                    Preview::Chrome(_)
+                        | Preview::OverlayTabs
+                        | Preview::Scrollbar { .. }
+                        | Preview::Splitter { .. }
+                )
+            }) {
+                let mut state = GalleryState {
+                    compact: true,
+                    ..Default::default()
+                };
+                state.query.insert_text(spec.id);
+                let size = ((900.0 * scale) as usize, (440.0 * scale) as usize);
+                let mut pixels = vec![0; size.0 * size.1];
+                let layout = renderer.render(&mut pixels, size, scale, &state, &theme);
+                let last_category = layout.categories.last().unwrap();
+                assert!(last_category.y + last_category.h <= size.1 - (32.0 * scale) as usize);
+                let row = layout
+                    .rows
+                    .iter()
+                    .find(|row| row.specimen.id == spec.id)
+                    .unwrap();
+                let x = (row.rect.x + row.preview.x) as usize;
+                let y = (row.rect.y + row.preview.y) as usize;
+                let non_background = (y..y + row.preview.height as usize).any(|y| {
+                    pixels[y * size.0 + x..y * size.0 + x + row.preview.width as usize]
+                        .iter()
+                        .any(|pixel| *pixel != theme.overlay.panel_background.to_argb_u32())
+                });
+                assert!(non_background, "blank specimen: {}", spec.id);
+            }
+        }
+    }
 
     #[test]
     fn dropdown_reveals_last_option_and_segments_share_hit_geometry() {

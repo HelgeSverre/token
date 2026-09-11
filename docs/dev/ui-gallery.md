@@ -7,7 +7,7 @@ Cargo feature. All build artifacts stay under `target/`.
 
 ## Current slice
 
-The catalog currently contains 29 labelled visual specimens:
+The catalog currently contains 46 labelled visual specimens:
 
 - Buttons: normal, hovered, pressed, focused, selected, disabled, long label.
 - Icon button: a glyph-label close action, using the standard button painter.
@@ -19,6 +19,12 @@ The catalog currently contains 29 labelled visual specimens:
 - Menus and rows: selected/hovered menu rows with shortcut keycaps and a
   separator; a selected completion row with a kind badge.
 - Surface swatches: panel, secondary, recessed.
+- Document tabs: active/inactive, save-error marker, clipped/scrolling title and
+  drag ghost. Dock tabs, terminal active/hovered/exited/overflow states, and
+  overlay tabs with count/pending/unavailable indicators remain distinct families.
+- Bottom Problems and right Outline panels: real headers, borders and empty states.
+- Scrollbars: vertical/horizontal, normal/hovered, end position and content fitting.
+  Splitters: horizontal and vertical boundaries.
 
 These are explicitly **static visual states**, not pretend interactive controls.
 Use their stable names when requesting changes, for example
@@ -63,6 +69,16 @@ not coverage of every editor component. Documentation cards, complex pickers,
 interactive specimen sandboxes, live theme editing, and editor compositions
 remain subsequent slices.
 
+Chrome specimens build an isolated `AppModel` and use the real editor/dock/terminal
+layout and painters. Terminal sessions use headless PTY handles: no shell is
+started. Crops preserve native pixel size, not scaled screenshots. The fixtures
+are static visual examples; they do not provide editor or terminal interaction.
+
+Unsupported styling is not invented: the document-tab fixture includes a dirty
+document, but the current production tab title has no distinct dirty marker.
+The `!` marker represents a save error/external change. Scrollbars likewise have
+no separate pressed/dragging color beyond their existing normal/hover styling.
+
 ## Screenshots
 
 Headless PNG output uses exactly the same gallery painter and bundled code/UI
@@ -106,6 +122,10 @@ as Token. Run `just ui-gallery --help` for options.
 - `src/view/segmented_control.rs`: equal-width segment layout and themed painting.
   The owner supplies labels, selected index, and focus; painting and clicks use
   the same rectangles. Both selection components are available outside the gallery.
+- `src/view/document_tabs.rs`: production document-tab painter; geometry stays in
+  `src/layout/editor.rs`. `Renderer` remains the application orchestrator.
+- `src/view/gallery_chrome.rs`: isolated chrome fixtures and native-size cropping;
+  calls the production dock/terminal painters and document-tab layout.
 
 Theme colors come from the current resolved palette. New optional YAML keys
 `ui.button.background_selected` and `ui.button.foreground_disabled` separate
