@@ -52,7 +52,7 @@ use crate::theme::OverlayTheme;
 /// Logical-px chrome constants for `Anchor::Centered`, per the Visual
 /// Language spec in overlay-surface.md. All rendered as
 /// `round(v * scale_factor)`, with a 1px floor for strokes.
-mod dims {
+pub(super) mod dims {
     pub const RADIUS: f32 = 10.0;
     /// `Anchor::Cursor` chrome radius (Visual Language > Chrome).
     pub const RADIUS_CURSOR: f32 = 8.0;

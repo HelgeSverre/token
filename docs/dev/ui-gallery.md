@@ -5,13 +5,19 @@ development window: no documents, language servers, session restore, or settings
 writes. Normal builds do not include it; the launcher requires the `ui-gallery`
 Cargo feature. All build artifacts stay under `target/`.
 
-## First slice
+## Current slice
 
-The catalog currently contains 17 labelled visual specimens:
+The catalog currently contains 29 labelled visual specimens:
 
 - Buttons: normal, hovered, pressed, focused, selected, disabled, long label.
-- Single-line fields: unfocused, focused, selection.
-- Checkboxes: off/on. Select anchors: closed/open (not the dropdown popup).
+- Icon button: a glyph-label close action, using the standard button painter.
+- Fields: single-line unfocused/focused/selection, multiline editing, and a
+  focused overlay search header.
+- Checkboxes: off/on. Select anchors: closed/open and an open option list.
+- Settings choices: selected choice group and collapsed/expanded disclosures.
+- Form fields: a validation message paired with its input geometry.
+- Menus and rows: selected/hovered menu rows with shortcut keycaps and a
+  separator; a selected completion row with a kind badge.
 - Surface swatches: panel, secondary, recessed.
 
 These are explicitly **static visual states**, not pretend interactive controls.
@@ -21,10 +27,21 @@ interactive: type to filter, select a category, cycle themes, change preview
 width, scroll by pixels, or drag the scrollbar. Escape clears the filter;
 Cmd/Ctrl+A selects its text. Native scaling follows the display.
 
-This is the first increment of the [component inventory](ui-component-inventory.md),
-not coverage of every editor component. Menus, rows, documentation cards, complex
-pickers, interactive specimen sandboxes, and live theme editing remain subsequent
-slices. The gallery is not a replacement for production interaction testing.
+The select popup and choice group share Settings geometry, and menu/list examples
+render through the production overlay surface. The gallery is not a replacement
+for production interaction testing.
+
+Specimen dimensions are independent of row spacing: single-line fields stay
+34 logical pixels high, Settings buttons are 22 pixels high, and icon buttons
+are square. Narrow mode changes width, not scale. Each row is painted into a
+reused local surface and clipped into the scrolling viewport, so popup anchoring
+does not flip or shift when a row reaches the window edge. Metadata and previews
+use consistent columns rather than opposite edges of a wide window.
+
+This remains an increment of the [component inventory](ui-component-inventory.md),
+not coverage of every editor component. Documentation cards, complex pickers,
+interactive specimen sandboxes, live theme editing, and editor compositions
+remain subsequent slices.
 
 ## Screenshots
 
@@ -50,9 +67,13 @@ as Token. Run `just ui-gallery --help` for options.
 - `src/bin/ui_gallery.rs`: native window, input translation, theme loading, PNG
   output. No editor-state persistence.
 - `src/view/button.rs`: shared button painter, used by Settings and Find.
-- `src/view/controls.rs`: checkbox, select-anchor, and field-surface painters,
-  used by Settings and the gallery. Production callers retain interaction state
-  and hit geometry; this is not a widget framework.
+- `src/view/controls.rs`: checkbox, select-anchor, field-surface, disclosure,
+  choice-group and select-popup geometry used by Settings and the gallery.
+  Production callers retain interaction state and hit geometry; this is not a
+  widget framework.
+- `src/view/overlay_surface.rs`: production menu/list and form-label rendering,
+  used directly by the gallery's static menu, row, search, and validation
+  specimens.
 - `src/view/text_field.rs`: shared code-font field content/selection/caret.
 - `src/view/scrollbar.rs`: gallery and application scrollbar geometry/painting.
 

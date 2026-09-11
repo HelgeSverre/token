@@ -107,7 +107,7 @@ pub(super) fn field_options(row: &Row, rect: Rect, sf: f64) -> Option<TextFieldO
     ))
 }
 fn choice_width(label: &str, sf: f64) -> usize {
-    scaled(label.chars().count() as f32 * 7.0 + 16.0, sf)
+    crate::view::controls::choice_width(label, sf)
 }
 
 fn is_checkbox(labels: &[&str]) -> bool {
@@ -177,90 +177,16 @@ fn select_options<'a>(
     let bottom = layout
         .footer
         .map_or(layout.panel.y + layout.panel.h, |footer| footer.y);
-    let height = scaled(28.0, sf).min(bottom.saturating_sub(layout.panel.y) / labels.len().max(1));
-    let total = height * labels.len();
-    let y = (anchor.y + anchor.h)
-        .min(bottom.saturating_sub(total))
-        .max(layout.panel.y);
-    labels
-        .iter()
+    crate::view::controls::select_option_rects(anchor, labels.len(), layout.panel.y, bottom, sf)
+        .into_iter()
+        .zip(labels.iter())
         .enumerate()
-        .map(|(choice, label)| {
-            (
-                FlatIndex(index),
-                choice,
-                *label,
-                WidgetRect {
-                    x: anchor.x,
-                    y: y + choice * height,
-                    w: anchor.w,
-                    h: height,
-                },
-            )
-        })
+        .map(|(choice, (rect, label))| (FlatIndex(index), choice, *label, rect))
         .collect()
 }
 
 fn preset_rects(row: &WidgetRect, labels: &[&str], scale_factor: f64) -> Vec<WidgetRect> {
-    if labels.is_empty() {
-        return Vec::new();
-    }
-    let control = controls(row, scale_factor);
-    let budget = if row.w < scaled(400.0, scale_factor) {
-        row.w
-    } else {
-        row.w * 2 / 3
-    };
-    let gap = scaled(dims::CHIP_GAP, scale_factor);
-    let widths: Vec<_> = labels
-        .iter()
-        .map(|label| choice_width(label, scale_factor))
-        .collect();
-    let total = widths.iter().sum::<usize>() + gap * labels.len().saturating_sub(1);
-    if total > budget {
-        // Long selectors wrap below the label/description instead of squeezing
-        // every option into indistinguishable fragments. Height, paint and hit
-        // testing all consume these same rectangles.
-        let mut x = row.x;
-        let mut y = row.y
-            + scaled(
-                if row.w < scaled(400.0, scale_factor) {
-                    26.0
-                } else {
-                    50.0
-                },
-                scale_factor,
-            );
-        let h = scaled(22.0, scale_factor);
-        return widths
-            .into_iter()
-            .map(|width| {
-                let w = width.min(row.w);
-                if x > row.x && x + w > row.x + row.w {
-                    x = row.x;
-                    y += h + gap;
-                }
-                let rect = WidgetRect { x, y, w, h };
-                x += w + gap;
-                rect
-            })
-            .collect();
-    }
-    let mut x = control.x + control.w.saturating_sub(total);
-    let h = scaled(22.0, scale_factor).min(control.h);
-    widths
-        .into_iter()
-        .map(|w| {
-            let rect = WidgetRect {
-                x,
-                y: control.y + control.h.saturating_sub(h) / 2,
-                w,
-                h,
-            };
-            x += w + gap;
-            rect
-        })
-        .collect()
+    crate::view::controls::choice_group_rects(*row, labels, scale_factor)
 }
 
 const ROW: f32 = 56.0;
@@ -617,23 +543,7 @@ fn contains(r: &WidgetRect, x: usize, y: usize) -> bool {
 }
 
 fn controls(rect: &WidgetRect, sf: f64) -> WidgetRect {
-    // At compact widths put controls below the label, leaving the entire
-    // row width available to each. Descriptions remain in the footer.
-    if rect.w < scaled(400.0, sf) {
-        WidgetRect {
-            x: rect.x,
-            y: rect.y + scaled(26.0, sf),
-            w: rect.w,
-            h: scaled(22.0, sf),
-        }
-    } else {
-        WidgetRect {
-            x: rect.x,
-            y: rect.y,
-            w: rect.w,
-            h: scaled(32.0, sf),
-        }
-    }
+    crate::view::controls::settings_control_rect(*rect, sf)
 }
 
 fn value_rect(rect: &WidgetRect, sf: f64) -> WidgetRect {
@@ -1265,24 +1175,29 @@ pub(super) fn render(
                         },
                         h: rect.h,
                     };
-                    text(
-                        frame,
-                        painter,
-                        &label,
-                        if disclosure {
-                            if collection(spec).is_some_and(|collection| collection.advanced) {
-                                "▾  Advanced"
+                    if disclosure {
+                        crate::view::controls::render_disclosure(
+                            frame,
+                            painter,
+                            theme,
+                            label,
+                            collection(spec).is_some_and(|collection| collection.advanced),
+                            sf,
+                        );
+                    } else {
+                        text(
+                            frame,
+                            painter,
+                            &label,
+                            if horizontal_field {
+                                row.label.split(" (JSON").next().unwrap_or(row.label)
                             } else {
-                                "▸  Advanced"
-                            }
-                        } else if horizontal_field {
-                            row.label.split(" (JSON").next().unwrap_or(row.label)
-                        } else {
-                            row.label
-                        },
-                        size_px(12.0, sf),
-                        colors.text_primary,
-                    );
+                                row.label
+                            },
+                            size_px(12.0, sf),
+                            colors.text_primary,
+                        );
+                    }
                     if collection(spec).is_none()
                         && !horizontal_field
                         && (!compact || matches!(row.accessory, Accessory::SettingInput { .. }))

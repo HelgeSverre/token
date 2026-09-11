@@ -1,7 +1,15 @@
 //! Isolated development fixtures. Nothing here reads or writes editor settings.
 use crate::editable::{EditConstraints, EditableState, StringBuffer};
 
-pub const CATEGORIES: &[&str] = &["All", "Buttons", "Inputs", "Selection", "Surfaces"];
+pub const CATEGORIES: &[&str] = &[
+    "All",
+    "Buttons",
+    "Inputs",
+    "Selection",
+    "Forms",
+    "Menus & rows",
+    "Surfaces",
+];
 
 #[derive(Clone, Copy)]
 pub enum Preview {
@@ -12,11 +20,20 @@ pub enum Preview {
     ButtonSelected,
     ButtonDisabled,
     ButtonLongLabel,
+    IconButton,
     FieldUnfocused,
     FieldFocused,
     FieldSelection,
+    FieldMultiline,
+    SearchField,
+    FormValidation,
     Checkbox(bool),
     Select { open: bool },
+    SelectOptions,
+    ChoiceGroup,
+    Disclosure { expanded: bool },
+    MenuRows { hover: bool },
+    ListRow,
     Panel,
     Secondary,
     Recessed,
@@ -133,23 +150,100 @@ pub const SPECIMENS: &[Specimen] = &[
     Specimen {
         id: "surface.panel",
         preview: Preview::Panel,
-        category: 4,
+        category: 6,
         source: "Theme::overlay · resolved palette",
         tokens: "overlay panel background / hairline",
     },
     Specimen {
         id: "surface.secondary",
         preview: Preview::Secondary,
-        category: 4,
+        category: 6,
         source: "Theme::overlay · resolved palette",
         tokens: "overlay panel secondary / hairline",
     },
     Specimen {
         id: "surface.recessed",
         preview: Preview::Recessed,
-        category: 4,
+        category: 6,
         source: "Theme::overlay · resolved palette",
         tokens: "overlay recessed wash / hairline",
+    },
+    Specimen {
+        id: "icon-button.close",
+        preview: Preview::IconButton,
+        category: 1,
+        source: "view/button.rs · render_button (glyph label)",
+        tokens: "button.background / foreground / border",
+    },
+    Specimen {
+        id: "field.multiline",
+        preview: Preview::FieldMultiline,
+        category: 2,
+        source: "view/controls.rs + view/text_field.rs",
+        tokens: "overlay recessed wash / hairline / editor selection",
+    },
+    Specimen {
+        id: "search-field.focused",
+        preview: Preview::SearchField,
+        category: 2,
+        source: "view/overlay_surface.rs · render_header",
+        tokens: "overlay panel / accent / text",
+    },
+    Specimen {
+        id: "choice-group.selected",
+        preview: Preview::ChoiceGroup,
+        category: 3,
+        source: "view/controls.rs · choice_group_rects + view/button.rs",
+        tokens: "button.background_selected / focus_ring",
+    },
+    Specimen {
+        id: "disclosure.collapsed",
+        preview: Preview::Disclosure { expanded: false },
+        category: 3,
+        source: "view/controls.rs · render_disclosure",
+        tokens: "overlay text primary",
+    },
+    Specimen {
+        id: "disclosure.expanded",
+        preview: Preview::Disclosure { expanded: true },
+        category: 3,
+        source: "view/controls.rs · render_disclosure",
+        tokens: "overlay text primary",
+    },
+    Specimen {
+        id: "select.open-options",
+        preview: Preview::SelectOptions,
+        category: 3,
+        source: "view/controls.rs · select_option_rects + view/button.rs",
+        tokens: "overlay recessed wash / accent / button hover",
+    },
+    Specimen {
+        id: "form-field.validation",
+        preview: Preview::FormValidation,
+        category: 4,
+        source: "view/overlay_surface.rs · Field + render_fields",
+        tokens: "overlay severity_error_text / recessed wash",
+    },
+    Specimen {
+        id: "menu.rows-hovered",
+        preview: Preview::MenuRows { hover: true },
+        category: 5,
+        source: "view/overlay_surface.rs · render_list",
+        tokens: "overlay hover wash / keycaps / hairline",
+    },
+    Specimen {
+        id: "menu.rows-selected",
+        preview: Preview::MenuRows { hover: false },
+        category: 5,
+        source: "view/overlay_surface.rs · render_list",
+        tokens: "overlay selection wash / keycaps / hairline",
+    },
+    Specimen {
+        id: "list-row.kind-badge",
+        preview: Preview::ListRow,
+        category: 5,
+        source: "view/overlay_surface.rs · RowIcon::KindBadge",
+        tokens: "overlay selection wash / kind badge / text",
     },
 ];
 

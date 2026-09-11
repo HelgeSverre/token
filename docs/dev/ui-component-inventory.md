@@ -41,8 +41,9 @@ The strongest reusable pieces are:
   text measurement, font roles, keycaps and symbol drawing.
 
 At the time of this inventory there was no central component catalog or
-component-state browser. The first [native gallery](ui-gallery.md) now covers
-buttons, fields, checkbox/select anchors, and surface swatches. The
+component-state browser. The [native gallery](ui-gallery.md) now covers buttons,
+icon buttons, fields, settings choices/disclosures/select popups, form
+validation, overlay menus/list rows, and surface swatches. The
 [screenshot generator](../../src/bin/screenshot.rs) already renders real
 application scenarios with theme/size/scale overrides and deterministic LSP and
 terminal fixtures. That is useful existing infrastructure, not a kitchen sink.
@@ -57,8 +58,9 @@ assembled for a feature; local = paint/layout still specific to that feature.
 States describe what exists today. Missing states are called out afterward.
 
 The tables and limitations below record the pre-gallery baseline. Since then,
-checkbox/select-anchor/field-surface painters have been extracted for shared use,
-and buttons have gained separate selected and disabled states and theme overrides.
+checkbox/select-anchor/field-surface painters and Settings choice/select geometry
+have been extracted for shared use, and buttons have gained separate selected and
+disabled states and theme overrides.
 
 ### Controls and content
 
@@ -201,7 +203,7 @@ proof none exists elsewhere. Sources:
 ## Initial recommendation and implementation status
 
 The first native development slice is now implemented on `feat/ui-gallery`.
-See [UI Gallery](ui-gallery.md) for its 17 specimens, launch/screenshot commands,
+See [UI Gallery](ui-gallery.md) for its 29 specimens, launch/screenshot commands,
 shared production painters, and explicit remaining scope. The broader proposal
 below remains a direction, not a claim that every inventoried component is covered.
 
