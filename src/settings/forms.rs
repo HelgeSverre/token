@@ -2,7 +2,7 @@
 use std::sync::Arc;
 
 use super::{RowKind, SettingRow};
-use crate::config::{EditorConfig, LspServerOverride};
+use crate::config::{EditorConfig, LspServerConfig};
 use crate::editable::{EditConstraints, EditableState, StringBuffer};
 use crate::syntax::LanguageId;
 mod provider;
@@ -10,29 +10,131 @@ mod provider;
 #[derive(Debug, Clone)]
 pub enum SettingsChange {
     LanguageServer {
+        previous_id: Option<String>,
         id: String,
-        value: LspServerOverride,
+        value: LspServerConfig,
     },
     InlineProvider {
+        previous_id: Option<String>,
         id: String,
         value: crate::config::ProviderConfig,
         select: bool,
     },
+    Remove {
+        collection: CollectionKind,
+        id: String,
+    },
+}
+
+#[cfg(test)]
+mod catalog_tests {
+    use super::*;
+
+    #[test]
+    fn preset_records_can_be_renamed_and_removed_without_inheritance() {
+        let mut config = EditorConfig::default();
+        let original = config.lsp.servers["rust-analyzer"].clone();
+        let mut form = SettingsForm::language_server(Some("rust-analyzer"), &config);
+        form.fields[6].input.set_content("personal-rust");
+        let change = form.change(&config).unwrap();
+        assert!(
+            config.lsp.servers.contains_key("rust-analyzer"),
+            "validation is pure"
+        );
+        change.apply(&mut config);
+        form.applied(&change);
+        assert!(!config.lsp.servers.contains_key("rust-analyzer"));
+        assert_eq!(config.lsp.servers["personal-rust"], original);
+        form.removal().unwrap().apply(&mut config);
+        let reloaded: EditorConfig =
+            serde_yaml::from_str(&serde_yaml::to_string(&config).unwrap()).unwrap();
+        assert!(crate::lsp::server_id_for_language(LanguageId::Rust, &reloaded.lsp).is_none());
+    }
+
+    #[test]
+    fn selected_provider_rename_tracks_selection_and_removal_disables_suggestions() {
+        let mut config = EditorConfig::default();
+        let provider = crate::config::ProviderConfig::default();
+        config
+            .completion
+            .providers
+            .insert("old".into(), provider.clone());
+        config.completion.inline.provider = "old".into();
+        config.completion.inline.enabled = true;
+        SettingsChange::InlineProvider {
+            previous_id: Some("old".into()),
+            id: "new".into(),
+            value: provider,
+            select: false,
+        }
+        .apply(&mut config);
+        assert_eq!(config.completion.inline.provider, "new");
+        assert!(config.completion.inline.enabled);
+        assert!(!config.completion.providers.contains_key("old"));
+        SettingsChange::Remove {
+            collection: CollectionKind::InlineProviders,
+            id: "new".into(),
+        }
+        .apply(&mut config);
+        assert!(!config.completion.inline.enabled);
+        assert!(config.completion.inline.provider.is_empty());
+    }
+}
+
+/// Collections share draft navigation and persistence; their payloads stay typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CollectionKind {
+    LanguageServers,
+    InlineProviders,
 }
 
 impl SettingsChange {
     pub fn apply(&self, config: &mut EditorConfig) {
         match self {
-            Self::LanguageServer { id, value } => {
+            Self::LanguageServer {
+                previous_id,
+                id,
+                value,
+            } => {
+                if let Some(previous) = previous_id.as_ref().filter(|previous| *previous != id) {
+                    config.lsp.servers.remove(previous);
+                }
                 config.lsp.servers.insert(id.clone(), value.clone());
             }
-            Self::InlineProvider { id, value, select } => {
+            Self::InlineProvider {
+                previous_id,
+                id,
+                value,
+                select,
+            } => {
+                let selected = previous_id
+                    .as_ref()
+                    .is_some_and(|previous| previous == &config.completion.inline.provider);
+                if let Some(previous) = previous_id.as_ref().filter(|previous| *previous != id) {
+                    config.completion.providers.remove(previous);
+                }
                 config
                     .completion
                     .providers
                     .insert(id.clone(), value.clone());
-                if *select {
+                if *select || selected {
                     config.completion.inline.provider.clone_from(id);
+                }
+            }
+            Self::Remove {
+                collection: CollectionKind::LanguageServers,
+                id,
+            } => {
+                config.lsp.servers.remove(id);
+            }
+            Self::Remove {
+                collection: CollectionKind::InlineProviders,
+                id,
+            } => {
+                config.completion.providers.remove(id);
+                if config.completion.inline.provider == *id {
+                    config.completion.inline.provider.clear();
+                    config.completion.inline.enabled = false;
                 }
             }
         }
@@ -117,6 +219,7 @@ pub(crate) struct SettingsForm {
     pub saving: bool,
     pub status: String,
     pub executable_status: String,
+    pub remove_pending: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -151,10 +254,27 @@ impl SettingsForm {
     }
 
     pub fn actions(&self) -> &'static [&'static str] {
-        match self.kind {
-            FormKind::LanguageServer(_) => &["Apply & Restart", "Cancel", "Open log"],
-            FormKind::InlineProvider(_) => &["Save", "Cancel", "Save & Use"],
+        if self.remove_pending {
+            return &["Keep entry", "Cancel", "", "Confirm remove"];
         }
+        match self.kind {
+            FormKind::LanguageServer(Some(_)) => &["Save", "Cancel", "Open log", "Remove"],
+            FormKind::InlineProvider(Some(_)) => &["Save", "Cancel", "Save & Use", "Remove"],
+            FormKind::LanguageServer(None) => &["Save", "Cancel"],
+            FormKind::InlineProvider(None) => &["Save", "Cancel", "Save & Use"],
+        }
+    }
+
+    pub fn removal(&self) -> Option<SettingsChange> {
+        let (collection, id) = match &self.kind {
+            FormKind::LanguageServer(Some(id)) => (CollectionKind::LanguageServers, id),
+            FormKind::InlineProvider(Some(id)) => (CollectionKind::InlineProviders, id),
+            _ => return None,
+        };
+        Some(SettingsChange::Remove {
+            collection,
+            id: id.clone(),
+        })
     }
 
     pub fn executable_field(&self) -> Option<usize> {
@@ -168,16 +288,17 @@ impl SettingsForm {
         match change {
             SettingsChange::LanguageServer { id, .. } => {
                 self.kind = FormKind::LanguageServer(Some(id.clone()));
-                self.fields.truncate(6);
             }
             SettingsChange::InlineProvider { id, .. } => {
                 self.kind = FormKind::InlineProvider(Some(id.clone()))
             }
+            SettingsChange::Remove { .. } => {}
         }
         self.focused = None;
     }
 
     pub fn changed(&mut self) {
+        self.remove_pending = false;
         self.status = "Draft · changes have not been applied".into();
         if self.focused.is_some() && self.focused == self.executable_field() {
             self.executable_status = "Executable changed · checked again when applied".into();
@@ -185,17 +306,11 @@ impl SettingsForm {
     }
 
     pub fn language_server(id: Option<&str>, config: &EditorConfig) -> Self {
-        let def = id.and_then(crate::lsp::server_def_by_id);
         let value = id
             .and_then(|id| config.lsp.servers.get(id))
             .cloned()
             .unwrap_or_default();
-        let args = value.args.unwrap_or_else(|| {
-            def.into_iter()
-                .flat_map(|def| def.args)
-                .map(|arg| (*arg).into())
-                .collect()
-        });
+        let args = value.args.unwrap_or_default();
         let languages = id
             .map(|id| crate::lsp::configured_languages(id, &config.lsp))
             .unwrap_or_default()
@@ -203,44 +318,66 @@ impl SettingsForm {
             .map(LanguageId::display_name)
             .collect::<Vec<_>>()
             .join(", ");
-        let markers = value.root_markers.unwrap_or_else(|| {
-            def.into_iter()
-                .flat_map(|def| def.project_markers)
-                .map(|marker| (*marker).into())
-                .collect()
-        });
+        let markers = value.root_markers.unwrap_or_default();
         let mut executable = FormField::new(
             "Executable",
             "Command on PATH or an absolute path; no shell expansion",
-            value
-                .command
-                .as_deref()
-                .or_else(|| def.map(|def| def.command))
-                .unwrap_or_default(),
+            value.command.as_deref().unwrap_or_default(),
             false,
         );
         executable.browse = true;
         let mut form = Self {
-            session: Arc::new(()), kind: FormKind::LanguageServer(id.map(str::to_owned)), choices: Vec::new(),
+            session: Arc::new(()),
+            kind: FormKind::LanguageServer(id.map(str::to_owned)),
+            choices: Vec::new(),
             fields: vec![
                 executable,
-                FormField::new("Arguments (JSON / YAML list)", "A list of strings, not a shell command; [] means no arguments; empty uses defaults", &json_text(Some(&serde_json::json!(args))), true),
-                FormField::new("Initialization options (JSON / YAML)", "Advanced options sent as initializationOptions; empty uses defaults", &json_text(value.initialization_options.as_ref()), true),
-                FormField::new("Server settings (JSON / YAML object)", "Advanced settings returned to workspace/configuration; empty uses defaults", &json_text(value.settings.as_ref()), true),
-                FormField::new("Languages", "Comma-separated language names or aliases, for example C, C++, Python, tsx", &languages, false),
-                FormField::new("Root markers (JSON / YAML list)", "Nearest ancestor containing any marker; the open workspace takes precedence", &json_text(Some(&serde_json::json!(markers))), true),
+                FormField::new(
+                    "Arguments (JSON / YAML list)",
+                    "A list of strings, not a shell command; empty means no arguments",
+                    &json_text(Some(&serde_json::json!(args))),
+                    true,
+                ),
+                FormField::new(
+                    "Initialization options (JSON / YAML)",
+                    "Advanced options sent as initializationOptions; empty sends null",
+                    &json_text(value.initialization_options.as_ref()),
+                    true,
+                ),
+                FormField::new(
+                    "Server settings (JSON / YAML object)",
+                    "Advanced settings returned to workspace/configuration; empty sends null",
+                    &json_text(value.settings.as_ref()),
+                    true,
+                ),
+                FormField::new(
+                    "Languages",
+                    "Comma-separated language names or aliases, for example C, C++, Python, tsx",
+                    &languages,
+                    false,
+                ),
+                FormField::new(
+                    "Root markers (JSON / YAML list)",
+                    "Nearest ancestor containing any marker; the open workspace takes precedence",
+                    &json_text(Some(&serde_json::json!(markers))),
+                    true,
+                ),
             ],
-            enabled: value.enabled.unwrap_or(true), focused: Some(0), dragging: false, saving: false,
-            status: "Draft · Apply & Restart saves this server only; Cancel leaves it unchanged".into(),
+            enabled: value.enabled.unwrap_or(true),
+            focused: Some(0),
+            dragging: false,
+            saving: false,
+            status: "Draft · Save applies this server; Cancel leaves it unchanged".into(),
             executable_status: "Checking executable…".into(),
+            remove_pending: false,
         };
+        form.fields.push(FormField::new(
+            "Server ID",
+            "Unique name, for example clangd or lua-language-server",
+            id.unwrap_or_default(),
+            false,
+        ));
         if id.is_none() {
-            form.fields.push(FormField::new(
-                "Server ID",
-                "Unique name, for example clangd or lua-language-server",
-                "",
-                false,
-            ));
             form.focused = Some(6);
             form.executable_status = "Choose an installed executable".into();
         }
@@ -250,7 +387,7 @@ impl SettingsForm {
     pub fn entries(&self) -> Vec<SettingRow> {
         match &self.kind {
             FormKind::LanguageServer(server) => self.server_entries(server.as_deref()),
-            FormKind::InlineProvider(id) => self.provider_entries(id.as_deref()),
+            FormKind::InlineProvider(_) => self.provider_entries(),
         }
     }
 
@@ -260,25 +397,17 @@ impl SettingsForm {
             kind: RowKind::FormEnabled,
             section,
             name: "Server enabled".into(),
-            description: "Explicit language assignments take precedence over built-in defaults"
-                .into(),
+            description: "Only one enabled server can be assigned to each language".into(),
         }];
-        rows.extend(
-            (server
-                .is_none()
-                .then_some(6)
-                .into_iter()
-                .chain([0, 4, 1, 5, 2, 3]))
-            .map(|index| {
-                let field = &self.fields[index];
-                SettingRow {
-                    kind: RowKind::FormField(index),
-                    section,
-                    name: field.label.into(),
-                    description: field.help.into(),
-                }
-            }),
-        );
+        rows.extend([6, 0, 4, 1, 5, 2, 3].into_iter().map(|index| {
+            let field = &self.fields[index];
+            SettingRow {
+                kind: RowKind::FormField(index),
+                section,
+                name: field.label.into(),
+                description: field.help.into(),
+            }
+        }));
         rows.push(SettingRow {
             kind: RowKind::FormInfo,
             section,
@@ -298,7 +427,7 @@ impl SettingsForm {
             kind: RowKind::FormActions,
             section,
             name: "Configuration".into(),
-            description: "Apply & Restart, cancel the draft, or open the application log".into(),
+            description: "Save, cancel the draft, open the log, or remove this entry".into(),
         });
         rows
     }
@@ -315,30 +444,22 @@ impl SettingsForm {
         server: Option<&str>,
         config: &EditorConfig,
     ) -> Result<SettingsChange, FormError> {
-        let id = server
-            .map(str::to_owned)
-            .unwrap_or_else(|| self.fields[6].input.text());
+        let id = self.fields[6].input.text().trim().to_owned();
         if !id.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
             || !id
                 .bytes()
                 .all(|ch| ch.is_ascii_alphanumeric() || b"-_.".contains(&ch))
-            || (server.is_none()
-                && (crate::lsp::server_def_by_id(&id).is_some()
-                    || config.lsp.servers.contains_key(&id)))
+            || (server != Some(id.as_str()) && config.lsp.servers.contains_key(&id))
         {
             return Err(FormError::ServerId);
         }
-        let def = crate::lsp::server_def_by_id(&id);
         let command = self.fields[0].input.text();
         if command.trim().is_empty() || command.contains(['\n', '\r', '\0']) {
             return Err(FormError::Executable);
         }
         let arguments = self.fields[1].input.text();
         let args: Vec<String> = if arguments.trim().is_empty() {
-            def.into_iter()
-                .flat_map(|def| def.args)
-                .map(|arg| (*arg).into())
-                .collect()
+            Vec::new()
         } else {
             serde_yaml::from_str(&arguments).map_err(|source| FormError::Structured {
                 field: "Arguments",
@@ -384,18 +505,16 @@ impl SettingsForm {
         if languages.is_empty() {
             return Err(FormError::MissingLanguages);
         }
-        let languages = (languages != crate::lsp::languages_for_server(&id)).then_some(languages);
-        if let Some(languages) = languages.as_ref().filter(|_| self.enabled) {
-            if let Some(other) = crate::lsp::association_conflict(&id, languages, &config.lsp) {
+        if self.enabled {
+            if let Some(other) =
+                crate::lsp::association_conflict(server.unwrap_or(&id), &languages, &config.lsp)
+            {
                 return Err(FormError::AssociationConflict(other.into()));
             }
         }
         let marker_text = self.fields[5].input.text();
         let root_markers: Vec<String> = if marker_text.trim().is_empty() {
-            def.into_iter()
-                .flat_map(|def| def.project_markers)
-                .map(|marker| (*marker).into())
-                .collect()
+            Vec::new()
         } else {
             serde_yaml::from_str(&marker_text).map_err(|source| FormError::Structured {
                 field: "Root markers",
@@ -410,26 +529,17 @@ impl SettingsForm {
         }) {
             return Err(FormError::RootMarker);
         }
-        let default_args = def.map_or(&[][..], |def| def.args);
-        let default_markers = def.map_or(&[][..], |def| def.project_markers);
         Ok(SettingsChange::LanguageServer {
+            previous_id: server.map(str::to_owned),
             id,
-            value: LspServerOverride {
-                command: (Some(command.as_str()) != def.map(|def| def.command)).then_some(command),
-                args: (args
-                    .iter()
-                    .map(String::as_str)
-                    .ne(default_args.iter().copied()))
-                .then_some(args),
+            value: LspServerConfig {
+                command: Some(command),
+                args: Some(args),
                 enabled: Some(self.enabled),
                 initialization_options,
                 settings,
-                languages,
-                root_markers: root_markers
-                    .iter()
-                    .map(String::as_str)
-                    .ne(default_markers.iter().copied())
-                    .then_some(root_markers),
+                languages: Some(languages),
+                root_markers: Some(root_markers),
             },
         })
     }

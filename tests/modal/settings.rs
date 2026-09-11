@@ -189,12 +189,12 @@ fn lsp_settings_master_reuses_live_effect_and_noops_on_same_choice() {
 fn lsp_settings_filtered_server_toggle_preserves_other_overrides() {
     let mut model = test_model("text", 0, 0);
     model.config.lsp.enabled = false;
-    let override_config = token::config::LspServerOverride {
+    let override_config = token::config::LspServerConfig {
         command: Some("/custom/rust-analyzer".into()),
         args: Some(vec!["--quiet".into()]),
         initialization_options: Some(serde_json::json!({"test": true})),
         settings: Some(serde_json::json!({"cargo": {"features": "all"}})),
-        ..Default::default()
+        ..token::lsp::RUST_ANALYZER.configuration()
     };
     model
         .config
@@ -633,7 +633,7 @@ fn settings_server_form_validates_and_applies_only_after_save_success() {
     .unwrap();
     assert!(contains(
         &applied,
-        |cmd| matches!(cmd, Cmd::LspApplyConfiguration { server_id } if server_id.to_string() == "rust-analyzer")
+        |cmd| matches!(cmd, Cmd::LspApplyConfiguration { server_id, .. } if server_id.to_string() == "rust-analyzer")
     ));
     let server = &model.config.lsp.servers["rust-analyzer"];
     assert_eq!(

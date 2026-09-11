@@ -994,6 +994,12 @@ pub(crate) fn with_settings_spec<R>(
     let spec = OverlaySpec {
         tabs: Some(tabs),
         anchor: Anchor::Settings {
+            actions_row: state.form.as_ref().and_then(|_| {
+                state
+                    .rows
+                    .iter()
+                    .position(|&id| matches!(state.entries[id].kind, RowKind::FormActions))
+            }),
             subpage: state.form.is_some(),
             hovered_choice: model.ui.modal_hover_choice,
             width: WidthRule {
@@ -3227,7 +3233,7 @@ mod tests {
 
         model.config.lsp.servers.insert(
             server_id.to_owned(),
-            crate::config::LspServerOverride {
+            crate::config::LspServerConfig {
                 enabled: Some(false),
                 ..Default::default()
             },

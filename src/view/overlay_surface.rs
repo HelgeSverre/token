@@ -212,6 +212,7 @@ pub enum Anchor {
         width: WidthRule,
         subpage: bool,
         hovered_choice: Option<(usize, usize)>,
+        actions_row: Option<usize>,
     },
     /// Centered X; Y follows the Chrome table's `min(h/4, Y)` class. Dims
     /// the backdrop at `dim_alpha`.

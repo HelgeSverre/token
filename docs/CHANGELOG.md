@@ -15,6 +15,14 @@ All notable changes to rust-editor are documented in this file.
 
 ### Language-server setup
 
+- Treat preset language servers as ordinary saved entries: their IDs can be
+  edited and entries removed without hidden defaults restoring them. Migrate
+  older override configurations to a complete catalog while preserving routing.
+- Rename and remove AI providers in Settings, preserving the selected provider
+  on rename and disabling inline suggestions when that provider is removed.
+- Keep configuration-form actions in a fixed footer while fields scroll, and
+  use compact aligned labels and inputs when the window has room.
+
 - Add custom language servers from Settings, with language associations and
   project-root markers. Apply changes to matching open files, use custom servers
   throughout completion/navigation/status, and reject conflicting assignments.

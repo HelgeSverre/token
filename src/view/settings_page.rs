@@ -18,12 +18,20 @@ fn item_height(row: &DisplayRow<'_>, sf: f64, viewport_height: usize, width: usi
             _,
         ) => {
             let lines = if content.constraints.allow_multiline {
-                5
+                3
             } else {
                 1
             };
-            let minimum = scaled(60.0, sf) + line_height;
-            (scaled(60.0, sf) + lines * line_height).min(viewport_height.max(minimum))
+            let padding = scaled(
+                if width >= scaled(440.0, sf) {
+                    24.0
+                } else {
+                    60.0
+                },
+                sf,
+            );
+            let minimum = padding + line_height;
+            (padding + lines * line_height).min(viewport_height.max(minimum))
         }
         DisplayRow::Row(
             Row {
@@ -48,7 +56,21 @@ fn item_height(row: &DisplayRow<'_>, sf: f64, viewport_height: usize, width: usi
     }
 }
 
-fn input_rect(rect: Rect, sf: f64) -> Rect {
+fn input_rect(rect: Rect, sf: f64, browse: bool) -> Rect {
+    if rect.width >= scaled(440.0, sf) as f32 {
+        let label = scaled(150.0, sf) as f32;
+        let action = if browse {
+            scaled(120.0, sf) as f32
+        } else {
+            0.0
+        };
+        return Rect::new(
+            rect.x + label,
+            rect.y + scaled(12.0, sf) as f32,
+            (rect.width - label - action - scaled(8.0, sf) as f32).max(0.0),
+            (rect.height - scaled(24.0, sf) as f32).max(0.0),
+        );
+    }
     Rect::new(
         rect.x + scaled(8.0, sf) as f32,
         rect.y + scaled(48.0, sf) as f32,
@@ -62,6 +84,7 @@ pub(super) fn field_options(row: &Row, rect: Rect, sf: f64) -> Option<TextFieldO
         content,
         line_height,
         char_width,
+        browse,
         ..
     } = row.accessory
     else {
@@ -69,7 +92,7 @@ pub(super) fn field_options(row: &Row, rect: Rect, sf: f64) -> Option<TextFieldO
     };
     Some(TextFieldOptions::for_text_area(
         content,
-        input_rect(rect, sf),
+        input_rect(rect, sf, browse),
         line_height,
         char_width,
     ))
@@ -142,7 +165,7 @@ fn preset_rects(row: &WidgetRect, labels: &[&str], scale_factor: f64) -> Vec<Wid
 
 const ROW: f32 = 56.0;
 const TOP: f32 = 56.0;
-const FOOT: f32 = 30.0;
+const FOOT: f32 = 44.0;
 const NAV_STEP: f32 = 30.0;
 
 fn row_height(scale: f64) -> usize {
@@ -299,12 +322,13 @@ pub(super) fn layout(
         .iter()
         .map(|item| {
             let start = total;
-            total += item_height(
+            let footer_action = matches!((item, &spec.anchor), (DisplayRow::Row(_, index), Anchor::Settings { actions_row: Some(row), .. }) if index.0 == *row);
+            if !footer_action { total += item_height(
                 item,
                 sf,
                 viewport_height,
                 p.w.saturating_sub(sidebar + pad * 2),
-            );
+            ); }
             start..total
         })
         .collect();
@@ -321,7 +345,9 @@ pub(super) fn layout(
     out.settings_items = positions
         .iter()
         .enumerate()
-        .filter(|(_, range)| range.start < visible.end && range.end > visible.start)
+        .filter(|(_, range)| {
+            !range.is_empty() && range.start < visible.end && range.end > visible.start
+        })
         .map(|(index, range)| {
             (
                 index,
@@ -444,6 +470,11 @@ pub(super) fn hit_test(
         .as_ref()
         .is_some_and(|rect| contains(rect, x, y))
     {
+        for (row, choice, _, rect) in footer_actions(spec, layout) {
+            if contains(&rect, x, y) {
+                return OverlayHit::Choice { row, choice };
+            }
+        }
         return OverlayHit::Inside;
     }
     if let Some(index) = layout.tab_rects.iter().position(|r| contains(r, x, y)) {
@@ -466,7 +497,7 @@ pub(super) fn hit_test(
                             choice: 0,
                         };
                     }
-                    if input_rect(*raw, layout.scale_factor).contains(x as f32, y as f32) {
+                    if input_rect(*raw, layout.scale_factor, browse).contains(x as f32, y as f32) {
                         if let Some(opts) = field_options(row, *raw, layout.scale_factor) {
                             return OverlayHit::Input {
                                 row: *index,
@@ -542,6 +573,56 @@ fn settings_button(
             text_size: Some(size_px(11.0, sf)),
         },
     );
+}
+
+/// Fixed form actions use the same row/action identifiers as keyboard input.
+/// This geometry is shared by painting and pointer hit testing.
+fn footer_actions<'a>(
+    spec: &'a OverlaySpec,
+    layout: &OverlayLayout,
+) -> Vec<(FlatIndex, usize, &'a str, WidgetRect)> {
+    let Anchor::Settings {
+        actions_row: Some(index),
+        ..
+    } = spec.anchor
+    else {
+        return Vec::new();
+    };
+    let (Body::List { sections, .. }, Some(footer)) = (&spec.body, layout.footer) else {
+        return Vec::new();
+    };
+    let rows = flatten_rows(sections);
+    let Some(DisplayRow::Row(
+        Row {
+            accessory: Accessory::Choices { labels, .. },
+            ..
+        },
+        _,
+    )) = rows
+        .iter()
+        .find(|row| matches!(row, DisplayRow::Row(_, i) if i.0 == index))
+    else {
+        return Vec::new();
+    };
+    let sf = layout.scale_factor;
+    let mut right = footer.x + footer.w.saturating_sub(scaled(16.0, sf));
+    labels
+        .iter()
+        .enumerate()
+        .rev()
+        .filter(|(_, label)| !label.is_empty())
+        .map(|(choice, label)| {
+            let w = choice_width(label, sf);
+            let rect = WidgetRect {
+                x: right.saturating_sub(w),
+                y: footer.y + scaled(10.0, sf),
+                w,
+                h: scaled(24.0, sf),
+            };
+            right = rect.x.saturating_sub(scaled(6.0, sf));
+            (FlatIndex(index), choice, *label, rect)
+        })
+        .collect()
 }
 
 // Mirrors the shared overlay renderer's explicit paint context.
@@ -710,6 +791,8 @@ pub(super) fn render(
                         );
                     }
                     let compact = rect.w < scaled(400.0, sf);
+                    let horizontal_field = rect.w >= scaled(440.0, sf)
+                        && matches!(row.accessory, Accessory::SettingInput { .. });
                     let control = controls(rect, sf);
                     let reserve = if matches!(
                         row.accessory,
@@ -738,7 +821,11 @@ pub(super) fn render(
                     let label = WidgetRect {
                         x: rect.x,
                         y: rect.y + scaled(8.0, sf),
-                        w: rect.w.saturating_sub(reserve),
+                        w: if horizontal_field {
+                            scaled(140.0, sf)
+                        } else {
+                            rect.w.saturating_sub(reserve)
+                        },
                         h: rect.h,
                     };
                     text(
@@ -749,7 +836,9 @@ pub(super) fn render(
                         size_px(12.0, sf),
                         colors.text_primary,
                     );
-                    if !compact || matches!(row.accessory, Accessory::SettingInput { .. }) {
+                    if !horizontal_field
+                        && (!compact || matches!(row.accessory, Accessory::SettingInput { .. }))
+                    {
                         if let Some(detail) = row.detail {
                             let r = WidgetRect {
                                 y: rect.y + scaled(30.0, sf),
@@ -773,7 +862,7 @@ pub(super) fn render(
                             browse,
                             ..
                         } => {
-                            let input = input_rect(*raw, sf);
+                            let input = input_rect(*raw, sf, *browse);
                             let bg_y = (input.y - scaled(4.0, sf) as f32).max(0.0) as usize;
                             frame.fill_rect_px(
                                 input.x as usize - scaled(4.0, sf),
@@ -927,17 +1016,47 @@ pub(super) fn render(
     }
     render_list_scrollbar(frame, layout, colors);
     if let (Some(footer), Some(rect)) = (&spec.footer, layout.footer) {
+        let actions = footer_actions(spec, layout);
+        let text_width = actions
+            .iter()
+            .map(|(_, _, _, rect)| rect.x.saturating_sub(p.x + scaled(12.0, sf)))
+            .min()
+            .unwrap_or(rect.w);
+        let leading = fit_with_ellipsis(
+            painter,
+            footer.leading,
+            size_px(SIZE_META, sf),
+            text_width.saturating_sub(scaled(dims::HEADER_PAD_X * 2.0, sf)),
+        );
+        let footer = Footer {
+            leading: &leading,
+            trailing: if actions.is_empty() {
+                footer.trailing
+            } else {
+                ""
+            },
+        };
         render_footer(
             frame,
             painter,
             colors,
-            footer,
+            &footer,
             rect,
             sf,
             radius,
             colors.panel_secondary | 0xFF00_0000,
             masks,
         );
+        for (row, choice, label, rect) in actions {
+            use crate::view::button::ButtonState;
+            let state = if matches!(spec.anchor, Anchor::Settings { hovered_choice: Some((r, c)), .. } if r == row.0 && c == choice)
+            {
+                ButtonState::Hovered
+            } else {
+                ButtonState::Normal
+            };
+            settings_button(frame, painter, theme, rect, label, state, sf);
+        }
     }
     frame.pop_clip();
 }
@@ -945,6 +1064,37 @@ pub(super) fn render(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_form_actions_stay_in_footer_at_every_scroll_offset() {
+        for (width, height, scale) in [(1200, 900, 1.0), (400, 550, 1.0), (800, 1100, 2.0)] {
+            let model = crate::model::AppModel::new(width, height, scale);
+            let mut state = crate::settings::SettingsState::new(&model.config);
+            state.form = Some(crate::settings::forms::SettingsForm::language_server(
+                Some("rust-analyzer"),
+                &model.config,
+            ));
+            state.refresh_entries(&model.config);
+            for offset in [0, 51, 9000] {
+                state.scroll_offset_px = offset;
+                crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                    let geometry =
+                        super::super::layout(spec, width as usize, height as usize, scale);
+                    let footer = geometry.footer.unwrap();
+                    let actions = footer_actions(spec, &geometry);
+                    assert_eq!(actions.len(), 4);
+                    for (row, choice, _, rect) in actions {
+                        assert!(rect.x >= footer.x && rect.x + rect.w <= footer.x + footer.w);
+                        assert!(rect.y >= footer.y && rect.y + rect.h <= footer.y + footer.h);
+                        assert_eq!(
+                            hit_test(spec, &geometry, rect.x + rect.w / 2, rect.y + rect.h / 2),
+                            OverlayHit::Choice { row, choice }
+                        );
+                    }
+                });
+            }
+        }
+    }
 
     #[test]
     fn settings_long_choices_wrap_with_nonoverlapping_in_bounds_hit_targets() {

@@ -1402,9 +1402,13 @@ pub(super) fn reveal_settings_selection(model: &mut AppModel) {
         return;
     };
     if let Some(ModalState::Settings(state)) = &mut model.ui.active_modal {
-        state.scroll_offset_px = viewport.scroll_to_reveal_range_pixels(
-            positions.get(state.selected_index).cloned().unwrap_or(0..1),
-        );
+        // Fixed footer controls have an empty body range and are already visible.
+        if let Some(range) = positions
+            .get(state.selected_index)
+            .filter(|range| !range.is_empty())
+        {
+            state.scroll_offset_px = viewport.scroll_to_reveal_range_pixels(range.clone());
+        }
     }
 }
 
@@ -3177,7 +3181,7 @@ mod tests {
 
         let cmd = update_ui(&mut model, UiMsg::Modal(ModalMsg::Confirm));
 
-        let first_id = crate::lsp::all_server_defs()[0].id;
+        let first_id = crate::lsp::server_ids(&model.config.lsp)[0];
         assert_eq!(
             model
                 .config

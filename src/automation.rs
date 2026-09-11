@@ -2039,7 +2039,10 @@ mod tests {
             .expect("lsp servers must report an overlay");
         assert_eq!(snapshot.context, "lsp_servers");
         assert_eq!(snapshot.rows.len(), token::lsp::all_server_defs().len());
-        assert_eq!(snapshot.rows[0].label, token::lsp::all_server_defs()[0].id);
+        assert_eq!(
+            snapshot.rows[0].label,
+            token::lsp::server_ids(&Default::default())[0]
+        );
         assert_eq!(snapshot.selected, 1);
     }
 

@@ -135,6 +135,9 @@ pub fn toggle_lsp_enabled(model: &mut AppModel) -> Option<Cmd> {
 /// apply-live shape as `toggle_lsp_enabled`, scoped to a single server;
 /// `None` only if the config can't be reached (never for a valid `id`).
 pub fn toggle_lsp_server_enabled(model: &mut AppModel, server_id: &str) -> Option<Cmd> {
+    if !model.config.lsp.servers.contains_key(server_id) {
+        return None;
+    }
     if let Some(server) = model
         .config
         .lsp
@@ -1159,12 +1162,9 @@ mod tests {
     #[test]
     fn apply_lsp_server_toggle_defaults_to_enabled_and_flips_in_place() {
         let mut lsp = crate::config::LspConfig::default();
-        assert!(
-            !lsp.servers.contains_key("rust-analyzer"),
-            "test setup: no override yet"
-        );
+        lsp.servers.get_mut("rust-analyzer").unwrap().enabled = None;
 
-        // Absent override reads as enabled, so the first toggle disables.
+        // An omitted enabled flag reads as enabled, so the first toggle disables.
         assert!(!apply_lsp_server_toggle(&mut lsp, "rust-analyzer"));
         assert_eq!(lsp.servers["rust-analyzer"].enabled, Some(false));
 

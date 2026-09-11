@@ -4,6 +4,9 @@
 
 use serde::{Deserialize, Serialize};
 
+mod language_servers;
+pub use language_servers::{LspConfig, LspServerConfig};
+
 /// Result of reloading configuration
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReloadResult {
@@ -439,72 +442,6 @@ pub enum WordsMode {
     #[default]
     Fallback,
     Disabled,
-}
-
-/// Language server settings, stored under `lsp:` in `config.yaml`:
-///
-/// ```yaml
-/// lsp:
-///   enabled: true
-///   servers:
-///     rust-analyzer:
-///       command: /custom/path/rust-analyzer
-///     pyright:
-///       enabled: false
-/// ```
-///
-/// Entries are keyed by server ID. Built-ins retain their default command and
-/// language associations unless overridden. A custom ID needs `command` and
-/// `languages`; `root_markers` optionally controls detached-project discovery.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LspConfig {
-    /// Master switch; `false` disables every server regardless of
-    /// per-server settings.
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    /// Display server-provided parameter annotations at line ends (Sema only).
-    /// Kept opt-in so opening a file does not add unsolicited text to the editor.
-    #[serde(default)]
-    pub inlay_hints: bool,
-    #[serde(default)]
-    pub servers: std::collections::HashMap<String, LspServerOverride>,
-}
-
-impl Default for LspConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            inlay_hints: false,
-            servers: std::collections::HashMap::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct LspServerOverride {
-    /// Explicit language associations override the built-in mapping. A custom
-    /// server needs both a command and at least one language association.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub languages: Option<Vec<crate::syntax::LanguageId>>,
-    /// Root marker files or directories. Empty uses the file's parent when
-    /// there is no workspace; absent retains a built-in server's defaults.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub root_markers: Option<Vec<String>>,
-    pub command: Option<String>,
-    pub args: Option<Vec<String>>,
-    pub enabled: Option<bool>,
-    /// Arbitrary server-specific options sent as `initializationOptions`
-    /// in the `initialize` request (e.g. pyright's `python` config).
-    /// Passed through verbatim — the editor doesn't interpret it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub initialization_options: Option<serde_json::Value>,
-    /// Server-specific settings returned from `workspace/configuration`
-    /// requests (e.g. rust-analyzer's `cargo.features`). Each requested
-    /// configuration `section` is looked up as a dotted path into this
-    /// object; a missing section answers `null`, matching the previous
-    /// all-null reply for servers with no configured settings.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settings: Option<serde_json::Value>,
 }
 
 fn default_theme() -> String {
@@ -945,7 +882,7 @@ mod tests {
         let mut config = EditorConfig::default();
         config.lsp.servers.insert(
             "rust-analyzer".to_owned(),
-            LspServerOverride {
+            LspServerConfig {
                 enabled: Some(false),
                 ..Default::default()
             },

@@ -2980,8 +2980,11 @@ impl App {
                 self.lsp.missing_servers.retain(|(id, _)| *id != server_id);
                 self.restart_lsp_server(&server_id);
             }
-            Cmd::LspApplyConfiguration { server_id } => {
-                self.reconfigure_lsp_server(&server_id);
+            Cmd::LspApplyConfiguration {
+                server_id,
+                previous_id,
+            } => {
+                self.reconfigure_lsp_servers(std::iter::once(server_id).chain(previous_id));
             }
             Cmd::LspDidOpen {
                 document_id,
@@ -4098,7 +4101,11 @@ impl App {
     /// Rebind open documents when explicit associations change. Only the edited
     /// server and servers whose documents change owner are restarted.
     fn reconfigure_lsp_server(&mut self, server_id: &LspServerId) {
-        let mut affected = HashSet::from([server_id.clone()]);
+        self.reconfigure_lsp_servers(std::iter::once(server_id.clone()));
+    }
+
+    fn reconfigure_lsp_servers(&mut self, server_ids: impl IntoIterator<Item = LspServerId>) {
+        let mut affected: HashSet<_> = server_ids.into_iter().collect();
         for (document_id, open) in &self.lsp.open_documents {
             let desired = self
                 .model

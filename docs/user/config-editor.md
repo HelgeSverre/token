@@ -56,10 +56,11 @@ and root markers. Server switches update matching open files immediately.
 A server's switch retains its own preference when the
 master switch is Off. Selecting an unchanged choice does not save again.
 
-Executable rows show the configured command or registry default. Their
+Executable rows show the saved command. Presets become ordinary editable records
+when configuration is initialized or migrated. Their
 **Configure…** buttons open a draft form for paths, arguments and advanced
 JSON/YAML options, with Browse, executable lookup, live status and Open log.
-Apply & Restart saves that server and rebinds documents affected by its language
+Save saves that server and rebinds documents affected by its language
 assignments; Cancel/Escape discards only
 unapplied edits. Validation or save failures keep the draft and leave the live
 configuration unchanged. Live process-state rows remain read-only. Status updates without

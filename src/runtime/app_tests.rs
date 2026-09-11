@@ -2451,13 +2451,13 @@ fn missing_server_is_memoized_and_not_retried_on_repeated_opens() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some("/definitely/not/a/real/binary-xyz".to_owned()),
             args: None,
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
     let dir = tempfile::tempdir().expect("temp dir should be created");
@@ -3995,13 +3995,13 @@ fn hover_resolved_opens_the_card_with_plaintext_content() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -4066,13 +4066,13 @@ fn a_stale_hover_response_after_a_revision_bump_is_dropped() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -4174,13 +4174,13 @@ fn references_resolved_populates_destination(panel: bool) {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -4277,13 +4277,13 @@ fn stale_references_response_after_a_revision_bump_is_dropped() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -4371,13 +4371,13 @@ fn goto_definition_with_multiple_locations_opens_the_popup() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -4464,13 +4464,13 @@ fn hover_on_a_diagnostic_line_includes_related_information() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -4561,13 +4561,13 @@ fn problems_panel_end_to_end_via_fake_server_publish_and_command() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -4678,13 +4678,13 @@ fn server_exit_empties_the_open_problems_panel() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -4786,13 +4786,13 @@ fn configure_fake_rust_analyzer(app: &mut App, dir: &Path, transcript_path: &Pat
 
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 }
@@ -4819,6 +4819,7 @@ fn settings_server_reconfiguration_recovers_missing_process_and_opens_once() {
     configure_fake_rust_analyzer(&mut app, dir.path(), &transcript);
     app.process_cmd(Cmd::LspApplyConfiguration {
         server_id: server_id.clone(),
+        previous_id: None,
     });
     assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
         app.model.lsp.servers.get(&server_id) == Some(&ServerState::Ready)
@@ -4842,7 +4843,10 @@ fn settings_server_reconfiguration_recovers_missing_process_and_opens_once() {
         .get_mut("rust-analyzer")
         .unwrap()
         .enabled = Some(false);
-    app.process_cmd(Cmd::LspApplyConfiguration { server_id });
+    app.process_cmd(Cmd::LspApplyConfiguration {
+        server_id,
+        previous_id: None,
+    });
     assert!(app.lsp.servers.is_empty());
     assert!(app.lsp.open_documents.is_empty());
 }
@@ -4877,6 +4881,7 @@ fn custom_lsp_server_syncs_cpp_and_rebinds_when_language_assignments_change() {
     let first = LspServerId::from("custom-cpp");
     app.process_cmd(Cmd::LspApplyConfiguration {
         server_id: first.clone(),
+        previous_id: None,
     });
     assert!(
         pump_until(&mut app, Duration::from_secs(5), |app| {
@@ -4910,6 +4915,7 @@ fn custom_lsp_server_syncs_cpp_and_rebinds_when_language_assignments_change() {
     let second = LspServerId::from("replacement-cpp");
     app.process_cmd(Cmd::LspApplyConfiguration {
         server_id: second.clone(),
+        previous_id: None,
     });
     assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
         app.model.lsp.servers.get(&second) == Some(&ServerState::Ready)
@@ -4927,7 +4933,10 @@ fn custom_lsp_server_syncs_cpp_and_rebinds_when_language_assignments_change() {
         .get_mut("replacement-cpp")
         .unwrap()
         .languages = Some(vec![LanguageId::C]);
-    app.process_cmd(Cmd::LspApplyConfiguration { server_id: second });
+    app.process_cmd(Cmd::LspApplyConfiguration {
+        server_id: second,
+        previous_id: None,
+    });
     assert!(app.lsp.servers.is_empty());
     assert!(app.lsp.open_documents.is_empty());
     assert!(app.lsp.detached_roots.is_empty());
@@ -5095,13 +5104,13 @@ fn server_initiated_apply_edit_is_applied_and_acknowledged() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
     let doc_id = app.model.document().id.expect("document id");
@@ -5348,13 +5357,13 @@ fn goto_definition_into_an_unopened_file_opens_it_and_places_the_cursor() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -5459,13 +5468,13 @@ fn goto_definition_and_hover_flush_a_pending_did_change_ahead_of_their_request()
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -5599,13 +5608,13 @@ fn diagnostics_publish_for_an_unopened_file_is_retained_and_applied_on_open() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -5695,13 +5704,13 @@ fn stale_version_diagnostics_publish_is_dropped() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_path.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -5784,13 +5793,13 @@ fn crash_restart_resyncs_previously_open_documents() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_a.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 
@@ -5832,13 +5841,13 @@ fn crash_restart_resyncs_previously_open_documents() {
     .unwrap();
     app.model.config.lsp.servers.insert(
         "rust-analyzer".to_owned(),
-        token::config::LspServerOverride {
+        token::config::LspServerConfig {
             command: Some(fake_lsp_server_path().to_string_lossy().into_owned()),
             args: Some(vec![scenario_b.to_string_lossy().into_owned()]),
             enabled: None,
             initialization_options: None,
             settings: None,
-            ..Default::default()
+            ..token::lsp::RUST_ANALYZER.configuration()
         },
     );
 

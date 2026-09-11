@@ -4,7 +4,7 @@ use crate::keymap::preferences::{BaseKeymap, KeymapChange, KeymapSave, MAX_CAPTU
 use crate::keymap::{KeyCode, Keymap, Modifiers};
 use crate::messages::SettingsMsg;
 use crate::model::{AppModel, ModalState};
-use crate::settings::forms::{FormKind, SettingsChange, SettingsForm};
+use crate::settings::forms::{CollectionKind, FormKind, SettingsChange, SettingsForm};
 use crate::settings::{
     keymap::{Capture, SettingsTab},
     RowKind, SettingsState,
@@ -121,6 +121,14 @@ pub(super) fn form_choice(
         RowKind::FormActions => {
             form.focused = None;
             let action = choice.unwrap_or(if delta < 0 { 1 } else { 0 });
+            if form.remove_pending && action == 0 {
+                form.remove_pending = false;
+                form.status = "Removal cancelled · draft retained".into();
+                return Some(Cmd::Redraw);
+            }
+            if form.remove_pending && action == 2 {
+                return Some(Cmd::Redraw);
+            }
             match action {
                 0 | 2 if action == 0 || matches!(form.kind, FormKind::InlineProvider(_)) => {
                     match form.change(&model.config) {
@@ -147,7 +155,7 @@ pub(super) fn form_choice(
                         if let Some(form) = &mut state.form {
                             form.dragging = false;
                             form.status =
-                                "Draft retained while viewing the log · Apply or Cancel when ready"
+                                "Draft retained while viewing the log · Save or Cancel when ready"
                                     .into();
                         }
                         model.ui.suspended_settings = Some(state);
@@ -157,6 +165,23 @@ pub(super) fn form_choice(
                         model,
                         crate::commands::ConfigResource::Log,
                     );
+                }
+                3 => {
+                    let change = form.removal()?;
+                    if !form.remove_pending {
+                        form.remove_pending = true;
+                        form.status = "Remove this entry and discard its draft? Confirm remove to save this change.".into();
+                    } else {
+                        form.saving = true;
+                        form.status = "Removing configuration…".into();
+                        return Some(Cmd::Batch(vec![
+                            Cmd::ApplySettingsForm {
+                                session: Arc::clone(&form.session),
+                                change: Box::new(change),
+                            },
+                            Cmd::Redraw,
+                        ]));
+                    }
                 }
                 _ => return None,
             }
@@ -242,7 +267,7 @@ pub(super) fn capturing(model: &AppModel) -> bool {
 pub(super) fn switch_tab(model: &mut AppModel, index: Option<usize>) -> Option<Cmd> {
     let state = state_mut(&mut model.ui)?;
     if let Some(form) = &mut state.form {
-        form.status = "Apply or Cancel this draft before changing categories".into();
+        form.status = "Save or Cancel this draft before changing categories".into();
         return Some(Cmd::Redraw);
     }
     let categories = crate::settings::categories();
@@ -508,13 +533,24 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             }
             if success {
                 if let Some(state) = state_mut(&mut model.ui) {
+                    if matches!(*change, SettingsChange::Remove { .. })
+                        && state
+                            .form
+                            .as_ref()
+                            .is_some_and(|form| Arc::ptr_eq(&form.session, &session))
+                    {
+                        state.form = None;
+                    }
                     state.refresh_entries(&model.config);
                 }
                 let mut commands = vec![Cmd::Redraw];
                 match *change {
-                    SettingsChange::LanguageServer { id, .. } => {
+                    SettingsChange::LanguageServer {
+                        id, previous_id, ..
+                    } => {
                         commands.push(Cmd::LspApplyConfiguration {
                             server_id: id.into(),
+                            previous_id: previous_id.map(Into::into),
                         });
                         if let Some(form) =
                             state_mut(&mut model.ui).and_then(|state| state.form.as_ref())
@@ -530,6 +566,17 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                     SettingsChange::InlineProvider { .. } => {
                         commands.extend(super::inline::dismiss(model))
                     }
+                    SettingsChange::Remove {
+                        collection: CollectionKind::LanguageServers,
+                        id,
+                    } => commands.push(Cmd::LspApplyConfiguration {
+                        server_id: id.into(),
+                        previous_id: None,
+                    }),
+                    SettingsChange::Remove {
+                        collection: CollectionKind::InlineProviders,
+                        ..
+                    } => commands.extend(super::inline::dismiss(model)),
                 }
                 Some(Cmd::Batch(commands))
             } else {

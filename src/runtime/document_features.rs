@@ -359,9 +359,9 @@ mod tests {
         app.model.config = token::config::EditorConfig::default();
         app.model.config.lsp.servers.insert(
             "gopls".into(),
-            token::config::LspServerOverride {
+            token::config::LspServerConfig {
                 command: Some(binary),
-                ..Default::default()
+                ..token::lsp::GOPLS.configuration()
             },
         );
         let document_id = app.model.document().id.unwrap();
@@ -416,10 +416,10 @@ mod tests {
         let mut app = app();
         app.model.config.lsp.servers.insert(
             "sema".into(),
-            token::config::LspServerOverride {
+            token::config::LspServerConfig {
                 command: Some(binary),
                 args: Some(vec!["lsp".into()]),
-                ..Default::default()
+                ..token::lsp::SEMA.configuration()
             },
         );
         let document_id = app.model.document().id.unwrap();

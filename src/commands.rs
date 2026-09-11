@@ -1125,6 +1125,7 @@ pub enum Cmd {
     /// previously missing servers. Reopen each matching document exactly once.
     LspApplyConfiguration {
         server_id: crate::lsp::LspServerId,
+        previous_id: Option<crate::lsp::LspServerId>,
     },
     /// A matching document gained a file path + language — send
     /// `textDocument/didOpen` (spawning the server first if needed).

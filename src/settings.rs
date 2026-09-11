@@ -464,7 +464,8 @@ impl SettingRow {
             RowKind::Provider(_) => &["Configure…"],
             RowKind::FormField(_) | RowKind::FormChoice(_) | RowKind::FormInfo => &[],
             RowKind::FormEnabled => BOOL_LABELS,
-            RowKind::FormActions => &["Apply & Restart", "Cancel", "Open log"],
+            // Form-owned actions depend on the draft's kind and confirmation state.
+            RowKind::FormActions => &[],
             RowKind::KeymapBase => crate::keymap::preferences::BaseKeymap::LABELS,
             RowKind::KeymapBinding(..) => &[],
             RowKind::CaptureActions => &["Save", "Cancel", "Literal"],
@@ -508,12 +509,9 @@ impl SettingRow {
                 .get(id)
                 .and_then(|o| o.command.as_deref())
             {
-                Some("") => Cow::Borrowed("(empty override)"),
+                Some("") => Cow::Borrowed("(empty command)"),
                 Some(command) => Cow::Borrowed(command),
-                None => crate::lsp::server_def_by_id(id)
-                    .map_or(Cow::Borrowed("No executable configured"), |def| {
-                        Cow::Owned(format!("{} (default)", def.command))
-                    }),
+                None => Cow::Borrowed("No executable configured"),
             };
         }
         Cow::Borrowed(&self.description)
@@ -807,23 +805,24 @@ mod tests {
             .collect();
         assert_eq!(lsp_rows.len(), 2 + 3 * crate::lsp::all_server_defs().len());
         let mut config = EditorConfig::default();
-        for (def, group) in crate::lsp::all_server_defs()
-            .iter()
-            .zip(lsp_rows[2..].as_chunks::<3>().0)
-        {
+        let ids: Vec<_> = crate::lsp::server_ids(&config.lsp)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        for (id, group) in ids.iter().zip(lsp_rows[2..].as_chunks::<3>().0) {
             assert_eq!(group[0].active(&config), Some(1));
-            assert_eq!(group[1].name, format!("{} executable", def.id));
+            assert_eq!(group[1].name, format!("{id} executable"));
             assert_eq!(
                 group[1].detail(&config),
-                format!("{} (default)", def.command)
+                config.lsp.servers[id].command.as_deref().unwrap()
             );
             assert_eq!(group[1].choices(), &["Configure…"]);
             assert!(group[2].choices().is_empty());
-            config.lsp.servers.entry(def.id.into()).or_default().command =
+            config.lsp.servers.entry(id.clone()).or_default().command =
                 Some("/an/overridden/command".into());
             assert_eq!(group[1].detail(&config), "/an/overridden/command");
-            config.lsp.servers.get_mut(def.id).unwrap().command = Some(String::new());
-            assert_eq!(group[1].detail(&config), "(empty override)");
+            config.lsp.servers.get_mut(id).unwrap().command = Some(String::new());
+            assert_eq!(group[1].detail(&config), "(empty command)");
         }
     }
 
