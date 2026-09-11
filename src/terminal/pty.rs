@@ -165,6 +165,10 @@ pub fn spawn_pty(
 ) -> std::io::Result<PtyHandle> {
     let mut cmd = CommandBuilder::new(default_shell());
     cmd.cwd(cwd);
+    if std::env::var_os("TERM").is_none() {
+        // Launched from Finder: no inherited TERM, which cripples zle/readline.
+        cmd.env("TERM", "xterm-256color");
+    }
     spawn_pty_command(cmd, rows, cols, msg_tx, session_id)
 }
 

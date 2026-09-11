@@ -12,7 +12,16 @@ pub struct TerminalKeyModifiers {
 
 pub fn translate_key(key: &Key, modifiers: TerminalKeyModifiers) -> Option<Vec<u8>> {
     if modifiers.logo {
-        return None;
+        // Cmd+Arrow/Backspace/Delete behave like macOS "natural text editing":
+        // readline/zle line-start, line-end, kill-to-start, kill-to-end.
+        // Every other Cmd combination stays reserved for app shortcuts.
+        return translate_logo_key(key).map(bytes);
+    }
+
+    if modifiers.alt {
+        if let Some(seq) = translate_alt_key(key) {
+            return Some(bytes(seq));
+        }
     }
 
     if modifiers.ctrl {
@@ -53,6 +62,27 @@ fn translate_control_key(key: &Key) -> Option<Vec<u8>> {
         '^' => Some(vec![0x1E]),
         '_' => Some(vec![0x1F]),
         '?' => Some(vec![0x7F]), // Ctrl+? == DEL
+        _ => None,
+    }
+}
+
+/// Option+key -> Meta sequences that zsh (emacs mode) and bash bind by default.
+fn translate_alt_key(key: &Key) -> Option<&'static [u8]> {
+    match key {
+        Key::Named(NamedKey::ArrowLeft) => Some(b"\x1bb"),
+        Key::Named(NamedKey::ArrowRight) => Some(b"\x1bf"),
+        Key::Named(NamedKey::Backspace) => Some(b"\x1b\x7f"),
+        Key::Named(NamedKey::Delete) => Some(b"\x1bd"),
+        _ => None,
+    }
+}
+
+fn translate_logo_key(key: &Key) -> Option<&'static [u8]> {
+    match key {
+        Key::Named(NamedKey::ArrowLeft) => Some(b"\x01"),
+        Key::Named(NamedKey::ArrowRight) => Some(b"\x05"),
+        Key::Named(NamedKey::Backspace) => Some(b"\x15"),
+        Key::Named(NamedKey::Delete) => Some(b"\x0b"),
         _ => None,
     }
 }
@@ -340,6 +370,54 @@ mod tests {
             key_bytes(Key::Named(NamedKey::F12)),
             Some(b"\x1b[24~".to_vec())
         );
+    }
+
+    #[test]
+    fn option_modified_keys_translate_to_meta_word_sequences() {
+        let alt = TerminalKeyModifiers {
+            alt: true,
+            ..TerminalKeyModifiers::default()
+        };
+        let cases: [(NamedKey, &[u8]); 4] = [
+            (NamedKey::ArrowLeft, b"\x1bb"),
+            (NamedKey::ArrowRight, b"\x1bf"),
+            (NamedKey::Backspace, b"\x1b\x7f"),
+            (NamedKey::Delete, b"\x1bd"),
+        ];
+        for (key, expected) in cases {
+            assert_eq!(
+                translate_key(&Key::Named(key), alt),
+                Some(expected.to_vec()),
+                "alt+{key:?}"
+            );
+        }
+        // Option+letter is already composed into a glyph by the platform.
+        assert_eq!(
+            translate_key(&Key::Character("∑".into()), alt),
+            Some("∑".as_bytes().to_vec())
+        );
+    }
+
+    #[test]
+    fn command_modified_navigation_keys_translate_to_line_edits() {
+        let logo = TerminalKeyModifiers {
+            logo: true,
+            ..TerminalKeyModifiers::default()
+        };
+        let cases: [(NamedKey, &[u8]); 4] = [
+            (NamedKey::ArrowLeft, b"\x01"),
+            (NamedKey::ArrowRight, b"\x05"),
+            (NamedKey::Backspace, b"\x15"),
+            (NamedKey::Delete, b"\x0b"),
+        ];
+        for (key, expected) in cases {
+            assert_eq!(
+                translate_key(&Key::Named(key), logo),
+                Some(expected.to_vec()),
+                "cmd+{key:?}"
+            );
+        }
+        assert_eq!(translate_key(&Key::Named(NamedKey::ArrowUp), logo), None);
     }
 
     #[test]
