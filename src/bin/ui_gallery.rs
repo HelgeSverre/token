@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
-use token::model::gallery::GalleryState;
+use token::model::gallery::{GalleryFocus, GalleryState};
 use token::theme::{self, Theme, ThemeInfo};
 use token::view::gallery::{GalleryLayout, GalleryRenderer};
 use winit::application::ApplicationHandler;
@@ -33,6 +33,9 @@ struct Args {
     /// Filter by stable specimen name, painter, or palette role.
     #[arg(long, default_value = "")]
     filter: String,
+    /// Include the open theme dropdown in headless screenshots.
+    #[arg(long)]
+    theme_menu: bool,
 }
 
 struct App {
@@ -46,6 +49,8 @@ struct App {
     layout: Option<GalleryLayout>,
     mouse: (f32, f32),
     drag: Option<f32>,
+    theme_drag: Option<f32>,
+    theme_wheel: f64,
     modifiers: ModifiersState,
     error: Option<anyhow::Error>,
 }
@@ -75,6 +80,9 @@ impl App {
             .state
             .scroll
             .clamp(0.0, layout.scrollbar.state.max_position() as f64);
+        if let Some(popup) = &layout.theme_popup {
+            self.state.theme_select.scroll = popup.first;
+        }
         self.layout = Some(layout);
         buffer
             .present()
@@ -86,6 +94,46 @@ impl App {
             return;
         };
         let (x, y) = self.mouse;
+        if self.state.theme_select.open {
+            if let Some(popup) = &layout.theme_popup {
+                if let Some(bar) = &popup.scrollbar {
+                    if bar.hits_thumb(x, y) {
+                        self.theme_drag = Some(y - bar.thumb_rect.y);
+                        return;
+                    }
+                    if bar.hits_track(x, y) {
+                        self.state.theme_select.scroll_to(
+                            bar.position_from_track_click(y),
+                            popup.rows.len(),
+                            self.themes.len(),
+                        );
+                        return;
+                    }
+                }
+                let panel = popup.panel;
+                if token::model::Rect::new(
+                    panel.x as f32,
+                    panel.y as f32,
+                    panel.w as f32,
+                    panel.h as f32,
+                )
+                .contains(x, y)
+                    && popup.option_at(x, y).is_none()
+                {
+                    return;
+                }
+            }
+            let option = layout
+                .theme_popup
+                .as_ref()
+                .and_then(|popup| popup.option_at(x, y));
+            if let Some(index) = option {
+                self.apply_theme(index);
+            } else {
+                self.state.theme_select.open = false;
+            }
+            return;
+        }
         if layout.scrollbar.needed && layout.scrollbar.hits_thumb(x, y) {
             self.drag = Some(y - layout.scrollbar.thumb_rect.y);
         } else if layout.scrollbar.needed && layout.scrollbar.hits_track(x, y) {
@@ -95,25 +143,88 @@ impl App {
         {
             self.state.category = category;
             self.state.scroll = 0.0;
-        } else if layout.width_toggle.contains(x, y) {
-            self.state.compact = !self.state.compact;
+            self.state.focus = GalleryFocus::Filter;
+        } else if let Some(index) =
+            token::view::section_navigation::section_at(&layout.width_segments, x, y)
+        {
+            self.state.compact = index == 0;
+            self.state.focus = GalleryFocus::Width;
         } else if layout.theme.contains(x, y) {
-            let current = self
-                .themes
-                .iter()
-                .position(|t| t.name == self.theme.name)
-                .unwrap_or(0);
-            if let Some(next) = self.themes.get((current + 1) % self.themes.len().max(1)) {
-                match theme::load_theme(&next.id) {
-                    Ok(theme) => self.theme = theme,
-                    Err(error) => eprintln!("Cannot load theme {}: {error}", next.id),
+            self.open_themes();
+        } else if layout.search.contains(x, y) {
+            self.state.focus = GalleryFocus::Filter;
+        }
+    }
+
+    fn open_themes(&mut self) {
+        self.state.focus = GalleryFocus::Theme;
+        self.theme_wheel = 0.0;
+        self.state.theme_select.open(self.state.selected_theme);
+    }
+
+    fn apply_theme(&mut self, index: usize) {
+        if let Some(info) = self.themes.get(index) {
+            match theme::load_theme(&info.id) {
+                Ok(theme) => {
+                    self.theme = theme;
+                    self.state.selected_theme = index;
                 }
+                Err(error) => eprintln!("Cannot load theme {}: {error}", info.id),
             }
         }
+        self.state.theme_select.open = false;
     }
 
     fn key(&mut self, key: Key, text: Option<&str>) {
         let extend = self.modifiers.shift_key();
+        if key == Key::Named(NamedKey::Tab) {
+            self.state.theme_select.open = false;
+            self.state.focus = match (self.state.focus, extend) {
+                (GalleryFocus::Filter, false) | (GalleryFocus::Width, true) => GalleryFocus::Theme,
+                (GalleryFocus::Theme, false) | (GalleryFocus::Filter, true) => GalleryFocus::Width,
+                _ => GalleryFocus::Filter,
+            };
+            return;
+        }
+        if self.state.theme_select.open {
+            match key {
+                Key::Named(NamedKey::Escape) => self.state.theme_select.open = false,
+                Key::Named(NamedKey::Enter | NamedKey::Space) => {
+                    self.apply_theme(self.state.theme_select.active)
+                }
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.state.theme_select.move_by(1, self.themes.len())
+                }
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.state.theme_select.move_by(-1, self.themes.len())
+                }
+                Key::Named(NamedKey::Home) => self.state.theme_select.active = 0,
+                Key::Named(NamedKey::End) => {
+                    self.state.theme_select.active = self.themes.len().saturating_sub(1)
+                }
+                _ => {}
+            }
+            return;
+        }
+        if self.state.focus == GalleryFocus::Theme {
+            if matches!(
+                key,
+                Key::Named(
+                    NamedKey::Enter | NamedKey::Space | NamedKey::ArrowDown | NamedKey::ArrowUp
+                )
+            ) {
+                self.open_themes();
+            }
+            return;
+        }
+        if self.state.focus == GalleryFocus::Width {
+            match key {
+                Key::Named(NamedKey::ArrowLeft | NamedKey::Home) => self.state.compact = true,
+                Key::Named(NamedKey::ArrowRight | NamedKey::End) => self.state.compact = false,
+                _ => {}
+            }
+            return;
+        }
         match key {
             Key::Named(NamedKey::Escape) => {
                 self.state.query.select_all();
@@ -191,9 +302,31 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse = (position.x as f32, position.y as f32);
-                if let (Some(grab), Some(layout)) = (self.drag, &self.layout) {
+                if let (Some(grab), Some(popup)) = (
+                    self.theme_drag,
+                    self.layout
+                        .as_ref()
+                        .and_then(|layout| layout.theme_popup.as_ref()),
+                ) {
+                    if let Some(bar) = &popup.scrollbar {
+                        self.state.theme_select.scroll_to(
+                            bar.position_from_drag(grab, self.mouse.1),
+                            popup.rows.len(),
+                            self.themes.len(),
+                        );
+                    }
+                } else if let (Some(grab), Some(layout)) = (self.drag, &self.layout) {
                     self.state.scroll =
                         layout.scrollbar.position_from_drag(grab, self.mouse.1) as f64;
+                } else if self.state.theme_select.open {
+                    if let Some(index) = self
+                        .layout
+                        .as_ref()
+                        .and_then(|layout| layout.theme_popup.as_ref())
+                        .and_then(|popup| popup.option_at(self.mouse.0, self.mouse.1))
+                    {
+                        self.state.theme_select.active = index;
+                    }
                 } else {
                     return;
                 }
@@ -207,6 +340,7 @@ impl ApplicationHandler for App {
                     self.click();
                 } else {
                     self.drag = None;
+                    self.theme_drag = None;
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
@@ -217,8 +351,23 @@ impl ApplicationHandler for App {
                             y as f64 * 40.0 * self.window.as_ref().map_or(1.0, |w| w.scale_factor())
                         }
                     };
-                    self.state.scroll = (self.state.scroll - dy)
-                        .clamp(0.0, layout.scrollbar.state.max_position() as f64);
+                    if self.state.theme_select.open {
+                        if let Some(popup) = &layout.theme_popup {
+                            let row_height =
+                                popup.rows.first().map_or(24, |row| row.h).max(1) as f64;
+                            self.theme_wheel -= dy / row_height;
+                            let steps = self.theme_wheel.trunc() as isize;
+                            self.theme_wheel -= steps as f64;
+                            self.state.theme_select.scroll_to(
+                                self.state.theme_select.scroll.saturating_add_signed(steps),
+                                popup.rows.len(),
+                                self.themes.len(),
+                            );
+                        }
+                    } else {
+                        self.state.scroll = (self.state.scroll - dy)
+                            .clamp(0.0, layout.scrollbar.state.max_position() as f64);
+                    }
                 }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
@@ -229,6 +378,8 @@ impl ApplicationHandler for App {
                 return;
             }
             WindowEvent::Focused(false) => {
+                self.state.theme_select.open = false;
+                self.theme_drag = None;
                 self.drag = None;
                 self.modifiers = ModifiersState::empty();
             }
@@ -256,7 +407,22 @@ fn main() -> Result<()> {
         Some(id) => theme::load_theme(id).map_err(|e| anyhow!(e))?,
         None => Theme::default_dark(),
     };
-    let mut state = GalleryState::default();
+    let mut state = GalleryState {
+        theme_names: themes.iter().map(|info| info.name.clone()).collect(),
+        selected_theme: themes
+            .iter()
+            .position(|info| {
+                args.theme
+                    .as_ref()
+                    .map_or(info.name == theme.name, |id| info.id == *id)
+            })
+            .unwrap_or(0),
+        ..Default::default()
+    };
+    if args.theme_menu {
+        state.theme_select.open(state.selected_theme);
+        state.focus = GalleryFocus::Theme;
+    }
     state.query.insert_text(&args.filter);
     let mut painter = GalleryRenderer::new()?;
     if let Some(path) = &args.screenshot {
@@ -286,6 +452,8 @@ fn main() -> Result<()> {
         layout: None,
         mouse: (0.0, 0.0),
         drag: None,
+        theme_drag: None,
+        theme_wheel: 0.0,
         modifiers: ModifiersState::empty(),
         error: None,
     };
@@ -294,4 +462,64 @@ fn main() -> Result<()> {
         return Err(error);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn theme_navigation_commits_only_on_accept_and_width_selects_directly() {
+        let themes: Vec<_> = [
+            ("default-dark", "Default Dark"),
+            ("github-light", "GitHub Light"),
+        ]
+        .into_iter()
+        .map(|(id, name)| ThemeInfo {
+            id: id.into(),
+            name: name.into(),
+            source: theme::ThemeSource::Builtin,
+        })
+        .collect();
+        let state = GalleryState {
+            theme_names: themes.iter().map(|t| t.name.clone()).collect(),
+            ..Default::default()
+        };
+        let mut app = App {
+            args: Args::parse_from(["ui-gallery"]),
+            state,
+            painter: GalleryRenderer::new().unwrap(),
+            theme: Theme::default_dark(),
+            themes,
+            window: None,
+            surface: None,
+            layout: None,
+            mouse: (0.0, 0.0),
+            drag: None,
+            theme_drag: None,
+            theme_wheel: 0.0,
+            modifiers: ModifiersState::empty(),
+            error: None,
+        };
+        app.state.query.insert_text("field");
+        app.key(Key::Named(NamedKey::Tab), None);
+        app.key(Key::Named(NamedKey::ArrowDown), None);
+        app.key(Key::Named(NamedKey::ArrowDown), None);
+        assert_eq!(app.state.selected_theme, 0);
+        app.key(Key::Named(NamedKey::Escape), None);
+        assert_eq!(app.state.query.text(), "field");
+        assert!(!app.state.theme_select.open);
+        app.key(Key::Named(NamedKey::Enter), None);
+        app.key(Key::Named(NamedKey::End), None);
+        app.key(Key::Named(NamedKey::Enter), None);
+        assert_eq!(app.state.selected_theme, 1);
+        assert_eq!(app.theme.name, "GitHub Light");
+        app.layout = Some(GalleryLayout::new(1100, 820, 1.0, &app.state));
+        let narrow = app.layout.as_ref().unwrap().width_segments[0];
+        app.mouse = ((narrow.x + 4) as f32, (narrow.y + 4) as f32);
+        app.click();
+        app.click();
+        assert!(app.state.compact);
+        app.key(Key::Named(NamedKey::ArrowRight), None);
+        assert!(!app.state.compact);
+    }
 }

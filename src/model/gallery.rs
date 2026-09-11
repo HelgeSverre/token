@@ -252,6 +252,18 @@ pub struct GalleryState {
     pub query: EditableState<StringBuffer>,
     pub scroll: f64,
     pub compact: bool,
+    pub theme_names: Vec<String>,
+    pub selected_theme: usize,
+    pub theme_select: crate::model::select::SelectState,
+    pub focus: GalleryFocus,
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub enum GalleryFocus {
+    #[default]
+    Filter,
+    Theme,
+    Width,
 }
 
 impl Default for GalleryState {
@@ -261,6 +273,10 @@ impl Default for GalleryState {
             query: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
             scroll: 0.0,
             compact: false,
+            theme_names: Vec::new(),
+            selected_theme: 0,
+            theme_select: Default::default(),
+            focus: GalleryFocus::Filter,
         }
     }
 }

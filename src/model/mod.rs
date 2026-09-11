@@ -29,6 +29,7 @@ mod text_settings;
 pub use save::{SaveIntent, SaveReason};
 pub use text_settings::{DocumentTextSettings, IndentStyle, LineEnding, TextPreferences};
 pub mod scroll;
+pub mod select;
 pub mod status_bar;
 pub mod styled_text;
 pub mod ui;

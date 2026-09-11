@@ -23,6 +23,8 @@ pub struct GalleryLayout {
     pub search: Rect,
     pub theme: Rect,
     pub width_toggle: Rect,
+    pub width_segments: Vec<WidgetRect>,
+    pub theme_popup: Option<super::select::SelectLayout>,
     pub categories: Vec<WidgetRect>,
     pub viewport: Rect,
     pub scrollbar: ScrollbarGeometry,
@@ -116,9 +118,14 @@ impl GalleryLayout {
             })
             .collect();
         Self {
-            search: Rect::new(24.0 * s, 76.0 * s, (w - 380.0 * s).max(80.0 * s), 34.0 * s),
-            theme: Rect::new(w - 336.0 * s, 76.0 * s, 180.0 * s, 34.0 * s),
-            width_toggle: Rect::new(w - 144.0 * s, 76.0 * s, 120.0 * s, 34.0 * s),
+            search: Rect::new(24.0 * s, 76.0 * s, (w - 468.0 * s).max(80.0 * s), 29.0 * s),
+            theme: Rect::new(w - 424.0 * s, 76.0 * s, 220.0 * s, 29.0 * s),
+            width_toggle: Rect::new(w - 188.0 * s, 76.0 * s, 164.0 * s, 29.0 * s),
+            width_segments: super::segmented_control::segment_rects(
+                Rect::new(w - 188.0 * s, 76.0 * s, 164.0 * s, 29.0 * s),
+                2,
+            ),
+            theme_popup: None,
             categories: super::section_navigation::section_rects(
                 WidgetRect {
                     x: (16.0 * s) as usize,
@@ -172,7 +179,7 @@ impl GalleryRenderer {
         state: &GalleryState,
         theme: &Theme,
     ) -> GalleryLayout {
-        let layout = GalleryLayout::new(size.0, size.1, scale, state);
+        let mut layout = GalleryLayout::new(size.0, size.1, scale, state);
         let font_size = (14.0 * scale) as f32;
         let metrics = self
             .fonts
@@ -223,7 +230,7 @@ impl GalleryRenderer {
             theme,
             layout.search,
             &state.query,
-            true,
+            state.focus == crate::model::gallery::GalleryFocus::Filter,
         );
         if state.query.text().is_empty() {
             painter.with_font(FontRole::Code).draw_sized(
@@ -236,30 +243,38 @@ impl GalleryRenderer {
                 colors.text_dim.to_argb_u32(),
             );
         }
+        let theme_labels: Vec<_> = state.theme_names.iter().map(String::as_str).collect();
+        let theme_select = super::select::Select {
+            anchor: layout.theme,
+            labels: &theme_labels,
+            selected: state.selected_theme,
+            state: &state.theme_select,
+            focused: state.focus == crate::model::gallery::GalleryFocus::Theme,
+            scale,
+        };
         for (rect, label) in [
-            (layout.theme, format!("Theme: {}", theme.name)),
-            (
-                layout.width_toggle,
-                if state.compact {
-                    "Width: narrow"
-                } else {
-                    "Width: wide"
-                }
-                .to_owned(),
-            ),
+            (layout.theme, "Theme"),
+            (layout.width_toggle, "Preview width"),
         ] {
-            render_button(
+            painter.draw_sized(
                 &mut frame,
-                &mut painter,
-                theme,
-                rect,
-                &label,
-                ButtonStyle {
-                    text_size: Some((12.0 * scale) as f32),
-                    ..Default::default()
-                },
+                rect.x as usize,
+                px(58.0),
+                label,
+                (11.0 * scale) as f32,
+                0.0,
+                colors.text_dim.to_argb_u32(),
             );
         }
+        theme_select.render_anchor(&mut frame, &mut painter, theme);
+        super::segmented_control::SegmentedControl {
+            segments: &layout.width_segments,
+            labels: &["Narrow", "Wide"],
+            selected: usize::from(!state.compact),
+            focused: state.focus == crate::model::gallery::GalleryFocus::Width,
+            scale,
+        }
+        .render(&mut frame, &mut painter, theme);
         super::section_navigation::SectionNavigation {
             rows: &layout.categories,
             divider: Some(WidgetRect {
@@ -386,6 +401,8 @@ impl GalleryRenderer {
             colors.panel_secondary.to_argb_u32(),
         );
         painter.draw_sized(&mut frame, px(24.0), size.1.saturating_sub(px(24.0)), &format!("{} specimens · wheel / drag scrollbar · Esc clears filter · theme and width controls above", layout.rows.len()), (11.0*scale) as f32, 0.0, colors.text_dim.to_argb_u32());
+        layout.theme_popup =
+            theme_select.render_popup(&mut frame, &mut painter, &mut self.masks, theme, size);
         layout
     }
 }
@@ -814,6 +831,39 @@ fn render_overlay(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dropdown_reveals_last_option_and_segments_share_hit_geometry() {
+        for scale in [1.0, 2.0] {
+            let mut state = GalleryState {
+                theme_names: (0..30).map(|i| format!("Theme {i}")).collect(),
+                selected_theme: 29,
+                ..Default::default()
+            };
+            state.theme_select.open(29);
+            let mut renderer = GalleryRenderer::new().unwrap();
+            let size = ((900.0 * scale) as usize, (440.0 * scale) as usize);
+            let mut pixels = vec![0; size.0 * size.1];
+            let layout = renderer.render(&mut pixels, size, scale, &state, &Theme::default_dark());
+            let popup = layout.theme_popup.unwrap();
+            let last = popup.rows.last().unwrap();
+            assert_eq!(
+                popup.option_at((last.x + last.w / 2) as f32, (last.y + last.h / 2) as f32),
+                Some(29)
+            );
+            assert!(popup.panel.y + popup.panel.h <= size.1);
+            for (index, rect) in layout.width_segments.iter().enumerate() {
+                assert_eq!(
+                    super::super::section_navigation::section_at(
+                        &layout.width_segments,
+                        (rect.x + rect.w / 2) as f32,
+                        (rect.y + rect.h / 2) as f32
+                    ),
+                    Some(index)
+                );
+            }
+        }
+    }
 
     #[test]
     fn specimen_constraints_survive_width_scale_and_scroll_changes() {

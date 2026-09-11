@@ -21,6 +21,8 @@ pub mod overlay_surface;
 pub mod panels;
 pub mod scrollbar;
 pub mod section_navigation;
+pub mod segmented_control;
+pub mod select;
 pub mod text_field;
 pub mod tree_view;
 

@@ -23,9 +23,29 @@ The catalog currently contains 29 labelled visual specimens:
 These are explicitly **static visual states**, not pretend interactive controls.
 Use their stable names when requesting changes, for example
 “`button.selected`: make its fill less saturated”. The gallery shell is
-interactive: type to filter, select a category, cycle themes, change preview
+interactive: type to filter, select a category, choose a theme, change preview
 width, scroll by pixels, or drag the scrollbar. Escape clears the filter;
 Cmd/Ctrl+A selects its text. Native scaling follows the display.
+
+### Selection controls and naming
+
+- `select.theme`: a non-editable **select**, also called a **dropdown** or
+  Apple's **pop-up button**. It displays the current value and opens a list of
+  mutually exclusive choices, with a checkmark on the committed theme.
+- `segmented-control.preview-width`: a **single-select segmented control**.
+  Narrow and Wide remain visible; clicking the selected segment leaves it selected.
+  This is not an on/off switch or a button that cycles through hidden values.
+
+These names follow [Apple's pop-up button guidance](https://developer.apple.com/design/human-interface-guidelines/pop-up-buttons)
+and [segmented controls](https://developer.apple.com/design/human-interface-guidelines/segmented-controls).
+Material uses [single-select segmented button](https://developer.android.com/develop/ui/compose/components/segmented-button)
+for the latter pattern.
+
+Tab/Shift+Tab moves between the filter, theme select, and width control. On the
+theme control, Enter/Space or an arrow opens the dropdown; Up/Down and Home/End
+move the active option, Enter/Space commits, and Escape cancels. Clicking outside
+or losing window focus dismisses it. The list supports pointer hover, wheel
+scrolling, and scrollbar dragging. Width uses Left/Right or Home/End.
 
 The select popup and choice group share Settings geometry, and menu/list examples
 render through the production overlay surface. The gallery is not a replacement
@@ -52,6 +72,7 @@ fonts as the native window:
 just ui-gallery --screenshot target/verification/ui-gallery/buttons.png --filter button --height 1100
 just ui-gallery --screenshot target/verification/ui-gallery/fields.png --filter field --scale 2
 just ui-gallery --screenshot target/verification/ui-gallery/light.png --theme github-light
+just ui-gallery --screenshot target/verification/ui-gallery/theme-menu.png --theme-menu
 ```
 
 `--width` and `--height` are logical dimensions. `--scale` controls PNG density;
@@ -79,6 +100,12 @@ as Token. Run `just ui-gallery --help` for options.
 - `src/view/section_navigation.rs`: Settings and gallery category navigation;
   shared row/grid spacing, active state, label truncation and optional divider.
   The gallery sidebar is itself a live use of this component.
+- `src/view/select.rs` and `src/model/select.rs`: select anchor, menu composition,
+  measured popup hit geometry, and transient selection/scroll state. Owners commit
+  values and perform effects; the shared control does not load themes or settings.
+- `src/view/segmented_control.rs`: equal-width segment layout and themed painting.
+  The owner supplies labels, selected index, and focus; painting and clicks use
+  the same rectangles. Both selection components are available outside the gallery.
 
 Theme colors come from the current resolved palette. New optional YAML keys
 `ui.button.background_selected` and `ui.button.foreground_disabled` separate
