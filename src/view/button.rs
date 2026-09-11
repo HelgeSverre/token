@@ -19,6 +19,10 @@ pub enum ButtonState {
     Hovered,
     /// Mouse button is pressed on the button
     Pressed,
+    /// A persistent choice, distinct from a pointer press.
+    Selected,
+    /// Visual disabled state; callers also suppress activation.
+    Disabled,
 }
 
 /// Optional label sizing lets dense toolbars/forms share the standard button.
@@ -50,8 +54,20 @@ pub fn render_button(
             btn.background_pressed.to_argb_u32(),
             btn.focus_ring.to_argb_u32(),
         ),
+        ButtonState::Selected => (
+            btn.background_selected
+                .unwrap_or(btn.background_pressed)
+                .to_argb_u32(),
+            btn.focus_ring.to_argb_u32(),
+        ),
+        ButtonState::Disabled => (btn.background.to_argb_u32(), btn.border.to_argb_u32()),
     };
-    let fg = btn.foreground.to_argb_u32();
+    let fg = if style.state == ButtonState::Disabled {
+        btn.foreground_disabled.unwrap_or(theme.overlay.text_dim)
+    } else {
+        btn.foreground
+    }
+    .to_argb_u32();
 
     let x = rect.x.round() as usize;
     let y = rect.y.round() as usize;
@@ -66,7 +82,7 @@ pub fn render_button(
     // lost against the button's own border), and draw it unconditionally
     // regardless of button size so small buttons still get a visible focus
     // indicator.
-    if style.focused {
+    if style.focused && style.state != ButtonState::Disabled {
         let focus_color = btn.focus_ring.to_argb_u32();
         draw_focus_ring(frame, x, y, w, h, focus_color);
     }
@@ -155,6 +171,59 @@ mod tests {
     use super::*;
 
     const FOCUS_COLOR: u32 = 0xFF00FFFF;
+
+    #[test]
+    fn selected_falls_back_to_pressed_and_disabled_suppresses_focus() {
+        let fonts = crate::view::fonts::Fonts::load("JetBrains Mono", "Inter").unwrap();
+        let mut cache = crate::view::GlyphCache::new();
+        let mut painter = TextPainter::new(&fonts.editor, &mut cache, 14.0, 11.0, 8.0, 20);
+        let mut theme = Theme::default_dark();
+        let mut buffer = vec![0; 40 * 40];
+        let mut frame = Frame::new(&mut buffer, 40, 40);
+        let rect = Rect::new(5.0, 5.0, 30.0, 30.0);
+        render_button(
+            &mut frame,
+            &mut painter,
+            &theme,
+            rect,
+            "",
+            ButtonStyle {
+                state: ButtonState::Selected,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            frame.get_pixel(20, 20),
+            theme.button.background_pressed.to_argb_u32()
+        );
+        theme.button.background_selected = Some(crate::theme::Color::rgb(1, 2, 3));
+        render_button(
+            &mut frame,
+            &mut painter,
+            &theme,
+            rect,
+            "",
+            ButtonStyle {
+                state: ButtonState::Selected,
+                ..Default::default()
+            },
+        );
+        assert_eq!(frame.get_pixel(20, 20), 0xFF010203);
+        frame.clear(0);
+        render_button(
+            &mut frame,
+            &mut painter,
+            &theme,
+            rect,
+            "",
+            ButtonStyle {
+                state: ButtonState::Disabled,
+                focused: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(frame.get_pixel(4, 4), 0);
+    }
 
     /// M13 regression: previously the whole focus-ring block was gated by
     /// `w > 2 && h > 2`, so a tiny (e.g. 2x2 or 3x3) button never got a

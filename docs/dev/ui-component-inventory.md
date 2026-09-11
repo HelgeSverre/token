@@ -40,7 +40,9 @@ The strongest reusable pieces are:
 - [Frame/text painter](../../src/view/frame.rs): clipping, shapes, rounded masks,
   text measurement, font roles, keycaps and symbol drawing.
 
-There is no central component catalog or component-state browser. The
+At the time of this inventory there was no central component catalog or
+component-state browser. The first [native gallery](ui-gallery.md) now covers
+buttons, fields, checkbox/select anchors, and surface swatches. The
 [screenshot generator](../../src/bin/screenshot.rs) already renders real
 application scenarios with theme/size/scale overrides and deterministic LSP and
 terminal fixtures. That is useful existing infrastructure, not a kitchen sink.
@@ -53,6 +55,10 @@ Names below are **proposed feedback IDs**, not claims that matching Rust types
 already exist. Shared = reusable helper today; composed = shared primitives
 assembled for a feature; local = paint/layout still specific to that feature.
 States describe what exists today. Missing states are called out afterward.
+
+The tables and limitations below record the pre-gallery baseline. Since then,
+checkbox/select-anchor/field-surface painters have been extracted for shared use,
+and buttons have gained separate selected and disabled states and theme overrides.
 
 ### Controls and content
 
@@ -192,7 +198,12 @@ proof none exists elsewhere. Sources:
 [Lapce UI color names](https://github.com/lapce/lapce/blob/b604d57de4a820006d335a3be0d7583eb8fab558/lapce-app/src/config/color.rs),
 [Lapce theme fallback](https://github.com/lapce/lapce/blob/b604d57de4a820006d335a3be0d7583eb8fab558/lapce-app/src/config/color_theme.rs).
 
-## Recommendation to discuss, not implement yet
+## Initial recommendation and implementation status
+
+The first native development slice is now implemented on `feat/ui-gallery`.
+See [UI Gallery](ui-gallery.md) for its 17 specimens, launch/screenshot commands,
+shared production painters, and explicit remaining scope. The broader proposal
+below remains a direction, not a claim that every inventoried component is covered.
 
 A development-only **UI Gallery** inside Token is the smallest useful first
 step: searchable family navigation, a vertically scrollable specimen area, theme

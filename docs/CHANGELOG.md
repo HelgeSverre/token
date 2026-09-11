@@ -4,6 +4,14 @@ All notable changes to Token are documented in this file.
 
 ---
 
+## Unreleased
+
+### Theming
+
+- Allow themes to style selected buttons independently of pressed buttons with
+  `ui.button.background_selected`, and disabled labels with
+  `ui.button.foreground_disabled`. Existing themes retain their selected styling.
+
 ## v0.7.0 - 2026-09-11
 
 This release introduces language-server code assistance and optional AI inline

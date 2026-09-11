@@ -17,6 +17,8 @@ pub(crate) use file_io::{FileOpenState, OpenOrigin, OpenPosition, PendingFileOpe
 pub(crate) use file_io::{PendingWorkspaceEdit, WorkspaceEditAction};
 pub mod editor;
 pub mod editor_area;
+#[cfg(feature = "ui-gallery")]
+pub mod gallery;
 mod ghost_text;
 pub mod hover;
 pub use ghost_text::GhostText;

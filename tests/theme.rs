@@ -3,6 +3,31 @@ use token::theme::{
     DEFAULT_DARK_YAML, FLEET_DARK_YAML, GITHUB_DARK_YAML, GITHUB_LIGHT_YAML,
 };
 
+#[test]
+fn button_state_overrides_are_optional_and_validate_colors() {
+    let mut data: token::theme::ThemeData = serde_yaml::from_str(DEFAULT_DARK_YAML).unwrap();
+    let original = Theme::from_data(data.clone()).unwrap();
+    assert!(original.button.background_selected.is_none());
+    assert!(original.button.foreground_disabled.is_none());
+    data.ui.button.background_selected = Some("#123456".into());
+    data.ui.button.foreground_disabled = Some("#789ABC".into());
+    let custom = Theme::from_data(data.clone()).unwrap();
+    assert_eq!(
+        custom.button.background_selected.unwrap().to_argb_u32(),
+        0xFF123456
+    );
+    assert_eq!(
+        custom.button.foreground_disabled.unwrap().to_argb_u32(),
+        0xFF789ABC
+    );
+    assert_eq!(
+        custom.button.background_pressed.to_argb_u32(),
+        original.button.background_pressed.to_argb_u32()
+    );
+    data.ui.button.background_selected = Some("not-a-color".into());
+    assert!(Theme::from_data(data).is_err());
+}
+
 /// WCAG contrast ratio, computed independently of `theme.rs`'s internal
 /// helper so this check verifies the actual resolved colors, not the
 /// derivation math that produced them.

@@ -4,12 +4,15 @@
 
 pub mod button;
 pub mod caret;
+pub mod controls;
 pub mod editor_scrollbars;
 pub mod editor_special_tabs;
 pub mod editor_text;
 pub mod find_bar;
 mod fonts;
 pub mod frame;
+#[cfg(feature = "ui-gallery")]
+pub mod gallery;
 pub mod geometry;
 pub mod helpers;
 pub mod hit_test;

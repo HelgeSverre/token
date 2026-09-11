@@ -30,8 +30,15 @@ path = "src/bin/profile_render.rs"
 name = "fake-lsp-server"
 path = "src/bin/fake_lsp_server.rs"
 
+[[bin]]
+name = "ui-gallery"
+path = "src/bin/ui_gallery.rs"
+required-features = ["ui-gallery"]
+
 [features]
 default = []
+# Native component development window; excluded from normal builds.
+ui-gallery = []
 dhat-heap = ["dhat"]
 # Enable debug visualization of damage regions (colored outlines)
 damage-debug = []

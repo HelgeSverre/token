@@ -368,7 +368,7 @@ pub(crate) fn render(frame: &mut Frame, painter: &mut TextPainter, model: &AppMo
             label,
             crate::view::button::ButtonStyle {
                 state: if active {
-                    ButtonState::Pressed
+                    ButtonState::Selected
                 } else if hovered {
                     ButtonState::Hovered
                 } else {

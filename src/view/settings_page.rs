@@ -201,38 +201,6 @@ fn select_options<'a>(
         .collect()
 }
 
-fn draw_checkbox(
-    frame: &mut Frame,
-    painter: &mut TextPainter,
-    rect: WidgetRect,
-    enabled: bool,
-    colors: &Palette,
-    sf: f64,
-) {
-    frame.draw_bordered_rect(
-        rect.x,
-        rect.y,
-        rect.w,
-        rect.h,
-        if enabled {
-            colors.accent
-        } else {
-            colors.recessed_wash
-        },
-        colors.hairline,
-    );
-    if enabled {
-        text(
-            frame,
-            painter,
-            &rect,
-            "✓",
-            size_px(12.0, sf),
-            colors.text_bright,
-        );
-    }
-}
-
 fn preset_rects(row: &WidgetRect, labels: &[&str], scale_factor: f64) -> Vec<WidgetRect> {
     if labels.is_empty() {
         return Vec::new();
@@ -866,51 +834,6 @@ fn settings_button(
     );
 }
 
-fn select_button(
-    frame: &mut Frame,
-    painter: &mut TextPainter,
-    colors: &Palette,
-    rect: WidgetRect,
-    label: &str,
-    open: bool,
-    sf: f64,
-) {
-    frame.draw_bordered_rect(
-        rect.x,
-        rect.y,
-        rect.w,
-        rect.h,
-        colors.recessed_wash,
-        if open { colors.accent } else { colors.hairline },
-    );
-    let label_rect = WidgetRect {
-        x: rect.x + scaled(8.0, sf),
-        y: rect.y + scaled(7.0, sf),
-        w: rect.w.saturating_sub(scaled(32.0, sf)),
-        ..rect
-    };
-    text(
-        frame,
-        painter,
-        &label_rect,
-        label,
-        size_px(12.0, sf),
-        colors.text_primary,
-    );
-    text(
-        frame,
-        painter,
-        &WidgetRect {
-            x: rect.x + rect.w.saturating_sub(scaled(20.0, sf)),
-            w: scaled(14.0, sf),
-            ..label_rect
-        },
-        "▾",
-        size_px(12.0, sf),
-        colors.text_dim,
-    );
-}
-
 /// Fixed form actions use the same row/action identifiers as keyboard input.
 /// This geometry is shared by painting and pointer hit testing.
 fn footer_actions<'a>(
@@ -1088,12 +1011,12 @@ pub(super) fn render(
     }
     if let Some(collection) = collection(spec) {
         let manager = manager_rects(&p, sf);
-        draw_checkbox(
+        crate::view::controls::render_checkbox(
             frame,
             painter,
+            theme,
             manager.master,
             collection.enabled,
-            colors,
             sf,
         );
         text(
@@ -1284,7 +1207,7 @@ pub(super) fn render(
                     let button_state = |choice, active| {
                         use crate::view::button::ButtonState;
                         if active {
-                            ButtonState::Pressed
+                            ButtonState::Selected
                         } else if matches!(spec.anchor, Anchor::Settings { hovered_choice: Some((r, c)), .. } if r == index.0 && c == choice)
                         {
                             ButtonState::Hovered
@@ -1389,19 +1312,19 @@ pub(super) fn render(
                         } => {
                             let input = input_rect(*raw, sf, *browse);
                             let bg_y = (input.y - scaled(4.0, sf) as f32).max(0.0) as usize;
-                            frame.draw_bordered_rect(
-                                input.x as usize - scaled(4.0, sf),
-                                bg_y,
-                                input.width as usize + scaled(8.0, sf),
-                                (input.y + input.height + scaled(4.0, sf) as f32).max(bg_y as f32)
-                                    as usize
-                                    - bg_y,
-                                colors.recessed_wash,
-                                if *focused {
-                                    colors.accent
-                                } else {
-                                    colors.hairline
+                            crate::view::controls::render_field_surface(
+                                frame,
+                                theme,
+                                WidgetRect {
+                                    x: (input.x as usize).saturating_sub(scaled(4.0, sf)),
+                                    y: bg_y,
+                                    w: input.width as usize + scaled(8.0, sf),
+                                    h: (input.y + input.height + scaled(4.0, sf) as f32)
+                                        .max(bg_y as f32)
+                                        as usize
+                                        - bg_y,
                                 },
+                                *focused,
                             );
                             if *browse {
                                 settings_button(
@@ -1455,13 +1378,20 @@ pub(super) fn render(
                                 // The entire disclosure row is interactive.
                             } else if is_checkbox(labels) {
                                 let r = checkbox_rect(rect, sf);
-                                draw_checkbox(frame, painter, r, *active == Some(1), colors, sf);
-                            } else if collection(spec).is_some() && labels.len() > 1 {
-                                let r = select_rect(rect, sf);
-                                select_button(
+                                crate::view::controls::render_checkbox(
                                     frame,
                                     painter,
-                                    colors,
+                                    theme,
+                                    r,
+                                    *active == Some(1),
+                                    sf,
+                                );
+                            } else if collection(spec).is_some() && labels.len() > 1 {
+                                let r = select_rect(rect, sf);
+                                crate::view::controls::render_select(
+                                    frame,
+                                    painter,
+                                    theme,
                                     r,
                                     active
                                         .and_then(|index| labels.get(index))

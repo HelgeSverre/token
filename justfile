@@ -49,6 +49,11 @@ run: release
 dev: build
     ./target/debug/token samples/sample_code.rs README.md keymap.yaml samples/sample.html
 
+# Native component catalog; optional PNG output uses the same production painters.
+[group('run')]
+ui-gallery *args:
+    cargo run --features ui-gallery --bin ui-gallery -- {{args}}
+
 [group('run')]
 workspace: build
     ./target/debug/token ./

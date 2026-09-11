@@ -770,6 +770,10 @@ pub struct CsvThemeData {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ButtonThemeData {
     #[serde(default)]
+    pub background_selected: Option<String>,
+    #[serde(default)]
+    pub foreground_disabled: Option<String>,
+    #[serde(default)]
     pub background: Option<String>,
     #[serde(default)]
     pub background_hover: Option<String>,
@@ -1157,6 +1161,8 @@ impl CsvTheme {
 /// Button control colors (resolved)
 #[derive(Debug, Clone)]
 pub struct ButtonTheme {
+    pub background_selected: Option<Color>,
+    pub foreground_disabled: Option<Color>,
     pub background: Color,
     pub background_hover: Color,
     pub background_pressed: Color,
@@ -1169,6 +1175,8 @@ impl ButtonTheme {
     /// Default dark button theme, derived from typical editor colors
     pub fn default_dark() -> Self {
         Self {
+            background_selected: None,
+            foreground_disabled: None,
             background: Color::rgb(0x3C, 0x3C, 0x3C),
             background_hover: Color::rgb(0x4A, 0x4A, 0x4A),
             background_pressed: Color::rgb(0x2A, 0x2A, 0x2A),
@@ -1616,6 +1624,20 @@ impl Theme {
             button: {
                 let defaults = ButtonTheme::default_dark();
                 ButtonTheme {
+                    background_selected: data
+                        .ui
+                        .button
+                        .background_selected
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?,
+                    foreground_disabled: data
+                        .ui
+                        .button
+                        .foreground_disabled
+                        .as_ref()
+                        .map(|s| Color::from_hex(s))
+                        .transpose()?,
                     background: data
                         .ui
                         .button
