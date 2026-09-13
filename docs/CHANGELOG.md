@@ -6,6 +6,10 @@ All notable changes to Token are documented in this file.
 
 ## Unreleased
 
+### Workspace
+
+- Use right/down chevrons instead of plus/minus signs for File Explorer folders.
+
 ### Preview
 
 - Refresh Markdown and HTML previews when switching to unedited documents,

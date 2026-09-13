@@ -365,17 +365,27 @@ pub fn render_sidebar(
             let text_y = pos.text_y;
 
             if node.is_dir {
-                let indicator = if workspace.is_expanded(&node.path) {
-                    "-"
-                } else {
-                    "+"
-                };
+                let expanded = workspace.is_expanded(&node.path);
                 let icon_color = if is_selected {
                     ctx.selection_fg
                 } else {
                     ctx.folder_icon_color
                 };
-                painter.draw(frame, icon_x, text_y, indicator, icon_color);
+                let icon_size = (8.0 * metrics.scale_factor as f32)
+                    .min(ctx.tree.indicator_width as f32)
+                    .min(ctx.row_height as f32);
+                painter.draw_icon(
+                    frame,
+                    Rect::new(
+                        icon_x as f32 + (ctx.tree.indicator_width as f32 - icon_size) / 2.0,
+                        row.row_y as f32 + (ctx.row_height as f32 - icon_size) / 2.0,
+                        icon_size,
+                        icon_size,
+                    ),
+                    if expanded { '⌄' } else { '›' },
+                    if expanded { 'v' } else { '>' },
+                    icon_color,
+                );
             }
 
             let fg = if is_selected {
