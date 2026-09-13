@@ -144,6 +144,16 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             }
             None
         }
+        AppMsg::OpenInDefaultAppFinished { path, result } => {
+            if let Err(error) = result {
+                model.ui.set_status(format!(
+                    "Could not open {} in default app: {error}",
+                    crate::util::filename_for_display(&path)
+                ));
+                return Some(Cmd::redraw_status_bar());
+            }
+            None
+        }
         AppMsg::ConfigurationLoaded {
             config,
             theme,
@@ -273,7 +283,9 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             } else {
                 model.ui.set_status("Open folder cancelled");
             }
-            Some(Cmd::redraw_status_bar())
+            // The palette was dismissed before the native dialog opened, and
+            // the workspace may have changed the dock and editor geometry.
+            Some(super::dock::with_terminal_sync(model, Cmd::Redraw))
         }
 
         AppMsg::PasteFromClipboard(text) => {
@@ -387,14 +399,16 @@ pub(super) fn prepare_resolved_save(model: &mut AppModel, intent: SaveIntent) ->
     let same_language =
         reason != SaveReason::SaveAs || LanguageId::from_path(&intent.path) == doc.language;
     doc.pending_save = Some(intent.clone());
-    if format && model.config.lsp.enabled && doc.file_path.is_some() && same_language {
-        Some(Cmd::LspRequestFormatting {
-            document_id,
-            revision: doc.revision,
-            range: None,
-            options: super::lsp::formatting_options(intent.settings),
-            save: Some(intent),
-        })
+    let external = model
+        .config
+        .formatters
+        .get(&doc.language)
+        .is_some_and(|value| value.enabled);
+    if format
+        && same_language
+        && (external || (model.config.lsp.enabled && doc.file_path.is_some()))
+    {
+        super::formatting::route(model, document_id, None, Some(intent))
     } else {
         finish_preparing_save(model, intent)
     }
@@ -863,7 +877,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions, cargo_bench))]
 mod tests {
     use super::*;
     use crate::model::AppModel;
@@ -918,6 +932,62 @@ mod tests {
         AppModel::new(800, 600, 1.0)
     }
 
+    #[test]
+    fn open_folder_from_palette_refreshes_window_and_shows_explorer() {
+        use crate::messages::ModalMsg;
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut model = test_model();
+        model.dock_layout.left.activate(PanelId::OUTLINE);
+        model.dock_layout.left.close();
+        model.recalculate_viewports();
+        let previous_columns = model.editor().viewport.visible_columns;
+
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        update_ui(
+            &mut model,
+            UiMsg::Modal(ModalMsg::SetInput("Open Folder".into())),
+        );
+        let command = update_ui(&mut model, UiMsg::Modal(ModalMsg::Confirm));
+        assert!(
+            matches!(command, Some(Cmd::Batch(ref cmds)) if cmds.iter().any(|cmd| matches!(cmd, Cmd::ShowOpenFolderDialog { .. })))
+        );
+        assert!(model.ui.active_modal.is_none());
+
+        let command = update_app(
+            &mut model,
+            AppMsg::OpenFolderDialogResult {
+                folder: Some(dir.path().to_path_buf()),
+            },
+        );
+
+        assert!(matches!(command, Some(Cmd::Redraw)));
+        assert_eq!(
+            model.workspace_root(),
+            Some(&dir.path().canonicalize().unwrap())
+        );
+        assert_eq!(
+            model
+                .dock_layout
+                .active_panel_position(PanelId::FILE_EXPLORER),
+            Some(DockPosition::Left)
+        );
+        assert!(model.editor().viewport.visible_columns < previous_columns);
+        assert!(model.ui.active_modal.is_none());
+    }
+
+    #[test]
+    fn open_folder_cancel_refreshes_dismissed_palette_without_opening_dock() {
+        let mut model = test_model();
+        model.dock_layout.left.close();
+
+        let command = update_app(&mut model, AppMsg::OpenFolderDialogResult { folder: None });
+
+        assert!(matches!(command, Some(Cmd::Redraw)));
+        assert!(model.workspace.is_none());
+        assert!(!model.dock_layout.left.is_open);
+    }
+
     fn file_backed_model() -> (tempfile::TempDir, AppModel) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("main.rs");
@@ -953,6 +1023,7 @@ mod tests {
         assert!(model.ui.is_saving);
     }
 
+    #[cfg(any(test, debug_assertions))]
     fn focused_terminal_model() -> (AppModel, mpsc::Receiver<Vec<u8>>) {
         let mut model = test_model();
         model.dock_layout.bottom.activate(PanelId::TERMINAL);
@@ -1001,6 +1072,7 @@ mod tests {
         assert!(cmds.iter().any(|cmd| matches!(cmd, Cmd::Redraw)));
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn paste_from_clipboard_routes_to_focused_terminal() {
         let (mut model, pty_rx) = focused_terminal_model();
@@ -1016,6 +1088,7 @@ mod tests {
         assert_eq!(pty_rx.try_recv().unwrap(), b"terminal paste".to_vec());
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn paste_routes_to_terminal_after_it_moves_to_the_right_dock() {
         let (mut model, pty_rx) = focused_terminal_model();
@@ -1247,5 +1320,56 @@ mod tests {
                 "the language switch must not double the Save As didClose"
             );
         }
+    }
+
+    #[test]
+    fn open_in_default_app_error_displays_in_status_bar() {
+        use crate::model::status_bar::SegmentId;
+        let mut model = test_model();
+        let path = PathBuf::from("/tmp/test.db");
+        let error_msg = "no application found for file type";
+
+        let cmd = update_app(
+            &mut model,
+            AppMsg::OpenInDefaultAppFinished {
+                path,
+                result: Err(error_msg.to_string()),
+            },
+        );
+
+        assert!(cmd.is_some(), "should produce a redraw command");
+        let status_segment = model
+            .ui
+            .status_bar
+            .get_segment(SegmentId::StatusMessage)
+            .expect("StatusMessage segment exists");
+        let status_text = status_segment.content.display_text();
+        assert!(
+            status_text.contains("Could not open"),
+            "status should contain error header: {status_text}"
+        );
+        assert!(
+            status_text.contains("test.db"),
+            "status should contain filename: {status_text}"
+        );
+        assert!(
+            status_text.contains(error_msg),
+            "status should contain error details: {status_text}"
+        );
+    }
+
+    #[test]
+    fn open_in_default_app_success_produces_no_command() {
+        let mut model = test_model();
+
+        let cmd = update_app(
+            &mut model,
+            AppMsg::OpenInDefaultAppFinished {
+                path: PathBuf::from("/tmp/test.db"),
+                result: Ok(()),
+            },
+        );
+
+        assert!(cmd.is_none(), "success should produce no command");
     }
 }

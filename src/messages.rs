@@ -574,6 +574,11 @@ pub enum AppMsg {
         persist: bool,
         result: Result<Box<crate::theme::Theme>, String>,
     },
+    /// Runtime result of attempting to open a file in the OS default application.
+    OpenInDefaultAppFinished {
+        path: PathBuf,
+        result: Result<(), String>,
+    },
     /// Restart the language server for the active document's language
     /// (palette/automation entry point for `LspMsg::RestartServer`; the
     /// server id is resolved from the active document here, since the
@@ -1129,6 +1134,7 @@ pub enum Msg {
     Completion(CompletionMsg),
     /// Language server messages (lsp-integration.md)
     Lsp(LspMsg),
+    Formatting(FormattingMsg),
     /// Context menu messages (context-menu.md)
     ContextMenu(ContextMenuMsg),
 }
@@ -1422,24 +1428,6 @@ pub enum LspMsg {
         abandoned: bool,
     },
 
-    // ==== Formatting ====
-    /// User intent (keybinding / palette): `textDocument/formatting`, or
-    /// `textDocument/rangeFormatting` over the active selection when
-    /// `selection_only`.
-    FormatDocument {
-        selection_only: bool,
-    },
-    /// Runtime -> update: a formatting reply (or its gate/timeout
-    /// fallback, `edits: None`). Revision-guarded; `save` chains the
-    /// pending `format_on_save` save after applying.
-    FormattingResolved {
-        document_id: crate::model::editor_area::DocumentId,
-        revision: u64,
-        /// `None` when the formatter never answered (no server, no
-        /// capability, timeout); `Some(vec![])` when it had nothing to do.
-        edits: Option<Vec<(lsp_types::Range, String)>>,
-        save: Option<crate::model::SaveIntent>,
-    },
     /// Worker -> runtime only: the raw `textDocument/formatting` /
     /// `rangeFormatting` response, keyed like `HoverResponseFromServer`.
     FormattingResponseFromServer {
@@ -1689,4 +1677,31 @@ impl Msg {
     pub fn resize(width: u32, height: u32) -> Self {
         Msg::App(AppMsg::Resize(width, height))
     }
+}
+
+/// Provider-independent formatting intents and outcomes.
+#[derive(Debug, Clone)]
+pub enum FormattingMsg {
+    /// Format the document using its configured provider, or the selection via LSP.
+    FormatDocument { selection_only: bool },
+    /// Runtime -> update: a formatting reply (or its gate/timeout
+    /// fallback, `edits: None`). Revision-guarded; `save` chains the
+    /// pending `format_on_save` save after applying.
+    FormattingResolved {
+        document_id: crate::model::editor_area::DocumentId,
+        revision: u64,
+        /// `None` when the formatter never answered (no server, no
+        /// capability, timeout); `Some(vec![])` when it had nothing to do.
+        edits: Option<Vec<(lsp_types::Range, String)>>,
+        save: Option<crate::model::SaveIntent>,
+    },
+    /// Command output; runtime verifies the request identity before dispatch.
+    ExternalResolved {
+        document_id: crate::model::DocumentId,
+        language: crate::syntax::LanguageId,
+        revision: u64,
+        request: std::sync::Arc<()>,
+        result: Result<String, String>,
+        save: Option<crate::model::SaveIntent>,
+    },
 }

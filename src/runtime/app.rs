@@ -118,6 +118,29 @@ fn document_uri(doc: &mut token::model::Document) -> Option<lsp_types::Uri> {
     doc.file_identity().map(|identity| identity.uri().clone())
 }
 
+/// Attempt to open a file in the OS default application, capturing exit status and stderr.
+fn open_in_default_app(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut cmd = std::process::Command::new("explorer");
+    #[cfg(target_os = "linux")]
+    let mut cmd = std::process::Command::new("xdg-open");
+    cmd.arg(path);
+
+    let output = cmd.output().map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(if stderr.trim().is_empty() {
+            format!("exited with {}", output.status)
+        } else {
+            stderr.trim().to_string()
+        })
+    }
+}
+
 /// Application state prepared in parallel with the platform event loop.
 pub struct AppPreparation {
     handle: JoinHandle<PreparedApp>,
@@ -285,6 +308,7 @@ pub struct App {
     automation_syntax_profile: Option<AutomationSyntaxProfile>,
     latest_syntax_performance: Option<crate::automation::SyntaxPerfSnapshot>,
     lsp: LspManager,
+    formatters: HashMap<token::model::DocumentId, std::sync::Arc<()>>,
     reference_previews: references::ReferencePreviews,
     /// Wakes the event loop from file/LSP workers; `None` in tests
     /// that construct `App` without a real event loop (matches
@@ -569,7 +593,7 @@ impl PendingRequest for PendingPrepareRename {
 }
 
 /// What `LspManager` needs to turn a formatting response into
-/// `LspMsg::FormattingResolved`. `save` rides along so the gate /
+/// `FormattingMsg::FormattingResolved`. `save` rides along so the gate /
 /// timeout fallbacks still perform the `format_on_save` save.
 struct PendingFormatting {
     document_id: token::model::editor_area::DocumentId,
@@ -606,12 +630,14 @@ fn rename_status_msg(text: &str) -> Msg {
 
 impl PendingFormatting {
     fn unavailable(self) -> Option<Msg> {
-        Some(Msg::Lsp(LspMsg::FormattingResolved {
-            document_id: self.document_id,
-            revision: self.revision,
-            edits: None,
-            save: self.save,
-        }))
+        Some(Msg::Formatting(
+            token::messages::FormattingMsg::FormattingResolved {
+                document_id: self.document_id,
+                revision: self.revision,
+                edits: None,
+                save: self.save,
+            },
+        ))
     }
 }
 
@@ -1148,6 +1174,7 @@ impl App {
             automation_syntax_profile: None,
             latest_syntax_performance: None,
             lsp: LspManager::new(),
+            formatters: HashMap::new(),
             reference_previews: references::ReferencePreviews::default(),
             worker_wake,
             lsp_change_deadlines: lsp::sync::DidChangeDeadlines::new(),
@@ -2630,24 +2657,14 @@ impl App {
                 }
             }
             Cmd::OpenInExplorer { path } => {
-                #[cfg(target_os = "macos")]
-                {
-                    if let Err(e) = std::process::Command::new("open").arg(&path).spawn() {
-                        tracing::warn!("Failed to open file in default app: {}", e);
-                    }
-                }
-                #[cfg(target_os = "windows")]
-                {
-                    if let Err(e) = std::process::Command::new("explorer").arg(&path).spawn() {
-                        tracing::warn!("Failed to open file in explorer: {}", e);
-                    }
-                }
-                #[cfg(target_os = "linux")]
-                {
-                    if let Err(e) = std::process::Command::new("xdg-open").arg(&path).spawn() {
-                        tracing::warn!("Failed to open file with xdg-open: {}", e);
-                    }
-                }
+                let msg_tx = self.msg_tx.clone();
+                std::thread::spawn(move || {
+                    let result = open_in_default_app(&path);
+                    let _ = msg_tx.send(Msg::App(AppMsg::OpenInDefaultAppFinished {
+                        path,
+                        result,
+                    }));
+                });
             }
             Cmd::RevealFileInFinder { path } => {
                 #[cfg(target_os = "macos")]
@@ -3130,6 +3147,38 @@ impl App {
                     },
                 );
             }
+            Cmd::RunFormatter {
+                document_id,
+                revision,
+                formatter,
+                text,
+                file,
+                workspace,
+                language,
+                save,
+            } => {
+                if let Some(key) = self.lsp.formatting.supersede(document_id) {
+                    self.lsp.formatting.take_response(&key);
+                    self.cancel_lsp_request(&key);
+                }
+                let request = std::sync::Arc::new(());
+                self.formatters.insert(document_id, request.clone());
+                super::formatting::spawn(
+                    super::formatting::Job {
+                        document_id,
+                        revision,
+                        formatter,
+                        text,
+                        file,
+                        workspace,
+                        language,
+                        save,
+                        request,
+                    },
+                    self.msg_tx.clone(),
+                    self.worker_wake.clone(),
+                );
+            }
             Cmd::LspRequestFormatting {
                 document_id,
                 revision,
@@ -3137,6 +3186,7 @@ impl App {
                 options,
                 save,
             } => {
+                self.formatters.remove(&document_id);
                 self.request_lsp_formatting(document_id, revision, range, options, save);
             }
             Cmd::WorkspaceSymbols(request) => self.set_workspace_symbol_query(request),
@@ -3831,6 +3881,22 @@ impl App {
         messages
             .into_iter()
             .filter_map(|msg| {
+                if let Msg::Formatting(token::messages::FormattingMsg::ExternalResolved {
+                    document_id,
+                    request,
+                    ..
+                }) = &msg
+                {
+                    if !self
+                        .formatters
+                        .get(document_id)
+                        .is_some_and(|current| std::sync::Arc::ptr_eq(current, request))
+                    {
+                        return None;
+                    }
+                    self.formatters.remove(document_id);
+                    return Some(msg);
+                }
                 let Msg::Lsp(LspMsg::FormattingResponseFromServer {
                     server_id,
                     root,
@@ -3848,12 +3914,14 @@ impl App {
                 if abandoned {
                     return None;
                 }
-                Some(Msg::Lsp(LspMsg::FormattingResolved {
-                    document_id: pending.document_id,
-                    revision: pending.revision,
-                    edits: Some(edits),
-                    save: pending.save,
-                }))
+                Some(Msg::Formatting(
+                    token::messages::FormattingMsg::FormattingResolved {
+                        document_id: pending.document_id,
+                        revision: pending.revision,
+                        edits: Some(edits),
+                        save: pending.save,
+                    },
+                ))
             })
             .collect()
     }
@@ -5826,6 +5894,8 @@ impl ApplicationHandler for App {
         self.check_lsp_signature_help_deadlines();
         self.check_lsp_rename_deadlines();
         self.check_lsp_formatting_deadlines();
+        self.formatters
+            .retain(|id, _| self.model.editor_area.documents.contains_key(id));
         needs_redraw |= self.check_auto_save(Instant::now());
         self.check_lsp_references_deadlines();
         self.check_lsp_code_action_deadlines();
@@ -6801,7 +6871,7 @@ impl ScrollAccumulator {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions, cargo_bench))]
 #[path = "app_tests.rs"]
 mod tests;
 
