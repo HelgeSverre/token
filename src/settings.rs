@@ -33,6 +33,7 @@ pub(crate) enum Setting {
     InlayHints,
     FormatOnSave,
     AutoReload,
+    ExplorerAutoReveal,
     AutoSave,
     AutoSaveDelay,
     AutoSaveFormatting,
@@ -202,6 +203,13 @@ pub(crate) static DESCRIPTORS: &[Descriptor] = &[
         labels: BOOL_LABELS,
     },
     Descriptor {
+        setting: Setting::ExplorerAutoReveal,
+        section: "Editor",
+        name: "Reveal active file",
+        description: "explorer_auto_reveal · expand and scroll to the active file without moving focus",
+        labels: BOOL_LABELS,
+    },
+    Descriptor {
         setting: Setting::AutoReload,
         section: "Editor",
         name: "Reload external changes",
@@ -315,6 +323,7 @@ impl Descriptor {
             Setting::InlayHints => usize::from(config.lsp.inlay_hints),
             Setting::FormatOnSave => usize::from(config.format_on_save),
             Setting::AutoReload => usize::from(config.auto_reload),
+            Setting::ExplorerAutoReveal => usize::from(config.explorer_auto_reveal),
             Setting::AutoSave => {
                 return AUTO_SAVE_MODES
                     .iter()
@@ -387,6 +396,7 @@ impl Descriptor {
             Setting::InlayHints => config.lsp.inlay_hints = choice != 0,
             Setting::FormatOnSave => config.format_on_save = choice != 0,
             Setting::AutoReload => config.auto_reload = choice != 0,
+            Setting::ExplorerAutoReveal => config.explorer_auto_reveal = choice != 0,
             Setting::AutoSave => config.auto_save.mode = AUTO_SAVE_MODES[choice],
             Setting::AutoSaveDelay => config.auto_save.delay_ms = AUTO_SAVE_DELAY[choice],
             Setting::AutoSaveFormatting => config.auto_save.format_on_save = choice != 0,

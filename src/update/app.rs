@@ -273,7 +273,9 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             } else {
                 model.ui.set_status("Open folder cancelled");
             }
-            Some(Cmd::redraw_status_bar())
+            // The palette was dismissed before the native dialog opened, and
+            // the workspace may have changed the dock and editor geometry.
+            Some(super::dock::with_terminal_sync(model, Cmd::Redraw))
         }
 
         AppMsg::PasteFromClipboard(text) => {
@@ -916,6 +918,62 @@ mod tests {
 
     fn test_model() -> AppModel {
         AppModel::new(800, 600, 1.0)
+    }
+
+    #[test]
+    fn open_folder_from_palette_refreshes_window_and_shows_explorer() {
+        use crate::messages::ModalMsg;
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut model = test_model();
+        model.dock_layout.left.activate(PanelId::OUTLINE);
+        model.dock_layout.left.close();
+        model.recalculate_viewports();
+        let previous_columns = model.editor().viewport.visible_columns;
+
+        update_ui(&mut model, UiMsg::ToggleModal(ModalId::CommandPalette));
+        update_ui(
+            &mut model,
+            UiMsg::Modal(ModalMsg::SetInput("Open Folder".into())),
+        );
+        let command = update_ui(&mut model, UiMsg::Modal(ModalMsg::Confirm));
+        assert!(
+            matches!(command, Some(Cmd::Batch(ref cmds)) if cmds.iter().any(|cmd| matches!(cmd, Cmd::ShowOpenFolderDialog { .. })))
+        );
+        assert!(model.ui.active_modal.is_none());
+
+        let command = update_app(
+            &mut model,
+            AppMsg::OpenFolderDialogResult {
+                folder: Some(dir.path().to_path_buf()),
+            },
+        );
+
+        assert!(matches!(command, Some(Cmd::Redraw)));
+        assert_eq!(
+            model.workspace_root(),
+            Some(&dir.path().canonicalize().unwrap())
+        );
+        assert_eq!(
+            model
+                .dock_layout
+                .active_panel_position(PanelId::FILE_EXPLORER),
+            Some(DockPosition::Left)
+        );
+        assert!(model.editor().viewport.visible_columns < previous_columns);
+        assert!(model.ui.active_modal.is_none());
+    }
+
+    #[test]
+    fn open_folder_cancel_refreshes_dismissed_palette_without_opening_dock() {
+        let mut model = test_model();
+        model.dock_layout.left.close();
+
+        let command = update_app(&mut model, AppMsg::OpenFolderDialogResult { folder: None });
+
+        assert!(matches!(command, Some(Cmd::Redraw)));
+        assert!(model.workspace.is_none());
+        assert!(!model.dock_layout.left.is_open);
     }
 
     fn file_backed_model() -> (tempfile::TempDir, AppModel) {

@@ -4,6 +4,16 @@ All notable changes to Token are documented in this file.
 
 ---
 
+## Unreleased
+
+### Workspace
+
+- Opening a workspace shows File Explorer and refreshes the full window so the
+  command palette disappears after using Open Folder.
+- Automatically reveal the active file in File Explorer when navigating, without
+  moving keyboard focus or opening a hidden explorer. Disable this in Settings →
+  Editor → Reveal active file or with `explorer_auto_reveal: false`.
+
 ## v0.7.0 - 2026-09-11
 
 This release introduces language-server code assistance and optional AI inline

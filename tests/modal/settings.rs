@@ -22,6 +22,35 @@ fn open(model: &mut AppModel) {
 }
 
 #[test]
+fn settings_explorer_auto_reveal_toggle_saves_and_is_searchable() {
+    let mut model = test_model("text", 0, 0);
+    open(&mut model);
+    let category = token::settings::categories()
+        .iter()
+        .position(|category| *category == Some("Editor"))
+        .unwrap();
+    modal(&mut model, ModalMsg::ActivateTab(category));
+    modal(
+        &mut model,
+        ModalMsg::SetInput("explorer_auto_reveal".into()),
+    );
+    let cmd = modal(&mut model, ModalMsg::Confirm).unwrap();
+    assert!(!model.config.explorer_auto_reveal);
+    assert!(
+        !saved(&cmd)
+            .expect("toggle saves config")
+            .explorer_auto_reveal
+    );
+    let cmd = modal(&mut model, ModalMsg::Confirm).unwrap();
+    assert!(model.config.explorer_auto_reveal);
+    assert!(
+        saved(&cmd)
+            .expect("toggle saves config")
+            .explorer_auto_reveal
+    );
+}
+
+#[test]
 fn settings_page_category_navigation_filters_without_changing_preferences() {
     let mut model = test_model("text", 0, 0);
     open(&mut model);

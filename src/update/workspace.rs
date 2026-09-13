@@ -400,7 +400,60 @@ fn select_adjacent_item(model: &mut AppModel, delta: i32) {
     }
 }
 
-/// Reveal the currently active file in the tree
+/// Follow navigation once per target change, without taking focus or opening docks.
+pub(super) fn reconcile_auto_reveal(model: &mut AppModel) -> Option<Cmd> {
+    if !model.config.explorer_auto_reveal {
+        model.ui.explorer_auto_reveal = None;
+        return None;
+    }
+    let target = (|| {
+        let workspace = model.workspace.as_ref()?;
+        let editor_id = model.editor_area.focused_editor_id()?;
+        let path = model.editor_area.focused_document()?.file_path.as_ref()?;
+        path.starts_with(&workspace.root)
+            .then_some((workspace, editor_id, path))
+    })();
+    let Some((workspace, editor_id, path)) = target else {
+        model.ui.explorer_auto_reveal = None;
+        return None;
+    };
+    let explorer_visible = model
+        .dock_layout
+        .active_panel_position(crate::panel::PanelId::FILE_EXPLORER)
+        .is_some();
+    let same_target = model.ui.explorer_auto_reveal.as_ref().is_some_and(|last| {
+        last.editor_id == editor_id && last.path == *path && last.workspace_root == workspace.root
+    });
+    if same_target {
+        let last = model.ui.explorer_auto_reveal.as_mut()?;
+        let became_visible = explorer_visible && !last.explorer_visible;
+        last.explorer_visible = explorer_visible;
+        // Respect manual tree selection and scrolling between navigations.
+        // When reopening the explorer, scroll its current selection into view.
+        if became_visible {
+            ensure_selection_visible(model);
+            return Some(Cmd::Redraw);
+        }
+        return None;
+    }
+
+    let path = path.clone();
+    model.ui.explorer_auto_reveal = Some(crate::model::workspace::AutoRevealTarget {
+        editor_id,
+        path: path.clone(),
+        workspace_root: workspace.root.clone(),
+        explorer_visible,
+    });
+    if let Some(workspace) = &mut model.workspace {
+        workspace.reveal_file(&path);
+    }
+    if explorer_visible {
+        ensure_selection_visible(model);
+    }
+    Some(Cmd::Redraw)
+}
+
+/// Reveal the currently active file in the tree.
 fn reveal_active_file(model: &mut AppModel) {
     let active_path = model
         .editor_area
@@ -449,6 +502,150 @@ mod tests {
     use super::*;
     use crate::model::{ScaledMetrics, Workspace};
     use std::path::PathBuf;
+
+    fn auto_reveal_model() -> (AppModel, tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let nested = root.join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        for index in 0..60 {
+            std::fs::write(nested.join(format!("file{index:02}.rs")), "fn main() {}\n").unwrap();
+        }
+        let mut model = AppModel::new(800, 400, 1.0);
+        model.open_workspace(root);
+        (model, dir, nested.join("file59.rs"))
+    }
+
+    fn open_test_file(model: &mut AppModel, path: PathBuf) {
+        let cmd = crate::update::update(
+            model,
+            crate::messages::Msg::Layout(LayoutMsg::OpenFileInNewTab(path)),
+        );
+        crate::update::finish_test_file_opens(model, cmd);
+    }
+
+    #[test]
+    fn auto_reveal_palette_open_expands_scrolls_and_preserves_editor_focus() {
+        use crate::messages::{ModalMsg, Msg, UiMsg};
+        let (mut model, _dir, path) = auto_reveal_model();
+        crate::update::update(&mut model, Msg::Ui(UiMsg::OpenFuzzyFileFinder));
+        crate::update::update(
+            &mut model,
+            Msg::Ui(UiMsg::Modal(ModalMsg::SetInput("file59.rs".into()))),
+        );
+        let cmd = crate::update::update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm)));
+        crate::update::finish_test_file_opens(&mut model, cmd);
+
+        let workspace = model.workspace.as_ref().unwrap();
+        assert_eq!(model.document().file_path.as_ref(), Some(&path));
+        assert_eq!(workspace.selected_item.as_ref(), Some(&path));
+        assert!(workspace.expanded_folders.contains(path.parent().unwrap()));
+        assert!(workspace.scroll_offset > 0);
+        assert_eq!(model.ui.focus, crate::model::FocusTarget::Editor);
+        assert!(model.ui.active_modal.is_none());
+    }
+
+    #[test]
+    fn auto_reveal_follows_tab_changes_but_respects_manual_tree_browsing() {
+        use crate::messages::Msg;
+        let (mut model, _dir, last) = auto_reveal_model();
+        let first = last.with_file_name("file00.rs");
+        open_test_file(&mut model, first.clone());
+        open_test_file(&mut model, last.clone());
+        crate::update::update(&mut model, Msg::Layout(LayoutMsg::PrevTab));
+        assert_eq!(
+            model.workspace.as_ref().unwrap().selected_item,
+            Some(first.clone())
+        );
+
+        crate::update::update(
+            &mut model,
+            Msg::Workspace(WorkspaceMsg::SelectItem(last.clone())),
+        );
+        crate::update::update(
+            &mut model,
+            Msg::Workspace(WorkspaceMsg::CollapseFolder(first.parent().unwrap().into())),
+        );
+        assert_eq!(
+            model.workspace.as_ref().unwrap().selected_item,
+            Some(last.clone())
+        );
+        assert!(!model
+            .workspace
+            .as_ref()
+            .unwrap()
+            .expanded_folders
+            .contains(first.parent().unwrap()));
+
+        crate::update::update(&mut model, Msg::Layout(LayoutMsg::NextTab));
+        assert_eq!(model.workspace.as_ref().unwrap().selected_item, Some(last));
+        assert!(model
+            .workspace
+            .as_ref()
+            .unwrap()
+            .expanded_folders
+            .contains(first.parent().unwrap()));
+    }
+
+    #[test]
+    fn auto_reveal_reopening_active_file_reveals_it_again() {
+        use crate::messages::Msg;
+        let (mut model, _dir, path) = auto_reveal_model();
+        open_test_file(&mut model, path.clone());
+        crate::update::update(
+            &mut model,
+            Msg::Workspace(WorkspaceMsg::SelectItem(path.parent().unwrap().into())),
+        );
+        crate::update::update(
+            &mut model,
+            Msg::Workspace(WorkspaceMsg::CollapseFolder(path.parent().unwrap().into())),
+        );
+        open_test_file(&mut model, path.clone());
+        let workspace = model.workspace.as_ref().unwrap();
+        assert_eq!(workspace.selected_item.as_ref(), Some(&path));
+        assert!(workspace.expanded_folders.contains(path.parent().unwrap()));
+        assert!(workspace.scroll_offset > 0);
+    }
+
+    #[test]
+    fn auto_reveal_keeps_hidden_explorer_closed_then_scrolls_when_shown() {
+        use crate::messages::{DockMsg, Msg};
+        use crate::panel::PanelId;
+        let (mut model, _dir, path) = auto_reveal_model();
+        crate::update::update(
+            &mut model,
+            Msg::Dock(DockMsg::TogglePanel(PanelId::FILE_EXPLORER)),
+        );
+        open_test_file(&mut model, path.clone());
+        assert!(!model.dock_layout.left.is_open);
+        assert_eq!(model.ui.focus, crate::model::FocusTarget::Editor);
+        assert_eq!(model.workspace.as_ref().unwrap().selected_item, Some(path));
+        assert_eq!(model.workspace.as_ref().unwrap().scroll_offset, 0);
+        crate::update::update(
+            &mut model,
+            Msg::Dock(DockMsg::TogglePanel(PanelId::FILE_EXPLORER)),
+        );
+        assert!(model.workspace.as_ref().unwrap().scroll_offset > 0);
+    }
+
+    #[test]
+    fn auto_reveal_opt_out_preserves_manual_reveal_and_outside_files_are_ignored() {
+        use crate::messages::Msg;
+        let (mut model, _dir, path) = auto_reveal_model();
+        model.config.explorer_auto_reveal = false;
+        open_test_file(&mut model, path.clone());
+        assert!(model.workspace.as_ref().unwrap().selected_item.is_none());
+        crate::update::update(&mut model, Msg::Workspace(WorkspaceMsg::RevealActiveFile));
+        assert_eq!(
+            model.workspace.as_ref().unwrap().selected_item,
+            Some(path.clone())
+        );
+
+        model.config.explorer_auto_reveal = true;
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        open_test_file(&mut model, outside.path().to_path_buf());
+        assert_eq!(model.workspace.as_ref().unwrap().selected_item, Some(path));
+    }
 
     fn test_workspace() -> Workspace {
         let metrics = ScaledMetrics::new(1.0);

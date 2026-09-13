@@ -646,6 +646,8 @@ fn finish_file_open(
         }
     }
     if activate && model.editor_area.focused_group_id == target.group_id {
+        // An explicit navigation also reveals an already-active file again.
+        model.ui.explorer_auto_reveal = None;
         model.ui.set_status(format!("Opened: {}", request.source));
         if target.position.is_some() {
             model.ui.focus_editor();

@@ -1483,6 +1483,7 @@ pub struct UiState {
     pub find_selection_drag: Option<FindReplaceField>,
     /// Last command palette state (persisted for quick re-execution)
     pub last_command_palette: Option<CommandPaletteState>,
+    pub(crate) explorer_auto_reveal: Option<super::workspace::AutoRevealTarget>,
     /// A Settings draft temporarily left to inspect the application log.
     pub(crate) suspended_settings: Option<crate::settings::SettingsState>,
     /// Last find/replace state (persisted for quick re-use)
@@ -1646,6 +1647,7 @@ impl UiState {
             find_bar: None,
             find_selection_drag: None,
             last_command_palette: None,
+            explorer_auto_reveal: None,
             suspended_settings: None,
             last_find_replace: None,
             drop_state: DropState::default(),
