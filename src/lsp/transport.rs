@@ -1,9 +1,8 @@
 //! Content-Length framing for JSON-RPC over a language server's stdio,
 //! per the LSP base protocol (`Content-Length: <n>\r\n\r\n<body>`).
 //!
-//! Framing is hand-written rather than pulled from a crate — it's ~80
-//! lines and every alternative brings an async runtime this editor
-//! doesn't have (see docs/feature/lsp-integration.md).
+//! Framing uses synchronous `BufRead` and `Write` to match the language
+//! server worker threads that own the child process's stdio streams.
 
 use std::io::{self, BufRead, Write};
 
