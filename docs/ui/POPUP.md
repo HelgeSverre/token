@@ -1,150 +1,146 @@
-# Popup
+# Cursor popup — Token implementation reference
 
-## Purpose and boundary
+## Boundary and current representation
 
-A **popup** is a lightweight, cursor- or pointer-anchored transient surface for
-choosing or reading in the current editor context. It is not a dialog: it has
-no backdrop or title-bar close affordance, and it must not become a second
-settings page. This matches IntelliJ's distinction between lightweight popups
-and action-blocking dialogs ([UI overview](https://plugins.jetbrains.com/docs/intellij/ui-overview.html),
-[Popups](https://plugins.jetbrains.com/docs/intellij/popups.html)). **High confidence** for
-the terminology; Token's component contract below is proposed where noted.
+Token has a cursor-overlay family, not a generic Popup widget. A visible popup combines shared interaction state with feature-owned payload. OverlaySpec is a borrowed render/hit-test projection, never a store. Current kinds are Completion, Hover, References, Code Actions, and Context Menu, plus debug fixtures ([model](../../src/model/ui.rs)). Signature help is a sibling float and may coexist with completion.
 
-## Current implementation — high confidence
+```rust
+// Current excerpt; selected/scroll are row indices, not physical px.
+pub struct CursorOverlayState {
+    pub kind: CursorOverlayKind,
+    pub selected: usize,
+    pub scroll: usize,
+    pub hover_row: Option<usize>,
+    pub documentation: DocumentationState,
+}
 
-Token implements a single cursor-overlay family, not a generic `Popup` type.
-`UiState::cursor_overlay: Option<CursorOverlayState>` owns exactly one kind,
-selection, list scroll, pointer-hover row, and independent documentation state
-([model](../../src/model/ui.rs)). `CursorOverlayKind` currently covers real
-completion, hover, references/multiple definitions, code actions, and context
-menu; its two debug variants are fixtures, not product components. Signature
-help is a separate floating surface so that it can coexist with completion.
-
-`view::overlay_surface::OverlaySpec` and its shared `layout()` are the painter
-and hit-test authority. `view::modal::with_cursor_overlay_spec` maps model data
-to that spec, while `runtime/input.rs`, `runtime/mouse.rs`, and update modules
-own dispatch. This is a genuine reusable surface, but it currently supports
-only the named cursor/menu cases—there is no application-wide popup registry.
-
-| Concern               | Implemented authority                                                                                                                    |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| state                 | `CursorOverlayState`, plus feature data such as `completion_menu`, `hover_card`, `reference_list`, `code_action_list`, or `context_menu` |
-| placement/hit testing | `OverlaySpec`/`OverlayLayout`, `Anchor::Cursor` or `Anchor::Menu`, and `view::hit_test`                                                  |
-| transitions           | `LspMsg`, `CompletionMsg`, `ContextMenuMsg`, `UiMsg::DocumentationScrolled`; feature update modules                                      |
-| paint/theme           | `view/modal.rs`, `view/overlay_surface.rs`, `Theme::overlay`                                                                             |
-
-### Implemented data ownership (field-level)
-
-| Field/symbol                                                                       | Owner and writer                                       | Reader / invariant                                                                         |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| [`UiState::cursor_overlay`](../../src/model/ui.rs)                                 | feature update opens/replaces it; dismissal clears it  | renderer and input dispatcher branch on `kind`; exactly one cursor overlay                 |
-| [`CursorOverlayState::{kind, selected, scroll, hover_row}`](../../src/model/ui.rs) | feature update and pointer routing                     | `selected` is keyboard authority; `hover_row` is visual pointer wash; scroll is list-local |
-| `CursorOverlayState::documentation`                                                | `UiMsg::DocumentationScrolled` / `ToggleDocumentation` | independent from list scroll; valid only through `UiState::has_documentation()`            |
-| [`completion_menu`](../../src/model/ui.rs)                                         | completion update                                      | Completion is visible only for nonempty filtered results; menu owns item order/docs        |
-| [`hover_card`](../../src/model/ui.rs) + `hover_request`                            | hover/LSP update                                       | payload/request identity clear on dismiss; response matches request/document/revision      |
-| `reference_list`, `code_action_list`, `context_menu`                               | navigation/LSP/context-menu update                     | vector/`items` is render, click and Enter order; context menu owns captured anchor         |
-
-`OverlaySpec` borrows feature payload to render; it is not a second store for
-rows, selection, or asynchronous requests. `SignatureHelpState` is outside the
-table because it is a separate simultaneous float, not a `CursorOverlayKind`.
-
-### Implemented interaction and lifecycle
-
-Opening a feature creates a `CursorOverlayState`; the feature payload is the
-ordering/content authority and is cleared with dismissal. Lists route Up/Down,
-Enter, Escape and sometimes Tab before editor input. The documented exception
-is important: completion accepts its dedicated keys but ordinary typing flows
-to the editor; references/code actions/context menu consume their documented
-keys and dismiss otherwise. Hover is invalidated by cursor/edit/focus changes;
-mouse dwell requests are cancellation and revision guarded. See
-[`model/ui.rs`](../../src/model/ui.rs),
-[`update/completion.rs`](../../src/update/completion.rs),
-[`update/hover.rs`](../../src/update/hover.rs), and
-[`runtime/input.rs`](../../src/runtime/input.rs).
-
-Pointer interaction uses the same layout for row, tab, documentation-scrollbar,
-and outside-press decisions. A popup is clipped to its own panel and its anchor
-is captured when it cannot be derived again (notably a right-click context menu).
-No accessibility tree, screen-reader announcement, or focus-ring model is
-implemented for cursor popups; that is a known gap, not an implied capability.
-
-| Transition (implemented)                                           | State owner / invariant                                                     | Result                                            |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------- | ------------------------------------------------- |
-| completion result becomes nonempty                                 | completion update; selected row and menu order stay paired                  | open `Completion`, anchor at caret                |
-| LSP hover resolves for current document/revision/request           | hover update; `HoverCardState` and overlay are installed together           | open `Hover` at dwell cell or caret               |
-| references/code actions/context menu open                          | their update module builds one authoritative row vector                     | open matching kind with `selected = 0`            |
-| key/pointer activation                                             | runtime routes supported navigation; feature update indexes the same vector | command/edit/navigation or no-op for disabled row |
-| Escape/outside press/caret edit/focus loss (policy varies by kind) | dismissal clears overlay and payload; hover invalidates request ownership   | no stale overlay resurrection                     |
-
-### Geometry, type, and theme
-
-`Anchor::Cursor` uses a physical caret/click rect, prefers a side, flips when
-space is insufficient, and clamps to window edges. `layout::anchor` owns this
-geometry. Overlay logical constants scale through `scale_factor`: cursor radius
-8, cursor rows 24 high with 4 inset and radius 5; regular overlay rows are 30
-high. The type scale is input 14, row 13, metadata 11 logical px.
-`Theme::overlay` supplies panel/background, borders, text, selection and chrome
-roles; painting uses UI and code font roles rather than assuming editor text
-metrics. Shadows, rounded masks, and clipping are implemented by `Frame`.
-([overlay surface](../../src/view/overlay_surface.rs),
-[theme](../../src/theme.rs), [frame](../../src/view/frame.rs)).
-
-#### Measured-layout invariants — implemented
-
-- [`OverlaySpec`](../../src/view/overlay_surface.rs) declares anchor, optional
-  tabs/header/footer, list/fields/zones body, pointer row and optional docs;
-  [`layout_measured`](../../src/view/overlay_surface.rs) produces the one
-  `OverlayLayout` consumed by painting and hit testing.
-- Real paths pass glyph measurement to `layout_measured`; `layout()` is only a
-  monospace-cell fallback for tests/painterless contexts. Do not use it for
-  interactive production placement.
-- `Anchor::Cursor`/`Menu` receive physical `(x, y, h)`, add caret gap, prefer a
-  side, flip when it cannot fit, then clamp to the window. Cursor/menu surfaces
-  do not dim the backdrop; centered/settings anchors follow separate rules.
-- `OverlayLayout` retains snapped panel/row/tab/docs/scrollbar rects and
-  premeasured wrapped-zone/docs plans. Painting consumes those plans; hit tests
-  rebuild the same spec/layout; `Frame` clips panel/documentation content.
-
-## Proposed public contract
-
-Do not introduce a widget object that owns I/O. Add a declarative `PopupSpec`
-only if a new concrete consumer cannot be expressed by `OverlaySpec`:
-
-```text
-PopupSpec { anchor, body, selected, scroll, dismiss_policy, a11y_label }
-PopupEvent = Move | Activate | Dismiss | HoverRow | Scroll | ToggleDocs
+pub struct ContextMenuState {
+    pub items: Vec<MenuItem>,
+    pub anchor: (usize, usize, usize), // physical x, y, height
+    pub region: ContextMenuRegion,
+}
 ```
 
-The feature model owns payload and effect-specific validation; update maps a
-`PopupEvent` into the feature's messages/commands. Required policies are
-explicit: outside pointer press, Escape, focus loss, document/caret change,
-and whether non-navigation keys pass through or are consumed. Never use a
-popup for required confirmation, a persistent workflow, or unanchored global
-feedback.
+UiState.cursor_overlay is optional, giving the one-popup invariant. Completion rows live in completion_menu; hover text/dwell anchor in hover_card; references, actions, and context-menu rows in their dedicated fields. Context-menu separators have display slots but no FlatIndex. selected must remain valid for the current feature vector; feature update repairs/removes state when payload changes. View projection clamps before access.
 
-## Gallery, gaps, and acceptance
+The selected-to-payload mapping is not uniform:
 
-The gallery proves only shared pieces: `overlay-tabs.counts`, menu rows, and
-scrollbars ([catalog](../../src/model/gallery.rs)). It has no end-to-end
-completion, hover, context-menu, placement-flip, or keyboard specimen.
+| kind        | acceptance predicate                                                     | selected indexes                                                           | activation validity                                                                     |
+| ----------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Completion  | completion_menu exists, filtered is nonempty, overlay kind is Completion | filtered[selected].1, then items[item_index]                               | menu document/revision/query snapshot remains current; pending resolve may block accept |
+| Hover       | hover_request/card plus Hover overlay                                    | no selectable collection                                                   | docs-only; response requires exact HoverRequest owner                                   |
+| References  | reference_list exists with References overlay                            | sorted LocationItem vector                                                 | current document/revision/caret response guard passed before open                       |
+| CodeActions | code_action_list exists with CodeActions overlay                         | preferred-first CodeActionItem vector                                      | code_action_origin document/revision remains nonstale at activation                     |
+| ContextMenu | context_menu exists with ContextMenu overlay                             | selectable_items(items), excluding separators but retaining disabled items | captured region anchor; disabled activation is a no-op                                  |
 
-Before calling a new popup complete, prove: below/above and all-edge clamping;
-one authoritative item order for render/click/Enter; disabled rows skipped;
-outside/Escape policy; HiDPI and light/dark themes; a clipped scrollable body;
-and no leaked late async result after dismissal. Make this measurable with a
-headless update test plus gallery screenshots at 1x and 2x. Priority: reuse
-this surface for a concrete editor-context consumer before creating a general
-API.
+CompletionMenuState itself has document_id, revision, query_start, query, items, filtered triples, is_incomplete, selection_changed, and pending_resolve. The triple's second value is the identity bridge from visual filtered position to stable items storage. HoverRequest is HoverAnchor plus Position plus Mouse/Keyboard origin; HoverAnchor captures document id, revision, editor id, caret, selection, and pixel-scroll bits. HoverCardState carries only accepted content plus optional line/column visual anchor.
 
-Concrete workflow acceptance: open completion at a bottom-edge caret and make
-the list flip above; move selection across a documentation item; wheel docs
-without changing selection; click a row and press Enter in separate runs; type
-ordinary text while completion is open; dismiss and deliver a late LSP reply.
-The final model must contain neither a visible popup nor payload from the
-abandoned request.
+Durable data is feature payload. Transient input is selection, scroll, pointer row, and docs viewport. Borrowed presentation is OverlaySpec, Row, and Section. Derived layout/cache is OverlayLayout, glyph plans, scrollbar geometry, and frame masks. Completion is visible only when the filtered list is nonempty and its overlay kind is Completion; a pending request owns neither keys nor screen space.
 
-## Evidence
+The projection boundary is concrete. view/modal constructs an OverlaySpec with Anchor, optional tabs/header/footer, a Body::List, pointer FlatIndex, and optional Documentation. Its rows borrow strings and precomputed vectors for exactly the closure call to with_cursor_overlay_spec; this is why callers cannot retain a spec in UiState. layout_measured consumes the spec, physical window size, scale factor, and TextMeasure and returns OverlayLayout with panel, row, docs viewport, and scrollbar rectangles. Both render and hit test must call that same composition path.
 
-- [Token overlay model](../../src/model/ui.rs), [spec/layout/painter](../../src/view/overlay_surface.rs), [consumer mapping](../../src/view/modal.rs)
-- [Token gallery catalog](../../src/model/gallery.rs)
-- [IntelliJ UI overview](https://plugins.jetbrains.com/docs/intellij/ui-overview.html) and [popup guidance](https://plugins.jetbrains.com/docs/intellij/popups.html)
+## Lifecycle, focus, and async ownership
+
+| Event                            | Guard                                                | Transition/effect                                             |
+| -------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------- |
+| Completion filter nonempty       | active plain-text session                            | install Completion; selected/scroll zero; schedule/refine LSP |
+| Accepted hover reply             | document/revision/position/focus/request owner match | install Hover card and overlay                                |
+| References/actions reply         | revision and captured caret match                    | build authoritative vector, install kind                      |
+| Context trigger                  | builder returns items                                | capture click/caret anchor, install ContextMenu               |
+| Up/Down/Page                     | selectable rows                                      | move selection and minimal-reveal scroll                      |
+| Enter/click                      | row exists/enabled                                   | activate same indexed payload, clear overlay                  |
+| Escape/outside press             | kind policy                                          | dismiss; context non-navigation keys dismiss and consume      |
+| Ordinary typing while Completion | no claimed key                                       | editor receives key; completion refreshes/dismisses           |
+| Edit/caret/focus/resize          | hover policy                                         | invalidate request/card/overlay                               |
+
+Runtime routes popup keys before normal editor/keymap routing, but this is not modal capture: only documented navigation keys are claimed. Mouse code derives row and outside targets from the same OverlayLayout used for paint. Hover request ownership includes document/revision/position/origin; dismiss_hover clears request and card, so a late reply cannot reopen. Completion is revision guarded and asks runtime to cancel work when dismissed.
+
+Input differs by kind and is intentionally not erased behind a generic reducer. Completion claims navigation/accept/dismiss while normal text still reaches the editor. References and code actions use the stored vector for Up/Down/Enter and dismiss-and-consume ordinary keys. Context-menu FlatIndex excludes separators only: disabled menu rows retain their index for rendering, pointer hover, and navigation; activation of such a row is a no-op rather than an accidental index shift. Hover has no selectable rows; its text reading controls are handled through has_documentation. Pointer hover changes hover_row only: it must never overwrite keyboard selected, even if mouse and keyboard refer to different rows. Pointer release/capture cancellation clears scrollbar drag through the shared UI drag owner.
+
+| kind         | focus ownership                                         | dismissal triggers that are implemented/policy-specific                                                                                                                                             | capture behavior                                                               |
+| ------------ | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Completion   | editor remains focused; popup pre-routes dedicated keys | explicit dismiss, accept, editor edit/session invalidation; ordinary typing passes through                                                                                                          | docs-thumb capture only when docs visible; release/focus/resize ends it        |
+| Hover        | editor remains focused                                  | hover reconcile sees changed HoverAnchor, competing overlay, mouse-disabled/signature state; runtime also dismisses on keypress except docs controls, focus loss, resize, and pointer leaving grace | docs scrollbar uses shared capture; hover grace is timing, not pointer capture |
+| References   | editor remains focused                                  | activation, Escape, and non-navigation key dismissal/consume                                                                                                                                        | no docs capture; row click uses layout hit result                              |
+| Code Actions | editor remains focused                                  | activation, Escape/non-navigation routing and stale activation rejection                                                                                                                            | no docs capture; activation clears list/origin before applying edit            |
+| Context Menu | editor remains focused; no modal focus                  | Escape and non-navigation dismiss/consume; outside press follows menu pointer routing                                                                                                               | no scrolling in v1; captured physical open anchor, not pointer capture         |
+
+No row popup transfers FocusTarget to Modal. A focused window loss is a runtime boundary for hover/documentation; consumers must not infer an unimplemented global “all cursor overlays close on blur” rule from Hover's stronger behavior.
+
+## Geometry, index mapping, clipping
+
+Anchor::Cursor and Anchor::Menu receive physical x,y,h. WidthRule values are logical pixels: resolve window_w×pct, clamp to logical min/max and the scaled 32px edge margin, then apply the scaled 200px cursor floor without exceeding the window. Let gap=round(2×scale), panel=pw×ph:
+
+```
+px = min(x, window_w - pw)
+below = y + h + gap
+fits_below = below + ph <= window_h
+fits_above = y >= ph + gap
+py = below if prefer_below && fits_below
+   = y - gap - ph if fits_above
+   = below if fits_below
+   = window_h - ph otherwise
+```
+
+Completion is below-preferred, 240–320 logical px, maximum eight visible rows. Hover is above-preferred and 42% window width clamped to 360–560 logical px. Menus measure content before width finalization. UiTree/Frame clip an overlarge pinned panel.
+
+Display positions include headers and separators; FlatIndex includes selectable rows only. resolve_scroll_for_selection maps flat to display, minimally reveals there, then returns flat scroll. This prevents header-induced click/Enter/render drift.
+
+Trace: at 1× anchor=(950,200,20), window=1000×250, panel=300×100 gives px=700; below 222 fails; py=98 above. For sections Recent rows 0–2 then All rows 3–5, flat positions map to display [1,2,3,5,6,7]; a three-slot window selecting flat 3 starts at display 5, not raw display 3.
+
+At scale 2×, a logical 240px completion minimum is 480 physical px and the 2px logical gap is 4 physical px. In a 450px window, resolve_width applies the cursor floor but its final min(window_width) produces 450px, then px=0. This degradation is expected: horizontal panel clipping is preferable to unsigned underflow or off-window geometry.
+
+### Selection and scrolling algorithm
+
+The following is an **algorithm sketch** of the invariant that existing update helpers implement. SectionShape is the current shape-only dependency used by update code: has_title denotes a titled header, len is the number of selectable rows in that section. The layout helper also inserts a display separator before every non-first untitled section; a caller must represent that boundary consistently rather than treating all untitled sections as one list. FlatIndex is a newtype over a selectable-row ordinal, so display slots are never passed to activation.
+
+```rust
+fn move_popup_selection(
+    selected: FlatIndex,
+    scroll: usize,
+    selectable_count: usize,
+    delta: isize,
+    shapes: &[SectionShape],
+    max_visible: usize,
+) -> (FlatIndex, usize) {
+    if selectable_count == 0 || max_visible == 0 {
+        return (FlatIndex(0), 0);
+    }
+    let next = selected.0
+        .saturating_add_signed(delta)
+        .min(selectable_count - 1);
+    let next_scroll =
+        resolve_scroll_for_selection(shapes, next, max_visible, scroll);
+    (FlatIndex(next), next_scroll)
+}
+```
+
+The real list navigation may wrap for a particular popup kind; a caller must state that policy rather than silently applying it. max_visible must be nonzero before reveal math; the current callers use fixed caps such as eight or ten. An empty list returns FlatIndex(0),0 only as a harmless stored coordinate: it does not make row zero valid. A filter replacement must preserve selected identity only if it can map that identity into the new ordering authority; otherwise reset to zero and discard docs/hover that named the removed item.
+
+Conceptually, section_positions first produces flat_to_display. For each shape at section ordinal i, increment display by one if has_title or i is nonzero (the latter is the separator), then append the current display position once for every selectable row and increment it. resolve_scroll_for_selection looks up flat_to_display[selected], computes reveal in display space, then uses a partition search back to a FlatIndex-space scroll. This two-way mapping is the missing dependency in any algorithm that claims headers are harmless.
+
+### Hit-test consistency contract
+
+For each frame, view/modal creates rows in feature-vector order, layout_measured snaps their rectangles once, and hit testing returns a FlatIndex from that layout. Pointer action then indexes the original feature vector by that returned index. The forbidden implementation is:
+
+```
+paint: sorted(filtered_items)
+click: original_items[index]
+Enter: filtered_items[selected]
+```
+
+Those three arrays agree only by accident. Separators make the failure visible sooner because display row 3 can have no selectable payload. The actual design uses flattened selectable rows for FlatIndex and keeps section headings only in the display layout.
+
+## Integration, invalidation, tests
+
+```
+feature or LSP event -> update validates owner, changes UiState -> Cmd::Redraw
+ -> view::modal::with_cursor_overlay_spec borrows payload
+ -> overlay_surface::layout_measured creates OverlayLayout
+ -> renderer and hit_test_cursor_overlay consume same layout
+ -> pointer/key result -> feature message/update
+```
+
+Production paths use glyph-backed layout_measured; monospace layout is fallback/test-only. Invalidate on payload/order, selection/scroll/docs state, caret/dwell anchor, window/viewport, scale, theme/font, and side space. Projection is O(rows); layout/paint is O(visible rows plus measured docs glyphs).
+
+**Existing tests** cover flip/clamp/spec in [view/modal.rs](../../src/view/modal.rs), drag/click/wheel in [runtime/mouse.rs](../../src/runtime/mouse.rs), and stale LSP paths in [update/lsp.rs](../../src/update/lsp.rs). **Proposed regressions:** numeric trace at 1×/2×; context menu keeps captured anchor after caret mutation; filtering sectioned rows preserves painted/clicked/Enter identity; dismiss each async kind then deliver old reply and assert nothing reappears.

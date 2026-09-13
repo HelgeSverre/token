@@ -1,80 +1,88 @@
-# Toolbar
+# Toolbar — terminal chrome and future reusable contract
 
-## Purpose and current boundary
+## Boundary and status
 
-A toolbar is a persistent, compact group of frequent actions/settings for one
-scope. It is not a Menu (transient command choice), section navigation, or a
-tab strip. Token has buttons and domain action rows but no shared `Toolbar`
-model/painter, focus policy, overflow component, or customization system.
+Token has no shared `Toolbar` model, painter, overflow menu, focus policy, or customization system. The nearest implemented surface is terminal tab/action chrome. It couples terminal session lifecycle, tab scrolling, and four action cells; it is layout evidence, not a generic toolbar. A toolbar is persistent controls for one stable scope; it is not a tab strip, menu, or Settings category row.
 
-## Verified consumers and anatomy
+## Existing terminal representation and geometry
 
-The closest current surface is terminal tab/action chrome. It reserves fixed
-Previous, Next, New, Close action cells around a clipped sessions viewport
-(`src/panels/terminal.rs:17-76`). It uses the general button renderer for
-hover/normal state and renders `<`, `>`, `+`/pending `...`, `x`
-(`src/panels/terminal.rs:99-143`). The same row also selects terminal sessions,
-so its state is terminal chrome, **not** a reusable toolbar.
+**Current excerpt** — [src/panels/terminal.rs](../../src/panels/terminal.rs).
 
-| Existing piece          | Owner                 | Why it is not shared toolbar evidence         |
-| ----------------------- | --------------------- | --------------------------------------------- |
-| terminal action squares | terminal model/update | coupled to session tabs/spawn/close lifecycle |
-| form/panel buttons      | owning modal/panel    | feature-local geometry/events                 |
-| document tab strip      | editor group          | navigation only; no close action button       |
+```rust
+tree.node(ElementDecl { key: Some(UiKey::TerminalTabs), dir: Dir::Row, clip: true, .. }, |tree| {
+    button(tree, TabAction::Previous);
+    button(tree, TabAction::Next);
+    tree.node(ElementDecl { key: Some(UiKey::TerminalTabViewport), clip: true, .. }, |tree| {
+        tree.node(ElementDecl { dir: Dir::Row,
+            scroll: Some(ScrollDecl { offset_x: model.terminal.tab_scroll, offset_y: 0.0 }), .. }, |tree| {
+            for session in &model.terminal.sessions {
+                tree.leaf(ElementDecl { key: Some(UiKey::TerminalAction(TabAction::Select(session.id))),
+                    sizing: SizingAxes::new(Sizing::Fixed(model.char_width * 22.0), Sizing::GROW), .. });
+            }
+        });
+    });
+    button(tree, TabAction::New); button(tree, TabAction::Close);
+});
+```
 
-`TerminalMsg::Tab` owns terminal actions and produces lifecycle commands
-(`src/update/terminal.rs:16-82`). The gallery's terminal normal/overflow/exited
-specimens prove this current chrome (`src/model/gallery.rs:83-130`). No Token
-main toolbar equivalent is represented by the gallery or `src/view/` renderer.
+`UiKey::TerminalAction(TabAction)` is identity derived from durable terminal action/session identity, not display index. `LayoutSnapshot` owns derived physical-pixel rectangles and clip relationships for one layout pass. Terminal state owns durable sessions, active index, pending spawn state and `tab_scroll`; `hovered_tab: Option<TabAction>` is transient presentation. Render borrows these values; it does not mutate them.
 
-## Proposed data and event contract
+Action cells are square at `metrics.tab_bar_height`; every session tab declares `char_width × 22` plus medium horizontal padding. The viewport clips only the scrollable tab run; Previous/Next/New/Close remain visible. The same layout snapshot feeds declaration, rendering, hit test, PTY sizing, and `reveal_active_tab`. Its repair is `delta = tab.left - viewport.left` if the tab lies outside either viewport edge, otherwise 0, then `tab_scroll = max(0, tab_scroll + delta)`. It runs after dock/font resize, so active tab cannot stay offscreen.
 
-Use a toolbar only when its owner can identify a stable scope and a common
-workflow. The owner supplies ordered `ActionId`s, visible/enabled/selected/
-pending state, accessible label and tooltip, icon/text presentation, group
-separators, overflow policy, and activation message. Toolbar resolves geometry,
-hit targets and visual state; it does not perform I/O or execute a command.
+**Worked trace.** With a 400-pixel bar at x=0 and tab height 28, Previous and Next occupy x=0..28 and x=28..56; New and Close occupy x=344..372 and x=372..400. The solved viewport is therefore x=56, width 288. With `char_width=8`, each session tab's **border box** is 176 pixels (the medium padding is internal, not added outside it): session one has absolute left 56, session two 232, and session three 408. Selecting the third gives `delta = tab.x - viewport.x = 408 - 56 = 352`, then `tab_scroll = max(0, old_scroll + 352)`. With no sessions, action rects still exist; Update, not empty paint, must make Previous/Next/Close unavailable.
 
-| Item kind       | Required owner data         | Activation                            |
-| --------------- | --------------------------- | ------------------------------------- |
-| action          | ID, label, enabled/pending  | message routes through Update/Command |
-| toggle          | action data + selected      | same action changes declared state    |
-| menu button     | label + menu model/expanded | opens Menu contract                   |
-| selector/search | value/query + focus         | feature-owned update                  |
-| separator/label | presentation only           | never activates                       |
-| overflow        | hidden action IDs           | opens Menu with same actions/order    |
+The renderer calls the shared button painter only for glyph cells and derives hover from `hovered_tab`; session select/spawn/close route through `TerminalMsg::Tab` in Update. There is no generic roving focus, tooltip, accessibility role, or overflow control.
 
-Transition: owner computes actions → one layout solves visible/overflow rects →
-paint/hit use it → pointer/key emits action ID → update checks enabled and
-returns command/redraw → state refreshes. Keyboard, menu and toolbar routes
-must reuse the same action command rather than duplicate side effects.
+## Proposed reusable representation (not implemented)
 
-## Focus, accessibility, layout and theme
+**Proposed API.** `ActionId: Copy + Eq` is a stable owner action key across reorder/overflow; `PointerId: Copy + Eq` identifies one pointer sequence; and `ToolbarScope` is an owner-defined stable context key (for example, a particular editor group). The owner reducer maps returned `ActionId` to its existing message/then `Cmd`; toolbar paint never produces effects.
 
-**Verified:** terminal stores hover as `hovered_tab`; no shared toolbar focus,
-roving keyboard, tooltips, or accessibility roles are implemented. **Proposed:**
-Tab reaches a keyboard-operable toolbar; arrows rove compact icon groups; Enter/
-Space activate; Tab exits; menu buttons follow Menu dismissal/selection. Expose
-role/name/pressed/disabled/expanded state and a focus indicator independent of
-hover/color. Icon-only actions require a tooltip/name.
+```rust
+enum ToolbarItem<ActionId> {
+    Action { id: ActionId, label: String, enabled: bool, pending: bool },
+    Toggle { id: ActionId, label: String, selected: bool, enabled: bool },
+    Menu { id: ActionId, label: String, enabled: bool, expanded: bool },
+    Separator, Label(String),
+}
+struct ToolbarModel<ActionId> {
+    scope: ToolbarScope,
+    items: Vec<ToolbarItem<ActionId>>, // display and overflow ordering authority
+    focused: Option<ActionId>,
+    press: Option<(PointerId, ActionId)>,
+}
+struct ToolbarLayout<ActionId> {
+    visible: Vec<(ActionId, Rect)>, hidden: Vec<ActionId>, overflow: Option<Rect>,
+}
+```
 
-Use one scaled horizontal or vertical row. Reserve a visible overflow affordance
-instead of clipping actionable controls. The terminal container uses sidebar
-colors while its buttons use button painting; a new toolbar must choose explicit
-theme roles, not borrow document-tab colors. UI controls normally use
-`FontRole::Ui`; terminal's Code choice is deliberate. Code/UI metrics/caches
-are separate (`src/view/frame.rs:832-930`).
+Invariant: `visible ∪ hidden` contains each actionable ID once in original relative order; separators/labels are never focusable; `overflow.is_some() ⇔ hidden` is nonempty; `focused`/capture reference a current visible action. On removal or resize, clear stale capture and advance focus to the next enabled visible action or overflow. Disabled actions remain discoverable but cannot focus, capture, or invoke.
 
-Primary IntelliJ guidance allows action/toggle/dropdown/split buttons, search,
-labels, separators and overflow; recommends only frequent actions and a
-chevron instead of a second toolbar when space runs out. [Toolbar guideline](https://plugins.jetbrains.com/docs/intellij/toolbar.html)
+### Packing, hit test, and input algorithm
 
-## Gallery, gaps, acceptance
+```text
+reserve = overflow_needed ? overflow_width + trailing_gap : 0
+budget = max(0, toolbar_width - fixed_nonaction_width - reserve)
+scan declared order: append while used + measured_width ≤ budget; otherwise hidden += ID
+if hidden became nonempty and reserve was 0: repeat once with overflow reserve
+```
 
-Priority 1: do not extract until another concrete toolbar shares both geometry
-and interaction. If extracted, gallery must prove normal/hover/pressed/focused/
-disabled/toggle/menu/overflow, narrow and HiDPI states, and keyboard invocation.
-Priority 2: customization only for a genuine main toolbar. Acceptance: one
-geometry authority; hidden items remain reachable; disabled blocks pointer and
-keyboard; command result matches menu invocation; semantic name/state is
-available. Secondary local context: `temporary-docs/intellij-platform-sdk/references/ui-settings-and-toolwindows.md`.
+Measure UI text/icons once and round only when constructing physical rects. This reserve/repeat rule avoids a final ellipsis displacing an already “visible” action. For W=210, widths [48,40,56,44], gaps 8, overflow 28: first pass requires 212, so the reserved budget is 182. It fits `48+8+40+8+56=160` but not `+8+44`; first three are visible and fourth goes to overflow. Vertical layouts exchange axes. Renderer and hit test consume the same `ToolbarLayout`.
+
+Pointer press captures only a visible enabled ID; matching release inside emits owner `Activate(id)`. Matching release outside, matching cancellation, focus loss, scope destruction, and mutation clear capture; wrong-pointer release/cancel leaves it intact. Tab enters toolbar; arrows rove visible enabled items; Enter/Space activate; Tab exits. A menu/overflow follows [Menu](MENU.md) and restores focus to its trigger on Escape. Icon-only actions require label/tooltip and all focus/selected/expanded states require non-color-only projection.
+
+## Integration, invalidation, async safety, and verification
+
+The owner derives items, runs `layout_toolbar` once, passes that layout to render/hit-test, then maps `Activate(ActionId)` through its existing Update/Command path. Overflow carries original IDs and invokes exactly the same reducer; do not create a second effect path. Packing/measurement is O(n); glyph caches may reuse glyphs but are not an excuse to cache stale geometry. Invalidate layout on item order/labels/icons/enabled/pending visibility, UI font/scale, orientation/gaps/padding, bounds, or overflow policy. Theme-only changes repaint.
+
+For async action sources, retain `(scope, generation)`; accept only a reply that matches the still-open owner, and resolve its `ActionId` again at activation. A reply after scope destruction must neither recreate toolbar state nor invoke a recycled position.
+
+| Setup                                     | action                            | expected output                                                      |
+| ----------------------------------------- | --------------------------------- | -------------------------------------------------------------------- |
+| terminal 400-pixel bar, 28-pixel cells    | solve layout                      | viewport width 288; four cells outside clip                          |
+| packing example                           | layout then overflow click        | hidden fourth ID invokes same owner action                           |
+| captured action pointer 1                 | resize removes action; pointer-up | no invocation; focus/capture repaired                                |
+| all visible disabled, enabled hidden item | arrows/Enter then overflow        | no visible activation; hidden action remains reachable               |
+| scope 9 generation 2 closes               | reply generation 2                | discard, no new toolbar                                              |
+| scale 1→2                                 | render/hit                        | one recomputed geometry authority; no independently rounded hit rect |
+
+Terminal gallery samples are visual terminal-chrome coverage. A generic toolbar needs its own layout, focus, overflow, interaction, and stale-reply automation tests.

@@ -1,101 +1,190 @@
-# Status bar
+# Status bar: implementation reference
 
-## Purpose
+The status bar is a passive, always-present projection of the focused document
+and selected application state. It is neither a notification queue nor an
+interactive toolbar. The model uses character counts for its test layout and
+measured physical pixels for native rendering; do not confuse either with
+editor columns.
 
-The **status bar** is the always-visible, space-constrained summary of the
-focused document and application state. It is not a notification center, a
-toolbar, or a substitute for an actionable context menu. IntelliJ similarly
-describes status widgets as compact information/settings relevant enough to be
-always shown ([Status Bar Widgets](https://plugins.jetbrains.com/docs/intellij/status-bar-widgets.html)).
+## Current model, identities, and precedence
 
-## Current implementation — high confidence
+The current representation in [src/model/status_bar.rs](../../src/model/status_bar.rs)
+is fixed-schema state, despite being stored as a vector:
 
-`StatusBar` is a structured ordered vector of `StatusSegment`s. Each has a
-fixed `SegmentId`, left/right position, text-or-empty content, overflow priority
-and optional minimum width. Implemented IDs are file name, modified indicator,
-status message, diagnostics, LSP server, inline suggestion, caret count, text
-policy, selection, cursor position and line count. Center segments are modeled
-but the renderer emits none.
-
-`sync_status_bar(model)` derives most values from current model state. The
-`StatusMessage` slot is special: a `TransientMessage` (or an explicit segment
-write) wins; otherwise the highest-severity diagnostic under the cursor may
-occupy it, flattened and capped at 120 characters. `UiMsg::UpdateSegment`,
-`SetTransientMessage`, and `ClearTransientMessage` produce status-bar-only
-damage. Rendering is isolated as `Renderer::render_status_bar` and has a
-dedicated performance/damage stage.
-
-| Model/event                                       | Ownership                                                    |
-| ------------------------------------------------- | ------------------------------------------------------------ |
-| `StatusBar`, `StatusSegment`, `TransientMessage`  | `model/status_bar.rs` and `UiState`                          |
-| derived segment content; stored priority metadata | `sync_status_bar` / `StatusSegment`                          |
-| explicit feedback                                 | `UiMsg` → `update/ui.rs`                                     |
-| expiry wake                                       | runtime app event loop                                       |
-| geometry/draw                                     | `StatusBar::layout_measured` + `Renderer::render_status_bar` |
-
-### Layout/theme
-
-The layout measures real glyph widths. It applies character-unit padding and
-spacing converted through measured space width; left items flow left-to-right,
-right items are placed from the right edge backwards, and separators appear
-between right segments. `StatusSegment::priority` and `min_width` are stored,
-but `layout_measured` currently does **not** cull, truncate, or otherwise apply
-them on overflow; its saturating placement can compress leftward under narrow
-width. Overflow prioritization is therefore proposed, not implemented. Rendering
-snaps the `UiKey::StatusBar` rect, paints background/top border, vertically
-centers text at a configured clamped status-bar font size, and blends right-side
-separators. Theme roles are `Theme::status_bar.{background,foreground,border}`;
-text uses the UI face.
-
-No segment has current click/keyboard activation, popup, tooltip, configuration
-UI, semantic accessibility role, or center alignment. `HoverRegion::StatusBar`
-exists for hit/scroll routing but does not make the bar interactive.
-
-| Transition (implemented)                  | Authority                           | Invariant                                                  |
-| ----------------------------------------- | ----------------------------------- | ---------------------------------------------------------- |
-| focused document/config/LSP state changes | `sync_status_bar`                   | derived segments recompute from model, never painter cache |
-| explicit segment write                    | `UiMsg::UpdateSegment`              | triggers `DamageArea::StatusBar` only                      |
-| transient feedback starts/expires         | `UiState` + runtime wake            | transient owns message slot until cleared/replaced         |
-| renderer runs                             | measured layout + theme/font config | text/separators use the same measured result               |
-
-## Proposed contract
-
-Preserve fixed segment ownership. A new segment needs a named `SegmentId`,
-position, content derivation owner, priority/minimum-width rationale, privacy
-review, and narrow `UiMsg`/update API. Do not let arbitrary features append
-unbounded strings or write a shared status segment directly.
-
-If an existing segment becomes a setting/action, add an explicit activation
-event and a context popup contract with a keyboard equivalent—do not overload
-plain display text. Proposed semantic shape:
-
-```text
-StatusSegmentSpec { id, position, priority, min_width, text, accessible_label, activate? }
+```rust
+// current excerpt
+pub enum SegmentContent { Empty, Text(String) }
+pub struct StatusSegment {
+    pub id: SegmentId,                 // fixed enum identity; must occur once
+    pub position: SegmentPosition,     // Left | Center | Right
+    pub content: SegmentContent,       // empty is hidden
+    pub priority: u8,                  // metadata only; no current overflow policy
+    pub min_width: usize,              // character units; metadata only
+}
+pub struct StatusBar {
+    segments: Vec<StatusSegment>,
+    pub separator_spacing: usize,      // space-character units
+    pub padding: usize,                // space-character units per edge
+}
+pub struct TransientMessage { pub text: String, pub expires_at: Instant }
 ```
 
-| Proposed event                        | Owner                         | Required guard                                                             |
-| ------------------------------------- | ----------------------------- | -------------------------------------------------------------------------- |
-| derive/update segment projection      | named feature/update function | only declared `SegmentId` may be written; preserve transient priority rule |
-| activate a future interactive segment | status-bar hit/input route    | target must be visible, focusable and dispatch a specific message/popup    |
-| width/config/theme change             | layout/render                 | rerun measured layout; do not preserve stale x coordinates                 |
+Default identity/order is left `FileName(100)`, `ModifiedIndicator(90)`,
+`StatusMessage(50)` and right `Diagnostics(70)`, `LspServer(65)`,
+`InlineSuggestion(66)`, `CaretCount(45)`, `TextPolicy(35)`, `Selection(40)`,
+`CursorPosition(80,min 12)`, `LineCount(60,min 6)`. Parentheses show stored
+priority, not a behavior currently applied. Center is an enum option but no
+default center segment and no renderer output exists.
 
-It remains a renderer-facing projection; effects stay behind messages/commands.
+`UiState` owns both `status_bar` and the optional transient. The transient is
+durable only until `Instant::expires_at`; it has no ID/generation, severity,
+action, cancellation, or queue. `status_message_is_diagnostic` records whether
+the `StatusMessage` text belongs to the diagnostic-under-cursor fallback. This
+bit is essential: it lets synchronization replace/clear only its own fallback,
+without overwriting explicit text.
 
-## Gallery, gaps, acceptance
+| Source                                  | Projection ownership                                     | Invariant                                                                                                                                          |
+| --------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| focused text document                   | `sync_status_bar`                                        | filename, modified marker, cursor/line/selection/carets/text policy recompute from current document/editor                                         |
+| image mode                              | `sync_status_bar`                                        | dimensions/zoom/file size/format replace text fields; stale diagnostics/LSP are cleared                                                            |
+| focused document diagnostics/LSP        | `sync_status_bar`                                        | counts and server lifecycle are derived; no server hides/changes appropriate fields                                                                |
+| inline request                          | `sync_status_bar`                                        | `InlineSuggestion` only while in flight on a plain-text focused editor                                                                             |
+| canonical flash                         | `UiState::set_status_for` / `UiMsg::SetTransientMessage` | writes both transient and StatusMessage, then requests status-bar damage                                                                           |
+| direct transient writer                 | selected feature reducers, e.g. inline failure           | may set only `transient_message`; it suppresses diagnostic fallback but does **not** mirror text into StatusMessage or guarantee status-bar damage |
+| explicit `UpdateSegment(StatusMessage)` | UI reducer                                               | clears diagnostic-ownership bit but leaves any old transient deadline live                                                                         |
 
-The gallery has no status-bar specimen. Add one only with the renderer’s real
-layout: full/default, diagnostics/LSP/inline values, transient override,
-narrow overflow priority, long localized text, light/dark and scaled font.
+Diagnostic fallback applies only if there is no transient and the message slot
+is empty or already diagnostic-owned. A direct writer can therefore leave the
+old/empty slot visible while suppressing the fallback until expiry. It chooses the highest-severity diagnostic
+containing the active cursor, flattens whitespace, and caps it at 120 Unicode
+characters. This is a priority relation, not a generic notification system.
 
-Acceptance: derived state never overwrites an explicit/transient message;
-expiry redraws only the required area; glyph measurement and paint coordinates
-match; narrow-width behavior is specified and tested before priority becomes a
-claimed feature; and every newly interactive segment has focus, activation and
-accessible-description coverage.
+## Reducer lifecycle and timer staleness
+
+```text
+feature/document change → sync_status_bar(model) → derived segments
+canonical flash         → SetTransientMessage → transient + StatusMessage + status damage
+direct feature write    → transient only (feature decides its own damage; no slot mirror)
+explicit write          → UpdateSegment(StatusMessage) → status damage; old transient remains
+event-loop wake         → expire_status_message → clears current transient and StatusMessage
+render                  → measured layout + paint (read-only)
+```
+
+`UiMsg::{SetTransientMessage,ClearTransientMessage,UpdateSegment}` are reduced
+in [src/update/ui.rs](../../src/update/ui.rs) and return
+`Cmd::redraw_status_bar()`. Runtime deadline selection includes the current
+`transient.expires_at`; expiry calls `UiState::expire_status_message` and emits
+status-bar damage. Replacing a _canonical_ flash replaces the one model object
+and deadline, so an old wake cannot independently clear newer flash text: the
+expiry predicate checks the current `expires_at`. However,
+`UpdateSegment(StatusMessage)` does **not** clear `transient_message`; its old
+deadline subsequently clears the newer explicit segment. That is current
+behavior, not an ownership guarantee. Explicit clear removes the current
+transient and clears StatusMessage; a subsequent normal sync may install a
+diagnostic fallback.
+
+There is no input machine: status-bar hit targets consume pointer events but
+have no click/key activation, capture, focus, popup, tooltip, or accessibility
+role. Its owner invalidates and redraws its passive projection. A future
+interactive segment must add a separate input contract, not mutate this one.
+
+## Measured layout algorithm
+
+`layout_measured(available_width, space_width, measure)` uses physical px in
+the renderer. `padding_px = padding × space_width`; `spacing_px =
+separator_spacing × space_width`. Empty content is skipped. Let `M(t)` be
+ceil-measured glyph width in physical px.
+
+```rust
+// algorithm sketch; this matches the current directional placement.
+let mut lx = padding_px;
+for left in nonempty_left_in_vector_order {
+    if not_first { lx = previous_end + spacing_px; }
+    emit(left.id, lx, M(left.text));
+    previous_end = lx + M(left.text);
+}
+let mut rx = available_width.saturating_sub(padding_px);
+for right in nonempty_right_in_reverse_vector_order {
+    if not_first {
+        rx = previous_start.saturating_sub(spacing_px);
+        separator_at(previous_start.saturating_sub(spacing_px / 2));
+    }
+    rx = rx.saturating_sub(M(right.text));
+    emit(right.id, rx, M(right.text));
+    previous_start = rx;
+}
+reverse_right_output_to_left_to_right_order();
+```
+
+The solver neither reserves a gap between left/right groups nor compares their
+ends. `saturating_sub` prevents unsigned underflow but may assign overlapping
+or compressed coordinates at narrow widths. `priority` and `min_width` are
+not consulted, and text is not truncated. This is a documented limitation, not
+overflow support.
+
+Normal trace (test units): width 80, padding 2, spacing 2; left text `a` then
+`save` yields `(x,w)=(2,1),(5,4)`. Right `Ln 1` (4) and `1 Ln` (4) place from
+78: `1 Ln` at 74, separator 73, then `Ln 1` at 68. Pathological trace: width
+10, same padding, left filename width 12 gets x=2/end=14, right four-character
+segment gets x=4. Both draw into overlapping coordinates because no collision
+resolver exists. A future policy must choose/measure survivors before emitting
+rectangles; it cannot repair the collision during paint.
+
+The renderer obtains `UiKey::StatusBar`, snaps its rect, fills background and
+top border, then measures UI-font text at the clamped configured status size.
+Text y is `status_y + (height - line_height)/2` using saturating subtraction.
+It draws left/right output and one-pixel alpha-blended separators. Inputs are
+theme `status_bar.{background,foreground,border}`, scale factor, font setting,
+font cache/measurement, segment data, and solved rect.
+
+## Costs, invalidation, and proposed overflow API
+
+Every synchronization rewrites a fixed 11-segment vector; layout traverses it
+twice and measures only visible strings. Native glyph measurement uses the text
+painter cache, but no status-specific cache retains x positions. Changes to any
+segment, message expiry, focus/cursor/document/view mode, LSP state, theme/font
+size/scale, window width, or status height require a fresh layout. This is
+small fixed overhead plus text measurement, not an O(document-size) pass.
+
+If narrow-width behavior is implemented, make it a pure projection with exact
+ownership and keep the bar passive. Do not add `StatusAction` until a named
+consumer also supplies `StatusMsg::Activate { id }`, a visible-hit lookup from
+the solved layout, focus traversal, and an accessibility label/announcement:
+
+```rust
+// proposed API — all widths are physical px after measurement.
+struct SegmentSpec<'a> {
+    id: SegmentId, position: SegmentPosition, text: &'a str,
+    priority: u8, min_width_px: usize, truncate: bool,
+    accessible_label: &'a str,
+}
+struct StatusLayout { visible: Vec<RenderedSegment>, hidden: Vec<SegmentId> }
+```
+
+`min_width_px` is intentionally not the existing character-unit field: conversion
+must happen before selection. Proposed algorithm: reserve both edge paddings,
+sort only eligible segments by descending priority with original vector order
+as tiebreak, admit an item only if its measured/truncated width plus required
+intra-group spacing fits the remaining budget, then place the survivors. A
+candidate that cannot reach its minimum is hidden, never drawn at x=0. The
+producer still owns text; the layout layer owns only visibility/truncation.
+
+## Verification
+
+Existing unit tests in `tests/status_bar.rs` cover model layout and transient
+basics. Preserve/add these vectors:
+
+| Initial state                           | Action                                                      | Expected projection                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| diagnostic fallback text at cursor      | canonical set transient `Saved`, 3 s                        | transient exists; StatusMessage is `Saved`; diagnostic bit false                                            |
+| that state, current clock past deadline | runtime wake                                                | transient absent and slot empty; a later sync may restore diagnostic fallback                               |
+| canonical flash still pending           | `UpdateSegment(StatusMessage, Indexing)`, then old deadline | Indexing first displays, then old expiry clears it: current bug/contract gap                                |
+| inline failure direct writer            | set `transient_message` without segment mutation            | diagnostic fallback suppressed; status slot is not guaranteed to show failure or receive status-only damage |
+| width 80 / padding 2 / spacing 2        | layout strings above                                        | left `(2,1),(5,4)` and right `(68,4),(74,4)`                                                                |
+| width 10 / long left and right          | current layout                                              | overlap is reproducible; test proposed policy separately before claiming priority behavior                  |
+| image tab after diagnostic text tab     | sync                                                        | image fields shown and Diagnostics/LspServer empty                                                          |
 
 ## Evidence
 
-- [Status model and layout](../../src/model/status_bar.rs), [UI state](../../src/model/ui.rs), [messages](../../src/messages.rs), [update](../../src/update/ui.rs)
-- [Renderer](../../src/view/mod.rs), [chrome layout keys](../../src/layout/keys.rs), [performance stage](../../src/perf.rs)
-- [Local IntelliJ SDK status-widget reference](../../temporary-docs/intellij-platform-sdk/references/ui-settings-and-toolwindows.md) (secondary)
-- [IntelliJ status widgets](https://plugins.jetbrains.com/docs/intellij/status-bar-widgets.html)
+- [model/layout/synchronization](../../src/model/status_bar.rs), [UI ownership](../../src/model/ui.rs), [UI reducer](../../src/update/ui.rs)
+- [deadline scheduling](../../src/runtime/app.rs), [renderer](../../src/view/mod.rs), [layout key](../../src/layout/keys.rs)

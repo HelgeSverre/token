@@ -1,40 +1,124 @@
 # Keycap
 
-## Purpose and boundary
+## Current representation and ownership
 
-A **Keycap** visually represents one key or modifier; a **binding sequence** is ordered chord steps made of keycaps. It is passive instructional/accessory content, not an interactive Button, Badge, or text substitute. Its scope is Token's platform-formatted keybindings in overlay/menu/settings contexts.
+A keycap is passive physical-pixel chrome for one displayed key. A binding is an
+ordered sequence of chord steps; it is not a button and never participates in
+keymap dispatch. Token has no retained `Keycap` state. The keymap/configuration
+owner owns the durable binding; render borrows its already formatted `&str`,
+creates temporary chips, and paints them in one frame.
 
-## Current Token contract — high confidence
+**Current excerpt — borrowed presentation data**
 
-This is a real reusable painter, though not a named widget. `frame::draw_keycap` draws rounded bordered chip and centered label; `keycap_width` is the matching measurement API. `overlay_surface::binding_chips` parses a display binding into `Vec<Vec<Chip>>`: outer chord steps, inner modifier/key chips. It handles macOS glyph modifiers, textual Ctrl/Alt/Shift/Win prefixes, multi-character keys like F12, plus key, and chord spaces.
-
-| Contract          | Current behavior                                                                                                                                                                                |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Data/owner        | `Chip { label }`; callers own binding formatting and decide `Accessory::Keycaps` versus dim text. `chip_count` supports the current >4-chip fallback.                                           |
-| Geometry          | 11 logical px text, minimum 17 logical px width, 4px horizontal padding, rounded radius 4, extra bottom border, height from measured line height plus scaled vertical padding.                  |
-| Composition       | Overlay Rows measure accessories first, reserve their full width, paint keycaps at centered row height, with 4px intra-step/6px inter-step gaps. Settings page shares equivalent width/drawing. |
-| Theme/font        | `overlay.keycap_bg`, `keycap_border`, `keycap_fg`; label uses painter sizing/fallback glyph behavior. Theme resolution enforces keycap foreground contrast.                                     |
-| Input/a11y        | Passive: no focus/hit/keyboard/a11y semantics. It communicates a shortcut also available through command/keymap infrastructure.                                                                 |
-| Consumers/gallery | Command palette, context menu, Settings Keymap, overlay menu rows, and Gallery menu specimens use it; no dedicated keycap gallery specimen exists.                                              |
-
-## Proposed Token contract — proposed extraction, not new widget framework
-
-The current primitive is enough. Clarify the data boundary before adding variants:
-
-```text
-KeycapSequence { steps: &[KeycapStep { keys: &[Keycap { label }] }], presentation: Full | Compact }
-KeycapLayout { chip_rects, step_rects, total_rect }
+```rust
+// src/view/overlay_surface.rs
+#[derive(Debug, Clone)]
+pub struct Chip { pub label: String }
+pub enum Accessory<'a> {
+    Keycaps(&'a [Vec<Chip>]), // outer: chord step; inner: modifiers then key
+    DimText(&'a str),
+    // ...
+}
 ```
 
-The keymap/platform formatter owns canonical binding-to-display conversion. The sequence helper owns parse/measurement/layout/paint only. It must return rects only if a future interactive keybinding capture explicitly needs them; passive display must never become a tab stop. Keep >4-chip fallback at the caller/presentation policy boundary, because a context menu has different space than Keymap settings.
+`Chip::label` owns a `String` because parsing splits the borrowed display string.
+`Accessory::Keycaps` borrows the completed vector only for rendering; it cannot
+escape into `AppModel`. `⌘K ⌘C` becomes `[[⌘, K], [⌘, C]]`, while `F12` is one
+chip. Empty spaces are discarded. Leading macOS modifiers `⌃⌥⇧⌘` split by
+character; textual `Ctrl+`, `Alt+`, `Shift+`, `Win+` prefixes are peeled in
+order, leaving the final `+` in `Ctrl++` as the key.
 
-### Invariants, edge cases, acceptance
+The parser does not canonicalize or validate bindings. That belongs to the
+keymap/platform formatter. Its only invariant is leading modifier chips plus at
+most one nonempty key chip per nonempty step. An all-modifier malformed input is
+displayable but must not be created by the model owner.
 
-Always measure/draw with the same scale/font/fallback; keep modifiers separate and a non-modifier multi-glyph key intact; preserve chord order; ensure width reservation prevents label truncation; clip whole sequence at owner boundary rather than overlapping row label; and do not recolor keycaps as selected-row text (their backgrounds are opaque/pre-blended by overlay convention). At narrow/scale changes, fallback to textual binding before breaking chips across unrelated row content.
+## Measurement, paint, and clipping
 
-Gallery should add `keycap.single`, `keycap.modifiers`, `keycap.function-key`, `keycap.two-step-chord`, `keycap.textual-platform`, `keycap.narrow-fallback`, and selected/hovered parent row. Acceptance: parser tests for all forms; 1x/non-1x measure=paint width; contrast tests; row reservation; and no focus/hit target introduced accidentally.
+Logical constants become physical pixels as `round(v × scale).max(1)`. Text is
+`11 × scale` physical px; text measurement is `f32` physical px, but extents
+and origins are integer physical px.
 
-## Evidence
+**Current algorithm — shared by reservation and paint**
 
-- Token: [keycap painter/measure](../../src/view/frame.rs), [Chip parser/accessory/layout](../../src/view/overlay_surface.rs), [modal consumers](../../src/view/modal.rs), [Settings consumer](../../src/view/settings_page.rs), [theme contrast tests](../../tests/theme.rs), [gallery catalog](../../src/model/gallery.rs).
-- Token inventory: [component inventory](../dev/ui-component-inventory.md).
+```rust
+fn width(measure: &mut dyn TextMeasure, label: &str, sf: f64) -> usize {
+    let px = |v: f32| (v as f64 * sf).round().max(1.0) as usize;
+    let text = measure.width(label, TextStyle::sized((11.0 * sf) as f32));
+    (text.ceil() as usize + 2 * px(4.0)).max(px(17.0))
+}
+fn height(p: &TextPainter, sf: f64) -> usize {
+    let px = |v: f32| (v as f64 * sf).round().max(1.0) as usize;
+    p.line_height_for_size((11.0 * sf) as f32) + 2 * px(2.0)
+}
+```
+
+At `sf=1`, `measure("⌘")=7.2` yields `max(ceil(7.2)+8,17)=17 px`; a
+`Ctrl` measurement of 23.1 yields 32 px. At 1.25x, padding is `round(5)=5`
+and minimum width `round(21.25)=21`: never multiply a rounded 1x result.
+
+`draw_keycap` first fills a rounded outer rectangle with radius `round(4×sf)`,
+then an inset background. Border is one pixel at top/sides and deliberately two
+at bottom:
+
+```
+inner = (x+b, y+b, width-2b, height-b-(b+round(1×sf)))
+text.x = x + floor((width-ceil(text_width))/2)
+text.y = y + floor((height-line_height)/2)
+```
+
+The raised lower edge is paint, not extra layout height. `RoundedRectMaskCache`
+caches coverage by physical radius; `TextPainter` caches rasters by glyph and
+physical size. Measure and draw must use the same scoped font.
+
+Overlay accessories are right-aligned at
+`row.x+row.w-inset-text_pad-accessory_width`. Width is all cap widths plus
+`CHIP_GAP` within a chord and `CHIP_STEP_GAP` between chords. Caps share
+`row.y+floor((row.h-chip_height)/2)` and create no individual clip or hit
+rectangle. Crucially, normal `overlay_surface::render_list` does **not** push an
+owner/list clip; it relies on the clip already active on `Frame` (often none).
+The Settings page is different: it pushes `settings_viewport.rect()` around its
+row traversal and separately clips its keycap control rectangle.
+
+## Passive projection, cost, and proposed boundary
+
+Keycaps have no pointer, keyboard, focus, capture, cancel, or accessibility
+machine. Their owner invalidates paint when binding, geometry, scale, palette,
+or font changes. Glyph/mask caches are derived accelerators, not state. Cost is
+O(chips plus glyphs); no retained keycap layout cache exists.
+
+The palette applies `chip_count(steps)>4 → Accessory::DimText(original)` before
+paint. This prevents narrow rows from consuming primary-label width; it is a
+consumer policy, not wrapping. Any extraction must preserve it:
+
+```rust
+// proposed API — not implemented
+// WidgetRect is existing view::geometry physical-usize rectangle. `chip_rects`
+// would be paint-only geometry, not input targets; Vec is per-layout ephemeral.
+struct KeycapSequence<'a> { steps: &'a [KeycapStep<'a>] }
+struct KeycapStep<'a> { keys: &'a [Keycap<'a>] }
+struct Keycap<'a> { label: &'a str }
+struct KeycapLayout { chip_rects: Vec<WidgetRect>, total_width: usize }
+```
+
+Geometry may support a future capture UI, but passive display must never become
+a tab stop.
+
+## Worked trace, integration, and tests
+
+At 1x let normal overlay row be `(20,100,300,30)`, inset 6/text pad 8, and every cap in
+`⌘K ⌘C` be 17px. With gaps 4/6, width is
+`17+4+17+6+17+4+17=78`; accessory origin is `20+300-6-8-78=228`; primary
+label right is `20+300-6-8-78-8=220`. All four caps use the same centered y,
+and primary text is truncated to end at or before x=220. `⇧⌘K ⌘C` is
+five caps and therefore must project as dim text. `Ctrl++` must project as
+`[Ctrl,+]`, not an empty last cap.
+
+Flow is `keymap/config → modal::palette_accessory → binding_chips →
+Accessory::Keycaps → overlay_surface::render_list → frame::draw_keycap`.
+Model/update owns mutations; render only projects them. Existing parser and
+scale tests are in [overlay_surface.rs](../../src/view/overlay_surface.rs) and
+[frame.rs](../../src/view/frame.rs). Add deterministic-font tests for the 78px
+trace, 1.25x measure=paint width, and no cap `HitTarget`/focus entry. A clipping
+test belongs to Settings' viewport/control path; normal overlay list paint is
+not itself a clipping guarantee.

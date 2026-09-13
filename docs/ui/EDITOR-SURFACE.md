@@ -1,203 +1,384 @@
 # Editor surface
 
-The editor surface is Token's domain composition for viewing and editing a
-document in one group. It shares editor anatomy and geometry; it is not a
-reusable multiline-field implementation and must never reimplement the text
-renderer for a gallery or feature.
+The editor surface is Token's domain composition for an active document view in
+one editor group. It is not a reusable multiline field. Features and gallery
+fixtures must drive the production renderer rather than inventing a second text
+loop. This chapter specifies the present model, derived geometry, projection,
+input routing, and known gaps.
 
-## Current composition — verified
+The conceptual foundations are also covered by the editor reference's
+[viewport chapter](../EDITOR_UI_REFERENCE.md#chapter-4-viewport-geometry-and-line-calculations)
+and [soft-wrap chapter](../EDITOR_UI_REFERENCE.md#chapter-6-soft-wrapping-the-coordinate-system-split).
+Those chapters do not substitute for Token's implementation contracts below.
 
-One EditorArea owns documents, per-view EditorState values, editor groups and a
-layout tree. A group has tabs and an active editor; multiple editor views can
-share a document while retaining their own cursors, selections, viewport, soft
-wrap, folds and inline ghost projection. Rendering is orchestrated only by
-[Renderer](../../src/view/mod.rs).
+## Ownership and current representation
 
-| Layer                                                    | Existing responsibility                                                                           |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [editor-area model](../../src/model/editor_area.rs)      | documents, views, tab groups, split/preview tree and focused group                                |
-| [editor state](../../src/model/editor.rs)                | cursors/selections, viewport, wrapping, folds, ghost text and view mode                           |
-| [editor layout](../../src/layout/editor.rs)              | tab strip flow, tab clipping/scroll and preview chrome                                            |
-| [editor geometry](../../src/view/geometry.rs)            | group content rectangle, find-bar inset, gutter lanes, cursor/row transforms and scrollbar tracks |
-| [editor text renderer](../../src/view/editor_text.rs)    | visible text rows, selections, diagnostics, carets, gutter and clipping                           |
-| [editor scrollbars](../../src/view/editor_scrollbars.rs) | pixel scroll metrics, thumbs and overview marks                                                   |
-| [runtime mouse](../../src/runtime/mouse.rs)              | typed hit dispatch, selection drags, tabs, gutter and scrollbar capture                           |
-| [editor update](../../src/update/editor.rs)              | deterministic cursor, selection, folding, wrap and scroll transitions                             |
+### Durable document versus pane-local view
 
-A GroupLayout consists of group rect, tab bar, optional find-bar rect, remaining
-content rect, gutter lanes/border and text start. Both rendering and pointer
-mapping construct it. Content uses a clip; the gutter has a different clip. The
-tab bar is a separate Clay snapshot so its scrolling and title clipping do not
-invent editor-content geometry.
+**Current excerpt** — [src/model/editor_area.rs](../../src/model/editor_area.rs)
 
-## Shared anatomy
+```rust
+pub struct EditorArea {
+    pub documents: HashMap<DocumentId, Document>,
+    pub editors: HashMap<EditorId, EditorState>,
+    pub groups: HashMap<GroupId, EditorGroup>,
+    pub previews: HashMap<PreviewId, PreviewPane>,
+    pub layout: LayoutNode,
+    pub focused_group_id: GroupId,
+    pub last_layout_rect: Option<Rect>,
+}
 
-### Group and chrome
+pub struct EditorGroup {
+    pub id: GroupId,
+    pub tabs: Vec<Tab>,
+    pub active_tab_index: usize,
+    pub rect: Rect,
+    pub attached_preview: Option<PreviewId>,
+    pub tab_scroll: usize,
+}
+```
 
-1. **Tab strip**: each group owns an ordered tab collection and horizontal pixel
-   tab scroll. EditorTabBarLayout provides identical flow, clipping and hit
-   rectangles for drawing/dragging/input. Tab focus changes the focused group.
-2. **Docked find bar**: exists only for the matching focused editor and consumes
-   space below tabs. It is not overlaid inside the text viewport.
-3. **Content rect**: establishes the clipping boundary for the active tab
-   content and the overlay scrollbar edge.
-4. **Special content boundary**: the group can render Text, CSV, Image or
-   BinaryPlaceholder. The latter three use separate painters/input paths; text
-   behaviors must be gated by EditorState::is_plain_text_mode().
+A DocumentId selects durable buffer, file, revision, diagnostic and syntax source
+state. An EditorId selects one _view_: two states can share a document but must
+not share cursor, selection, viewport, wraps, folds, or ghost projection. A
+GroupId owns tab ordering, active tab index, and a derived layout rectangle.
+focused_group_id is pane focus; the global FocusTarget::Editor is deliberately
+coarser and identifies no group. Tab joins a group to EditorId; the editor joins
+itself to DocumentId.
 
-### Text editor anatomy
+The layout tree owns group/preview placement, as detailed in
+[SPLITTER.md](SPLITTER.md), not cursor state. rect and last_layout_rect are
+derived physical-pixel geometry retained by the area. tab_scroll is a separate
+physical-pixel tab-strip offset, never editor text X scroll. In debug builds
+EditorArea::assert_invariants checks focused group, active tab indexes, and
+tab/editor/document links.
 
-For Text mode, the surface is: gutter lanes; gutter border/padding; text
-viewport; selection and occurrence layers; syntax/decorations; carets; fold
-disclosures; ghost/inlay projection; optional find/diagnostic overview marks;
-and vertical/horizontal overlay scrollbars.
+**Current excerpt** — [src/model/editor.rs](../../src/model/editor.rs)
 
-The gutter is not merely line numbers. GutterLayout orders Marks, LineNumbers,
-Fold and Diff lanes left-to-right, skipping zero-width lanes. Marks activate with
-diagnostics; fold lane is enabled for plain text. Folding is an interactive
-gutter lane; marks may consume input for their future owner. Line number width
-uses one model formula based on line count, avoiding geometry drift. IntelliJ's
-editor reference similarly treats the gutter as an area for line numbers,
-folding and contextual actions, and inlays as additional editor information:
-[UI overview](https://plugins.jetbrains.com/docs/intellij/ui-overview.html).
+```rust
+pub struct EditorState {
+    pub id: Option<EditorId>,
+    pub document_id: Option<DocumentId>,
+    pub cursors: Vec<Cursor>,
+    pub selections: Vec<Selection>,
+    pub active_cursor_index: usize,
+    pub viewport: Viewport,
+    pub scroll_padding: usize,
+    pub rectangle_selection: RectangleSelectionState,
+    pub occurrence_state: Option<OccurrenceState>,
+    pub selection_history: Vec<SelectionSnapshot>,
+    pub view_mode: ViewMode,
+    pub tab_content: TabContent,
+    pub matched_brackets: Option<(Position, Position)>,
+    pub soft_wrap: bool,
+    pub wrap_cache: WrapCache,
+    pub folds: FoldState,
+    pub ghost_text: GhostText,
+    pub overview_cache: OverviewCache,
+}
+```
 
-The current inlay-like mechanism is inline ghost text. It projects rows and
-source spans through TextViewportMap; it affects wrapping, hit testing,
-scrollbars and overview invalidation, but is not a generic arbitrary inlay API.
-A proposed inlay system must extend this projection/mapping source of truth,
-not paint foreign text in a second line loop.
+cursors and selections are parallel source-position vectors; active_cursor_index
+must name an entry. The active cursor drives reveal and primary highlighting.
+Viewport owns integral anchors, fractional pixel offsets, measured extents,
+capacities, and optional easing. scroll_padding is visual rows.
+Rectangle/occurrence/history are pane-local interaction state.
 
-## Coordinates and data model
+soft_wrap, wrap_cache, folds, and ghost_text are projection inputs.
+overview_cache is derived memoized scrollbar-mark data, not document diagnostics.
+is_plain_text_mode() is the mandatory boundary: text fast paths may run only when
+both TabContent::Text and ViewMode::Text hold. A standalone state has None IDs
+while being assembled; EditorArea assigns them when inserting it.
 
-Document positions are source line/column. Visual rows are derived by
-TextViewportMap from document plus pane-local wrap cache, folds and ghost
-projection. The viewport retains integral top visual row/left column and
-fractional physical-pixel offsets. The transformations are:
+Global transient UI belongs in UiState: focus, hover, find/modal/overlay,
+scrollbar/splitter/tab capture, and blinking. Painters borrow it; they never
+move a cursor, edit a document, or claim input capture.
+
+## Geometry composition
+
+Renderer is the top-level orchestrator. Its render-plan construction does:
+
+```text
+chrome shell → editor-area rectangle
+→ EditorArea::compute_layout_scaled (group/preview rects and splitter bars)
+→ EditorArea::sync_all_viewports (every tab in every group)
+→ render editor groups, previews, and splitters
+```
+
+A group constructs GroupLayout from group rect, active document, scaled metrics,
+configured char width, applicable find inset, and whether the active editor is
+plain text. That object is shared source geometry for paint and pointer mapping.
+
+**Current excerpt** — [src/view/geometry.rs](../../src/view/geometry.rs)
+
+```rust
+pub struct GroupLayout {
+    pub group_rect: Rect,
+    pub find_bar_rect: Rect,
+    pub content_rect: Rect,
+    pub tab_bar_height: usize,
+    pub gutter: GutterLayout,
+    pub gutter_right_x: usize,
+    pub text_start_x: usize,
+}
+```
+
+All rectangle coordinates are window physical pixels. find_bar_rect is zero high
+unless it belongs to this active editor; it is docked below tabs, not over text.
+content_rect is the primary content clip. GutterLayout derives marks,
+line-number, and fold lane widths from char width, scaled metrics, source line
+count, diagnostics, and plain-text fold eligibility. Its current diff_w is
+hard-coded to zero rather than derived from a diff producer. Zero-width lanes
+never hit. gutter_right_x and text_start_x are absolute rounded boundaries.
+
+For group height H, scaled tab height T, and requested find height F:
+
+```text
+below_tabs = max(0, H - T)
+find.height = min(F, below_tabs)
+content.y = group.y + T + find.height
+content.height = below_tabs - find.height
+```
+
+The gutter border/text start use a single combined rounding calculation. That
+prevents fractional char widths from making a one-pixel gap between lane and text
+math. Gutter and text have intentionally distinct clips. Zero-size content is
+legal geometry: capacities, scroll, and hits must clamp rather than invent rows.
+
+sync_all_viewports visits all tabs, not merely the focused editor. It rebuilds
+the same GroupLayout, derives visible lines from content height and visible
+columns from text width (including unwrapped scrollbar reservation), resizes
+pixel axes using measured extents, refreshes wraps, then reapplies current pixel
+scroll to clamp. Image auto-fit and CSV rows follow their own mode branches.
+
+## Projection and coordinate algorithm
+
+The surface crosses four spaces:
+
+| Space          | Unit and identity                                           | Owner                         |
+| -------------- | ----------------------------------------------------------- | ----------------------------- |
+| source         | line plus character column, never byte offset               | Document and cursor/selection |
+| display        | projected visual row plus tab-expanded display column       | borrowed TextViewportMap      |
+| local viewport | text-origin-relative physical pixels with fractional scroll | Viewport pixels               |
+| window         | window-relative physical pixels                             | GroupLayout/renderer/input    |
 
 ```text
 window pointer
-  -> GroupLayout text origin/content clip
-  -> TextViewportMap visible row + visual display column
-  -> document source Position
+→ reject tab/find/scrollbar/gutter/outside-content targets
+→ subtract text_start_x and content_rect.y
+→ TextViewportMap::position_for_pixel
+→ source Position
+
 source Position
-  -> display row/column through wrap/fold/ghost map
-  -> viewport pixel offsets
-  -> GroupLayout text origin
-  -> clipped window pixels
+→ TextViewportMap::display_position
+→ local pixel position from viewport anchor/offset
+→ add GroupLayout origin and clip to content
 ```
 
-Use GroupLayout::pixel_to_cursor or the renderer wrapper, never a logical line
-times line-height calculation. Rectangle selection intentionally requests a
-visual column helper. Hover requests an actual source glyph cell and rejects
-whitespace, gutter, below-EOF and ghost glyphs; this differs correctly from a
-caret hit. Cursor, selection and rendering all consult the same visual map.
+**Current excerpt** — TextViewportMap stores a value snapshot of viewport
+scalars, while borrowing only projection inputs:
 
-EditorState owns per-view state. Document owns buffer/revision, diagnostics,
-syntax/folds source data and text settings. App UI owns global focus, modal,
-hover/capture and overlays. A component cannot move cursor or modify a buffer by
-calling a painter; it sends EditorMsg/DocumentMsg and update owns policy.
+```rust
+pub struct TextViewportMap<'a> {
+    pixels: PixelViewport,
+    top_line: usize,
+    left_column: usize,
+    visible_lines: usize,
+    line_count: usize,
+    wrap_cache: Option<&'a WrapCache>,
+    folds: Option<&'a crate::folding::FoldProjection>,
+    ghost: Option<&'a super::GhostProjection>,
+}
+```
 
-## Event and focus contract
+EditorState::viewport_map copies PixelViewport, top_line, left_column,
+visible_lines, and document line_count at construction. The map borrows only
+WrapCache, FoldProjection, and GhostProjection. It is therefore an operation
+snapshot, not a live borrow of Viewport, and is the source of truth for that
+operation's text cursor, selection, drawing, fold behavior, hover, and overview
+conversion.
 
-### Existing pointer behavior
+For source (line,column), display_position redirects a hidden fold body to its
+visible header, handles ghost source-span projection, otherwise maps through
+wrap cache and fold projection. position_at_display_column reverses it: ghost
+rows map to anchor source columns, and a wrap-boundary click belongs to the
+following segment. Tabs go through TextSettings tabs visual/character conversion;
+byte length and naive columns are invalid for Unicode/tabs.
 
-- A group tab focuses its group, selects the tab and arms a thresholded tab drag.
-- Text content click uses the production cursor mapping and selection logic,
-  including modifiers/click count; drag selection is editor-owned.
-- Fold lane click focuses its group and sends Fold Toggle. Other interactive
-  gutter lanes consume before ordinary text selection.
-- Scrollbar thumb/track hit testing precedes editor content and uses captured
-  press-time scrollbar geometry. Track click changes viewport, not caret.
-- Find bar, overlays and special modes intercept their own targets first.
-- Right/middle click paths have their own contexts; no caller should assume a
-  left press definition covers them.
-- Scrolling can dismiss completion because an anchored completion window cannot
-  remain truthfully attached after text moves.
+With local Y y, line height h, fractional Y offset o, and local row k:
 
-FocusTarget::Editor is coarse. Per-group focus lives in EditorArea::focused_group_id.
-A group click updates that ID; multiple views must not share cursor/viewport state
-merely because they share the document.
+```text
+visible_row = floor((max(y, 0) + round(o)) / h)
+global_visual_row = top_line + visible_row
+row_origin(k) = k × h - round(o)
+```
 
-### Existing keyboard behavior
+The text mapper then converts global row and display X to source Position. It
+includes partial edge rows; the content clip decides visibility. The forward X
+projection is `column_pixel_offset(c) = (c-left_column) × char_width -
+round(x.offset)`. Its inverse is deliberately nearest-cell, not floor:
 
-EditorMsg covers movement, selection extension, word/line/document navigation,
-paging, cursor positioning, scrolling, soft wrap, rectangle selection,
-occurrence and fold operations. Update first rejects text operations for non-text
-tabs and keeps selection/cursor history policy deterministic. Cursor reveal uses
-visual rows/padding; wheel scroll does not silently move the cursor.
+```text
+adjusted_x = local_x + round(x.offset)
+visual_column = left_column + round(adjusted_x / char_width)
+                   when adjusted_x > 0 and char_width > 0
+                = left_column otherwise
+```
 
-### Accessibility — gap and proposal
+This is TextViewportMap::visual_column_for_x_offset. Example: with
+left_column=4, x.offset=3.6 (rounded 4), char_width=8 and local_x=17,
+adjusted_x=21; round(21/8)=3, so the visual column is 7. A floor-based inverse
+would choose 6 and fail to agree with Token's caret-hit policy. These are the
+same PixelAxis boundaries documented in [SCROLL-AREA.md](SCROLL-AREA.md). No
+feature-local logical-line-times-height loop is valid.
 
-Current native CPU painting has no component accessibility tree, editor text
-provider, screen-reader semantics, IME contract, high-contrast mode guarantee or
-standard focus traversal across editor subparts. Do not claim accessibility from
-visible carets, colored syntax or pointer affordances.
+viewport_map.row_count is vertical extent authority. It starts with logical or
+wrapped visual lines, applies folds, then applies visible ghost projection.
+Soft wrap constructs a zero-X map and disables horizontal text scroll.
+scrollable_columns applies only to unwrapped text. CSV, image and binary modes
+must stay out of text rendering, text scrollbar, fold-presentation and text-only
+damage fast paths. This does not prohibit constructing `TextViewportMap`:
+`sync_all_viewports` visits every tab and `ensure_wrap_cache` constructs a map
+before its subsequent work. Do not infer a mode guard from map construction.
 
-A future adapter should expose one editor document/view, caret/selection,
-line/column, read-only/busy state, gutter actions and labelled scroll ranges
-without changing the Rust rendering/model boundary. It must retain source versus
-visual-row semantics, announce validation/diagnostics without relying solely on
-color, and provide keyboard access to any new gutter/inlay action. This is
-proposed work, not a precondition for ordinary rendering fixes.
+## Layering and input routing
 
-## Font, theme and performance contract
+Normal text painting is conceptually back-to-front:
 
-The text grid uses Code role and actual configured monospaced metrics. Editor
-tabs and explorer-style text also currently use Code in production; do not
-silently switch them to Ui. Proportional Ui role is selected only by painters
-whose labels/controls are designed for it. Gutter, text, selection, caret and
-syntax pull their semantic colors from resolved editor/gutter/syntax roles.
-Scrollbar overview marks map existing diagnostic/find semantics to colors; no
-new arbitrary color should be introduced at paint time.
+1. group/tab/find chrome;
+2. content background and gutter lanes/border;
+3. visible projected text, syntax/decorations, occurrences and selection;
+4. carets and owning gutter affordances in their respective clips;
+5. overlay scrollbars and vertical overview marks.
 
-Text rendering is bounded to visible projected rows. Shared PerfStage entries
-measure text, glyph, gutter, scrollbar and related stages. Preserve
-EditorState::is_plain_text_mode() around text-only fast paths so CSV/image/binary
-tabs never enter code-text rendering. Gallery fixtures must call production
-Renderer/editor-text paths; a hand-drawn line loop breaks geometry/performance
-truth.
+The concrete owners are [editor_text.rs](../../src/view/editor_text.rs),
+[editor_scrollbars.rs](../../src/view/editor_scrollbars.rs), and
+[view/mod.rs](../../src/view/mod.rs). Renderer owns their order. Cursor-line-only
+damage is guarded by is_plain_text_mode.
 
-## Edge cases
+hit_test_ui priority is cursor overlay, modal, shell/status/sidebar/docks,
+splitters, preview, then editor group. Inside a group, scrollbar thumb/track
+wins over content so a scrollbar press cannot move a caret. Tabs use
+EditorTabBarLayout, the same tab flow/clipping geometry used by paint and drag.
+A gutter lane is resolved through GutterLayout and visual-row mapping, not as
+text at X zero.
 
-- Soft wrap maps one logical line to many visual rows and disables horizontal
-  scrolling; viewport/caret/gutter/folding still target source positions.
-- Folds hide source rows; collapsed headers and fold badges use shared geometry.
-- Ghost/inlay projection can add rows and width, moves source suffix display and
-  must invalidate wrap/overview caches.
-- A docked find bar shifts content geometry and every gutter/text hit must see it.
-- Fractional pixel scroll clips the first/last row; no integer-only row math.
-- Long lines, tabs and Unicode use display/visual-column helpers, not byte count.
-- A small group may yield zero visible rows/columns; hit and scroll must clamp.
-- Multiple groups can show one document but have distinct view state and focus.
-- CSV/image/binary have their own interaction contracts; editor-surface docs
-  describe shared chrome, not permission to feed them text messages.
+Glyph hover is stricter than caret placement: it requires a source glyph and
+rejects gutter, whitespace, below-EOF, and ghost glyphs. Rectangle selection
+needs visual columns; ordinary selection needs source positions. This difference
+is intentional.
 
-## Gallery coverage and sequencing
+## State transitions and command boundary
 
-Gallery currently samples document tabs (states, overflow, drag ghost), dock/
-terminal tabs, panels and static scrollbars/splitters. It deliberately does not
-cover editor composition or interaction. Missing specimens include: focused and
-unfocused text group; selected and multi-caret text; diagnostic and folding
-gutter lanes; wrapped/fractional-scroll viewport; find-bar content inset; ghost
-projection; syntax/selection/caret layering; special tab boundaries; scrollbars
-with overview marks; and split editor groups.
+Token follows Message → Update → Command → Render. Relevant messages are
+EditorMsg (cursor/selection/scroll/wrap/fold), DocumentMsg (buffer editing),
+LayoutMsg (tabs/groups/splits), and UiMsg (scrollbar and overlay capture).
 
-Recommended first composition is a deterministic production EditorArea fixture
-with a single text view, then focused/unfocused pair, then a wrapped/folded/
-diagnostic/ghost matrix. Capture native-size light/dark screenshots. Only after
-that add interaction-specific tests for selection, gutter and capture; do not
-turn gallery into a second editor implementation.
+| Event / precondition                                  | State transition                                                                                                                                                                                | Effect / non-effect                                                                                                                     |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| tab press                                             | focus group if needed; select tab; arm TabDragState                                                                                                                                             | FocusTarget::Editor; preview/tab visibility reconcile.                                                                                  |
+| text left press                                       | production pixel map yields source position; modifier/click policy updates selection                                                                                                            | group focus changes first; selection drag stays editor-owned.                                                                           |
+| fold-lane press                                       | focus group and EditorMsg::Fold Toggle for header                                                                                                                                               | consumed before text selection.                                                                                                         |
+| other interactive gutter                              | its owner consumes it                                                                                                                                                                           | no accidental cursor move.                                                                                                              |
+| scrollbar thumb/track                                 | UiMsg uses shared captured geometry                                                                                                                                                             | thumb press cancels easing; viewport moves, caret does not.                                                                             |
+| wheel over text                                       | EditorMsg::ScrollPixels for hovered EditorId                                                                                                                                                    | stale hover/context anchor can dismiss; cursor does not move.                                                                           |
+| keyboard movement/edit in text                        | deterministic editor/document update then reveal policy                                                                                                                                         | command schedules redraw/I/O; update remains deterministic.                                                                             |
+| ordinary focused editor message in binary placeholder | update-level non-text guard rejects it                                                                                                                                                          | specialized mode owns interaction. Image, like CSV, remains `TabContent::Text` and relies on outer mode routing rather than this guard. |
+| CSV navigation or pointer-targeted ScrollPixels       | outer dispatcher routes CSV navigation separately; ScrollPixels bypasses that outer focused-mode gate because it names hovered EditorId, then EditorState::scroll_pixels rejects non-plain mode | do not generalize this into “all text operations are rejected by one guard.”                                                            |
+| revision/width/wrap/fold/ghost change                 | cache/map refresh and viewport clamp                                                                                                                                                            | every view of document updates its own pane cache.                                                                                      |
 
-## Acceptance criteria and evidence
+Cursor reveal obtains active cursor display row/column and PixelAxis safe region.
+Vertical padding is scroll_padding visual cells; horizontal reveal uses four
+cells in minimal mode. It calls canonical pixel scroll and clears animation.
+Wheel scrolling intentionally never reveals/moves caret.
 
-An editor-surface change is acceptable when it names document versus view versus
-global UI ownership; reuses GroupLayout, TextViewportMap and editor_text;
-keeps all content clipping; gates special modes; maps pointer through the same
-geometry; preserves tab/focus/capture behavior; adds relevant PerfStage evidence;
-and gives gallery composition through production painters.
+Accessibility is currently a gap: CPU painting exposes no tree, editor text
+provider, IME contract, or screen-reader semantics. Future work must expose a
+document/view, source caret/selection, read-only/busy state, labelled ranges, and
+keyboard gutter access without confusing source lines with projected rows.
 
-High-confidence evidence comes from the linked implementation files,
-[editor-area tests](../../tests/editor_area.rs),
-[scrolling tests](../../tests/scrolling.rs), [folding tests](../../tests/folding.rs) and
-[gallery guide](../dev/ui-gallery.md), reviewed 2026-09-12. The accessibility
-adapter, generic inlays and new gallery matrix are proposed, not implemented.
+## Worked traces
+
+### Wrapped, folded, fractional hit
+
+Group rect is (20,40,600,420), tab bar 28 px, find bar 32 px. content_rect is
+(20,100,600,360). Let text_start_x=92, line height=20, char width=10,
+top_line=30 and y.offset=7.5. A pointer at (123,111) is local text x=31,y=11.
+visible_row=floor((11+round(7.5))/20)=0, so its global projected row is 30.
+The mapper converts display X and row 30 through wrap/fold/ghost projection.
+
+If row 30 is a wrap continuation, source column begins at that segment start.
+If it is ghost text, the projection returns its anchor source column. The first
+drawn row origin is 100-8=92 and is clipped by content top 100. A naive
+source-line=30, column=floor(31/10) calculation is wrong in all three cases.
+
+### Tiny special tab
+
+At height 40, tabs 28 and requested find 24: below_tabs=12, find height=12,
+content height=0. Text capacity is zero and all hits/scroll clamp safely. If the
+tab is CSV or image, is_plain_text_mode is false: text renderer, fold gutter,
+text scrollbar state, and cursor-line damage fast path must not run. Image and
+CSV take their own zero-content viewport branches.
+
+### Same document, independent panes
+
+A 900 px group can wrap a source line into two rows while a 350 px group wraps it
+into six. Each references one DocumentId but owns its own EditorState, WrapCache,
+Viewport, cursor, and fold state. An edit changes shared revision; refresh must
+rebuild both maps and clamp both projections. Copying visual offset from pane A
+to B is invalid because it does not preserve a source location.
+
+## Invalidation, cost, and verification
+
+Layout invalidates on chrome/window size, split ratios, DPI metrics, tab/find
+visibility, diagnostics, and tree topology. Those change GroupLayout, clip,
+capacity, and wrap width. Projection invalidates on buffer identity/revision,
+tab settings, wrap width, soft-wrap flag, fold identity, ghost identity, and
+mode transition. Repair occurs through ensure_wrap_cache, viewport_map and
+reapplying pixel scroll; no mutable second visual-coordinate state exists.
+
+Per-pane overview cache keys buffer/revision, wrap/fold/find identity, diagnostic
+ranges, projected row count, and exact track height. Thus folds with equal count
+or changed find input cannot reuse old marks. Async syntax/LSP/completion work
+must check document identity/revision/owner before changing projection input.
+
+Text work is bounded by clipped projected rows, not whole document rows. Wrap
+rebuild/overview projection may traverse more when identities change. Use shared
+PerfStage instrumentation; the F2 overlay forces full redraw and cannot support
+release-equivalent timing claims.
+
+Existing evidence includes [tests/scrolling.rs](../../tests/scrolling.rs),
+[tests/folding.rs](../../tests/folding.rs), [tests/editor_area.rs](../../tests/editor_area.rs),
+and module tests for geometry/projection/overview. Gallery screenshots prove
+paint only, not pointer capture.
+
+| Coverage             | Initial state/action                                                                        | Expected result                                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| existing             | fractional pixel scroll, cursor set, easing/reverse/resize                                  | click preserves scroll; reverse uses displayed position; nav/resize cancel easing.                                                                                  |
+| existing             | alternate fold with equal projected count                                                   | overview identity changes; marks are not stale.                                                                                                                     |
+| proposed geometry    | continuation/tab/ghost trace above                                                          | pointer result uses map; clipped origin is 92 px.                                                                                                                   |
+| proposed integration | one document in 900/350 px split panes, then edit                                           | each owns refreshed wrap/cache/viewport; no cursor or offset transfer.                                                                                              |
+| proposed input       | fold press, scrollbar press, text press at same Y                                           | fold/no caret; scroll/no caret; content/source selection.                                                                                                           |
+| proposed regression  | CSV/image/binary rendering and damage                                                       | text rendering, text scrollbars, fold presentation and text-only damage fast paths stay excluded. Map construction during viewport synchronization is not excluded. |
+| proposed gallery     | production focus, selection, diagnostics, wrap/fold/ghost, fractional scroll and find inset | real Renderer/GroupLayout/map/scrollbars at light/dark native sizes.                                                                                                |
+
+## Stable and proposed boundaries
+
+The stable API is not a widget framework. Consumers compose EditorArea identities,
+GroupLayout, TextViewportMap, existing messages, and Renderer. A new inlay system
+must become input to the same projection/mapping source of truth; a feature-local
+extra-line painter would break selection, hit testing, wrap, overview, and scroll.
+
+**Proposed representation — not implemented**
+
+```rust
+pub struct AccessibleEditorView<'a> {
+    pub document_id: DocumentId,
+    pub editor_id: EditorId,
+    pub map: TextViewportMap<'a>,
+    pub read_only: bool,
+}
+```
+
+This is only an accessibility boundary sketch. It must not own a second document
+or view state, own a renderer, or report projected visual rows as source lines.

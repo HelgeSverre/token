@@ -1,180 +1,125 @@
 # Icon
 
-An icon is a compact visual sign with a stable semantic role. It is not merely a
-Unicode character, nor is an icon-only control self-describing. This document
-separates current glyph/badge practices from the proposed asset and accessibility
-contract.
+## Current representations and ownership
 
-## Current implementation — verified
+Token has icon paint utilities and several semantic producers, but no `Icon`
+component/catalog. Domain code owns meaning; renderer receives a glyph and
+fallback only for one paint call.
 
-Token has several icon-like render paths but no unified Icon component.
+| Producer          | Durable owner                    | Render representation            | Identity invariant                                                   |
+| ----------------- | -------------------------------- | -------------------------------- | -------------------------------------------------------------------- |
+| Workspace tree    | `FileNode { is_dir, extension }` | Nerd Font `&'static str`         | folder expansion picks closed/open glyph; files use cached extension |
+| Panels            | `PanelId`                        | `panel_icon(PanelId)`            | panel identity, not an icon button                                   |
+| Overlay file rows | modal result                     | `RowIcon::Glyph { ch, color }`   | first extension glyph or fallback                                    |
+| Completion rows   | completion item                  | `RowIcon::KindBadge`             | badge geometry, documented separately                                |
+| Problems tree     | problems row                     | `draw_icon(ch, fallback, color)` | chevron and file cell are separate                                   |
 
-| Consumer                | Current representation                      | Ownership/limitations                                        |
-| ----------------------- | ------------------------------------------- | ------------------------------------------------------------ |
-| workspace files/folders | Nerd Font string from FileType              | requires compatible glyph; file-type semantics live in model |
-| panel helper            | Nerd Font glyph or empty string             | panel identity helper, not a painter/registry                |
-| command/file modal rows | RowIcon::Glyph                              | overlay surface measures/draws a character                   |
-| completion rows         | RowIcon::KindBadge                          | painted letter badge with MenuItemKind color                 |
-| overlay/header/severity | single glyph/badge                          | feature-local semantic/palette mapping                       |
-| fold gutter             | disclosure glyph                            | text editor renderer and GutterLayout geometry               |
-| gallery icon button     | glyph label through standard button painter | visual specimen only                                         |
+**Current excerpt — semantic source stays outside paint**
 
-[Workspace icon mapping](../../src/model/workspace.rs) explicitly states its
-Nerd Font v3 dependency. [Panel helper](../../src/panels/mod.rs) is likewise a
-Nerd Font helper, and many panel arms are still empty. The bundled primary code
-font is JetBrains Mono, while the renderer supplies fallback behavior for missing
-glyphs. Therefore an icon can be unavailable, have different advance/ink bounds
-than an ordinary code cell, or silently look unlike its intended symbol.
-
-[TextPainter](../../src/view/frame.rs) does have a specialized draw_icon path
-that fits visible glyph ink into a caller-supplied cell and falls back when the
-active font lacks the character. This is a rendering utility, not an icon
-catalog, semantic label system, hit rectangle policy or SVG loader. Overlay
-rows reserve icon width when a RowIcon is present and use actual painter
-measurement for relevant layout.
-
-## Anatomy and naming
-
-Use the following terms.
-
-| Term        | Contract                                                                               |
-| ----------- | -------------------------------------------------------------------------------------- |
-| icon asset  | source artwork/glyph plus declared intrinsic logical size                              |
-| icon glyph  | an icon rendered from a font code point                                                |
-| noun icon   | identifies an object, such as a file kind; it does not invoke an action                |
-| action icon | represents an available command; it has an accessible label/tooltip                    |
-| status icon | represents state; shape/text communicates state in addition to color                   |
-| icon button | action control whose visible label is an icon; button owns hit/focus/press state       |
-| badge       | compact metadata label/chip, not a substitute for a universal icon                     |
-| gutter icon | line-anchored editor affordance; its lane and source position are part of the contract |
-
-Do not call a glyph-only tab title, file name or keycap an icon component. An
-icon button is still a button and uses the shared button interaction contract;
-do not fork its hover/pressed/disabled/focus geometry because its label happens
-to be symbolic.
-
-## Proposed Token Icon contract
-
-No Rust implementation is implied. Before adding broadly reusable icons, specify
-a small semantic interface equivalent to:
-
-```text
-Icon {
-  semantic_id, category: Action | Noun | Status | Gutter,
-  representation: Glyph | Asset,
-  intrinsic_logical_size, fallback,
-  accessible_label (required for action/status)
+```rust
+pub struct FileNode {
+    pub name: String, pub path: PathBuf, pub is_dir: bool,
+    pub children: Vec<FileNode>, pub extension: FileExtension,
 }
-IconPaint {
-  rect, visual_state, palette_role, scale_factor
+impl FileNode {
+    pub fn icon(&self) -> &'static str {
+        if self.is_dir { "\u{F07B}" } else { self.extension.icon() }
+    }
+    pub fn icon_expanded(&self) -> &'static str {
+        if self.is_dir { "\u{F07C}" } else { self.extension.icon() }
+    }
 }
 ```
 
-The owner chooses semantic ID and action/status meaning; a shared resolver
-selects supported representation and fallback; a painter fits within the
-provided rectangle; the parent component owns click/focus/tooltip. Geometry
-uses a rect and design size scaled once, not character count. The resolver must
-not perform I/O during paint. If external SVG/bitmap assets are introduced, load
-and validate them through a runtime/prepared asset path and cache rasterization
-by asset, scale and theme as appropriate.
+`FileNode` owns paths, children, and cached extension. A scan/reload that changes
+path/type must recompute extension before rendering. Returned glyph data are
+static Nerd Font strings; consumers deliberately take `.chars().next()` because
+`draw_icon` accepts `char`, and provide `?`. A missing semantic glyph selects
+that fallback codepoint without changing node identity; if fallback is absent
+too, the font may still rasterize its `.notdef` glyph rather than a question mark.
 
-The proposal does not require converting established text glyphs. Keep a glyph
-representation where its font support, fallback and semantics are deliberately
-tested. Use assets where visual identity, sharp HiDPI scaling or theme variants
-need guarantees a font cannot provide.
+## Ink-fitting algorithm and units
 
-## Theme, font and scaling
+`TextPainter<'a>` borrows active font and mutable `GlyphCache`; a scoped
+`with_font` borrow restores its prior Code/UI role on `Drop`, so icon work cannot
+leak typography into subsequent paint.
 
-Current icon color is feature-specific: sidebar file/folder colors, overlay
-text/severity colors, editor/gutter colors and completion kind colors. Reuse
-those semantic roles. A general icon palette is **not implemented**; do not add
-one solely because several pixels happen to be icons. Add a role only for a
-concrete state distinction with a fallback for existing theme YAML.
+**Current algorithm — `TextPainter::draw_icon`**
 
-Code versus Ui role matters: workspace/file glyphs and editor/fold glyphs use
-the contexts that currently paint them, while proportional Ui text metrics are
-not interchangeable with code-grid placement. Use draw_icon's ink fitting for a
-fixed glyph cell when appropriate; use ordinary text measurement for inline
-label glyphs. Physical size must derive from intrinsic logical size times display
-scale, then fit and clip to its provided rectangle. Never hard-code a 1x pixel
-box or assume every glyph has monospaced visual ink.
+```text
+if cell.width <= 1 or cell.height <= 1: return       // physical px
+font = choose active/fallback font containing glyph, otherwise fallback glyph
+bounds = font.metrics(glyph, 1.0).bounds
+if bounds.width <= 0 or bounds.height <= 0: return
+size = min((cell.width-1)/bounds.width, (cell.height-1)/bounds.height)
+bitmap = glyph_cache[(glyph, size.to_bits)] or rasterize(font, glyph, size)
+x = round(cell.x + (cell.width-bitmap.width)/2)
+y = round(cell.y + (cell.height-bitmap.height)/2)
+push cell clip; paint bitmap; pop clip
+```
 
-The primary IntelliJ guidance is useful reference: use simple shapes, distinguish
-status by more than color, and tailor default/gutter/tool-window sizes to their
-context. It recommends SVG for scalable, HiDPI-friendly custom icon assets.
-Those are design inputs, not Token asset-format requirements:
-[IntelliJ icon style](https://plugins.jetbrains.com/docs/intellij/icons-style.html)
-and [IntelliJ icon implementation guide](https://plugins.jetbrains.com/docs/intellij/icons.html).
+The calculation uses visible `bounds`, not em square or advance. One physical px
+is reserved for raster rounding. For cell `(10,10,14,14)` and unit ink bounds
+`(7,10)`, `size=min(13/7,13/10)=1.3`; a 9×13 raster starts at
+`(round(12.5),round(10.5))=(13,11)`. Ink remains contained even with unusual
+bearings/advance.
 
-## Pointer, keyboard, focus and accessibility
+Problems-tree callers make padded cells first: an `8×scale` chevron cell and a
+`14×scale` file cell centered in the row. Chevron hit testing still uses the
+tree layout's original indicator column. Paint clipping therefore cannot move
+interaction geometry, and `draw_icon` creates no hit/focus target itself.
 
-### Existing behavior
+## Passive projection, invalidation, and cost
 
-Icon-like output has no common pointer contract. Row icons activate through their
-row; fold disclosure activates its gutter lane; gallery's close icon activates a
-normal button painter. Tooltip/accessible label behavior is feature-specific or
-absent. An empty panel icon must not generate an empty hit target.
+Icons have no event/focus/capture/cancel state. Expansion or row selection is
+owned by tree/list update; renderer reads node identity and projects glyphs.
+Current `Workspace::refresh` calls `file_tree.refresh(&root)`, replacing the
+tree while retaining `selected_item` and `expanded_folders`; it does not repair
+them against removed paths. Repair by stable identity is desirable future work,
+not current behavior.
+Glyph bitmap cache key is `(char, physical-size bits)`: font, fallback, glyph,
+cell size and scale affect output; color does not. Visible icon cost is metrics
+lookup plus cached bitmap paint, with rasterization only on miss. No icon layout
+cache exists. Current Token has no accessibility tree; important icon-only
+actions must acquire names at their owning control when that tree is added.
 
-### Required proposal
+## Traces, integration, and tests
 
-- A noun icon has no action hit target unless its containing row has one.
-- An action icon has a visible or programmatic text name, tooltip/description,
-  keyboard-equivalent command and standard button focus/disabled behavior.
-- A status icon has adjacent text, a discoverable description or another
-  non-color signal; do not communicate error versus success only by red/green.
-- A gutter icon names its document position/lane and obeys editor group focus,
-  clipping, folding and keyboard alternatives.
-- Icon hit rectangles come from parent component layout, never from glyph ink.
-- Pointer hover alone must not be the sole way to discover a control.
+A collapsed Problems file projects `▸` in its 8px cell and first extension glyph
+in the adjacent 14px cell. If Nerd Font lacks it, its fallback codepoint (usually
+`?`, otherwise potentially `.notdef`) still stays within that second cell and
+cannot expand/move the chevron target. A one-pixel cell returns before
+rasterization. Existing [frame.rs](../../src/view/frame.rs) tests verify centered
+contained ink at scales and missing-primary glyph fallback. Add vectors for the
+7×10/14px calculation above, nonzero bearings under clip, scale 1→1.25 distinct
+cache keys, and chevron hit testing unchanged by a file icon.
 
-Token currently lacks an accessibility tree and general tooltip manager, so these
-are requirements for future components rather than claims about shipped behavior.
+Flow is `workspace/modal model → semantic glyph adapter → renderer consumer →
+TextPainter::draw_icon`; model/update does mutation and render is projection.
 
-## Edge cases
+```rust
+// proposed API — not implemented
+// FileExtension is re-exported from model::workspace; PanelId lives in
+// panel::dock. Rect is model::editor_area::Rect with f32 physical-pixel fields.
+enum IconName {
+    File(crate::model::FileExtension),
+    Folder { expanded: bool },
+    Panel(crate::panel::dock::PanelId),
+}
+struct IconPaint {
+    cell: crate::model::Rect,    // caller-owned physical-pixel bounds
+    fallback: char,              // semantic degradation chosen by consumer
+    color: u32,                  // resolved ARGB, not a model theme token
+}
+fn resolve_icon(name: IconName) -> &'static str { /* model-to-Nerd-glyph adapter */ }
+```
 
-- Missing Nerd Font glyph, fallback replacement, emoji substitution or unsuitable
-  advance/ink must preserve layout and expose meaningful text where necessary.
-- High display scale, light/dark themes and disabled/inactive window state need
-  visual verification.
-- A file icon in a dense tree may be noun metadata; it must not be confused with
-  a row action.
-- A status/badge can be colorblind-inaccessible even if it uses a theme role.
-- Icon-only labels can be too small for pointer acquisition; parent button
-  geometry supplies an adequate target, independent of icon art bounds.
-- Gutter icons must not overpaint text/gutter lanes or remain clickable when
-  their line is folded/hidden.
-- Do not add icon assets to user themes without a resolved fallback and a clear
-  security/performance loading boundary.
+`IconName::File` retains extension semantics without a path; `Folder` retains
+the expansion bit; `Panel` retains a stable panel identity. `IconPaint::cell` is
+not a new layout owner, `fallback` has an intentional degradation codepoint but
+not a guarantee of readable ink, and
+`color` is a resolved frame value. `resolve_icon` belongs at the view adapter
+boundary; model must not depend on fonts or a glyph cache.
 
-## Gallery coverage and sequence
-
-Gallery has only icon-button.close, and it is a glyph label painted through the
-shared button. It has no noun/status/gutter glyph specimens, fallback/missing
-glyph state, fixed-cell fit/crop, dark/light contrast matrix, tooltip/label
-proof, disabled icon action, or production file-tree/icon-row composition.
-
-The recommended sequence is:
-
-1. Inventory actual icon consumers and establish semantic IDs plus fallback
-   policy, beginning with the production workspace/file and panel gaps.
-2. Add production-painter gallery specimens for icon button states, noun file
-   row, completion badge, status/severity, and fold gutter at 1x/2x light/dark.
-3. Only then decide whether an SVG resolver/asset registry has two real
-   consumers; keep icons out of a generalized widget framework.
-4. Add semantic names/tooltips/accessibility adapter with the action-control
-   work, not as an afterthought.
-
-## Acceptance criteria and evidence
-
-An icon change is ready when semantic category and owner are explicit; its
-representation/fallback/font dependency is tested; the parent supplies hit/focus;
-color role and non-color status cue work in light/dark/scale variants; clipping
-is correct; and the gallery calls production paint code.
-
-High-confidence sources are [workspace model](../../src/model/workspace.rs),
-[panel helper](../../src/panels/mod.rs), [frame painter](../../src/view/frame.rs),
-[overlay surface](../../src/view/overlay_surface.rs),
-[editor text](../../src/view/editor_text.rs),
-[gallery model](../../src/model/gallery.rs), and
-[gallery guide](../dev/ui-gallery.md), reviewed 2026-09-12. The unified icon
-contract, asset resolver and accessibility behavior are proposed, not implemented.
+Sources: [frame.rs](../../src/view/frame.rs), [workspace.rs](../../src/model/workspace.rs),
+[panels.rs](../../src/view/panels.rs), [modal.rs](../../src/view/modal.rs).

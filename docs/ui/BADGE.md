@@ -1,55 +1,121 @@
 # Badge
 
-## Purpose and catalog mapping
+## Current component boundary and ownership
 
-A **Badge** is compact, non-primary metadata that identifies a kind, count, state, or severity in constrained UI. It is not a Button, status-bar segment, Keycap, icon, or arbitrary colored decoration. Token currently has one concrete badge family: completion/list **kind badges**. Fold continuation pills and status/severity text are related visuals but use different geometry/interaction and must not be forced into one type.
+Token's only badge primitive is a completion-kind mark embedded in an overlay
+row. It is not a generic retained component, count pill, or interactive status
+control. Completion/domain code owns `MenuItemKind`; `RowIcon::KindBadge` carries
+that semantic value into one render pass, while selection and lifetime remain
+with the list.
 
-The IntelliJ catalog does not define one universal Badge component; its component guidance instead separates icons, notification/severity surfaces, labels and list/table metadata. This proposed Token vocabulary is therefore an implementation-grounded consolidation, not a claim of an IntelliJ API. Use [Icon](ICON.md) when the mark itself is the semantic pictogram; use Badge when compact container plus label/kind mapping is required.
+**Current excerpt**
 
-## Current Token contract — high confidence
-
-`overlay_surface::RowIcon::KindBadge(MenuItemKind)` is a real, narrowly scoped completion/list painter.
-
-| Concern           | Current behavior                                                                                                                                                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Data/owner        | `MenuItemKind` is produced by completion sources/LSP mapping; view owns private glyph/color mapping. Kinds include Function/Method, Variable, Type, Keyword, Field, Module/Folder, File, Constant and Other.                         |
-| Anatomy           | One 16×16 logical rounded-square (`r4`) at row leading icon slot; a centered 11px metadata glyph. Method/Function share source color but retain glyph distinction.                                                                   |
-| Theme             | Background is syntax/overlay semantic source pre-blended 20% over panel, preventing alpha stacking on selection. Glyph uses `overlay.text_bright`; sources use accent, accent-bright, severity roles, dim text or keycap foreground. |
-| Geometry          | `ROW_ICON_W` reserves 18 logical px before label. Overlay row measurement/hit geometry is shared, centered vertically in row; badge itself has no separate hit target.                                                               |
-| State/input       | It remains passive under normal/hover/selected parent row. Parent row owns selection/activation/focus.                                                                                                                               |
-| Consumers/gallery | Completion and dummy completion/menu rows in modal, Context/overlay rows, and `list-row.kind-badge` gallery specimen. Tests exhaust glyph/color mapping.                                                                             |
-
-Other badge-like elements are intentionally not generic Badge: folded-region `⏎ +N lines` uses editor geometry/hit behavior; Keycaps use their own tokens and binding grammar; severity banners use `Severity` plus larger message surface; status labels are feature compositions.
-
-## Proposed Token contract — proposed, limited extraction
-
-Do not create a generic colored-pill API. Extract only if a second passive compact-metadata consumer shares semantic kinds and row layout. Preserve semantic data rather than `Color + String`:
-
-```text
-Badge { kind: CompletionKind | FileKind | Severity | Count | Custom, label: ShortText, presentation: SquareGlyph | PillText, emphasis: Subtle | Strong }
-BadgeLayout { outer_rect, glyph_or_text_rect }
+```rust
+pub enum RowIcon { None, Glyph { ch: char, color: u32 }, KindBadge(MenuItemKind) }
+pub struct Row<'a> {
+    pub icon: RowIcon, pub label: &'a str, pub match_indices: &'a [u32],
+    pub detail: Option<&'a str>, pub accessory: Accessory<'a>,
+}
+const KIND_BADGE_SIZE: f32 = 16.0;
+const KIND_BADGE_RADIUS: f32 = 4.0;
 ```
 
-The domain model owns meaning/count/severity; an adapter maps domain type to Badge kind; painter selects visual recipe and returns passive bounds. `Custom` is deliberately deferred until a named consumer proves that arbitrary text/color cannot be a [Label](LABEL.md) or [Icon](ICON.md). Badge never invokes actions, applies filters, or doubles as a status control.
+`MenuItemKind` is semantic input, not caller-provided color/text. Its private
+mapping picks a discriminator (`Function → f`, `Method → M`, `Field → .`,
+`Other → ?`) and source palette role. Function and method intentionally share a
+background but not glyph. Unknown protocol data must map to `Other` before view
+construction, rather than indexing a palette or panicking.
 
-### Geometry, theme, font and accessibility
+## Geometry, paint math, and clipping
 
-Each presentation has fixed logical minimum touch-independent visual dimensions and a measured label; reserve its width before parent label truncation, as Rows already do for accessories. For compact list kind badges retain 16×16/r4/18px slot. Pill/count badge must define max digits, truncation/overflow (`99+` policy), and never alter row height silently. Use UI/meta font and fallback glyph measurement. Scale all constants through existing overlay/metrics helpers; mask cache and painter measurement remain shared.
+List layout detects icons and reserves their leading column before label
+truncation. For `KindBadge` it converts logical values to physical px:
 
-Use semantic source roles with preblending only over known opaque surface; do not nest translucent fills or use color as sole meaning. Ensure glyph/text contrast and provide text alternative through parent row accessible name (for example “method, foo”). Passive Badge is not tab-focusable. If it conveys error/warning independently of nearby text, proposed platform accessibility must expose that severity; current Token has no platform tree.
+```
+d = round(16 × scale); r = round(4 × scale)
+icon_x = row.x + round(row_inset × scale) + round(8 × scale)
+badge = (icon_x, row.y + floor((row.h-d)/2), d, d)
+glyph_size = 11 × scale as f32       // `size_px`: not rounded
+glyph.x = badge.x + floor((d-ceil(measure(glyph)))/2)
+glyph.y = badge.y + floor((d-line_height(glyph_size))/2)
+```
 
-### State and edge cases
+Rectangle fields are physical pixels. `measure_sized` rounds each glyph advance,
+so the one-glyph `glyph_w` is already an integral-valued `f32` (the later `ceil`
+is harmless). Badge is not a hit target: overlay `Row` owns the list action;
+`FlatIndex` is only the borrowed render wrapper used by `OverlaySpec`. Completion
+state itself stores selected/scroll in its cursor-overlay state as `usize`.
+Hover/selection changes parent wash, never badge pressed state. Normal
+`render_list` establishes no list/owner clip; it paints under whatever `Frame`
+clip its caller established. Settings row traversal separately pushes its
+settings viewport clip.
 
-Badge inherits parent hover/selection background but must remain legible; it does not gain its own pressed/selected state. Unknown LSP kind maps predictably to Other rather than panics. Long labels/counts use a defined text/pill policy, not overflow. A badge must not be painted for a zero-width clipped row, and stale LSP result mapping must not outlive row data. Icon-only semantic status should remain Icon when no container/label/count is required.
+The background is preblended opaque, not source-alpha painted over changing row
+backgrounds:
 
-## Consumers, gallery, acceptance
+```
+out.channel = (source.channel * 20 + panel.channel * 80) / 100
+out.alpha = 255
+```
 
-Existing kind badge is the only current consumer and should remain in `overlay_surface`; no new generic implementation slice is authorized. A proposed File/Folder badge or diagnostic-count pill needs a concrete row/status consumer plus semantic mapping review first. Do not merge fold pill, terminal glyphs, Keycaps or severity banner just to increase reuse.
+For source `#4080C0` over panel `#202020`, integer math produces `#263340`.
+Painting 20% source after selection wash would change that color. `fill_rounded_rect`
+uses anti-aliased corner coverage cached by physical radius; same-radius badges
+share a mask regardless of color. Glyph uses `text_bright`.
 
-Maintain the existing `list-row.kind-badge` specimen and add states only with shared painter: every kind including Other; normal/hover/selected row; narrow row preserving accessory width; light/dark/scale contrast; unknown kind; and any future count overflow/severity mapping. Acceptance: exhaustive kind mapping test; row layout reserves badge before text; badge rectangles derive from same layout as paint; contrast/non-color semantic alternative verified; passive badge creates no hit/focus action; gallery is real production paint.
+## Projection, updates, cache inputs, and cost
 
-## Evidence
+```
+LSP/completion item -> MenuItemKind -> modal::completion_rows -> RowIcon
+                         update selection/scroll ------------^    |
+Renderer -> overlay layout -> render_list -> badge fill/glyph -----+
+```
 
-- Token: [kind badge dimensions/RowIcon/paint](../../src/view/overlay_surface.rs), [completion kind mapping](../../src/completion/menu.rs), [LSP mapping](../../src/completion/lsp.rs), [fold badge geometry](../../src/view/geometry.rs), [editor fold paint](../../src/view/editor_text.rs), [gallery catalog](../../src/model/gallery.rs).
-- Token inventory: [component inventory](../dev/ui-component-inventory.md) and [research brief](RESEARCH-BRIEF.md).
-- Primary catalog boundary: [IntelliJ Components](https://plugins.jetbrains.com/docs/intellij/components.html), [Notifications](https://plugins.jetbrains.com/docs/intellij/notifications.html), [Icon Button](https://plugins.jetbrains.com/docs/intellij/icon-button.html).
+There is no Badge message. Pointer/keyboard updates the owning consumer's
+`usize` selection/scroll state; modal assembly wraps it as `FlatIndex` for
+`OverlaySpec`. Consumers repair their own selection when filtering changes rows,
+and render derives each remaining badge anew. No badge-level repair exists. Per visible badge cost is
+O(1) rounded fill plus one glyph lookup/paint; no badge layout cache exists.
+Palette, font, scale, row geometry, and item kind are repaint inputs. Radius and
+glyph-size changes naturally select different cache entries. Completion accepts
+items against their `document_id` and `revision` guards (not a generic generation
+counter); paint cannot repair stale semantics.
+
+## Worked trace and verification
+
+At `scale=1.25`, normal-overlay inset is `round(6×1.25)=8`, pad is
+`round(8×1.25)=10`, `d=20`, `r=5`, and the normal logical 30px row becomes
+38 physical px. Thus row `(40,80,260,38)` has icon x `40+8+10=58` and badge
+`(58,89,20,20)`. The glyph paint size is the unrounded `11×1.25=13.75f32`;
+if its rounded `M` cell measures 9px and line height is 14, glyph origin is
+`(58+floor((20-9)/2),89+floor((20-14)/2))=(63,92)`. Clicking (68,99)
+activates its row, not a badge-specific action. Unknown kind uses `Other`/`?`,
+never prior-row color. A settings viewport clip constrains a Settings badge-like
+row, but a normal overlay list requires its caller to establish clipping.
+
+Existing mapping/gallery coverage is in [overlay_surface.rs](../../src/view/overlay_surface.rs)
+and [gallery.rs](../../src/model/gallery.rs). Add exact 1.25x rectangle, opaque
+alpha, r5-mask-reuse across colors, `Other` fallback, and no badge `HitTarget`
+tests.
+
+## Proposed extension boundary
+
+Do not introduce `Badge { color, text }`. A second passive consumer must retain
+semantic type and define its own measurement/overflow policy:
+
+```rust
+// proposed API — not implemented
+// MenuItemKind is crate::completion::menu's domain enum; Severity is the
+// existing overlay severity enum. WidgetRect is view::geometry's physical-usize
+// rectangle. Count stays numeric until this adapter applies its `99+` policy.
+enum BadgeKind { Completion(MenuItemKind), Severity(Severity), Count(u32) }
+enum BadgePresentation { SquareGlyph, PillText }
+struct BadgeLayout { outer: WidgetRect, content: WidgetRect }
+```
+
+A count pill needs a digit policy such as `99+`, measured width, owner clip, and
+text alternative; it cannot reuse a 16px completion slot. Token lacks a platform
+accessibility tree, so current row text must name a kind rather than color alone.
+
+Sources: [overlay_surface.rs](../../src/view/overlay_surface.rs),
+[frame.rs](../../src/view/frame.rs), [modal.rs](../../src/view/modal.rs).

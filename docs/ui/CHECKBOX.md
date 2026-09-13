@@ -1,91 +1,203 @@
 # Checkbox
 
-## Purpose and implemented overlap
+## What exists
 
-A checkbox expresses an independent yes/no choice; a group permits multiple
-choices. It does not currently exist as a semantic Token widget. The implemented
-primitive is `render_checkbox(frame, painter, theme, rect, checked, scale)`
-([controls.rs](../../src/view/controls.rs#L9)): it draws a square with either
-`overlay.recessed_wash` or `overlay.accent`, a `hairline`, and a clipped ✓ in
-`text_bright`. It accepts no label, hover, pressed, focused, disabled,
-indeterminate, event or accessible-name state.
+Token has a checkbox **mark painter**, not a semantic Checkbox widget.
+render_checkbox in [controls.rs:9](../../src/view/controls.rs#L9) draws a caller
+supplied square. Settings recognizes exactly labels ["Off", "On"] as a
+checkbox-like form accessory ([settings_page.rs:114](../../src/view/settings_page.rs#L114)).
+The gallery fixtures checkbox.off and checkbox.on are static paint samples.
 
-Settings recognizes a two-label `Off`/`On` convention as a checkbox-like
-accessory and owns commitment in its update layer; form rows paint the primitive
-([settings_page.rs](../../src/view/settings_page.rs#L1275)). The gallery covers
-`checkbox.off` and `checkbox.on` ([gallery.rs](../../src/model/gallery.rs#L308)).
-The current Settings rendering supplies visual state only; do not claim keyboard
-or assistive-technology semantics from it.
+The actual Settings flow is:
 
-### Current ownership and transitions
+```text
+SettingsForm.enabled / FormChoice.active (durable draft)
+ -> overlay Settings Row Accessory::Choices (borrowed label/active state)
+ -> checkbox_rect + render_checkbox
+ -> shared overlay hit test -> OverlayHit::Choice
+ -> form-choice/FormEnabled update -> form.changed -> Cmd::Redraw
+```
 
-| Layer                | Current data / job                                                                                                                                              | What it does not own                                                        |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `render_checkbox`    | `rect`, `checked`, `scale`, painter/theme                                                                                                                       | Label, focus, pointer hit target, enabledness, update message, persistence. |
-| Settings row adapter | Recognises exactly `labels == ["Off", "On"]`; maps active index 1 to checked. [settings_page.rs](../../src/view/settings_page.rs#L114)                          | A reusable checkbox model or tri-state semantics.                           |
-| Settings form        | `SettingsForm.enabled` for a form enable row                                                                                                                    | Master collection enable semantics, which use `ToggleMaster` separately.    |
-| Update/commands      | Converts a row choice to `form.enabled`, marks draft dirty; master action can issue LSP/config effects. [update/settings.rs](../../src/update/settings.rs#L155) | Checkbox paint state.                                                       |
+The painter never owns label, help, hover, press, focus, disabled, mixed,
+accessibility, persistence, or input state.
 
-| Current trigger                                            | Result                                                                                                                                                                                                 |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Pointer hits checkbox square in an `Off`/`On` Settings row | Hit testing returns choice `0` or `1`, the opposite of the currently active value; clicking elsewhere on that row is a row hit, not a toggle. [settings_page.rs](../../src/view/settings_page.rs#L676) |
-| Form enable choice accepted                                | `form.enabled = choice == 1` (or toggles when invoked without explicit choice), focus clears, draft becomes dirty.                                                                                     |
-| Collection master checkbox                                 | Emits `SettingsCollectionAction::ToggleMaster`; LSP/provider owner decides persistence/effect. [update/settings.rs](../../src/update/settings.rs#L544)                                                 |
-| Form is saving                                             | Settings action/update rejects interaction.                                                                                                                                                            |
+## Existing representation, ownership, and geometry
 
-The visible master checkbox and a form's `enabled` row therefore look alike but
-do not share a commit path. The gallery specimens are static paint fixtures; no
-generic Checkbox type has focus or keyboard transitions.
+**Current painter signature**:
 
-### Implemented geometry, theme, and font facts
+```rust
+pub fn render_checkbox(
+    frame: &mut Frame, painter: &mut TextPainter, theme: &Theme,
+    rect: WidgetRect, checked: bool, scale: f64)
+```
 
-In a standard Settings row the square is `14 × scale`, positioned `10 × scale`
-from the row top and `4 × scale` from its right edge
-([settings_page.rs](../../src/view/settings_page.rs#L122)). The painter draws the
-whole supplied rectangle; it has no intrinsic minimum size or clipping scope.
-Its check glyph is measured/truncated at `12 × scale` with the caller's current
-font, so it does not mandate UI or Code font. The adjacent master label is
-separately UI text at 12×scale ([settings_page.rs](../../src/view/settings_page.rs#L911)).
+rect x/y/w/h are physical usize pixels, supplied by the caller. checked is a
+borrowed visual Boolean. scale is physical pixels per logical pixel and makes
+the check mark 12*scale physical px. The painter fills rect using
+overlay.accent when checked, overlay.recessed_wash otherwise, always borders
+with overlay.hairline, and when checked truncates/draws a check glyph using
+overlay.text_bright. It clips no outer mark geometry itself; the caller owns
+rect validity and any parent clipping. It does not force a UI or code font.
 
-Implemented roles are only `overlay.recessed_wash` (off), `overlay.accent` (on),
-`overlay.hairline`, and `overlay.text_bright`; focus, hover, pressed, disabled,
-mixed and error roles are absent. A semantic checkbox cannot communicate a
-disabled/read-only distinction today: both must be introduced as data and paint
-states, and read-only must remain focusable/announced if its value is useful to
-inspect while disabled is skipped and inert.
+Settings defines the actual 1x physical mark box:
 
-## Proposed semantic checkbox
+```text
+size = round(14*scale)
+x = row.x + saturating_sub(row.w, size + round(4*scale))
+y = row.y + round(10*scale)
+w = h = size
+```
 
-**Proposed:** a checkbox descriptor contains stable id, visible label/help,
-`checked: bool` or deliberate `mixed`, enabled, focus and `Toggle(id)` message.
-The hit target includes box and label. Click, Space and Enter toggle if enabled;
-Tab traverses; disabled is skipped and cannot emit. It must expose role
-`checkbox`, name from label, checked/mixed/disabled/invalid state, and error
-description. A parent control that disables dependent rows must make that
-relationship programmatic as well as visual.
+For row=(100,200,300,56), scale=1, box=(382,210,14,14). At 1.25,
+size=18, right inset=5, so box=(377,213,18,18). This right-aligned square is
+the only checkbox hit target: a label click is a row hit, not a toggle.
 
-Use an imperative, short, non-negated sentence-case label on the right of the
-box. IntelliJ recommends checkbox for yes/no or multiple independent choices,
-radio buttons for exclusive alternatives, and supports an indeterminate state
-where it actually represents a mixed/loading aggregate
-([Checkbox](https://plugins.jetbrains.com/docs/intellij/checkbox.html)).
+A FormChoice owns a raw usize active index; enabled is a separate Boolean on
+SettingsForm. Neither is passed directly to the painter. Settings first projects
+the current row into Accessory::Choices { labels, active: Option<usize> }:
+the checkbox render expression is *active == Some(1). Thus Some(1) means the
+projected On choice, Some(0) Off, and None means no projected choice and paints
+off. This distinction matters when inspecting the source: FormChoice.active is
+not an Option and cannot itself be compared to Some(1). The collection master
+uses SettingsCollectionAction::ToggleMaster and may run LSP/config effects; a
+form enabled row changes only its draft. Their visual resemblance must not
+merge their ownership.
 
-## Theme/layout/acceptance
+## Current state × event behaviour
 
-The only implemented tokens are the overlay roles above; there are no
-checkbox-specific hover, focus, disabled or error tokens, and no font role for
-the missing label. Scale the square and its check consistently; its label should
-use UI font and wrap/clip according to the parent form, not the painter.
+| Event                           | Preconditions                                                   | Current state/effect                                        |
+| ------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------- |
+| render checked                  | projected Accessory::Choices.active==Some(1), or master enabled | accent square + check                                       |
+| pointer inside box              | labels exactly Off/On                                           | OverlayHit::Choice with opposite index                      |
+| pointer elsewhere in Off/On row | same row                                                        | OverlayHit::Row, not toggle                                 |
+| choice accepted                 | FormEnabled: choice 0/1                                         | enabled=choice==1; clear field focus; mark draft changed    |
+| choice accepted                 | FormChoice                                                      | validate choice<label count; set active; mark draft changed |
+| collection master click         | collection form                                                 | ToggleMaster; LSP/provider owner chooses command/effect     |
+| saving form                     | collection action                                               | update rejects mutation and redraws                         |
+| press/release/cancel/focus loss | no checkbox state exists                                        | no checkbox transition                                      |
+| disabled/read-only/mixed        | no representation                                               | no semantic behaviour                                       |
 
-Add gallery specimens for hover/pressed/focus/disabled/mixed/error, a long
-label, label-side hit target, high scale and keyboard toggling. First reusable
-slice: add semantic state and focus outline while retaining `render_checkbox`
-as its mark painter; avoid converting all Settings `Off`/`On` rows until their
-existing selection and draft behaviour is preserved.
+The update path is [update/settings.rs:137](../../src/update/settings.rs#L137)
+for form choices/enabled and [update/settings.rs:544](../../src/update/settings.rs#L544)
+for collection master. Existing visual fixtures do not establish keyboard or
+assistive semantics.
 
-Acceptance should include a live Settings form enable-row transition and a
-collection-master transition as separate cases, plus render fixtures for
-off/on/focus/hover/pressed/disabled/mixed/error, label-side hit target, long
-label wrapping, fractional scale and keyboard activation. Verify that proposed
-mixed is not used as a vague third boolean: its model must state the aggregate or
-loading meaning and its accessible state.
+## Proposed semantic checkbox (not current API)
+
+```rust
+// Proposed API — not implemented.
+enum CheckValue { Off, On, Mixed }
+struct CheckboxModel<Id> {
+    id: Id, label: String, help: Option<String>,
+    value: CheckValue, enabled: bool, read_only: bool, invalid: Option<String>,
+    focused: bool, pressed: Option<u64>,
+}
+enum CheckboxMsg<Id> { Toggle(Id), CancelPress }
+enum Event {
+    Press { pointer: u64 }, Release { pointer: u64 }, Cancel { pointer: u64 },
+    FocusLost, Activate,
+}
+```
+
+Mixed must have a defined aggregate/loading meaning, not be a vague third
+Boolean. Durable value, validation, persistence, and effects remain in the
+consumer update owner. The label uses UI font; the existing mark painter can
+remain the final fill/glyph step.
+
+**Proposed layout algorithm** — WidgetRect has physical usize x/y/w/h, and
+px(n)=max(1,round(n*scale)). measure_ui is a supplied UI-font measurement, not
+an unstated fixed character width:
+
+```rust
+// Proposed algorithm — no CheckboxLayout currently exists.
+struct CheckboxLayout { box_rect: WidgetRect, label: WidgetRect, hit: WidgetRect }
+
+fn checkbox_layout(row: WidgetRect, label_w: usize, scale: f64) -> CheckboxLayout {
+    let requested_side = px(14.0, scale);
+    let side = requested_side.min(row.w).min(row.h);
+    let gap = px(8.0, scale);
+    let box_rect = WidgetRect { x: row.x, y: row.y + row.h.saturating_sub(side)/2,
+                                w: side, h: side };
+    let label_x = box_rect.x.saturating_add(side).saturating_add(gap);
+    let right = row.x.saturating_add(row.w);
+    let label = WidgetRect { x: label_x, y: row.y,
+        w: label_w.min(right.saturating_sub(label_x)), h: row.h };
+    CheckboxLayout { box_rect, label,
+        hit: WidgetRect { x: row.x, y: row.y, w: row.w, h: row.h } }
+}
+```
+
+For row=(100,200,180,24), scale=1, requested_side=side=14 and gap=8,
+box=(100,205,14,14).
+If measured label width is 210, label is clipped to x=122,w=158 and the hit
+rect remains (100,200,180,24). A row narrower than side+gap produces label
+width zero but never an overflowing unsigned rectangle. Parent layout decides
+whether that degenerate control is displayed; hit testing never invents a
+larger label rectangle.
+
+**Proposed reducer algorithm**:
+
+```rust
+fn checkbox_event<Id: Clone>(m: &mut CheckboxModel<Id>, e: Event, hit: bool)
+    -> Option<CheckboxMsg<Id>> {
+    match e {
+        Event::Press { pointer } if hit && m.enabled && !m.read_only => {
+            m.pressed = Some(pointer); m.focused = true; None
+        }
+        Event::Release { pointer } if m.pressed == Some(pointer) => {
+            m.pressed = None;
+            hit.then(|| CheckboxMsg::Toggle(m.id.clone()))
+        }
+        Event::Release { .. } => None,
+        Event::Cancel { pointer } if m.pressed == Some(pointer) => { m.pressed = None; None }
+        Event::Cancel { .. } => None,
+        Event::FocusLost => { m.pressed = None; None }
+        Event::Activate if m.focused && m.enabled && !m.read_only =>
+            Some(CheckboxMsg::Toggle(m.id.clone())),
+        _ => None,
+    }
+}
+```
+
+Event and Id: Clone are dependencies of this proposed sketch. The owner maps
+Toggle to Off<->On (or its declared Mixed resolution) and redraws from the new
+durable value; the reducer never changes value optimistically.
+
+| Proposed event                    | Preconditions              | Reducer result                                       |
+| --------------------------------- | -------------------------- | ---------------------------------------------------- |
+| press box or label                | enabled and writable       | capture pointer; pressed=true                        |
+| release on same combined target   | capture valid              | clear press; Toggle(id) once; focus remains          |
+| release outside/cancel/focus loss | captured                   | clear press; no toggle                               |
+| Space/Enter                       | focused, enabled, writable | Toggle(id) once                                      |
+| Tab                               | enabled                    | one focus stop; disabled is skipped                  |
+| read-only activation              | read-only                  | report/value remains, no Toggle                      |
+| removal/replacement               | ID absent                  | clear focus/capture; owner selects next focus target |
+
+For a binary setting, Toggle maps Off<->On. For Mixed, the owner must state
+whether activation goes to On or an aggregate resolution; test it explicitly.
+
+## Cost, invalidation, and verification
+
+Paint is O(1) plus one glyph truncation when checked. The current layout
+depends on row rect, scale, checked state, theme, painter metrics, and parent
+clip. Invalidate derived hit rectangles on any of those; a Settings row
+replacement also invalidates its raw active-index interpretation. No interaction
+cache or timing claim exists.
+
+Existing coverage is static gallery paint only
+([model/gallery.rs:304](../../src/model/gallery.rs#L304)). Add or preserve these
+tests at the owner level:
+
+| Initial condition             | Action                                       | Expected                                |
+| ----------------------------- | -------------------------------------------- | --------------------------------------- |
+| row=(100,200,300,56), scale=1 | derive box                                   | (382,210,14,14)                         |
+| Off/On active=0               | box click                                    | Choice(1), then checked render          |
+| Off/On active=1               | label-side click                             | Row, no toggle                          |
+| FormEnabled=true              | choice=0                                     | enabled=false, focused=None, dirty=true |
+| saving=true                   | master/choice activation                     | no model mutation                       |
+| proposed checked capture      | press then release outside/cancel/focus loss | no Toggle, pressed clears               |
+| proposed Mixed aggregate      | activate                                     | documented deterministic resolution     |
+| proposed disabled             | Tab/click/Space                              | no focus and no Toggle                  |
+
+Role checkbox, accessible name from label, checked/mixed/disabled/invalid state,
+and error description are future semantic-bridge obligations, not current facts.

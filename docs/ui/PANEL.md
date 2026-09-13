@@ -1,147 +1,204 @@
-# Panel
+# Docked panels: implementation reference
 
-## Purpose and naming
+This chapter documents Token's persistent docked work surfaces. A **dock** is
+the left, right, or bottom container; a **panel** is the selected `PanelId`
+inside it. This is not the editor-tab or terminal-session-tab model: those have
+different owners and lifetimes.
 
-A **panel** is persistent, docked task content within the main Token window.
-Code calls its outer container a _dock_ and its content identity a `PanelId`.
-Use “panel” for the tabbed task surface and “dock” for the left/right/bottom
-container. This maps to IntelliJ tool windows—panes supporting work alongside
-the editor—without importing the IntelliJ platform model
-([UI overview](https://plugins.jetbrains.com/docs/intellij/ui-overview.html),
-[Tool windows](https://plugins.jetbrains.com/docs/intellij/tool-windows.html)).
+## Current representation and invariants
 
-## Current implementation — high confidence
+`DockLayout` is serializable durable layout state. Pointer drag state and
+keyboard focus are deliberately elsewhere. This is an abridged current excerpt
+from [src/panel/dock.rs](../../src/panel/dock.rs):
 
-`DockLayout` owns three `Dock`s (`Left`, `Right`, `Bottom`). A dock holds its
-registered `PanelId`s, active index, open bit and logical size; focus lives
-separately in `UiState::focus: FocusTarget::Dock(DockPosition)`. Defaults are
-open Explorer on the left, Outline on the right, and Terminal/Problems/Usages
-in the bottom dock. A dock has 150 logical-px minimum and a maximum half-window
-fraction; it is scaled by `metrics.scale_factor`.
-
-| Implemented panel content | State/consumer                                      |
-| ------------------------- | --------------------------------------------------- |
-| Explorer                  | left dock/tree state and shared tree render path    |
-| Outline                   | `OutlinePanelState`, collapsible hierarchy          |
-| Terminal                  | terminal sessions/grid/tab painter                  |
-| Problems                  | diagnostics-derived, collapsible rows and selection |
-| Usages                    | `UsagesPanelState`, result rows/loading/status      |
-| Tasks, Chat, TODOs        | `PlaceholderPanel`; not feature-complete panels     |
-
-### Implemented data ownership (field-level)
-
-| Field/symbol                                                                     | Writer                                | Reader / invariant                                                                          |
-| -------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------- |
-| [`DockLayout::{left,right,bottom}`](../../src/panel/dock.rs)                     | dock update/config persistence        | chrome, hit test and renderer read same dock position                                       |
-| [`Dock::{panel_ids,active_index,is_open,size_logical}`](../../src/panel/dock.rs) | `Dock` methods and `DockMsg` handlers | active index addresses registered IDs; closed dock reports physical size zero               |
-| [`UiState::focus`](../../src/model/ui.rs)                                        | input/dock update                     | `FocusTarget::Dock(position)` is intentionally outside persisted `Dock`                     |
-| [`DockResizeState`](../../src/model/ui.rs)                                       | pointer press/drag/release            | captures dock, axis, start coordinate/original logical size; renderer holds no resize state |
-| Outline/Problems/Usages/terminal models                                          | their feature updates                 | selection, scroll, loading/empty/session state remain domain-owned                          |
-
-`DockLayout::active_panel_position(panel_id)` is input/side-effect authority
-because a panel must not be assumed to occupy its default dock.
-
-`view/panels.rs` resolves a `DockPaneScene` from the layout snapshot and
-renders chrome, tab header, a clipped content rectangle, and selected content.
-`layout/chrome.rs` supplies `UiKey::Dock`, header/tab/content/row-list geometry;
-this avoids independent render and hit-test math. `DockMsg` handles toggling,
-activation, focus/close, cycling, and resizing in update/runtime paths.
-
-The left Explorer is a deliberate current special case: left-dock state is
-synchronized to workspace sidebar state and rendered by `render_sidebar`; the
-generic `render_dock` path is called for right and bottom only. Treat it as a
-panel-placement consumer, not evidence that every dock side shares one painter.
-
-### Anatomy, interaction, lifecycle
-
-An implemented dock has a resize boundary, header/tab strip, active tab,
-optional terminal sub-tabs, and clipped content. Tab activation opens its dock;
-panel focus is distinct from visibility. Pointer/keyboard routing resolves the
-active panel’s _current_ dock rather than assuming its default position.
-`DockResizeState` captures direction, starting coordinate and original logical
-size. Tree/Problems/Usages own their own selections and scroll; terminal owns
-terminal-specific interaction. Those domain behaviors must not be forced into a
-generic “panel list” API.
-
-| Transition (implemented)    | Owner                                      | Invariant                                                  |
-| --------------------------- | ------------------------------------------ | ---------------------------------------------------------- |
-| register/activate           | `Dock`/`DockLayout`                        | panel occurs once; activation opens containing dock        |
-| focus-or-toggle/close/cycle | `DockMsg` update path                      | focus follows active panel’s actual dock, not default dock |
-| resize press/drag/release   | `DockResizeState` + shared chrome/hit test | logical size is clamped; no unscaled duplicate geometry    |
-| panel row select/scroll     | corresponding domain model                 | row list/layout is authority for draw, click and keys      |
-| unavailable/pending content | feature model                              | paint scoped empty/loading/status, not global notification |
-
-The general panel system has no plugin registration, tear-off, move-between-
-docks action, per-tab close affordance, arbitrary panel factory or accessibility
-tree. The enum includes placeholders; do not advertise them as implemented
-tools. IntelliJ’s content/tab closing options are useful reference only
-([Tool windows](https://plugins.jetbrains.com/docs/intellij/tool-windows.html)).
-
-### Geometry/theme/accessibility
-
-`Dock::size_logical` converts to physical pixels only when open; geometry comes
-from the shared chrome snapshot. Dock chrome uses `Theme::sidebar` background,
-border, foreground and selection roles, and panel content is clipped with
-`Frame::push_clip`. Header text uses a code font in the existing renderer;
-individual content supplies appropriate font/metrics. There is no verified
-screen-reader role, roving tab focus or focus indicator across dock tabs.
-
-#### Measured-layout and clipping invariants — implemented
-
-- `layout::chrome` emits `UiKey::Dock`, `DockHeader`, `DockTab`,
-  `PanelContent` and panel row-list keys. `DockPaneScene::resolve` reads them
-  into a render scene; it only falls back if active content geometry is absent.
-- `DockPaneScene::render` paints chrome/header then `Frame::push_clip`s content
-  before dispatching the selected renderer. Header painting separately clips to
-  `header_rect`; terminal tabs follow their dedicated terminal renderer.
-- `Dock::size_logical` becomes physical in `Dock::size(scale_factor)` only when
-  open. `set_size` converts physical drag coordinates back; min is 150 logical
-  px and max is half window fraction. Resize limits belong to update/layout,
-  never a painter.
-- Active tab rect/text positions are `LayoutSnapshot` node/content rects; wash
-  alpha blends sidebar selection over dock background. Do not independently
-  center or measure tab titles.
-
-## Proposed contract
-
-Keep `PanelId`/`Dock` as placement and persistence authority. A new real panel
-should declare, rather than inherit unrelated behavior:
-
-```text
-PanelState (domain data, selection, scroll, loading/error/empty state)
-PanelEvent (activate, focus, select, scroll, command-specific action)
-PanelView (header title, content layout key, content renderer/hit mapping)
+```rust
+// current excerpt — `size_logical` is logical px, not framebuffer px.
+pub struct Dock {
+    pub position: DockPosition,       // Left | Right | Bottom
+    pub panel_ids: Vec<PanelId>,      // unique identities, tab order
+    pub active_index: Option<usize>,  // index into `panel_ids`, if present
+    pub is_open: bool,                // visibility, independent of focus
+    pub size_logical: f32,            // side width or bottom height
+}
+pub struct DockLayout { pub left: Dock, pub right: Dock, pub bottom: Dock }
 ```
 
-The update layer owns mutations and commands; renderer receives immutable
-state and a shared layout rect. A new panel must provide an empty/loading/error
-view, focus and Escape policy, selection order shared by render/click/keyboard,
-and resize/clip behavior. Do not create a generic tab abstraction for editor
-tabs, terminal sessions and dock tabs: their lifetime and close semantics differ.
+`PanelId` is an enum identity, not a per-instance key. The live location is
+`DockLayout::find_panel`; `default_position()` is registration advice only.
+`active_panel_position` is the authority for input/effects because a panel must
+not be assumed to still occupy its default dock. Defaults register Explorer at
+left, Outline at right, and Terminal/Problems/Usages at bottom; only left is
+open. Side docks start at 250 logical px, bottom at 200.
 
-## Gallery, gaps, acceptance
+| State kind              | Owner                                   | Field/unit/identity and invariant                                                                                                                                                                    |
+| ----------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| durable placement       | `DockLayout`                            | source methods prevent duplicate registration only within one dock; serde/current mutation do **not** normalize adjacent or cross-dock duplicates, and a valid `active_index` addresses its own list |
+| transient pointer input | `UiState::{sidebar_resize,dock_resize}` | one captured dock, axis, physical start coordinate, original logical extent                                                                                                                          |
+| focus                   | `UiState::focus: FocusTarget`           | `Dock(position)` routes keys; it does not itself open/select a panel                                                                                                                                 |
+| derived presentation    | `chrome(model) -> LayoutSnapshot`       | per-frame physical-px rectangles keyed by dock/panel identity; absent means invisible                                                                                                                |
+| content model           | panel domain owner                      | rows, selected index, scroll, queries, errors, terminal sessions never belong to `Dock`                                                                                                              |
 
-Gallery specimens `dock-tabs.active`, `panel.bottom-empty`, and
-`panel.right-empty` exercise real dock chrome. Terminal and document-tab
-specimens cover adjacent but different tab systems. Missing coverage: resizing,
-overflowed dock tabs, focus, all dock sides, populated/selected/problems rows,
-and light/HiDPI.
+`register_panel` repairs the empty-list case by selecting index 0 and prevents
+an exact duplicate in that one list. `active_panel()` safely returns `None` if
+an index has become out of range, but serde/current mutation do not normalize
+such a layout, nor do they enforce one `PanelId` across all three docks. There
+is no production unregister API; configuration/deserialization that removes IDs
+must repair the index and close an empty dock, rather than asking a renderer to
+do it.
 
-Acceptance: dock content uses shared `UiKey` geometry in render/hit test;
-opening/selecting/focusing a panel has deterministic effects; logical size
-persists and clamps; content cannot paint outside the dock; every real consumer
-handles empty/loading/error; and placeholders remain visibly provisional.
+```rust
+// proposed API — not implemented; persistence/configuration owns repair.
+fn normalize_layout(layout: &mut DockLayout) {
+    let mut seen = std::collections::HashSet::new();
+    for dock in [&mut layout.left, &mut layout.right, &mut layout.bottom] {
+        let active_id = dock.active_panel(); // capture identity before compaction
+        dock.panel_ids.retain(|id| seen.insert(*id)); // stable, global uniqueness
+        dock.active_index = active_id
+            .and_then(|id| dock.panel_ids.iter().position(|&candidate| candidate == id))
+            .or_else(|| (!dock.panel_ids.is_empty()).then_some(0));
+        if dock.panel_ids.is_empty() { dock.is_open = false; }
+    }
+}
+```
 
-Concrete workflow acceptance: with bottom dock closed, Focus-or-Toggle Problems
-must open/activate/focus it; invoking again closes it and restores editor focus;
-activate Terminal and cycle back; resize at 1x/2x; then select Problems rows.
-Current dock, tab rect, focus target, clipped content and row activation must
-agree throughout.
+## Update machine, capture, and effects
+
+`Msg::Dock(DockMsg)` is reduced in [src/update/dock.rs](../../src/update/dock.rs).
+The reducer mutates model state, returns `Cmd`, and the runtime performs those
+effects before a later message; the renderer never mutates docking state.
+
+| Event                    | Precondition            | Reduction                                                                                    | Intent/effect                                                                                 |
+| ------------------------ | ----------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `FocusOrTogglePanel(id)` | ID registered           | focused+open+active closes and focuses Editor; otherwise activate/open/focus containing dock | sync left workspace, recompute viewports, redraw, outline refresh/terminal sync if applicable |
+| `TogglePanel(id)`        | ID registered           | open active panel closes; all other states activate/open; focus unchanged                    | same geometry work                                                                            |
+| `ActivatePanel(id)`      | ID registered           | activate/open and focus dock; active-tab click is a no-op, not close                         | same geometry work                                                                            |
+| `CloseFocusedDock`       | focus is `Dock(p)`      | close it, move focus Editor                                                                  | geometry and terminal synchronization                                                         |
+| next/previous            | dock focused, count > 1 | modulo index change                                                                          | redraw and possibly terminal sync                                                             |
+| resize start             | boundary hit            | capture position/axis/start physical coordinate/original logical size                        | subsequent motion has exclusive drag meaning                                                  |
+| resize move              | matching capture        | replace clamped `size_logical`                                                               | recompute viewports; active Terminal may emit spawn/resize                                    |
+| pointer release          | capture exists          | clear capture                                                                                | recompute and redraw                                                                          |
+
+Current input sends `EndResize` on pointer release. It does **not** clear dock
+or sidebar resize state on focus loss/cancel (unlike some scrollbar paths), so
+a stale capture after those events is a current gap and later motion can resize
+unexpectedly. A future dispatcher must send `EndResize` for release, cancel,
+and focus loss. Dock switching has no generic asynchronous completion. Terminal is the
+exceptional consumer: opening/resizing an active Terminal queries current
+`PanelContent(Terminal)` geometry and may send `SpawnTerminal` or resize its
+grid. It uses live location/visibility, so an old default-bottom assumption
+cannot target a relocated/closed terminal.
+
+## Layout, units, clipping, and hit mapping
+
+`layout/chrome.rs` is the sole geometry authority for render, hit test, and
+update-layer capacity. It solves a physical-pixel root:
+
+```text
+status = [0, window_height - status_bar_height, window_width, status_bar_height]
+side_px(d) = is_open(d) && !empty(d) ? size_logical(d) × scale_factor : 0
+work = sidebar | (editor + right dock), with bottom dock below that work
+```
+
+The result contains `Dock(p)`, `DockHeader(p)`, `DockTab(p,id)`, and
+`PanelContent(active)`. Problems/Outline/Usages additionally get
+`PanelRows(active)` with physical row height, count, and scroll offset. Missing
+keys are not zero-size hit targets: they mean the object is not visible.
+
+The header height is `metrics.tab_bar_height`. It has medium horizontal
+padding, small top padding, `(medium-small)` bottom padding, and small tab gaps.
+Each tab is Fit-sized by `CellMeasure`: title character count times
+`model.char_width`, plus large horizontal/medium vertical tab padding; it does
+not use `TextPainter` glyph measurement. The header clips excess tabs. Active content receives the
+remaining dock rectangle and also clips. `DockPaneScene` paints chrome/header,
+pushes the content clip, then invokes only the active panel renderer. A partial
+bottom row may paint/click inside that clip but never escape into header/status.
+
+Resize is logical-pixel arithmetic. For physical pointer `p`, press `p0`,
+scale `s=max(scale_factor, ε)`, original extent `o`:
+
+```text
+δleft = (p-p0)/s;  δright = δbottom = (p0-p)/s
+new = clamp(o+δ, 150, 0.5×window_axis_px/s)
+```
+
+Rounding is deferred to `LayoutSnapshot::snap`; retaining a fractional logical
+extent avoids DPI drift. Current code should normalize an undersized window
+before `clamp`: if `0.5×axis/s < 150`, its bounds invert. That is a boundary
+case to fix in the reducer, not a paint-time workaround.
+
+### Geometry traces
+
+At 2x, right dock `o=250`, window width 1600 px, and drag `p0=1200→p=1100`:
+`δ=(1200-1100)/2=50`, so state becomes 300 logical px and solved width is 600
+physical px. Its maximum is `0.5×1600/2=400`; dragging to 300 produces
+`δ=(1200-300)/2=450`, raw `250+450=700`, and clamps to 400 (800 physical px).
+
+Pathological: bottom `o=200` at 1x, 600 px-high window, drag `700→1100`:
+`δ=-400`, raw -200, result 150. At height 240 px, right/bottom current code
+calls `clamp(150,120)` and panics because max is below min; left separately uses
+`new_width.max(150).min(max_width)` and instead yields 120, violating its own
+150 minimum. A future reducer must use `max(150, 0.5×axis/s)` before either form.
+
+## Assembly, invalidation, and cost
+
+```text
+pointer/key → DockMsg → update_dock(DockLayout, UiState)
+            → Cmd::Redraw / terminal command → runtime effect
+            → RenderPlan stores chrome(model) once for the frame
+            → render_sidebar(left) or render_dock(right/bottom)
+            → active domain renderer consumes PanelContent/PanelRows
+```
+
+Explorer is deliberately special: left-dock openness/width mirrors workspace
+sidebar state and `render_sidebar` paints it. Generic `render_dock` is used for
+right/bottom. Problems, Outline, and Usages share row geometry but not rows:
+their domain functions (`problems_rows`, outline traversal, `UsagesPanelState::rows`)
+are the ordering authority for layout, painting, keyboard, and clicks.
+
+`chrome(model)` is pure and currently cheap enough to recompute; `RenderPlan`
+only caches within one frame. Inputs include window/scale/status dimensions,
+sidebar state, each dock's open/size/IDs/active ID, tab titles, metrics, and
+active row count/scroll. A panel update, collapse, scroll, resize, scale/window
+change, or tab activation invalidates derived geometry. Row painters use
+`RowListView::drawn_range()`, although producing a row projection can still be
+O(number of groups/items); there is no persistent layout cache with stale keys.
+
+## Verification cases and proposed boundary
+
+Existing numeric layout tests live in `tests/chrome_layout.rs`; dock reducer
+tests live beside the reducer. Keep these concrete vectors:
+
+| Initial state                                          | Action                    | Expected output                                                                                    |
+| ------------------------------------------------------ | ------------------------- | -------------------------------------------------------------------------------------------------- |
+| bottom closed, Problems registered, focus Editor       | Focus-or-toggle Problems  | bottom open, active Problems, focus `Dock(Bottom)`, content key exists                             |
+| resulting state                                        | same event                | bottom closed, focus Editor, Problems content key absent                                           |
+| right 250 logical, 2x, 1600 px window                  | resize 1200→1100          | 300 logical persisted; right rect width 600 px                                                     |
+| resize capture active, then focus loss without release | later pointer move        | current gap: capture remains and move can resize; future input test must assert capture is cleared |
+| right/bottom axis below 300 logical px                 | resize move               | current `clamp(150,max<150)` panic; left instead violates min; future normalization returns 150    |
+| selected row 12 disappears on collapse                 | collapse group            | domain owner selects a surviving group row and reveal uses current `RowListView`                   |
+| Terminal closes during synchronization                 | terminal effect selection | no spawn/resize derived for a non-active Terminal                                                  |
+
+A new panel should provide a borrowed per-frame projection, not a framework that
+pretends all panels share content semantics:
+
+```rust
+// proposed API — types are illustrative and not present today.
+struct PanelProjection<'a> {
+    id: PanelId, title: std::borrow::Cow<'a, str>,
+    body: PanelBody<'a>, content_key: UiKey,
+    input: PanelInputPolicy,
+}
+enum PanelBody<'a> { Message(&'a str), Rows { count: usize } }
+enum PanelInputPolicy { Passive, Rows { selected: Option<usize> }, DomainSpecific }
+```
+
+It cannot own selection, timers, I/O, or an async request. The domain model
+must state its own identity, cancellation/stale-reply guard, empty/loading/error
+projection, selection repair, Escape/focus policy, and clipping tests. Tasks,
+Chat, and TODOs remain placeholders, not implementations of this contract.
 
 ## Evidence
 
-- [Dock model](../../src/panel/dock.rs), [panel names/placeholders](../../src/panels/mod.rs), [placeholder text](../../src/panels/placeholder.rs)
-- [Dock painter](../../src/view/panels.rs), [layout keys](../../src/layout/keys.rs), [messages](../../src/messages.rs)
-- [Gallery catalog](../../src/model/gallery.rs)
-- [Local IntelliJ SDK tool-window reference](../../temporary-docs/intellij-platform-sdk/references/ui-settings-and-toolwindows.md) (secondary)
-- [IntelliJ tool-window overview](https://plugins.jetbrains.com/docs/intellij/tool-windows.html) and [UI overview](https://plugins.jetbrains.com/docs/intellij/ui-overview.html)
+- [Dock model](../../src/panel/dock.rs), [dock reducer](../../src/update/dock.rs), [messages](../../src/messages.rs)
+- [shared chrome solver](../../src/layout/chrome.rs), [keys](../../src/layout/keys.rs), [dock renderers](../../src/view/panels.rs)
+- [Problems row authority](../../src/update/problems.rs), [Usages model](../../src/model/usages.rs), [Usages reducer](../../src/update/usages.rs)

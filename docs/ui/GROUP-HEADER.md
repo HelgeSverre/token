@@ -1,57 +1,153 @@
 # Group header
 
-## Purpose and catalog mapping
+## Boundary: current disclosure is not a generic group header
 
-A **Group Header** labels a coherent set of controls. It is not an overlay-list section header, a panel title, a tab, or generic bold text. A **collapsible group header** additionally owns an expanded/collapsed disclosure state. IntelliJ maps the visual family to group headers, collapsible group headers, tabs, and master-detail layouts; Token should expose those as variants of one group contract, not files/types for every appearance.
+Token has no `GroupHeader` type. The nearest current implementation is the
+Settings form's `Advanced` row. It is a selectable `RowKind`, a boolean in a
+form draft, and a text painter; it does not yet own generic title, description,
+child region, disabled/focus semantics, or accessibility metadata. Overlay
+`Section { title, rows }` is also deliberately different: its uppercase header
+is non-selectable list metadata, not a form grouping control.
 
-IntelliJ says headers add noise for groups of three controls or fewer, titles should be short/title-cased/non-generic, advanced groups may start collapsed, and groups become tabs or master-detail as count/height grows. [Group Header](https://plugins.jetbrains.com/docs/intellij/group-header.html) and [Groups of Controls](https://plugins.jetbrains.com/docs/intellij/groups-of-controls.html) are primary guidance.
+**Current excerpts — durable model and update owner**
 
-## Current Token contract — high confidence
+```rust
+// src/settings.rs
+pub(crate) enum RowKind { FormField(usize), FormChoice(usize), FormAdvanced, /* ... */ }
 
-**There is no generic GroupHeader.** The closest elements deliberately have distinct owners.
-
-| Element                      | Owner/data/behavior                                                                                                                                                                                |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Settings disclosure          | `render_disclosure` draws literal `▸/▾ Advanced`; its settings row owns interaction and settings state owns expansion. Gallery has `disclosure.collapsed` and `.expanded`.                         |
-| Overlay section header       | `Section { title, rows }` becomes non-selectable uppercase dim text in `overlay_surface`; a title-less later section becomes a separator hairline. It groups palette/menu rows, not form controls. |
-| Settings/collection headings | `settings_page.rs` composes feature-specific headings, fields and viewport geometry.                                                                                                               |
-| Gallery                      | Categories include Forms/Structure, but no Group Header specimen; it only uses disclosure and overlay menu sections indirectly.                                                                    |
-
-Current disclosure is incomplete as a generic component: its text is hard-coded “Advanced”, no explicit label/id/disabled/focus state exists, it has no keyboard/accessibility contract, and form body geometry does not model a reusable group content region.
-
-## Proposed Token contract — proposed, not implemented
-
-Do not extract a static heading first. Extract a group only with a concrete Settings form that needs labeled grouping and optional collapse.
-
-```text
-GroupHeader { id, title, description: Option<Label>, collapsible: Option<GroupDisclosure { expanded, enabled }>, level }
-event: Toggle(id)                         // emitted only for enabled collapsible header
-GroupLayout { header_rect, content_rect: Option<Rect>, description_rect: Option<Rect> }
+// src/update/settings.rs
+RowKind::FormAdvanced => {
+    form.advanced = !form.advanced;
+    form.focused = None;
+    state.refresh_entries(&model.config);
+}
 ```
 
-The form/settings model owns durable expansion (and whether collapse hides content); update maps `Toggle` to a deterministic `SettingsMsg`; renderer derives content visibility and rects from that state. GroupHeader does not validate child controls, scroll a page, or choose Form layout. [Form](FORM.md) owns labels/errors/row relationship, and [Label](LABEL.md) owns text styling.
+Provider and language-server form builders insert `FormAdvanced`, then append
+advanced rows only when `form.advanced` is true. `SettingsForm` therefore owns
+the durable boolean and focused field; `state.refresh_entries` owns the derived
+visible-row list. Renderer borrows that state through `SettingRow` and does not
+toggle it. The critical post-mutation invariant is:
 
-### Geometry, theme, font and edge cases
+```
+visible_rows = base_rows ++ (advanced ? advanced_rows : [])
+focused_field ∈ visible_editable_fields OR focused_field = None
+selected_index < visible_rows.len()  (unless list is empty)
+```
 
-Header text and optional disclosure share one clickable/focus rect only when the whole row toggles; otherwise return separate disclosure rect. Collapsed content occupies zero layout height and is absent from hit traversal/tab order; animation is out of scope until layout and damage policy exist. Expanded `content_rect` is the sole child clip/scroll relationship, so paint/hit test cannot leave hidden controls active. Preserve the Settings narrow-mode layout rather than deriving a new group-specific line loop.
+Current update explicitly repairs the first focus condition by assigning `None`.
+`refresh_entries` rebuilds `entries`, resets `rows` to `0..entries.len()`, and
+applies `selected_index = min(selected_index, rows.len().saturating_sub(1))`.
+That makes the index in-bounds but does not preserve semantic identity: if an
+advanced selected row disappears, the same numeric index can now name a base
+row. A generalized header must choose and test either clamping or stable-row
+reidentification deliberately.
 
-Use UI font. Static group title can be a clear UI heading role; overlay list section retains its dim uppercase metadata style and remains separate. Reuse overlay text/hairline/accent/focus roles initially; do not theme a static heading as an action. Scale through caller metrics and measure/truncate with `TextPainter`. A header should not truncate title into ambiguity: require short title, offer help/description below when needed.
+## Paint geometry, typography, and hit boundary
 
-### Events, keyboard, pointer, focus and accessibility
+`settings_page` has already solved each settings row as a `WidgetRect` in
+physical pixels. For disclosure it derives the label rect from that shared row:
 
-- Static headers have no focus/click target. Collapsible headers toggle on pointer click, Space/Enter when focused, and expose expanded/collapsed state; Escape never globally collapses a form section.
-- Focus follows normal Form order: header then visible descendants. On collapse while a descendant owns focus, move focus to header; never leave focus in hidden content.
-- Pointer hover is not an activation substitute. Disabled collapse affordance neither toggles nor appears interactive.
-- Proposed semantics: group name/description and `expanded` state; disclosure role/button name communicates action. Existing Token has no platform accessibility tree.
+```text
+label.x = row.x
+label.y = row.y + round(8 × scale)
+label.w = row.w - reserve                 // reserve is 0/120px or accessory-derived
+label.h = row.h
+size = 12 × scale
+text = expanded ? "▾  Advanced" : "▸  Advanced"
+visible = truncate_sized(text, size, label.w, End)
+draw at (label.x, label.y) using overlay.text_primary
+```
 
-## Consumers, gallery, acceptance
+`render_disclosure` owns only the final truncation/draw. The enclosing settings
+row owns the activation rectangle; `settings_page` pushes the settings viewport
+clip around its traversal. The helper does not scope the painter, but
+`RenderSession::new` initialized that active painter with `FontRole::Ui`, so the
+current disclosure inherits UI typography. For a row
+`(x=40,y=200,w=180,h=32)` at 1x and no reserve, label begins `(40,208)` and has
+180px. At 1.25x its top offset is `round(10)=10`; the 12px text becomes 15px.
+If a compact form reserves 120px, width is 60px and the drawn string must be the
+same measured ellipsis result, not an unclipped `▾ Advanced` over an accessory.
 
-The existing “Advanced” Settings disclosure is a concrete retrofit candidate only if its literal title and interaction row are replaced without changing Settings category navigation. Static GroupHeader has no independently justified consumer. For 3 or fewer clearly labeled controls use vertical insets, not a new heading; for many/variable groups use existing navigation/tabs/master-detail decisions rather than nested collapsibles.
+The glyph is a character in text, not an independently measured/fitted icon.
+Its visual column and every label pixel lie inside the row's existing clip and
+hit rect. Thus changing from `▸` to `▾` changes no geometry/hit target. No
+collapsed content rectangle exists in current code: advanced rows are removed
+from the derived row list before layout, so they consume zero paint, hit, scroll,
+and tab-order slots rather than being painted hidden.
 
-Gallery states: static form group with description; collapsible expanded; collapsed; focused; disabled; long-title/narrow clipped; content with validation error; and overlay list section separately labelled as non-interactive. Acceptance: explicit model/event ownership; collapsed children paint/hit/focus nowhere; header/content rectangles are shared; title/description follow font/scale/clip rules; keyboard and pointer transitions tested; existing advanced Settings workflow remains intact.
+## Transition table and real Elm integration
 
-## Evidence
+| State            | Event/precondition                                                  | Update/result                                                                                                                                | Effect                                        |
+| ---------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `advanced=false` | pointer `ChooseSetting` for row, or Enter `Confirm` on selected row | pointer calls `change_setting(...Some(choice))`; Enter calls `confirm_active_modal` then `change_setting(...None)`; both reach `form_choice` | advanced rows become layout/render candidates |
+| `advanced=true`  | same distinct pointer/Enter paths                                   | same `form_choice` toggle, focus=None, refresh entries                                                                                       | advanced rows absent from model-derived list  |
+| any              | pointer release/cancel outside row                                  | no `ChooseSetting` dispatch                                                                                                                  | unchanged                                     |
+| any              | disabled/read-only form (no current disabled branch)                | proposed owner must reject before toggle                                                                                                     | unchanged                                     |
+| no rows          | navigation                                                          | safe no-op/sentinel selection                                                                                                                | no disclosure paint                           |
 
-- Token: [controls/disclosure](../../src/view/controls.rs), [overlay Section](../../src/view/overlay_surface.rs), [settings page](../../src/view/settings_page.rs), [gallery catalog](../../src/model/gallery.rs), [settings forms](../../src/settings/forms.rs).
-- Primary: [Group Header](https://plugins.jetbrains.com/docs/intellij/group-header.html), [Groups of Controls](https://plugins.jetbrains.com/docs/intellij/groups-of-controls.html), [Components](https://plugins.jetbrains.com/docs/intellij/components.html).
-- Secondary local SDK: [UI/settings reference](../../temporary-docs/intellij-platform-sdk/references/ui-settings-and-toolwindows.md) documents `group`/`collapsibleGroup`; it is not Token API evidence.
+The pointer path dispatches `ModalMsg::ChooseSetting` to `change_setting`;
+Enter dispatches `Confirm` through `confirm_active_modal` to `change_setting`.
+Both reach `form_choice`, then `SettingsState.refresh_entries`, modal/settings
+row assembly, settings-page layout, and `render_disclosure`.
+It is `Message → Update → Command →
+Render`: the painter has no mutation or input side effect. Existing modal tests
+exercise selecting the literal `Advanced` row and updates in
+[tests/modal/settings.rs](../../tests/modal/settings.rs).
+
+## Invalidation, cost, and edge cases
+
+The boolean, rows/form kind, selected/focused state, viewport/scroll, row bounds,
+scale, active modal UI font, and overlay palette invalidate the projection. There is no group
+header cache. One visible disclosure costs one truncation measurement and glyph
+paint; expanding costs rebuilding derived entries and then normal visible-row
+layout, proportional to entries rendered/measured. This is not an animation:
+there is no interpolated height/damage policy to cache or test.
+
+Pathological transition: focus an advanced JSON field, then collapse. Current
+update clears `form.focused` before refresh, so TextFieldRenderer cannot paint a
+caret into a removed field. If selection was an advanced row, current refresh
+only clamps its index: it can select a different base row after removal.
+`refresh_entries` does not change `scroll_offset_px` and the toggle path makes no
+separate reveal call, so a previously scrolled form can retain its physical
+viewport offset across this row-count change. Test
+that actual policy explicitly, or use stable identity in a future group. A long
+localized title cannot be solved by hard-coding `Advanced`; current literal is
+an implementation limit to remove only with a real generalized consumer.
+
+## Proposed group contract and verification
+
+Do not extract a static heading simply to share bold text. When two Settings
+forms require named/collapsible groups, extract this _proposed_ boundary:
+
+```rust
+// proposed API — not implemented
+// GroupId must be a new stable settings-form identity (not editor-area GroupId);
+// WidgetRect is existing view::geometry physical-usize geometry. `expanded` is
+// model-owned durable state; `enabled` is an input guard, not paint inference.
+struct Disclosure { expanded: bool, enabled: bool }
+struct GroupHeader<'a> {
+    id: GroupId, title: &'a str, description: Option<&'a str>,
+    disclosure: Option<Disclosure>,
+}
+enum GroupMsg { Toggle(GroupId) }
+struct GroupLayout { header: WidgetRect, description: Option<WidgetRect>, content: Option<WidgetRect> }
+```
+
+Model owns expansion keyed by stable `GroupId`; update rejects disabled toggles.
+Layout must compute `content=None` when collapsed, and both paint and hit test
+must consume that same `GroupLayout`. Pointer click and focused Space/Enter may
+emit `Toggle`; Escape does not collapse a form. If collapse hides focused child,
+update moves focus to header, not `None`, once headers become focusable. Current
+literal row is not yet that contract.
+
+Regression vectors: the 1x/1.25x rectangles above; false→true adds the expected
+form rows and clears stale focus; true→false produces zero advanced row rects or
+hit targets; selection is valid after collapse; a long future title truncates
+inside header; and overlay `Section` remains non-selectable. Preserve gallery
+`disclosure.collapsed`/`.expanded` as static paint coverage, but do not mistake
+it for interaction coverage.
+
+Sources: [controls.rs](../../src/view/controls.rs), [settings.rs](../../src/settings.rs),
+[update/settings.rs](../../src/update/settings.rs), [settings_page.rs](../../src/view/settings_page.rs),
+[overlay_surface.rs](../../src/view/overlay_surface.rs).

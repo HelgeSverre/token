@@ -28,7 +28,8 @@ behavior, gallery coverage, and the next useful implementation slices.
 - IntelliJ: [UI overview](https://plugins.jetbrains.com/docs/intellij/ui-overview.html)
   and linked official component guidelines. Primary evidence for IntelliJ UX,
   not an instruction to adopt Swing or Kotlin infrastructure.
-- Local [IntelliJ SDK UI reference](../../temporary-docs/intellij-platform-sdk/references/ui-settings-and-toolwindows.md): user-provided secondary SDK
+- Local `temporary-docs/intellij-platform-sdk/references/ui-settings-and-toolwindows.md`
+  (user-supplied snapshot, no longer present in the current worktree): secondary SDK
   guidance; cross-check relevant claims against official documentation.
 - Token: current `src/`, tests, gallery catalog, and
   [editor reference](../EDITOR_UI_REFERENCE.md). Code is authoritative over plans.

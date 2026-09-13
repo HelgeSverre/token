@@ -1,130 +1,310 @@
-# Form
+# Form — implementation reference
 
-## Purpose and current Token form
+This chapter documents the only open-ended form workflow currently implemented:
+the LSP and inline-provider editor in Settings. It is deliberately not a claim
+that Token has a general `Form` widget. Durable configuration stays in
+`AppModel.config`; the modal owns a typed, disposable draft; commands perform
+persistence and inspection. Typing a bad executable must not change process
+configuration merely because the field was painted.
 
-A Form groups labelled inputs, choices, help, validation and actions into a
-draft workflow. It is a container and ownership contract, not merely a vertical
-stack. Token’s implemented open-ended settings forms are `SettingsForm` and
-`FormField` ([settings/forms.rs](../../src/settings/forms.rs#L170)); each field
-has label, help, editable draft and optional Browse action. The form owns draft
-status, dirty/saving/removal state, focus, popup choice state, advanced state and
-records scroll. `SettingsChange` remains typed and applies only after a command
-completes ([settings/forms.rs](../../src/settings/forms.rs#L11)).
+## Runtime boundary
 
-This preserves Elm flow: pointer/key intent becomes `SettingsMsg`, deterministic
-update mutates draft or requests `Cmd`, runtime performs file-picker,
-validation/persistence work, then `FormApplied` commits/announces result
-([messages.rs](../../src/messages.rs#L283), [update/settings.rs](../../src/update/settings.rs#L520)).
-Typing calls `changed`; Save validates `form.change` before `ApplySettingsForm`;
-Cancel reconstructs the form from persisted configuration. Saving blocks
-interaction. These are implemented behaviour, not a generic form framework.
+```text
+physical pointer/key/text input
+  -> runtime maps it to SettingsMsg / ModalMsg
+  -> update::settings changes SettingsForm deterministically
+  -> Cmd::{InspectSettingsExecutable, ApplySettingsForm, ...}
+  -> runtime performs I/O and sends a message carrying the form session
+  -> update guards transient form presentation where implemented; renderer projects new state
+```
 
-### State and ownership
+The Settings modal is assembled in `view/modal.rs` and
+`view/settings_page.rs`. It produces rows and an `OverlaySpec`;
+`overlay_surface` derives body clip, record viewport, footer, and hit regions.
+Painting, hit testing, and the pointer adapter consume that one derived layout.
+A form implementation must not invent a parallel `row * height` calculation:
+variable row heights, scrolling, compact width, and a popup change it.
 
-| Data                    | Implemented owner                                                                   | Contract                                                                                                                           |
-| ----------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Persisted configuration | `AppModel.config`                                                                   | Read to construct form; ordinary field editing does not mutate it. `SettingsChange::apply` runs only after successful persistence. |
-| Typed draft             | `SettingsForm { kind, fields, choices, enabled, preset }`                           | Fields hold editable values/cursors/selections; choices hold labels and active index. [forms.rs](../../src/settings/forms.rs#L179) |
-| Async identity          | `session: Arc<()>`                                                                  | File choice, executable inspection and apply results are ignored unless their session still matches.                               |
-| Transient UI            | `focused`, `dragging`, `open_select`, `select_cursor`, `records_scroll`, `advanced` | Update-only state, never configuration.                                                                                            |
-| Submission              | `dirty`, `saving`, `remove_pending`, status strings                                 | Guards unsafe interaction and communicates draft/progress/validation status.                                                       |
-| Effects                 | `Cmd` plus runtime                                                                  | Picker, executable inspection, persistence and LSP/inline reconfiguration stay outside the form.                                   |
+## Current representation and ownership
 
-`FormField` is only `label`, `help`, `EditableState<StringBuffer>`, and `browse`.
-`FormChoice` is only label/help/static labels/active index. There is no current
-field-level disabled, read-only, placeholder, stable option ID, invalid/error,
-or accessible-description data; do not treat those as hidden behaviour.
+**Current excerpt** — [forms.rs](../../src/settings/forms.rs#L180):
 
-### Implemented transitions
+```rust
+pub(crate) struct FormField {
+    pub label: &'static str,
+    pub help: &'static str,
+    pub input: EditableState<StringBuffer>,
+    pub browse: bool,
+}
 
-| Intent/event                                 | Deterministic update                                                        | Effect / outcome                                                                               |
-| -------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Open LSP/provider record                     | Construct draft from config; reset scroll/hover                             | May inspect a nonempty executable; config stays unchanged.                                     |
-| Field pointer/drag                           | Select form row, focus indexed field, set cursor/selection                  | Reset blink; `EndFieldSelection` ends drag.                                                    |
-| Edit, undo/redo, enable/choice/preset change | Mutate draft then `changed()`                                               | Dirty; removal confirmation clears; status says unapplied draft.                               |
-| Browse                                       | Choice on a browsable field                                                 | `ChooseSettingsFile`; matching `FileChosen` changes draft.                                     |
-| Save / Save & Use                            | `form.change(&config)` validates typed draft                                | Valid: lock `saving`, issue `ApplySettingsForm`; invalid: preserve draft and status error.     |
-| Apply result                                 | Matching session clears saving                                              | Success applies change/refreshes entries and requests dependent work; failure preserves draft. |
-| Cancel                                       | Reconstruct form from config when not saving                                | Discards draft, no write.                                                                      |
-| Remove                                       | First request sets `remove_pending`; confirmation saves typed remove change | Never deletes immediately.                                                                     |
+pub(crate) struct SettingsForm {
+    pub session: Arc<()>,
+    pub kind: FormKind,
+    pub fields: Vec<FormField>,
+    pub choices: Vec<FormChoice>,
+    pub enabled: bool,
+    pub focused: Option<usize>,
+    pub dragging: bool,
+    pub saving: bool,
+    pub status: String,
+    pub executable_status: String,
+    pub remove_pending: bool,
+    pub records_scroll: usize,
+    pub advanced: bool,
+    pub dirty: bool,
+    pub open_select: Option<usize>,
+    pub select_cursor: usize,
+    pub preset: Option<usize>,
+}
+```
 
-This is the LSP/AI configuration form, not a claim about the Keymap or all
-simple Settings rows.
+`FormKind` says which domain decoder/encoder is valid: a language server or
+an inline provider, optionally with the persisted record identity being edited.
+`fields` carries _draft text_, including each `StringBuffer`, cursor,
+selection, and undo history. `choices.active`, `enabled`, and `preset` are
+also draft inputs. They are not views of `EditorConfig` once opened. This is
+separate from the Settings collection **master** toggle: that path changes the
+live configuration directly (and saves it) rather than changing `form.enabled`.
 
-## Anatomy and rendering
+`session: Arc<()>` is an identity token, not a lifetime keeper or cancellation
+primitive. The runtime retains an `Arc` in file-picker, executable-inspection,
+or save work. File-choice and executable-check update use `Arc::ptr_eq`, so
+an old reply cannot edit a new form which happens to have the same server id.
+`focused`, `dragging`,
+`open_select`, `select_cursor`, `records_scroll`, and `advanced` are
+transient presentation/input state. `status`, `saving`, `dirty`, and
+`remove_pending` describe workflow state. None belongs in YAML.
 
-Current form anatomy: title/breadcrumb/category navigation; optional master
-enable; labelled field plus detail/help and optional Browse; preset/choice or
-checkbox control; Advanced disclosure; record selection; draft status; Save,
-Cancel and contextual destructive/secondary actions. Settings-page rendering
-composes TextField, checkbox, select, button and shared overlay layout
-([settings_page.rs](../../src/view/settings_page.rs#L1140)). The gallery has a
-visual `form-field.validation` specimen only
-([gallery.rs](../../src/model/gallery.rs#L405)); it is not a live validation
-workflow.
+The durable change is a value, not a closure over the form:
 
-Theme roles are mostly `overlay`: panel backgrounds/text, `recessed_wash`,
-hairline/accent, selection wash and `severity_*`/`severity_*_text`
-([theme.rs](../../src/theme.rs#L597)). Buttons have their separate `button.*`
-palette. Inputs use Code font today; labels/help use UI painter sizing. All
-control rectangles are scale-aware and overlay/form layout is the clipping and
-ordering authority. No unified field error-border, disabled, required-marker,
-success, or form-spacing theme role exists.
+```rust
+pub enum SettingsChange {
+    LanguageServer {
+        previous_id: Option<String>,
+        id: String,
+        value: LspServerConfig,
+    },
+    InlineProvider {
+        previous_id: Option<String>,
+        id: String,
+        value: ProviderConfig,
+        select: bool,
+    },
+    Remove { collection: CollectionKind, id: String },
+}
+```
 
-### Geometry, font, focus, and validation facts
+`SettingsChange::apply(&mut EditorConfig)` applies a validated form change.
+The form's `change(&config)` validates and builds it first: ids, language
+conflicts, executable/argument restrictions, structured settings, and provider
+values. This makes validation pure and allows tests to prove a failed validation
+leaves configuration untouched. It is not the only persistence mutation in the
+Settings family: `ToggleMaster` delegates LSP master enablement or directly
+flips `model.config.completion.inline.enabled` and emits
+`SaveConfiguration`.
 
-`overlay_surface` solves Settings field, input, choice and footer rectangles;
-painting and `OverlayHit` use that same layout. Pointer-to-text conversion calls
-the field's `TextFieldOptions::position_at`, avoiding a second character-grid
-projection ([settings_page.rs](../../src/view/settings_page.rs#L630)). Footer
-buttons are right-aligned from their labels, 24×scale high with 6×scale gaps
-([settings_page.rs](../../src/view/settings_page.rs#L748)).
+### Invariants and repair owner
 
-Titles are UI text at 14×scale, labels 12×scale, help/actions 11×scale. Field
-content is Code font via `TextFieldRenderer`; record IDs explicitly use Code
-font ([settings_page.rs](../../src/view/settings_page.rs#L1026)). The rounded
-form panel, field, and scrolling parent each clip their relevant paint; do not
-rederive row rectangles outside the measured layout.
+| Invariant                                           | Why                                       | Repair/guard                                                                                         |
+| --------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `fields[i]` has a cursor/selection                  | pointer and keys need a legal active edit | `EditableState::new` creates one; position setting clamps it                                         |
+| `focused == Some(i)` implies `i < fields.len()`     | render and dispatch dereference it        | form construction and row mapping create valid values; apply clears focus                            |
+| `open_select == Some(row)` names a row with options | preview otherwise has no meaning          | toggle derives it from the row; focus traversal/close clears it                                      |
+| `select_cursor < count` for open options            | Enter must not select a phantom           | current catalog options are nonempty; this is a required precondition, not a fully guarded invariant |
+| `saving` excludes draft mutation/switching          | result must apply the validated value     | field, collection, file-reply, and focus paths guard it                                              |
+| file/check completion belongs to `session`          | async reply cannot cross form instances   | `Arc::ptr_eq` in file and executable-check updates                                                   |
+| `remove_pending` is confirmation, not effect        | first Remove never deletes                | first activation flips flag; second emits apply command                                              |
 
-Focus is a selected settings row and optional `form.focused` field index.
-Keyboard traversal includes fields, enable, advanced, presets/choices and footer
-actions; a saving form rejects interaction. `saving` is a behavioural lock, not
-a themed disabled state. `enabled` is the server/provider setting, not a
-renderer-level disabled/read-only condition. Validation returns `FormError` into
-form status: current code does not mark an individual invalid surface, move
-focus to first invalid field, provide a tooltip, or expose invalid semantics.
+The current form has no field-local `disabled`, `read_only`, placeholder,
+required marker, stable field ID, validation map, or accessibility data. Do not
+write a consumer against imaginary fields. `enabled` represents a
+server/provider setting, not renderer-wide disabled state.
 
-## Proposed reusable form contract
+## Transition system
 
-**Proposed:** retain domain form models; share descriptors/layout only where
-they do not erase typed validation. Each field should expose stable id, visible
-label/help, required/disabled/read-only/invalid state, accessible description,
-and messages. Form owns draft, focus order, submit/cancel and validation summary;
-commands own I/O. Tab traversal follows visual order; Enter submits only when
-unambiguous; Escape cancels/dismisses according to container policy; focus moves
-to first invalid field on submit. Announce errors, async saving, and completion.
+| State / event                         | Preconditions                  | New state                                                                                                              | Effect                        |
+| ------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| open record/Add                       | no current form                | rebuild draft from config, new `Arc`, scroll 0                                                                         | possibly inspect executable   |
+| `FieldPointer(row, position, extend)` | row is field; not saving       | focus it, `dragging=true`, clamp/set cursor, select row                                                                | blink reset + redraw          |
+| pointer move with extend              | captured drag                  | anchor retained, selection head moves                                                                                  | redraw                        |
+| release/cancel                        | any drag                       | `dragging=false`                                                                                                       | none                          |
+| text edit/undo/redo                   | focused input                  | editable/history changes; `changed()` sets dirty, clears removal                                                       | redraw                        |
+| popup ↑/↓                             | popup open; **count > 0**      | `(old + delta).rem_euclid(count)` preview                                                                              | redraw                        |
+| popup Enter/click                     | valid option                   | write typed choice; dirty; close popup                                                                                 | redraw                        |
+| Browse reply                          | matching session; not saving   | replace input, focus/reveal field, dirty                                                                               | inspect if executable field   |
+| Save valid                            | `change(config)` returns value | saving lock + status                                                                                                   | `ApplySettingsForm`           |
+| Save invalid                          | validation error               | exact draft retained; error status                                                                                     | redraw only                   |
+| Apply reply                           | result returned                | on success, current code applies change to config **before** session comparison; matching form then clears lock/status | dependent runtime refresh     |
+| Cancel                                | not saving                     | discard draft                                                                                                          | no persistence                |
+| Remove, then confirm                  | record; not saving             | confirmation then saving                                                                                               | command only on second action |
 
-IntelliJ recommends labels aligned as a coherent group and validation on an
-appropriate boundary; complex forms keep confirmation available, then highlight
-invalid fields on submit ([Layout](https://plugins.jetbrains.com/docs/intellij/layout.html),
-[Validation errors](https://plugins.jetbrains.com/docs/intellij/validation-errors.html)).
-Its Kotlin UI DSL guidance in the local `temporary-docs/intellij-platform-sdk`
-is secondary architectural context, not an implementation dependency.
+> **Current ordering gap:** SettingsMsg::FormApplied calls
+> SettingsChange::apply(&mut model.config) whenever result is Ok, then filters
+> the current form with Arc::ptr_eq for saving/status/form.applied work
+> ([update/settings.rs](../../src/update/settings.rs#L688)). Thus the session
+> token protects presentation state for that reply, but does **not** prevent a
+> stale successful apply reply from mutating durable config. This is documented
+> behavior/defect, not a claim that this documentation change fixes it. A
+> production repair must check reply ownership before applying config, or carry
+> a durable request generation owned by the configuration transaction.
 
-## Gaps and acceptance
+The current select_key implementation also has no count-zero guard before
+rem_euclid(count). Existing form choices/presets supply nonempty labels, which
+is the required precondition. A reusable popup must instead close/no-op for
+count zero before keyboard preview; it must never rely on catalog construction
+to avoid a division-by-zero panic.
 
-Add live gallery/automation coverage for complete keyboard traversal, field
-errors and recovery, async saving/retry, Cancel draft discard, removal
-confirmation, narrow/scroll clipping, disabled dependencies and screen-reader
-names/status. Do not replace Settings with a command palette or introduce a
-widget framework under this work. First useful slice is a shared explicit
-validation presentation contract while preserving current typed `SettingsForm`
-validation and command boundary.
+Text input travels through `EditableState`, so OS text/IME commit belongs at
+the normal text-input boundary rather than inferred physical keys. Current
+forms do **not** model preedit composition or an IME candidate rectangle. A
+future field must retain composition transiently and not add interim preedit
+characters to `StringBuffer`/undo before commit. Focus loss/session replacement
+must cancel preedit, clear pointer capture, and reject late platform callbacks
+by session identity.
 
-Acceptance beyond the static `form-field.validation` gallery specimen: automate
-initial focus and Tab order, multiline field clipping/selection, Browse return,
-dirty navigation rejection, error and recovery, saving lockout, successful and
-failed apply, Cancel discard, and two-step removal. Add disabled/read-only and
-field-local error specimens only when their semantics/palette roles exist; test
-names, descriptions and status announcements when an accessibility adapter is
-introduced.
+### Async trace
+
+1. Edit a Rust server whose session is allocation **A**. Field 0 becomes
+   `/tmp/ra`; `changed()` makes it dirty.
+2. Browse chooses `/usr/bin/rust-analyzer`. `FileChosen(A, 0, Some(path))`
+   replaces only `fields[0].input` and queues executable inspection with A.
+3. User cancels/reopens another record. It owns allocation **B**. Delayed
+   `ExecutableChecked(A, ...)` is ignored by `Arc::ptr_eq`.
+4. Saving B calls `change(&config)`. If root markers contain `src/lib.rs`,
+   validation reports `RootMarker`: no command, same dirty draft. If valid,
+   exactly one `SettingsChange` crosses the command boundary.
+5. A failed B save releases its lock and retains text; a matching successful B
+   save applies the change and clears focus/dirty before dependent runtime
+   reconfiguration. A successful A reply after B replaces the form is the
+   ordering gap above: it still applies its change to config, though it does
+   not alter B's visible form state.
+
+## Geometry, clipping, and mapping
+
+All form geometry is physical pixels after scale application. Let `s` be
+scale. A Settings row comes from `overlay_surface`. The implemented control
+selection is:
+
+```text
+if row.w < round(400 * s):
+    control = (row.x, row.y + round(26*s), row.w, round(22*s))
+else:
+    control = (row.x, row.y, row.w, round(32*s))
+```
+
+The input surface expands input by `4*s`; `input_rect` reserves an adjacent
+Browse action. `TextFieldOptions::for_text_area` or `for_text_box` then
+maps content into the measured inner rectangle. Field clips renderer; record
+viewport clips field; rounded overlay clips both. This prevents an off-screen
+multiline cursor or popup option painting over the footer.
+
+At `s=1.25`, a 360-pixel row is compact because
+`360 < round(400*1.25)=500`. Its control begins 33 px below the row and is
+28 px high. Shared layout must be rounded once at its helper boundary; a click
+uses `settings_field_position -> TextFieldOptions::position_at`, never a
+fresh hand-written character-grid calculation.
+
+Current popup placement is:
+
+```text
+row_h = min(round(28*s), (bottom - top) / count)
+total = row_h * count
+y     = clamp(anchor.y + anchor.h, top, bottom - total)
+rect[i] = (anchor.x, y + i*row_h, anchor.w, row_h)
+```
+
+For anchor `(100,300,240,32)`, body `[80,500)`, `count=5`, `s=1`:
+`row_h=28`, total=140, y=332, and rows start 332, 360, 388, 416, 444.
+For 20 options, `row_h=min(28,420/20)=21`; twenty rows exactly fill the body.
+`count=0` returns no rectangles—no division and no selectable void.
+
+## Rendering, invalidation, and cost
+
+```text
+SettingsState::refresh_entries -> modal settings spec -> overlay layout
+ -> settings_page paints rows, surfaces, choices, footer
+ -> TextFieldRenderer paints Code-font selections, characters, carets
+ -> controls::render_select paints finite choice anchors/options
+```
+
+Derived layout invalidates on window size, scale, settings filter/category,
+rows/advanced state, popup state, records scroll, footer actions, or text that
+changes a multiline row. Field options invalidate on rect, line/character
+metrics, active cursor, scroll, colors, or blink. Configuration does not
+invalidate an open draft until successful apply/reopen deliberately rebuilds it.
+
+Visible record traversal is bounded by the viewport drawn range. Field render
+walks visible logical lines, selections, then cursors; ordinary form fields are
+single line. Label chip sizing is linear in label count and uses a
+`chars().count()` estimate, so it is layout heuristic, not shaping truth. No
+timing promise follows.
+
+## Proposed reusable boundary (not implemented)
+
+Extract only presentation/input identity; retain domain changes, validators,
+configuration, and async ownership in the consumer.
+
+**Proposed API:**
+
+```rust
+// Proposed names shared with TEXT-FIELD.md; not production Token code.
+use crate::ui::text_field::{FieldId, TextOperation};
+enum Validation {
+    Valid,
+    Invalid { message: String },
+}
+struct FormFieldView<'a> {
+    id: FieldId,
+    label: &'a str,
+    help: &'a str,
+    input: &'a EditableState<StringBuffer>,
+    enabled: bool,
+    read_only: bool,
+    validation: Validation,
+}
+enum FormIntent {
+    Edit { field: FieldId, operation: TextOperation },
+    Focus { field: FieldId },
+    Submit,
+    Cancel,
+    Browse { field: FieldId },
+}
+```
+
+The owner maps intent to typed messages. A disabled field is unfocusable/inert;
+a read-only field is focusable/selectable but rejects mutation—neither is
+current `enabled`. Submit would focus first invalid `FieldId`, expose a
+summary and announce it through a future accessibility adapter. Token has no
+platform accessibility tree today; that is an acceptance requirement, not a
+claim.
+
+## Verification cases
+
+Existing catalog/rename/removal coverage is in
+[forms.rs tests](../../src/settings/forms.rs#L30); layout/hit agreement is in
+[settings-page tests](../../src/view/settings_page.rs#L1510). Add these update
+and runtime vectors:
+
+| Initial                        | Action                                   | Expected                                                                                       |
+| ------------------------------ | ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| new provider, field `x`, clean | insert `y`                               | `xy`, dirty, no config mutation                                                                |
+| saving form                    | press field, toggle choice, Browse reply | no draft/focus change                                                                          |
+| allocation A replaced by B     | `FormApplied(A, Ok)`                     | **current:** B UI unchanged but A change applies config; **required fix:** reject before apply |
+| select count 5, cursor 0       | Up then Enter                            | commit 4, popup closes                                                                         |
+| 20 options/body 420 px         | derive rectangles                        | 20 × 21 px, all inside body                                                                    |
+| root marker `a/b`              | Save                                     | error status, no apply command                                                                 |
+| persisted id old/draft id new  | successful save                          | old removed, new inserted, focus clear                                                         |
+| edit then Cancel/reopen        | inspect value                            | persisted rather than draft value                                                              |
+| activate Remove twice          | inspect effects                          | first confirms, second emits one removal                                                       |
+
+Future IME vector: preedit `k -> ka ->` commit `か` produces one history
+entry; Escape/focus loss preserves the original buffer. Repeat narrow, 1.25×,
+2× layouts and a parent-scrolled multiline row.
+
+## Sources
+
+- [Draft models and validation](../../src/settings/forms.rs)
+- [Deterministic Settings update](../../src/update/settings.rs)
+- [Messages/commands](../../src/messages.rs)
+- [Settings paint and tests](../../src/view/settings_page.rs)
+- [Shared text mechanics](TEXT-FIELD.md); [finite choice mechanics](COMBOBOX.md)

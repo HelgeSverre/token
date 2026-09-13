@@ -1,6 +1,10 @@
 # Token UI component reference
 
-Research and specification reference, reviewed against the 2026-09-12 codebase. These documents distinguish current
+Implementation and state-modeling reference for the 2026-09-13 codebase.
+The 36 component chapters follow the
+[technical standard](TECHNICAL-STANDARD.md): concrete representations and ownership,
+event transitions, layout/index algorithms, worked traces, invalidation, runtime
+integration, and verification cases. These documents distinguish current
 Token implementations from proposed contracts; a documented component is not
 automatically an implemented widget or an approved feature.
 
@@ -54,8 +58,8 @@ component index and relevant application surfaces, including intentionally
 deferred variants. The [research brief](RESEARCH-BRIEF.md) records the questions,
 sources, confidence rules and division of work.
 
-Links into `temporary-docs/` identify the user-supplied local research snapshot,
-which is not distributed with this catalog. Official JetBrains links are the
+The research brief records the user-supplied local research snapshot's provenance;
+that snapshot is no longer present in the worktree. Official JetBrains links are the
 durable external references; Token implementation links point into this repository.
 
 ## What exists, and what is missing
