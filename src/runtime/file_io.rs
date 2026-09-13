@@ -427,7 +427,7 @@ fn prepare_open(
     use anyhow::Context;
     use token::util::{
         filename_for_display, is_likely_binary, is_supported_image, validate_file_for_opening,
-        FileOpenError,
+        ByteSize, FileOpenError,
     };
 
     let resolved;
@@ -468,38 +468,72 @@ fn prepare_open(
     }
     let mut view_mode = ViewMode::Text;
     let mut tab_content = TabContent::Text;
-    let mut document = match validate_file_for_opening(path) {
-        Ok(()) if is_supported_image(path) => {
-            // Fit against the actual target pane when the reply is installed.
-            let image = token::image::load_image(path, 0, 0)
-                .with_context(|| format!("Error opening image: {}", filename_for_display(path)))?;
-            view_mode = ViewMode::Image(Box::new(image));
-            let mut doc = Document::new();
-            doc.file_path = Some(path.clone());
-            doc
+
+    // Get file metadata once for size checks later
+    let metadata = match validate_file_for_opening(path) {
+        Ok(()) => {
+            std::fs::metadata(path)
+                .with_context(|| format!("Failed to stat {}", path.display()))?
         }
-        Ok(()) if is_likely_binary(path) => {
-            let size_bytes = std::fs::metadata(path)?.len();
-            tab_content =
-                TabContent::BinaryPlaceholder(token::model::editor::BinaryPlaceholderState {
-                    path: path.clone(),
-                    size_bytes,
-                });
-            let mut doc = Document::new();
-            doc.file_path = Some(path.clone());
-            doc
-        }
-        Ok(()) => Document::from_loaded_text(
-            &std::fs::read_to_string(path)
-                .with_context(|| format!("Error opening {}", path.display()))?,
-            identity.clone(),
-        ),
         Err(FileOpenError::NotFound)
             if request.policy == token::model::FileOpenPolicy::CreateOrOpen =>
         {
-            Document::new_with_path(path.clone())
+            let mut doc = Document::new_with_path(path.clone());
+            doc.set_file_identity(Some(identity));
+            return Ok(PreparedFile::Loaded {
+                document: Box::new(doc),
+                view_mode,
+                tab_content,
+            });
         }
         Err(error) => anyhow::bail!(error.user_message(&filename_for_display(path))),
+    };
+
+    let size_bytes = metadata.len();
+    let max = token::util::file_validation::MAX_FILE_SIZE;
+
+    let mut document = if is_supported_image(path) {
+        // Images require the full file to be loaded, so enforce size limit
+        if ByteSize::bytes(size_bytes) > max {
+            anyhow::bail!(
+                FileOpenError::TooLarge {
+                    size: ByteSize::bytes(size_bytes)
+                }
+                .user_message(&filename_for_display(path))
+            );
+        }
+        // Fit against the actual target pane when the reply is installed.
+        let image = token::image::load_image(path, 0, 0)
+            .with_context(|| format!("Error opening image: {}", filename_for_display(path)))?;
+        view_mode = ViewMode::Image(Box::new(image));
+        let mut doc = Document::new();
+        doc.file_path = Some(path.clone());
+        doc
+    } else if is_likely_binary(path) {
+        // Binary files only read first 8 KiB for detection, so no size limit
+        tab_content =
+            TabContent::BinaryPlaceholder(token::model::editor::BinaryPlaceholderState {
+                path: path.clone(),
+                size_bytes,
+            });
+        let mut doc = Document::new();
+        doc.file_path = Some(path.clone());
+        doc
+    } else {
+        // Text files require the full file to be loaded, so enforce size limit
+        if ByteSize::bytes(size_bytes) > max {
+            anyhow::bail!(
+                FileOpenError::TooLarge {
+                    size: ByteSize::bytes(size_bytes)
+                }
+                .user_message(&filename_for_display(path))
+            );
+        }
+        Document::from_loaded_text(
+            &std::fs::read_to_string(path)
+                .with_context(|| format!("Error opening {}", path.display()))?,
+            identity.clone(),
+        )
     };
     document.set_file_identity(Some(identity));
     if matches!(view_mode, ViewMode::Text) && matches!(tab_content, TabContent::Text) {
@@ -780,18 +814,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let invalid_utf8 = dir.path().join("invalid.txt");
         let broken_image = dir.path().join("broken.png");
-        let oversized = dir.path().join("oversized.txt");
+        let oversized_text = dir.path().join("oversized.txt");
         std::fs::write(&invalid_utf8, [0xff, 0xfe]).unwrap();
         std::fs::write(&broken_image, "not an image").unwrap();
-        File::create(&oversized)
-            .unwrap()
-            .set_len(token::util::ByteSize::mebibytes(51).as_u64())
-            .unwrap();
+        // Write actual text content (no nulls) to ensure it's classified as text, not binary
+        let large_text = "a".repeat(1024 * 100); // 100 KiB of text at start
+        std::fs::write(&oversized_text, format!("{}\n{}", large_text, "b".repeat(token::util::ByteSize::mebibytes(51).as_usize()))).unwrap();
         for path in [
             dir.path().to_path_buf(),
             invalid_utf8,
             broken_image,
-            oversized,
+            oversized_text,
         ] {
             assert!(prepare_open(&open_request(path), None).is_err());
         }
@@ -802,6 +835,42 @@ mod tests {
             request.policy = token::model::FileOpenPolicy::ExistingText;
             assert!(prepare_open(&request, None).is_err());
         }
+    }
+
+    #[test]
+    fn file_open_worker_allows_oversized_binary_files_as_placeholder() {
+        let dir = tempfile::tempdir().unwrap();
+        let oversized_binary = dir.path().join("oversized.bin");
+        // Create a binary file larger than MAX_FILE_SIZE (50 MiB)
+        // Start with SQLite header which contains a null byte early on
+        let mut content = b"SQLite format 3\0".to_vec();
+        content.extend(vec![0u8; token::util::ByteSize::mebibytes(60).as_usize()]);
+        std::fs::write(&oversized_binary, content).unwrap();
+
+        let (tx, rx) = mpsc::channel();
+        let worker = start_worker(tx, None).unwrap();
+        worker
+            .send(FileJob::Open(open_request(oversized_binary.clone())))
+            .unwrap();
+        drop(worker);
+
+        let replies: Vec<_> = rx.try_iter().collect();
+        assert_eq!(replies.len(), 1);
+        let Msg::Layout(LayoutMsg::FilePrepared {
+            result: Ok(prepared),
+            ..
+        }) = &replies[0]
+        else {
+            panic!("expected FilePrepared with Ok")
+        };
+        let PreparedFile::Loaded {
+            tab_content,
+            ..
+        } = &**prepared
+        else {
+            panic!("expected Loaded")
+        };
+        assert!(matches!(tab_content, TabContent::BinaryPlaceholder(_)));
     }
 
     #[cfg(unix)]

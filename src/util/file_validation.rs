@@ -68,9 +68,9 @@ impl std::error::Error for FileOpenError {}
 /// - File exists
 /// - Is not a directory
 /// - Has read permissions
-/// - Does not exceed size limit
 ///
-/// Does NOT check for binary content (use `is_likely_binary` separately after this passes)
+/// Does NOT check file size or binary content (size limit is applied later
+/// for file types that require full loading; binary files skip the size check)
 pub fn validate_file_for_opening(path: &Path) -> Result<(), FileOpenError> {
     let metadata = fs::metadata(path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => FileOpenError::NotFound,
@@ -80,12 +80,6 @@ pub fn validate_file_for_opening(path: &Path) -> Result<(), FileOpenError> {
 
     if metadata.is_dir() {
         return Err(FileOpenError::IsDirectory);
-    }
-
-    if ByteSize::bytes(metadata.len()) > MAX_FILE_SIZE {
-        return Err(FileOpenError::TooLarge {
-            size: ByteSize::bytes(metadata.len()),
-        });
     }
 
     Ok(())
@@ -158,20 +152,15 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_file_size_boundary() {
-        let at_limit = NamedTempFile::new().unwrap();
-        at_limit.as_file().set_len(MAX_FILE_SIZE.as_u64()).unwrap();
-        assert!(validate_file_for_opening(at_limit.path()).is_ok());
-
-        let over_limit = NamedTempFile::new().unwrap();
-        over_limit
+    fn test_validate_file_size_not_checked() {
+        // validate_file_for_opening no longer checks size — that's done by prepare_open
+        // based on whether the file is binary or text. Large files should still pass this check.
+        let oversized = NamedTempFile::new().unwrap();
+        oversized
             .as_file()
             .set_len(MAX_FILE_SIZE.as_u64() + 1)
             .unwrap();
-        assert!(matches!(
-            validate_file_for_opening(over_limit.path()),
-            Err(FileOpenError::TooLarge { size }) if size == ByteSize::bytes(MAX_FILE_SIZE.as_u64() + 1)
-        ));
+        assert!(validate_file_for_opening(oversized.path()).is_ok());
     }
 
     #[test]
