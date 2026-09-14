@@ -212,6 +212,22 @@ All navigation commands work with Shift to extend selection:
 | Expand Selection | Alt+Up    | `ExpandSelection` |
 | Shrink Selection | Alt+Down  | `ShrinkSelection` |
 
+### Terminal (when the terminal dock is focused)
+
+Most keys go straight to the shell. These are translated:
+
+| Action                | Shortcut         | Bytes sent        |
+|-----------------------|------------------|-------------------|
+| Move Word Left/Right  | Alt+Left/Right   | `ESC b` / `ESC f` |
+| Delete Word Backward  | Alt+Backspace    | `ESC DEL`         |
+| Delete Word Forward   | Alt+Delete       | `ESC d`           |
+| Line Start/End        | Cmd+Left/Right   | `^A` / `^E`       |
+| Delete To Line Start  | Cmd+Backspace    | `^U`              |
+| Delete To Line End    | Cmd+Delete       | `^K`              |
+| Copy / Paste          | Cmd+C / Cmd+V    |                   |
+| Scroll Back / Forward | Shift+PageUp/Down|                   |
+| Focus Editor          | Escape           |                   |
+
 ### Markdown Preview
 
 | Action                  | Shortcut      | Command                  |
