@@ -1258,6 +1258,17 @@ pub enum Cmd {
         command: String,
         arguments: Option<Vec<serde_json::Value>>,
     },
+    /// Run a configured whole-document formatter on a captured buffer.
+    RunFormatter {
+        document_id: DocumentId,
+        revision: u64,
+        formatter: crate::config::FormatterConfig,
+        text: String,
+        file: Option<std::path::PathBuf>,
+        workspace: Option<std::path::PathBuf>,
+        language: crate::syntax::LanguageId,
+        save: Option<crate::model::SaveIntent>,
+    },
     /// `textDocument/formatting` (`range: None`) or `rangeFormatting`.
     /// `save` marks a `format_on_save` request: the resolution (or
     /// its gate/timeout fallback) performs the save the user asked for.
@@ -1479,7 +1490,7 @@ impl Cmd {
             Cmd::LspRequestSignatureHelp { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestPrepareRename { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestRename { .. } => Damage::Areas(vec![]),
-            Cmd::LspRequestFormatting { .. } => Damage::Areas(vec![]),
+            Cmd::RunFormatter { .. } | Cmd::LspRequestFormatting { .. } => Damage::Areas(vec![]),
             Cmd::LspRequestReferences { .. } | Cmd::WorkspaceSymbols(_) => Damage::Areas(vec![]),
             Cmd::LspRequestCodeActions { .. } => Damage::Areas(vec![]),
             Cmd::LspExecuteCommand { .. } => Damage::Areas(vec![]),

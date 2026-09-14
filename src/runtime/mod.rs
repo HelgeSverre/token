@@ -14,6 +14,7 @@ mod editorconfig;
 mod file_io;
 mod file_watch;
 mod find_worker;
+mod formatting;
 mod inline_cache;
 mod inline_context;
 mod inline_retrieval;

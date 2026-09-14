@@ -4,7 +4,7 @@ mod common;
 use token::{
     commands::Cmd,
     config::{AutoSaveConfig, AutoSaveMode},
-    messages::{AppMsg, AutoSaveRequest, DocumentMsg, LayoutMsg, LspMsg, Msg},
+    messages::{AppMsg, AutoSaveRequest, DocumentMsg, LayoutMsg, Msg},
     model::{AppModel, SaveReason},
     update::update,
 };
@@ -183,7 +183,7 @@ fn formatted(m: &mut AppModel, cmd: Cmd, new_text: Option<&str>) -> Option<Cmd> 
     });
     update(
         m,
-        Msg::Lsp(LspMsg::FormattingResolved {
+        Msg::Formatting(token::messages::FormattingMsg::FormattingResolved {
             document_id,
             revision,
             save,
@@ -261,7 +261,7 @@ fn interactive_formatting_settles_an_earlier_save_before_replacing_its_request()
     let old = formatting(&mut m, false);
     let next = update(
         &mut m,
-        Msg::Lsp(LspMsg::FormatDocument {
+        Msg::Formatting(token::messages::FormattingMsg::FormatDocument {
             selection_only: false,
         }),
     )

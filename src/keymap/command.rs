@@ -674,12 +674,16 @@ impl Command {
             ShowSignatureHelp => vec![Msg::Lsp(LspMsg::ShowSignatureHelp)],
             RenameSymbol => vec![Msg::Lsp(LspMsg::RenameSymbol)],
             ShowCodeActions => vec![Msg::Lsp(LspMsg::ShowCodeActions)],
-            FormatDocument => vec![Msg::Lsp(LspMsg::FormatDocument {
-                selection_only: false,
-            })],
-            FormatSelection => vec![Msg::Lsp(LspMsg::FormatDocument {
-                selection_only: true,
-            })],
+            FormatDocument => vec![Msg::Formatting(
+                crate::messages::FormattingMsg::FormatDocument {
+                    selection_only: false,
+                },
+            )],
+            FormatSelection => vec![Msg::Formatting(
+                crate::messages::FormattingMsg::FormatDocument {
+                    selection_only: true,
+                },
+            )],
             FindUsages => vec![Msg::Lsp(LspMsg::FindUsagesInPanel)],
             ShowUsages => vec![Msg::Lsp(LspMsg::FindReferences)],
 

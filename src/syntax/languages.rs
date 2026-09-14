@@ -7,6 +7,18 @@ use std::path::Path;
 pub use super::registry::LanguageId;
 
 impl LanguageId {
+    /// Synthetic filename used by tools for an untitled buffer.
+    pub fn untitled_filename(self) -> String {
+        let definition = super::registry::language(self);
+        if let Some(suffix) = definition.compound_suffixes.first() {
+            return format!("untitled{suffix}");
+        }
+        definition
+            .extensions
+            .first()
+            .map_or_else(|| "untitled.txt".into(), |ext| format!("untitled.{ext}"))
+    }
+
     /// Detect language from file extension
     ///
     /// Note: `.blade.php` files are detected in `from_path()` before this is called,

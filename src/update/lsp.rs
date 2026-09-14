@@ -12,7 +12,6 @@ use crate::model::editor::Position;
 use crate::model::editor_area::DocumentId;
 use crate::model::{AppModel, CursorOverlayKind, CursorOverlayState};
 use crate::update::navigation;
-use crate::update::text_edits::{apply_planned_edits, plan_text_edits};
 
 /// A short status-bar transient for a server-state change, or `None` for
 /// states not worth flashing (`Indexing` fires often via `$/progress`
@@ -299,56 +298,6 @@ fn open_rename_prompt(
     Some(Cmd::Redraw)
 }
 
-/// Request formatting for the focused selection or document. Saving has its own
-/// document-targeted continuation and does not depend on interactive focus.
-pub(crate) fn request_formatting(model: &mut AppModel, selection_only: bool) -> Option<Cmd> {
-    // Interactive formatting replaces the runtime formatting slot. Settle any
-    // earlier save first so its continuation cannot be orphaned by supersession.
-    let prior = model.try_document()?.pending_save.clone();
-    let settled = prior.and_then(|intent| {
-        let revision = intent.revision;
-        super::app::finish_save_formatting(model, intent, revision, None)
-    });
-    let doc = model.try_document()?;
-    let document_id = doc.id?;
-    doc.file_path.as_ref()?;
-    let range = if selection_only {
-        let sel = *model.editor().active_selection();
-        if sel.is_empty() {
-            model.ui.set_status("No selection to format");
-            return super::merge_cmds(settled, Some(Cmd::redraw_status_bar()));
-        }
-        Some(lsp_types::Range::new(
-            crate::lsp::position_to_lsp(doc, sel.start()),
-            crate::lsp::position_to_lsp(doc, sel.end()),
-        ))
-    } else {
-        None
-    };
-    super::merge_cmds(
-        settled,
-        Some(Cmd::LspRequestFormatting {
-            document_id,
-            revision: doc.revision,
-            range,
-            options: formatting_options(doc.text_settings),
-            save: None,
-        }),
-    )
-}
-
-pub(super) fn formatting_options(
-    settings: crate::model::DocumentTextSettings,
-) -> lsp_types::FormattingOptions {
-    lsp_types::FormattingOptions {
-        tab_size: settings.indent_size as u32,
-        insert_spaces: settings.indent_style == crate::model::IndentStyle::Space,
-        trim_trailing_whitespace: settings.trim_trailing_whitespace,
-        insert_final_newline: settings.insert_final_newline,
-        ..Default::default()
-    }
-}
-
 pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
     match msg {
         LspMsg::WorkspaceSymbolProviders(providers) => {
@@ -373,41 +322,6 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             Some(Cmd::Redraw)
         }
         LspMsg::WorkspaceSymbolsResponseFromServer { .. } => None,
-        LspMsg::FormatDocument { selection_only } => request_formatting(model, selection_only),
-        LspMsg::FormattingResolved {
-            document_id,
-            revision,
-            edits,
-            save,
-        } => {
-            if let Some(intent) = save {
-                if intent.document_id != document_id {
-                    return None;
-                }
-                return super::app::finish_save_formatting(model, intent, revision, edits);
-            }
-            if stale_feature_response(model, document_id, revision) {
-                return None;
-            }
-            let mut cmd = None;
-            match edits.as_deref() {
-                Some([]) => model.ui.set_status("Already formatted"),
-                Some(edits) => {
-                    let planned =
-                        plan_text_edits(model.editor_area.documents.get(&document_id)?, edits);
-                    cmd = apply_planned_edits(
-                        model,
-                        document_id,
-                        &planned,
-                        super::text_edits::EditCarets::Preserve,
-                    );
-                }
-                None => model
-                    .ui
-                    .set_status("Formatting not supported by this server"),
-            }
-            super::merge_cmds(cmd, Some(Cmd::redraw_status_bar()))
-        }
         LspMsg::FormattingResponseFromServer { .. } => None,
         LspMsg::ShowSignatureHelp => request_signature_help(model, None, false),
         LspMsg::RenameSymbol => {
@@ -2054,9 +1968,9 @@ mod tests {
             };
             save
         });
-        update_lsp(
+        super::super::formatting::update_formatting(
             model,
-            LspMsg::FormattingResolved {
+            crate::messages::FormattingMsg::FormattingResolved {
                 document_id,
                 revision,
                 edits,
@@ -2078,9 +1992,9 @@ mod tests {
     #[test]
     fn format_document_emits_the_request_with_options() {
         let (_dir, mut model) = model_with_file();
-        let cmd = update_lsp(
+        let cmd = super::super::formatting::update_formatting(
             &mut model,
-            LspMsg::FormatDocument {
+            crate::messages::FormattingMsg::FormatDocument {
                 selection_only: false,
             },
         );
@@ -2102,9 +2016,9 @@ mod tests {
     #[test]
     fn format_selection_without_a_selection_sets_the_status() {
         let (_dir, mut model) = model_with_file();
-        let cmd = update_lsp(
+        let cmd = super::super::formatting::update_formatting(
             &mut model,
-            LspMsg::FormatDocument {
+            crate::messages::FormattingMsg::FormatDocument {
                 selection_only: true,
             },
         );
@@ -2124,9 +2038,9 @@ mod tests {
                 crate::model::editor::Position::new(0, 3),
                 crate::model::editor::Position::new(0, 7),
             );
-        let cmd = update_lsp(
+        let cmd = super::super::formatting::update_formatting(
             &mut model,
-            LspMsg::FormatDocument {
+            crate::messages::FormattingMsg::FormatDocument {
                 selection_only: true,
             },
         );

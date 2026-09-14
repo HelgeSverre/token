@@ -6461,3 +6461,35 @@ fn a_then_save_formatting_request_past_its_deadline_still_saves() {
     );
     handle.kill();
 }
+
+#[test]
+fn external_formatting_reply_identity_rejects_superseded_and_duplicate_results() {
+    use token::messages::FormattingMsg;
+    let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
+    let id = app.model.document().id.unwrap();
+    let previous = Arc::new(());
+    let current = Arc::new(());
+    app.formatters.insert(id, current.clone());
+    let reply = |request| {
+        Msg::Formatting(FormattingMsg::ExternalResolved {
+            document_id: id,
+            language: LanguageId::PlainText,
+            revision: 0,
+            request,
+            result: Ok("formatted".into()),
+            save: None,
+        })
+    };
+    assert!(app
+        .intercept_formatting_replies(vec![reply(previous)])
+        .is_empty());
+    assert_eq!(
+        app.intercept_formatting_replies(vec![reply(current.clone())])
+            .len(),
+        1
+    );
+    assert!(app
+        .intercept_formatting_replies(vec![reply(current)])
+        .is_empty());
+    assert!(app.formatters.is_empty());
+}

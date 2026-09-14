@@ -15,6 +15,10 @@ All notable changes to Token are documented in this file.
 
 - Default Python language services to ty and whole-document formatting to Ruff.
   Existing saved language-server configurations remain unchanged.
+- Configure per-language formatter commands in Settings → Formatting. Commands take
+  precedence over LSP for Format Document and format-on-save, including when LSP is
+  disabled. Format Selection continues through LSP. Formatter failures preserve
+  buffer content and save unformatted with a warning.
 
 ### Workspace
 

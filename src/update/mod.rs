@@ -26,6 +26,7 @@ mod editor;
 mod file_change;
 mod file_policy;
 mod folding;
+mod formatting;
 mod hover;
 mod image;
 pub mod inline;
@@ -374,6 +375,7 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         Msg::Terminal(m) => terminal::update_terminal(model, m),
         Msg::Completion(m) => completion::update_completion(model, m),
         Msg::Lsp(m) => lsp::update_lsp(model, m),
+        Msg::Formatting(m) => formatting::update_formatting(model, m),
         Msg::ContextMenu(m) => context_menu::update_context_menu(model, m),
     };
 
@@ -587,6 +589,11 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Lsp(crate::messages::LspMsg::CompletionResolved {
             document_id, revision, items, is_incomplete,
         }) => format!("Lsp::CompletionResolved(document={document_id:?}, revision={revision}, items={}, incomplete={is_incomplete})", items.len()),
+        Msg::Formatting(crate::messages::FormattingMsg::ExternalResolved { document_id, revision, result, .. }) =>
+            format!("Formatting::ExternalResolved(document={document_id:?}, revision={revision}, success={})", result.is_ok()),
+        Msg::Formatting(crate::messages::FormattingMsg::FormattingResolved { document_id, revision, edits, .. }) =>
+            format!("Formatting::FormattingResolved(document={document_id:?}, revision={revision}, edits={:?})", edits.as_ref().map(Vec::len)),
+        Msg::Formatting(m) => format!("Formatting::{m:?}"),
         Msg::Lsp(m) => format!("Lsp::{:?}", m),
         Msg::ContextMenu(m) => format!("ContextMenu::{:?}", m),
     }
