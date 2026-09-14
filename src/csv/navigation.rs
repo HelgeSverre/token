@@ -116,8 +116,13 @@ impl CsvState {
         );
     }
 
-    /// Set viewport dimensions (called on resize)
+    /// Synchronize viewport dimensions, revealing the selection only on resize.
     pub fn set_viewport_size(&mut self, rows: usize, cols: usize) {
+        // Rendering synchronizes dimensions every frame. Leave manual scrolling
+        // intact when the viewport size has not changed.
+        if self.viewport.visible_rows == rows && self.viewport.visible_cols == cols {
+            return;
+        }
         self.viewport.visible_rows = rows;
         self.viewport.visible_cols = cols;
         self.ensure_selection_visible();
@@ -236,5 +241,57 @@ mod tests {
 
         state.page_up();
         assert_eq!(state.selected_cell.row, 0);
+    }
+
+    #[test]
+    fn test_viewport_sync_preserves_manual_scrolling() {
+        let mut state = make_csv_state(100, 20);
+        state.set_viewport_size(10, 5);
+
+        state.scroll_vertical(20);
+        state.scroll_horizontal(10);
+        state.set_viewport_size(10, 5);
+
+        assert_eq!(state.viewport.top_row, 20);
+        assert_eq!(state.viewport.left_col, 10);
+        assert_eq!(state.selected_cell, CellPosition::new(0, 0));
+
+        state.move_to_last_cell();
+        state.scroll_vertical(-20);
+        state.scroll_horizontal(-10);
+        let top_row = state.viewport.top_row;
+        let left_col = state.viewport.left_col;
+        state.set_viewport_size(10, 5);
+
+        assert_eq!(state.viewport.top_row, top_row);
+        assert_eq!(state.viewport.left_col, left_col);
+        assert_eq!(state.selected_cell, CellPosition::new(99, 19));
+    }
+
+    #[test]
+    fn test_navigation_reveals_selection_after_manual_scrolling() {
+        let mut state = make_csv_state(100, 20);
+        state.set_viewport_size(10, 5);
+        state.scroll_vertical(20);
+        state.scroll_horizontal(10);
+
+        state.move_selection(1, 1);
+
+        assert_eq!(state.selected_cell, CellPosition::new(1, 1));
+        assert_eq!(state.viewport.top_row, 1);
+        assert_eq!(state.viewport.left_col, 1);
+    }
+
+    #[test]
+    fn test_viewport_resize_reveals_selection() {
+        let mut state = make_csv_state(100, 20);
+        state.set_viewport_size(10, 5);
+        state.scroll_vertical(20);
+        state.set_viewport_size(11, 5);
+        assert_eq!(state.viewport.top_row, 0);
+
+        state.scroll_horizontal(10);
+        state.set_viewport_size(11, 6);
+        assert_eq!(state.viewport.left_col, 0);
     }
 }

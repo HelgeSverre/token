@@ -15,6 +15,11 @@ All notable changes to Token are documented in this file.
 
 - Use right/down chevrons instead of plus/minus signs for File Explorer folders.
 
+### CSV
+
+- Allow manual scrolling past the selected cell without snapping back on redraw.
+  Keyboard navigation and viewport resizing still bring the selection into view.
+
 ### Preview
 
 - Refresh Markdown and HTML previews when switching to unedited documents,
