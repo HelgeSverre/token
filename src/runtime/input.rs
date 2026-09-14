@@ -1532,7 +1532,7 @@ mod tests {
         update(
             &mut model,
             Msg::Ui(UiMsg::Modal(ModalMsg::ActivateTab(
-                token::settings::categories().len() - 1,
+                token::settings::CategoryId::Keymap.index(),
             ))),
         );
         let Some(ModalState::Settings(state)) = &mut model.ui.active_modal else {

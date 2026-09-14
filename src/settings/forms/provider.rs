@@ -162,7 +162,7 @@ impl SettingsForm {
                 FormChoice { label: "Manage local llama-server", help: "Launch the executable on demand; requires llama.cpp at http://127.0.0.1:PORT", labels: &["Off", "On"], active: usize::from(value.local_server.is_some()) },
             ],
             enabled: false, focused: Some(if id.is_some() { Field::Url as usize } else { Field::Id as usize }), dragging: false, saving: false,
-            status: "Draft · Save & Use selects this provider without enabling inline suggestions".into(), executable_status: String::new(), remove_pending: false, records_scroll: 0, advanced: false, dirty: false, open_select: None, select_cursor: 0, preset: None,
+            status: "Draft · Save & Use selects this provider without enabling inline suggestions".into(), executable_status: String::new(), remove_pending: false, records_scroll: 0, advanced: false, dirty: false, open_select: None, select_cursor: 0, preset: None, preset_id: None,
         }
     }
 

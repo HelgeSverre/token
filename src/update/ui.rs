@@ -750,7 +750,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                 return None;
             };
             let count = crate::settings::categories().len();
-            let previous = (state.category + count - 1) % count;
+            let previous = (state.category.index() + count - 1) % count;
             super::settings::switch_tab(model, Some(previous))
         }
         ModalMsg::PrevTab => cycle_search_tab(model, false),
@@ -1326,7 +1326,10 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
         return None;
     };
     let row = &state.entries[*state.rows.get(state.selected_index)?];
-    if state.form.is_some() {
+    if state.form.is_some() && state.saving() {
+        return Some(Cmd::Redraw);
+    }
+    if state.form.is_some() && !matches!(row.kind, crate::settings::RowKind::Preset(_)) {
         return super::settings::form_choice(model, explicit, delta);
     }
     if state.tab == crate::settings::keymap::SettingsTab::Keymap {
@@ -1360,7 +1363,7 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
         crate::settings::RowKind::ServerEnabled(id) => {
             return super::lsp::toggle_lsp_server_enabled(model, &id)
         }
-        crate::settings::RowKind::Preset(index) => &crate::settings::DESCRIPTORS[index],
+        crate::settings::RowKind::Preset(setting) => setting,
         crate::settings::RowKind::ServerCommand(id) => {
             return super::settings::open_server(model, Some(&id))
         }
@@ -1370,29 +1373,17 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
         | crate::settings::RowKind::FormAdvanced
         | crate::settings::RowKind::FormPreset
         | crate::settings::RowKind::FormActions
-        | crate::settings::RowKind::FormInfo => return None,
+        | crate::settings::RowKind::FormInfo
+        | crate::settings::RowKind::FormToolInfo
+        | crate::settings::RowKind::FormInstallCommand(..)
+        | crate::settings::RowKind::FormInstallGuide(_)
+        | crate::settings::RowKind::FormRecheck => return None,
         crate::settings::RowKind::ServerStatus(_)
         | crate::settings::RowKind::KeymapBase
         | crate::settings::RowKind::KeymapBinding(..)
         | crate::settings::RowKind::CaptureActions => return None,
     };
-    if descriptor.setting == crate::settings::Setting::Theme {
-        return update_ui(model, UiMsg::ToggleModal(ModalId::ThemePicker));
-    }
-    if !descriptor.apply(&mut model.config, choice) {
-        return Some(Cmd::Redraw);
-    }
-    model.ui.cursor_visible = true;
-    let mut commands = vec![
-        Cmd::SaveConfiguration {
-            config: Box::new(model.config.clone()),
-        },
-        Cmd::Redraw,
-    ];
-    if descriptor.setting == crate::settings::Setting::StatusFont {
-        commands.push(Cmd::SyncFontMetrics);
-    }
-    Some(Cmd::Batch(commands))
+    super::settings::apply_setting(model, descriptor, choice)
 }
 
 fn settings_capacity(model: &AppModel) -> usize {

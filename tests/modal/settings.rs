@@ -1,6 +1,7 @@
 use crate::common::test_model;
 use token::messages::{ModalMsg, Msg, UiMsg};
 use token::model::{AppModel, ModalId, ModalState};
+use token::settings::CategoryId;
 use token::update::update;
 use token::Cmd;
 
@@ -22,6 +23,34 @@ fn open(model: &mut AppModel) {
 }
 
 #[test]
+fn settings_explorer_auto_reveal_toggle_saves_and_is_searchable() {
+    let mut model = test_model("text", 0, 0);
+    open(&mut model);
+    modal(
+        &mut model,
+        ModalMsg::ActivateTab(CategoryId::FilesSession.index()),
+    );
+    modal(
+        &mut model,
+        ModalMsg::SetInput("explorer_auto_reveal".into()),
+    );
+    let cmd = modal(&mut model, ModalMsg::Confirm).unwrap();
+    assert!(!model.config.explorer_auto_reveal);
+    assert!(
+        !saved(&cmd)
+            .expect("toggle saves config")
+            .explorer_auto_reveal
+    );
+    let cmd = modal(&mut model, ModalMsg::Confirm).unwrap();
+    assert!(model.config.explorer_auto_reveal);
+    assert!(
+        saved(&cmd)
+            .expect("toggle saves config")
+            .explorer_auto_reveal
+    );
+}
+
+#[test]
 fn settings_page_category_navigation_filters_without_changing_preferences() {
     let mut model = test_model("text", 0, 0);
     open(&mut model);
@@ -30,34 +59,79 @@ fn settings_page_category_navigation_filters_without_changing_preferences() {
         .iter()
         .enumerate()
         .skip(1)
-        .filter(|(_, category)| **category != Some("Keymap"))
+        .filter(|(_, category)| **category != CategoryId::Keymap)
     {
         let cmd = modal(&mut model, ModalMsg::ActivateTab(index)).unwrap();
         assert!(saved(&cmd).is_none());
         let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
             panic!("settings page");
         };
-        assert_eq!(state.category, index);
-        let section = match category {
-            Some("LSP") => Some("Server configuration"),
-            Some("AI") => Some("AI provider"),
-            other => *other,
+        assert_eq!(state.category, *category);
+        let expected_sections: &[&str] = match category {
+            CategoryId::Appearance => &["Theme", "Editor chrome", "Status bar"],
+            CategoryId::Editor => &["Editing assistance", "Indentation"],
+            CategoryId::FilesSession => &["File format", "File Explorer", "Saving", "Session"],
+            CategoryId::Formatting => &["Save behavior", "Formatting"],
+            CategoryId::Completion => &[
+                "General",
+                "Local suggestions",
+                "Inline suggestions",
+                "Privacy",
+            ],
+            CategoryId::LanguageServers => &["Server configuration"],
+            CategoryId::AiProviders => &["AI provider"],
+            CategoryId::All | CategoryId::Keymap => unreachable!(),
         };
+        assert!(state.filtered_rows().next().is_some());
         assert!(state
             .filtered_rows()
-            .all(|(_, actual)| Some(actual) == section));
+            .all(|(_, actual)| expected_sections.contains(&actual)));
     }
     modal(&mut model, ModalMsg::ActivateTab(0));
     modal(&mut model, ModalMsg::PrevTab);
     let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
         panic!("settings page");
     };
-    assert_eq!(state.category, categories.len() - 1);
+    assert_eq!(state.category, *categories.last().unwrap());
     modal(&mut model, ModalMsg::NextTab);
     let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
         panic!("settings page");
     };
-    assert_eq!(state.category, 0);
+    assert_eq!(state.category, CategoryId::All);
+}
+
+#[test]
+fn settings_inline_switch_has_identical_effects_in_preferences_and_provider_manager() {
+    use token::messages::{SettingsCollectionAction, SettingsMsg};
+    let mut model = test_model("text", 0, 0);
+    open(&mut model);
+    modal(
+        &mut model,
+        ModalMsg::SetInput("completion.inline.enabled".into()),
+    );
+    let original = serde_yaml::to_value(&model.config).unwrap();
+    let preset = modal(&mut model, ModalMsg::Confirm).unwrap();
+    let preset_config = serde_yaml::to_value(saved(&preset).expect("preset saves")).unwrap();
+    assert_ne!(preset_config, original);
+    // Restore via the same preference before exercising the other surface.
+    modal(&mut model, ModalMsg::Confirm);
+    assert_eq!(serde_yaml::to_value(&model.config).unwrap(), original);
+    modal(
+        &mut model,
+        ModalMsg::ActivateTab(CategoryId::AiProviders.index()),
+    );
+    let manager = update(
+        &mut model,
+        Msg::Ui(UiMsg::Settings(SettingsMsg::CollectionAction(
+            SettingsCollectionAction::ToggleMaster,
+        ))),
+    )
+    .unwrap();
+    assert_eq!(
+        serde_yaml::to_value(saved(&manager).expect("manager saves")).unwrap(),
+        preset_config
+    );
+    assert_eq!(serde_yaml::to_value(&model.config).unwrap(), preset_config);
 }
 
 #[test]
@@ -361,10 +435,7 @@ fn settings_collection_presets_are_drafts_and_cancel_keeps_the_editor() {
     use token::messages::{SettingsCollectionAction as Action, SettingsMsg};
     let mut model = test_model("text", 0, 0);
     open(&mut model);
-    let category = token::settings::categories()
-        .iter()
-        .position(|category| *category == Some("LSP"))
-        .unwrap();
+    let category = CategoryId::LanguageServers.index();
     modal(&mut model, ModalMsg::ActivateTab(category));
     let original = serde_yaml::to_value(&model.config).unwrap();
     let action = |model: &mut AppModel, action| {
@@ -381,7 +452,7 @@ fn settings_collection_presets_are_drafts_and_cancel_keeps_the_editor() {
     let id = row(&model, "Server ID");
     modal(&mut model, ModalMsg::ActivateRow(id));
     assert!(
-        matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.input() == format!("{}-2", token::lsp::all_server_defs()[0].id))
+        matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.input() == format!("{}-2", token::tooling::presets_for(token::tooling::PresetKind::Lsp, None)[0].id))
     );
     assert_eq!(serde_yaml::to_value(&model.config).unwrap(), original);
     // A different record must not silently replace the unsaved preset draft.

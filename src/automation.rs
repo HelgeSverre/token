@@ -703,14 +703,7 @@ fn overlay_snapshot(
         token::model::ModalState::Settings(state) => Some(OverlaySnapshot {
             context: "settings".to_owned(),
             query: state.input(),
-            active_tab: Some(
-                token::settings::categories()
-                    .get(state.category)
-                    .copied()
-                    .flatten()
-                    .unwrap_or("All Settings")
-                    .to_owned(),
-            ),
+            active_tab: Some(state.category.label().to_owned()),
             rows: state
                 .filtered_rows()
                 .map(|(label, section)| OverlayRowSnapshot {

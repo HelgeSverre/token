@@ -213,7 +213,7 @@ pub struct SettingsRecord<'a> {
 }
 
 pub struct SettingsCollection<'a> {
-    pub enable_label: &'static str,
+    pub enable_label: Option<&'static str>,
     pub select_cursor: usize,
     pub hovered: Option<crate::messages::SettingsCollectionAction>,
     pub title: &'static str,

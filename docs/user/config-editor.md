@@ -33,6 +33,12 @@ preset control. Clicking the row label only selects it.
 Preset changes save immediately; Escape closes the page without undoing them. The Theme
 row opens the existing theme picker.
 
+**Appearance** groups the theme, editor chrome, and status-bar font.
+**Editor** groups editing assistance and indentation. **Files & Session**
+contains line endings, automatic saving, external-change reloading, and session
+restore/save preferences. **All Settings** follows the same category order;
+selecting a category exposes its smaller groups.
+
 **Completion** controls the master switch (including manual requests), automatic
 menu opening, local-word fallback/mixing, minimum local candidate length, and AI
 inline suggestions with their typing delay and line-tail limit. These settings
@@ -77,10 +83,59 @@ installed; to override its location, set `lsp.servers.gopls.command` in the
 config file. Go projects use the open workspace root, falling back to the
 nearest `go.work` or `go.mod` when opening a file outside a workspace.
 
+### Formatting
+
+**Settings → Formatting** configures an external formatter for each language.
+Select an entry to edit its language, enabled switch, executable (including Browse),
+and arguments. **+ Add** creates a draft; **Save** applies it, **Cancel** discards
+unapplied changes, and **Remove** deletes the entry. Each language can have one
+command formatter. Install formatter executables separately.
+
+Format Document and both format-on-save options prefer an enabled command over LSP,
+even when language servers are disabled. Disabled or absent entries use LSP instead.
+Format Selection continues to use LSP range formatting; command formatters process
+whole documents only.
+
+Python defaults to Ruff:
+
+```yaml
+formatters:
+  python:
+    enabled: true
+    command: ruff
+    args: [format, --stdin-filename, "{file}", --quiet, "-"]
+format_on_save: false
+auto_save:
+  format_on_save: false
+```
+
+Arguments are a JSON/YAML list of strings, not a shell command. `{file}` expands
+inside arguments to the absolute document filename (the destination for Save As).
+The formatter receives the current buffer, including unsaved edits, on stdin and
+must return the complete formatted UTF-8 document on stdout. Commands should not
+modify files in place. Token runs the executable directly, without shell expansion,
+from the file's parent directory. Untitled buffers use a synthetic filename for
+their language in the workspace, or the application's working directory.
+
+Ruff discovers project configuration using the filename and working directory.
+Customize its behavior in `pyproject.toml` or Ruff's configuration files, or change
+the command/arguments to another stdin/stdout formatter.
+
+Formatting is undoable in one step. A missing executable, nonzero exit, invalid
+UTF-8, excessive output, or five-second command timeout leaves the buffer unchanged
+and reports an error. Token does not fall back to LSP after a configured command
+fails. Saves continue unformatted with a warning. Results for changed or closed
+buffers cannot overwrite newer edits.
+
+An omitted `formatters` field seeds Python's Ruff default. An explicitly saved map
+is authoritative: `formatters: {}` removes all external formatters, and removed
+entries stay removed after reloading.
+
 ### Auto-save
 
 Auto-save is off by default. The **Editor** category offers focus-loss, idle,
-and combined modes, along with delay presets and an independent formatter switch:
+and combined modes, along with delay presets. **Formatting** has the independent
+**Format on auto-save** switch:
 
 ```yaml
 auto_save:
@@ -475,7 +530,7 @@ a cooperative 50 ms parsing/traversal budget on the existing worker. Exact cache
 hits are checked against fresh local context; partial replay matches the
 normalized text that was shown, including tabs/spaces.
 
-Ghost-text suggestions are off by default. In **Settings → AI completion**, choose
+Ghost-text suggestions are off by default. In **Settings → AI Providers**, choose
 **+ Add**, enter a unique name, and select your service's transport.
 Select an existing provider from the list to edit it alongside the list.
 
@@ -880,3 +935,13 @@ bracket_matching: true
 
 See [EditorConfig and text settings](editorconfig.md) for project rules, user
 defaults, line-ending handling, and undoable save cleanup.
+
+### Tool preset references
+
+Language-server records and per-language formatter records may contain an optional
+`preset_id` (for example `ty` or `ruff`). Settings records it when you choose a
+bundled preset. It only identifies installation guidance; it never supplies or
+overrides execution settings. You can rename the record, edit its command and
+arguments, or retain an unknown preset ID without changing this behavior. Custom
+records omit this field. Available presets and default configurations are separate:
+adding a new preset to Token does not add it to your saved configuration.

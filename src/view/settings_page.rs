@@ -14,6 +14,13 @@ fn item_height(
     match row {
         DisplayRow::Row(
             Row {
+                accessory: Accessory::SettingValue { text, .. },
+                ..
+            },
+            _,
+        ) => row_height(sf) + text.lines().count().saturating_sub(1) * scaled(16.0, sf),
+        DisplayRow::Row(
+            Row {
                 accessory:
                     Accessory::SettingInput {
                         content,
@@ -239,7 +246,9 @@ fn chrome(p: &WidgetRect, sf: f64) -> Chrome {
     } else if wide(p, sf) {
         categories
     } else {
-        3
+        // Bound the navigation to three rows so adding categories cannot
+        // consume the entire form viewport in compact high-DPI windows.
+        categories.div_ceil(3).max(3)
     };
     let nav_height = categories.div_ceil(columns) * scaled(NAV_STEP, sf);
     Chrome {
@@ -590,7 +599,9 @@ pub(super) fn hit_test(
     }
     if collection(spec).is_some() {
         let manager = manager_rects(&layout.panel, layout.scale_factor);
-        if contains(&manager.master, x, y) {
+        if collection(spec).is_some_and(|value| value.enable_label.is_some())
+            && contains(&manager.master, x, y)
+        {
             return OverlayHit::SettingsAction(
                 crate::messages::SettingsCollectionAction::ToggleMaster,
             );
@@ -900,27 +911,29 @@ pub(super) fn render(
     }
     if let Some(collection) = collection(spec) {
         let manager = manager_rects(&p, sf);
-        crate::view::controls::render_checkbox(
-            frame,
-            painter,
-            theme,
-            manager.master,
-            collection.enabled,
-            sf,
-        );
-        text(
-            frame,
-            painter,
-            &WidgetRect {
-                x: manager.master.x + scaled(23.0, sf),
-                y: manager.master.y,
-                w: manager.heading.w,
-                h: manager.master.h,
-            },
-            collection.enable_label,
-            size_px(12.0, sf),
-            colors.text_primary,
-        );
+        if let Some(enable_label) = collection.enable_label {
+            crate::view::controls::render_checkbox(
+                frame,
+                painter,
+                theme,
+                manager.master,
+                collection.enabled,
+                sf,
+            );
+            text(
+                frame,
+                painter,
+                &WidgetRect {
+                    x: manager.master.x + scaled(23.0, sf),
+                    y: manager.master.y,
+                    w: manager.heading.w,
+                    h: manager.master.h,
+                },
+                enable_label,
+                size_px(12.0, sf),
+                colors.text_primary,
+            );
+        }
         text(
             frame,
             painter,
@@ -1245,15 +1258,18 @@ pub(super) fn render(
                             text: value,
                             action,
                         } => {
-                            let value_rect = value_rect(rect, sf);
-                            text(
-                                frame,
-                                painter,
-                                &value_rect,
-                                value,
-                                size_px(11.0, sf),
-                                colors.text_dim,
-                            );
+                            let mut value_rect = value_rect(rect, sf);
+                            for line in value.lines() {
+                                text(
+                                    frame,
+                                    painter,
+                                    &value_rect,
+                                    line,
+                                    size_px(11.0, sf),
+                                    colors.text_dim,
+                                );
+                                value_rect.y += scaled(16.0, sf);
+                            }
                             if let Some(action) = action {
                                 let r = action_rect(rect, sf);
                                 settings_button(

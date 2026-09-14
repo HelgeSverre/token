@@ -11,6 +11,15 @@ All notable changes to Token are documented in this file.
 - Remember the command palette query after dismissal or navigation, and select
   it when reopening Search Everywhere or its Files tab so typing replaces it.
 
+### Settings
+
+- Offer editable language-server and formatter presets with installation guidance,
+  copyable commands, and an executable availability check in Settings.
+
+- Group preferences into focused sections, move status-bar preferences into
+  Appearance and file-saving/session preferences into Files & Session, and keep
+  All Settings in category order with one heading per category.
+
 ### Formatting
 
 - Default Python language services to ty and whole-document formatting to Ruff.

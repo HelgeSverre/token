@@ -68,8 +68,9 @@ The status bar shows the effective indentation step and line ending. Use
 resolved values, source files and line numbers, diagnostics, and consulted
 config locations. The report is a snapshot in an untitled tab.
 
-Settings → Editor includes the EditorConfig switch and default indentation, tab
-width, and line-ending controls. YAML can specify custom values:
+Settings → Editor → Indentation includes the EditorConfig switch and default
+indentation and tab width. Line endings live in Settings → Files & Session →
+File format. YAML can specify custom values:
 
 ```yaml
 editorconfig: true

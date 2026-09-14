@@ -252,6 +252,15 @@ struct ModalConfig {
     /// Open the custom language-server creation form in Settings.
     #[serde(default)]
     new_server: bool,
+    /// Open the custom formatter form after selecting Formatting.
+    #[serde(default)]
+    new_formatter: bool,
+    /// Select a bundled preset by stable ID in an Add form.
+    #[serde(default)]
+    tool_preset: Option<String>,
+    /// Display the Start from dropdown.
+    #[serde(default)]
+    preset_dropdown: bool,
     /// Open the AI-provider creation form in Settings.
     #[serde(default)]
     new_provider: bool,
@@ -818,9 +827,8 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) -> Result<()> {
                 Msg::Ui(UiMsg::ToggleModal(token::model::ModalId::Settings)),
             );
             if let Some(category) = &config.category {
-                let index = token::settings::categories()
-                    .iter()
-                    .position(|label| *label == Some(category.as_str()))
+                let index = token::settings::CategoryId::from_name(category)
+                    .map(token::settings::CategoryId::index)
                     .with_context(|| format!("unknown Settings category {category}"))?;
                 update(model, Msg::Ui(UiMsg::Modal(ModalMsg::ActivateTab(index))));
             }
@@ -830,7 +838,16 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) -> Result<()> {
                     Msg::Ui(UiMsg::Modal(ModalMsg::SetInput(input.clone()))),
                 );
             }
-            if config.new_server || config.server.is_some() || config.new_provider {
+            if config.new_server {
+                update(
+                    model,
+                    Msg::Ui(UiMsg::Settings(
+                        token::messages::SettingsMsg::CollectionAction(
+                            token::messages::SettingsCollectionAction::Add,
+                        ),
+                    )),
+                );
+            } else if config.server.is_some() || config.new_provider {
                 anyhow::ensure!(
                     usize::from(config.new_server)
                         + usize::from(config.server.is_some())
@@ -866,6 +883,55 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) -> Result<()> {
             } else {
                 for _ in 0..config.selected_index.unwrap_or(0).min(100) {
                     token::update::update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)));
+                }
+            }
+            if config.new_formatter {
+                update(
+                    model,
+                    Msg::Ui(UiMsg::Settings(
+                        token::messages::SettingsMsg::CollectionAction(
+                            token::messages::SettingsCollectionAction::Add,
+                        ),
+                    )),
+                );
+            }
+            if config.tool_preset.is_some() || config.preset_dropdown {
+                let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
+                    unreachable!()
+                };
+                let row = state
+                    .filtered_rows()
+                    .position(|(name, _)| name == "Start from")
+                    .context("tool preset requires an Add server or formatter form")?;
+                if let Some(id) = &config.tool_preset {
+                    let kind = if config.new_formatter {
+                        token::tooling::PresetKind::Formatter
+                    } else {
+                        token::tooling::PresetKind::Lsp
+                    };
+                    let choice = token::tooling::presets_for(kind, None)
+                        .iter()
+                        .position(|preset| preset.id == id)
+                        .with_context(|| format!("unknown tool preset {id}"))?
+                        + 1;
+                    update(
+                        model,
+                        Msg::Ui(UiMsg::Modal(ModalMsg::ChooseSetting { row, choice })),
+                    );
+                }
+                if config.preset_dropdown {
+                    // Leave text editing and reveal the selected row through normal navigation.
+                    update(model, Msg::Ui(UiMsg::Modal(ModalMsg::ActivateRow(row))));
+                    update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)));
+                    update(model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectPrevious)));
+                    update(
+                        model,
+                        Msg::Ui(UiMsg::Settings(
+                            token::messages::SettingsMsg::CollectionAction(
+                                token::messages::SettingsCollectionAction::ToggleSelect(row),
+                            ),
+                        )),
+                    );
                 }
             }
             token::update::update(
@@ -1615,7 +1681,7 @@ mod tests {
                     let Some(ModalState::Settings(state)) = &model.ui.active_modal else {
                         panic!("Settings page");
                     };
-                    assert_eq!(token::settings::categories()[state.category], Some("LSP"));
+                    assert_eq!(state.category, token::settings::CategoryId::LanguageServers);
                     assert!(state.filtered_rows().any(|(label, _)| label == "gopls"));
                     assert!(state
                         .filtered_rows()

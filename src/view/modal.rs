@@ -860,30 +860,29 @@ pub(crate) fn with_settings_spec<R>(
 ) -> R {
     use crate::settings::{keymap::SettingsTab, RowKind};
     let keymap_tab = state.tab == SettingsTab::Keymap;
-    let preset_labels: Vec<_> = std::iter::once("Custom server")
-        .chain(crate::lsp::all_server_defs().iter().map(|preset| preset.id))
+    let preset_labels: Vec<_> = std::iter::once("Custom")
+        .chain(
+            state
+                .form
+                .as_ref()
+                .map(|form| form.presets())
+                .unwrap_or_default()
+                .iter()
+                .map(|preset| preset.display_name()),
+        )
         .collect();
     let capturing = state.keymap.capture.is_some();
     let categories = crate::settings::categories();
     let tab_labels: Vec<_> = categories
         .iter()
-        .map(|category| {
-            (
-                match category {
-                    Some("LSP") => "Language servers",
-                    Some("AI") => "AI completion",
-                    _ => category.unwrap_or("All Settings"),
-                },
-                overlay_surface::TabCount::Hidden,
-            )
-        })
+        .map(|category| (category.label(), overlay_surface::TabCount::Hidden))
         .collect();
     let tabs = TabBar {
         tabs: &tab_labels,
         active: if keymap_tab {
-            categories.len() - 1
+            crate::settings::CategoryId::Keymap.index()
         } else {
-            state.category
+            state.category.index()
         },
     };
     let groups = state.sections();
@@ -894,9 +893,11 @@ pub(crate) fn with_settings_spec<R>(
             if let (RowKind::FormInfo, Some(form)) = (state.entries[id].kind.clone(), &state.form) {
                 return std::borrow::Cow::Borrowed(form.executable_status.as_str());
             }
-            if matches!(state.entries[id].kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
-                std::borrow::Cow::Borrowed(model.config.theme.as_str())
-            } else { state.entries[id].detail(&model.config) }
+            if let Some(picker) = state.entries[id].picker(&model.config) {
+                std::borrow::Cow::Borrowed(picker.value)
+            } else {
+                state.entries[id].detail(&model.config)
+            }
         })
         .collect();
     let statuses: Vec<_> = state
@@ -927,31 +928,77 @@ pub(crate) fn with_settings_spec<R>(
                     Row {
                         icon: RowIcon::None,
                         label: &entry.name,
-                        detail: if matches!(entry.kind, RowKind::ServerCommand(_) | RowKind::FormInfo)
-                            || matches!(entry.kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
+                        detail: if matches!(
+                            entry.kind,
+                            RowKind::ServerCommand(_) | RowKind::FormInfo | RowKind::FormToolInfo
+                        ) || entry.picker(&model.config).is_some()
+                        {
                             None
-                        } else { Some(&details[index]) },
+                        } else {
+                            Some(&details[index])
+                        },
                         detail_style: None,
                         match_indices: &[],
-                        accessory: if let (RowKind::FormField(field), Some(form)) = (entry.kind.clone(), &state.form) {
-                            Accessory::SettingInput { content: &form.fields[field].input, focused: form.focused == Some(field) && !form.saving,
-                                browse: form.fields[field].browse, line_height: model.line_height, char_width: model.char_width }
-                        } else if matches!(entry.kind, RowKind::FormInfo) {
-                            Accessory::SettingValue { text: &details[index], action: None }
-                        } else if let (RowKind::FormPreset, Some(form)) = (entry.kind.clone(), &state.form) {
-                            Accessory::Choices { labels: &preset_labels, active: Some(form.preset.map_or(0, |index| index + 1)) }
-                        } else if let (RowKind::FormAdvanced, Some(form)) = (entry.kind.clone(), &state.form) {
-                            Accessory::Choices { labels: if form.advanced { &["Hide"] } else { &["Show"] }, active: None }
-                        } else if let (RowKind::FormEnabled, Some(form)) = (entry.kind.clone(), &state.form) {
-                            Accessory::Choices { labels: entry.choices(), active: Some(usize::from(form.enabled)) }
-                        } else if let (RowKind::FormChoice(index), Some(form)) = (entry.kind.clone(), &state.form) {
-                            Accessory::Choices { labels: form.choices[index].labels, active: Some(form.choices[index].active) }
-                        } else if let (RowKind::FormActions, Some(form)) = (entry.kind.clone(), &state.form) {
-                            Accessory::Choices { labels: form.actions(), active: None }
-                        } else if matches!(entry.kind, RowKind::Preset(i) if crate::settings::DESCRIPTORS[i].setting == crate::settings::Setting::Theme) {
-                            Accessory::SettingValue { text: &model.config.theme, action: Some("Choose…") }
+                        accessory: if let (RowKind::FormField(field), Some(form)) =
+                            (entry.kind.clone(), &state.form)
+                        {
+                            Accessory::SettingInput {
+                                content: &form.fields[field].input,
+                                focused: form.focused == Some(field) && !form.saving,
+                                browse: form.fields[field].browse,
+                                line_height: model.line_height,
+                                char_width: model.char_width,
+                            }
+                        } else if matches!(entry.kind, RowKind::FormInfo | RowKind::FormToolInfo) {
+                            Accessory::SettingValue {
+                                text: &details[index],
+                                action: None,
+                            }
+                        } else if let (RowKind::FormPreset, Some(form)) =
+                            (entry.kind.clone(), &state.form)
+                        {
+                            Accessory::Choices {
+                                labels: &preset_labels,
+                                active: Some(form.preset.map_or(0, |index| index + 1)),
+                            }
+                        } else if let (RowKind::FormAdvanced, Some(form)) =
+                            (entry.kind.clone(), &state.form)
+                        {
+                            Accessory::Choices {
+                                labels: if form.advanced { &["Hide"] } else { &["Show"] },
+                                active: None,
+                            }
+                        } else if let (RowKind::FormEnabled, Some(form)) =
+                            (entry.kind.clone(), &state.form)
+                        {
+                            Accessory::Choices {
+                                labels: entry.choices(),
+                                active: Some(usize::from(form.enabled)),
+                            }
+                        } else if let (RowKind::FormChoice(index), Some(form)) =
+                            (entry.kind.clone(), &state.form)
+                        {
+                            Accessory::Choices {
+                                labels: form.choices[index].labels,
+                                active: Some(form.choices[index].active),
+                            }
+                        } else if let (RowKind::FormActions, Some(form)) =
+                            (entry.kind.clone(), &state.form)
+                        {
+                            Accessory::Choices {
+                                labels: form.actions(),
+                                active: None,
+                            }
+                        } else if let Some(picker) = entry.picker(&model.config) {
+                            Accessory::SettingValue {
+                                text: picker.value,
+                                action: Some(picker.label),
+                            }
                         } else if matches!(entry.kind, RowKind::ServerCommand(_)) {
-                            Accessory::SettingValue { text: &details[index], action: Some("Configure…") }
+                            Accessory::SettingValue {
+                                text: &details[index],
+                                action: Some("Configure…"),
+                            }
                         } else if matches!(entry.kind, RowKind::KeymapBinding(_, _)) {
                             match &bindings[index] {
                                 PaletteAccessory::None => Accessory::None,
@@ -1009,6 +1056,23 @@ pub(crate) fn with_settings_spec<R>(
                 use crate::settings::forms::FormKind;
                 use overlay_surface::{SettingsCollection, SettingsRecord};
                 let (title, description, selected, records) = match &form.kind {
+                    FormKind::Formatter(id) => (
+                        "Formatters",
+                        "Run an installed formatter for each language.",
+                        id.as_deref(),
+                        crate::settings::forms::formatter_ids(&model.config)
+                            .into_iter()
+                            .filter_map(|id| {
+                                let language = crate::syntax::LanguageId::from_name(id)?;
+                                let value = model.config.formatters.get(&language)?;
+                                Some(SettingsRecord {
+                                    id,
+                                    detail: value.command.clone(),
+                                    enabled: value.enabled,
+                                })
+                            })
+                            .collect(),
+                    ),
                     FormKind::LanguageServer(id) => (
                         "Language servers",
                         "Connect installed language servers to your files.",
@@ -1036,7 +1100,7 @@ pub(crate) fn with_settings_spec<R>(
                             .collect::<Vec<_>>();
                         ids.sort();
                         (
-                            "AI completion",
+                            crate::settings::CategoryId::AiProviders.label(),
                             "Configure providers for optional inline suggestions.",
                             id.as_deref(),
                             ids.into_iter()
@@ -1054,8 +1118,9 @@ pub(crate) fn with_settings_spec<R>(
                 };
                 SettingsCollection {
                     enable_label: match form.kind {
-                        FormKind::LanguageServer(_) => "Enable language servers",
-                        FormKind::InlineProvider(_) => "Enable inline suggestions",
+                        FormKind::Formatter(_) => None,
+                        FormKind::LanguageServer(_) => Some("Enable language servers"),
+                        FormKind::InlineProvider(_) => Some("Enable inline suggestions"),
                     },
                     select_cursor: form.select_cursor,
                     hovered: model.ui.settings_hover_action,
@@ -1066,6 +1131,7 @@ pub(crate) fn with_settings_spec<R>(
                     scroll: form.records_scroll,
                     advanced: form.advanced,
                     enabled: match form.kind {
+                        FormKind::Formatter(_) => false,
                         FormKind::LanguageServer(_) => model.config.lsp.enabled,
                         FormKind::InlineProvider(_) => model.config.completion.inline.enabled,
                     },
@@ -2765,7 +2831,7 @@ mod tests {
         with_settings_spec(&model, &state, |spec| {
             assert_eq!(
                 spec.tabs.as_ref().unwrap().active,
-                crate::settings::categories().len() - 1
+                crate::settings::CategoryId::Keymap.index()
             );
             let Body::List { sections, .. } = &spec.body else {
                 panic!("list")

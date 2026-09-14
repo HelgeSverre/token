@@ -423,7 +423,7 @@ mod tests {
             cmd: Some(command), ..
         } = modal_press(
             &mut model,
-            ModalMsg::ActivateTab(token::settings::categories().len() - 1),
+            ModalMsg::ActivateTab(token::settings::CategoryId::Keymap.index()),
         )
         else {
             panic!("load effect lost")

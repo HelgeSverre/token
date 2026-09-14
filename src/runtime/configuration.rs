@@ -42,7 +42,7 @@ pub(super) fn executable_status(command: &str) -> String {
         }
         return format!("Found: {}", path.display());
     }
-    "Not found or not executable · install the server or choose an absolute path".into()
+    "Not found or not executable · install the tool or choose an absolute path".into()
 }
 
 /// Startup configuration and histories are effects, not model constructors.

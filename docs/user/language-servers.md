@@ -62,9 +62,16 @@ not a separate class of privileged servers or a runtime fallback.
 | Rust                             | `rust-analyzer`              | `rust-analyzer`                      | `Cargo.toml`        |
 | Go                               | `gopls`                      | `gopls`                              | `go.work`, `go.mod` |
 | JavaScript, TypeScript, JSX, TSX | `typescript-language-server` | `typescript-language-server --stdio` | `package.json`      |
-| Python                           | `pyright`                    | `pyright-langserver --stdio`         | `pyproject.toml`    |
+| Python                           | `ty`                         | `ty server`         | `pyproject.toml`    |
 | PHP, Blade                       | `phpantom`                   | `phpantom_lsp`                       | `composer.json`     |
 | Sema                             | `sema`                       | `sema lsp`                           | `sema.toml`         |
+
+Python uses [ty](https://docs.astral.sh/ty/editors/) for language services and
+[Ruff](https://docs.astral.sh/ruff/formatter/) for formatting. Install both tools
+separately and make them available on PATH, or configure their executable paths in
+Settings. Existing saved server catalogs are unchanged; switch an existing Python
+server to ty through Settings when desired. See [Formatting](config-editor.md#formatting)
+for command formatter configuration.
 
 For files inside the open workspace, that workspace is the project root. For
 other files, Token searches upward for the server's project markers, then falls
@@ -214,3 +221,23 @@ language servers; see [editor configuration](config-editor.md).
    member completion is LSP-only; it does not guess methods from arbitrary words.
 
 See also [completion and documentation controls](config-editor.md#hover-documentation).
+
+## Presets and installation
+
+In Settings → Language Servers, choose Add language server and use **Start from**
+to select a preset or **Custom**. Presets fill the editable executable, arguments,
+languages, and root markers. The bundled choices are rust-analyzer, TypeScript
+Language Server, ty, gopls, PHPantom, and Sema. Settings → Formatting has the same
+workflow, initially offering Ruff for Python.
+
+The Installation section shows prerequisites, copyable commands where available,
+and links to upstream instructions. Run the copied command in your terminal, then
+choose **Check executable again**. Token does not execute installation commands.
+The application's PATH may differ from your terminal's; you can also choose an
+absolute executable path.
+
+Saved entries retain an optional `preset_id` so installation guidance remains
+available after renaming or editing them. This is only a reference for guidance:
+saved commands and arguments remain authoritative. An unknown or retired preset
+ID does not prevent the configuration from working. Existing saved entries are
+not assigned a preset reference automatically.

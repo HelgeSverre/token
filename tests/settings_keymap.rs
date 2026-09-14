@@ -32,7 +32,7 @@ fn open_keymap(model: &mut AppModel) {
     update(model, Msg::Ui(UiMsg::ToggleModal(ModalId::Settings)));
     modal(
         model,
-        ModalMsg::ActivateTab(token::settings::categories().len() - 1),
+        ModalMsg::ActivateTab(token::settings::CategoryId::Keymap.index()),
     );
     assert!(state(model).keymap.loading);
     let session = state(model).keymap.session.clone();

@@ -5,10 +5,17 @@ use super::{RowKind, SettingRow};
 use crate::config::{EditorConfig, LspServerConfig};
 use crate::editable::{EditConstraints, EditableState, StringBuffer};
 use crate::syntax::LanguageId;
+mod formatter;
 mod provider;
+pub(crate) use formatter::formatter_ids;
 
 #[derive(Debug, Clone)]
 pub enum SettingsChange {
+    Formatter {
+        previous: Option<LanguageId>,
+        language: LanguageId,
+        value: crate::config::FormatterConfig,
+    },
     LanguageServer {
         previous_id: Option<String>,
         id: String,
@@ -84,6 +91,7 @@ mod catalog_tests {
 /// Collections share draft navigation and persistence; their payloads stay typed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CollectionKind {
+    Formatters,
     LanguageServers,
     InlineProviders,
 }
@@ -91,6 +99,24 @@ pub enum CollectionKind {
 impl SettingsChange {
     pub fn apply(&self, config: &mut EditorConfig) {
         match self {
+            Self::Formatter {
+                previous,
+                language,
+                value,
+            } => {
+                if let Some(previous) = previous.filter(|previous| previous != language) {
+                    config.formatters.remove(&previous);
+                }
+                config.formatters.insert(*language, value.clone());
+            }
+            Self::Remove {
+                collection: CollectionKind::Formatters,
+                id,
+            } => {
+                if let Some(language) = LanguageId::from_name(id) {
+                    config.formatters.remove(&language);
+                }
+            }
             Self::LanguageServer {
                 previous_id,
                 id,
@@ -143,6 +169,8 @@ impl SettingsChange {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FormError {
+    #[error("A formatter is already configured for this language; edit or remove it first")]
+    DuplicateFormatter,
     #[error("Choose a unique provider ID using letters, digits, dashes, underscores or dots")]
     ProviderId,
     #[error("{0}: enter a valid whole number")]
@@ -226,10 +254,12 @@ pub(crate) struct SettingsForm {
     pub open_select: Option<usize>,
     pub select_cursor: usize,
     pub preset: Option<usize>,
+    pub preset_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) enum FormKind {
+    Formatter(Option<String>),
     LanguageServer(Option<String>),
     InlineProvider(Option<String>),
 }
@@ -251,9 +281,12 @@ fn json_text(value: Option<&serde_json::Value>) -> String {
 impl SettingsForm {
     pub fn title(&self) -> String {
         match &self.kind {
-            FormKind::LanguageServer(Some(id)) | FormKind::InlineProvider(Some(id)) => {
+            FormKind::Formatter(Some(id))
+            | FormKind::LanguageServer(Some(id))
+            | FormKind::InlineProvider(Some(id)) => {
                 format!("{id} configuration")
             }
+            FormKind::Formatter(None) => "Add formatter".into(),
             FormKind::LanguageServer(None) => "Add language server".into(),
             FormKind::InlineProvider(None) => "Add AI provider".into(),
         }
@@ -264,6 +297,8 @@ impl SettingsForm {
             return &["Keep entry", "Cancel", "", "Confirm remove"];
         }
         match self.kind {
+            FormKind::Formatter(Some(_)) => &["Save", "Cancel", "", "Remove"],
+            FormKind::Formatter(None) => &["Save", "Cancel"],
             FormKind::LanguageServer(Some(_)) => &["Save", "Cancel", "Open log", "Remove"],
             FormKind::InlineProvider(Some(_)) => &["Save", "Cancel", "Save & Use", "Remove"],
             FormKind::LanguageServer(None) => &["Save", "Cancel"],
@@ -273,6 +308,7 @@ impl SettingsForm {
 
     pub fn removal(&self) -> Option<SettingsChange> {
         let (collection, id) = match &self.kind {
+            FormKind::Formatter(Some(id)) => (CollectionKind::Formatters, id),
             FormKind::LanguageServer(Some(id)) => (CollectionKind::LanguageServers, id),
             FormKind::InlineProvider(Some(id)) => (CollectionKind::InlineProviders, id),
             _ => return None,
@@ -285,7 +321,7 @@ impl SettingsForm {
 
     pub fn executable_field(&self) -> Option<usize> {
         match self.kind {
-            FormKind::LanguageServer(_) => Some(0),
+            FormKind::Formatter(_) | FormKind::LanguageServer(_) => Some(0),
             FormKind::InlineProvider(_) => None,
         }
     }
@@ -293,6 +329,9 @@ impl SettingsForm {
     pub fn applied(&mut self, change: &SettingsChange) {
         self.dirty = false;
         match change {
+            SettingsChange::Formatter { language, .. } => {
+                self.kind = FormKind::Formatter(Some(language.display_name().into()))
+            }
             SettingsChange::LanguageServer { id, .. } => {
                 self.kind = FormKind::LanguageServer(Some(id.clone()));
             }
@@ -384,6 +423,7 @@ impl SettingsForm {
             open_select: None,
             select_cursor: 0,
             preset: None,
+            preset_id: value.preset_id,
         };
         form.fields.push(FormField::new(
             "Server ID",
@@ -400,6 +440,7 @@ impl SettingsForm {
 
     pub fn entries(&self) -> Vec<SettingRow> {
         match &self.kind {
+            FormKind::Formatter(_) => self.formatter_entries(),
             FormKind::LanguageServer(server) => self.server_entries(server.as_deref()),
             FormKind::InlineProvider(_) => self.provider_entries(),
         }
@@ -456,6 +497,7 @@ impl SettingsForm {
                     .into(),
             });
         }
+        rows.extend(self.installation_entries());
         rows.push(SettingRow {
             kind: RowKind::FormActions,
             section,
@@ -467,6 +509,7 @@ impl SettingsForm {
 
     pub fn change(&self, config: &EditorConfig) -> Result<SettingsChange, FormError> {
         match &self.kind {
+            FormKind::Formatter(id) => self.formatter_change(id.as_deref(), config),
             FormKind::LanguageServer(server) => self.server_change(server.as_deref(), config),
             FormKind::InlineProvider(id) => self.provider_change(id.as_deref(), config),
         }
@@ -566,6 +609,7 @@ impl SettingsForm {
             previous_id: server.map(str::to_owned),
             id,
             value: LspServerConfig {
+                preset_id: self.preset_id.clone(),
                 command: Some(command),
                 args: Some(args),
                 enabled: Some(self.enabled),
@@ -577,3 +621,5 @@ impl SettingsForm {
         })
     }
 }
+
+mod tooling;

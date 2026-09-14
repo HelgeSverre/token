@@ -1,432 +1,16 @@
-//! Preset settings metadata and the shared search/section ordering authority.
+//! Settings state and the shared projection used by rendering, input and search.
 use crate::config::EditorConfig;
 use crate::editable::{EditConstraints, EditableState, StringBuffer};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use std::borrow::Cow;
+pub(crate) mod catalog;
+pub mod pages;
+pub(crate) use catalog::Setting;
+pub use pages::{categories, CategoryId};
 pub mod forms;
 pub mod keymap;
 
-/// Categories in the separate Settings page, derived from the form metadata.
-pub fn categories() -> Vec<Option<&'static str>> {
-    let mut categories = vec![None];
-    for descriptor in DESCRIPTORS {
-        let category = Some(descriptor.section);
-        if !categories.contains(&category) {
-            categories.push(category);
-        }
-    }
-    categories.extend([Some("LSP"), Some("AI"), Some("Keymap")]);
-    categories
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Setting {
-    Theme,
-    Blink,
-    Surround,
-    Brackets,
-    Scrollbar,
-    IndentGuides,
-    StatusFont,
-    Hover,
-    HoverDelay,
-    InlayHints,
-    FormatOnSave,
-    AutoReload,
-    AutoSave,
-    AutoSaveDelay,
-    AutoSaveFormatting,
-    IndentStyle,
-    IndentSize,
-    EditorConfig,
-    TabWidth,
-    LineEnding,
-    SessionRestore,
-    SessionSave,
-    CompletionEnabled,
-    CompletionMenu,
-    CompletionWords,
-    CompletionMinLength,
-    InlineEnabled,
-    InlineDelay,
-    InlineSuffix,
-    InlineStatistics,
-}
-
-pub(crate) struct Descriptor {
-    pub setting: Setting,
-    pub section: &'static str,
-    pub name: &'static str,
-    pub description: &'static str,
-    pub labels: &'static [&'static str],
-}
-
 const BOOL_LABELS: &[&str] = &["Off", "On"];
-const BLINK: &[u64] = &[0, 1000, 600, 300];
-const FONT: &[f32] = &[11.0, 12.0, 13.0];
-const HOVER_DELAY: &[u64] = &[150, 300, 600];
-const AUTO_SAVE_DELAY: &[u64] = &[500, 1000, 2000, 5000];
-const WORD_LENGTHS: &[usize] = &[1, 3, 5, 8];
-const INLINE_DELAYS: &[u64] = &[150, 300, 600, 1000];
-const INLINE_SUFFIXES: &[usize] = &[0, 8, 32];
-const WORD_MODES: &[crate::config::WordsMode] = &[
-    crate::config::WordsMode::Disabled,
-    crate::config::WordsMode::Fallback,
-    crate::config::WordsMode::Enabled,
-];
-const AUTO_SAVE_MODES: &[crate::config::AutoSaveMode] = &[
-    crate::config::AutoSaveMode::Off,
-    crate::config::AutoSaveMode::OnFocusLoss,
-    crate::config::AutoSaveMode::AfterDelay,
-    crate::config::AutoSaveMode::OnFocusLossAndDelay,
-];
-
-pub(crate) static DESCRIPTORS: &[Descriptor] = &[
-    Descriptor {
-        setting: Setting::Theme,
-        section: "Appearance",
-        name: "Theme",
-        description: "Color scheme · open theme picker",
-        labels: &["Choose…"],
-    },
-    Descriptor {
-        setting: Setting::Scrollbar,
-        section: "Appearance",
-        name: "Scrollbar",
-        description: "show_scrollbar · document overview",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::IndentGuides,
-        section: "Appearance",
-        name: "Indent guides",
-        description: "indent_guides · vertical indentation lines",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::Blink,
-        section: "Editor",
-        name: "Cursor blink",
-        description: "cursor_blink_ms · caret speed",
-        labels: &["Off", "Slow", "Normal", "Fast"],
-    },
-    Descriptor {
-        setting: Setting::Surround,
-        section: "Editor",
-        name: "Auto surround",
-        description: "auto_surround · brackets and quotes around selections",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::Brackets,
-        section: "Editor",
-        name: "Bracket matching",
-        description: "bracket_matching · matching pair highlights",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::Hover,
-        section: "Editor",
-        name: "Mouse hover",
-        description: "hover_on_mouse · documentation tooltips",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::HoverDelay,
-        section: "Editor",
-        name: "Hover delay",
-        description: "hover_delay_ms · tooltip timing",
-        labels: &["Fast", "Normal", "Slow"],
-    },
-    Descriptor {
-        setting: Setting::InlayHints,
-        section: "Editor",
-        name: "Inlay hints",
-        description: "lsp.inlay_hints · show Sema parameter hints at line ends",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::EditorConfig,
-        section: "Editor",
-        name: "EditorConfig",
-        description: "editorconfig · apply per-file rules from .editorconfig files",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::IndentStyle,
-        section: "Editor",
-        name: "Indent using",
-        description: "text.indent_style · fallback when no EditorConfig rule applies",
-        labels: &["Default", "Tabs", "Spaces"],
-    },
-    Descriptor {
-        setting: Setting::IndentSize,
-        section: "Editor",
-        name: "Indent size",
-        description: "text.indent_size · columns per indentation step",
-        labels: &["Default", "2", "4", "8"],
-    },
-    Descriptor {
-        setting: Setting::TabWidth,
-        section: "Editor",
-        name: "Tab width",
-        description: "text.tab_width · display width of hard tabs",
-        labels: &["Default", "2", "4", "8"],
-    },
-    Descriptor {
-        setting: Setting::LineEnding,
-        section: "Editor",
-        name: "Line endings",
-        description: "text.end_of_line · detect or use a preferred ending",
-        labels: &["Detect", "LF", "CRLF", "CR"],
-    },
-    Descriptor {
-        setting: Setting::AutoSave,
-        section: "Editor",
-        name: "Auto-save",
-        description: "Save modified files when the window loses focus or after editing pauses",
-        labels: &["Off", "Focus loss", "Idle", "Both"],
-    },
-    Descriptor {
-        setting: Setting::AutoSaveDelay,
-        section: "Editor",
-        name: "Auto-save delay",
-        description: "Idle time since the last edit in each file",
-        labels: &["0.5 s", "1 s", "2 s", "5 s"],
-    },
-    Descriptor {
-        setting: Setting::AutoSaveFormatting,
-        section: "Editor",
-        name: "Format on auto-save",
-        description: "Apply language server formatting before automatic saves",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::AutoReload,
-        section: "Editor",
-        name: "Reload external changes",
-        description: "auto_reload · reload clean buffers; always protect local edits",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::FormatOnSave,
-        section: "Editor",
-        name: "Format on save",
-        description: "format_on_save · language server formatting",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::StatusFont,
-        section: "Status Bar",
-        name: "Status bar font",
-        description: "status_bar_font_size · text size",
-        labels: &["Small", "Medium", "Large"],
-    },
-    Descriptor {
-        setting: Setting::SessionRestore,
-        section: "Session",
-        name: "Restore saved-file tabs",
-        description: "session.restore · tabs, splits, selections and scroll positions",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::SessionSave,
-        section: "Session",
-        name: "Save session on exit",
-        description: "session.save_on_exit · metadata only, never unsaved text",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::InlineStatistics,
-        section: "Completion",
-        name: "Local completion statistics",
-        description:
-            "completion.inline.statistics · counts only, never source or network telemetry",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::CompletionEnabled,
-        section: "Completion",
-        name: "Code completion",
-        description: "completion.enabled · master switch, including manual requests",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::CompletionMenu,
-        section: "Completion",
-        name: "Automatic completion menu",
-        description: "completion.menu.enabled · turn off to use only manual completion",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::CompletionWords,
-        section: "Completion",
-        name: "Local word suggestions",
-        description: "completion.menu.words · fallback uses words when language-server results are absent",
-        labels: &["Off", "Fallback", "Always"],
-    },
-    Descriptor {
-        setting: Setting::CompletionMinLength,
-        section: "Completion",
-        name: "Minimum local word length",
-        description: "completion.menu.min_word_length · shortest candidate identifier to include",
-        labels: &["1", "3", "5", "8"],
-    },
-    Descriptor {
-        setting: Setting::InlineEnabled,
-        section: "Completion",
-        name: "AI inline suggestions",
-        description: "completion.inline.enabled · requires a configured provider; may send source code",
-        labels: BOOL_LABELS,
-    },
-    Descriptor {
-        setting: Setting::InlineDelay,
-        section: "Completion",
-        name: "Inline suggestion delay",
-        description: "completion.inline.debounce_ms · wait after typing before requesting a suggestion",
-        labels: &["150 ms", "300 ms", "600 ms", "1 s"],
-    },
-    Descriptor {
-        setting: Setting::InlineSuffix,
-        section: "Completion",
-        name: "Text after the cursor",
-        description: "completion.inline.max_line_suffix · limit on text after the cursor; whitespace and closers are ignored",
-        labels: &["0", "8", "32"],
-    },
-];
-
-impl Descriptor {
-    pub fn active(&self, config: &EditorConfig) -> Option<usize> {
-        Some(match self.setting {
-            Setting::Theme => return None,
-            Setting::Blink => return BLINK.iter().position(|&v| v == config.cursor_blink_ms),
-            Setting::StatusFont => {
-                return FONT.iter().position(|&v| v == config.status_bar_font_size)
-            }
-            Setting::HoverDelay => {
-                return HOVER_DELAY.iter().position(|&v| v == config.hover_delay_ms)
-            }
-            Setting::Surround => usize::from(config.auto_surround),
-            Setting::Brackets => usize::from(config.bracket_matching),
-            Setting::Scrollbar => usize::from(config.show_scrollbar),
-            Setting::IndentGuides => usize::from(config.indent_guides),
-            Setting::EditorConfig => usize::from(config.editorconfig),
-            Setting::Hover => usize::from(config.hover_on_mouse),
-            Setting::InlayHints => usize::from(config.lsp.inlay_hints),
-            Setting::FormatOnSave => usize::from(config.format_on_save),
-            Setting::AutoReload => usize::from(config.auto_reload),
-            Setting::AutoSave => {
-                return AUTO_SAVE_MODES
-                    .iter()
-                    .position(|&mode| mode == config.auto_save.mode)
-            }
-            Setting::AutoSaveDelay => {
-                return AUTO_SAVE_DELAY
-                    .iter()
-                    .position(|&delay| delay == config.auto_save.delay_ms)
-            }
-            Setting::AutoSaveFormatting => usize::from(config.auto_save.format_on_save),
-            Setting::IndentStyle => [
-                None,
-                Some(crate::model::IndentStyle::Tab),
-                Some(crate::model::IndentStyle::Space),
-            ]
-            .iter()
-            .position(|value| *value == config.text.indent_style)?,
-            Setting::IndentSize => [None, Some(2), Some(4), Some(8)]
-                .iter()
-                .position(|value| *value == config.text.indent_size)?,
-            Setting::TabWidth => [None, Some(2), Some(4), Some(8)]
-                .iter()
-                .position(|value| *value == config.text.tab_width)?,
-            Setting::LineEnding => [
-                None,
-                Some(crate::model::LineEnding::Lf),
-                Some(crate::model::LineEnding::Crlf),
-                Some(crate::model::LineEnding::Cr),
-            ]
-            .iter()
-            .position(|value| *value == config.text.end_of_line)?,
-            Setting::SessionRestore => usize::from(config.session.restore),
-            Setting::SessionSave => usize::from(config.session.save_on_exit),
-            Setting::CompletionEnabled => usize::from(config.completion.enabled),
-            Setting::CompletionMenu => usize::from(config.completion.menu.enabled),
-            Setting::CompletionWords => WORD_MODES
-                .iter()
-                .position(|&mode| mode == config.completion.menu.words)?,
-            Setting::CompletionMinLength => WORD_LENGTHS
-                .iter()
-                .position(|&length| length == config.completion.menu.min_word_length)?,
-            Setting::InlineEnabled => usize::from(config.completion.inline.enabled),
-            Setting::InlineDelay => INLINE_DELAYS
-                .iter()
-                .position(|&delay| delay == config.completion.inline.debounce_ms)?,
-            Setting::InlineSuffix => INLINE_SUFFIXES
-                .iter()
-                .position(|&length| length == config.completion.inline.max_line_suffix)?,
-            Setting::InlineStatistics => usize::from(config.completion.inline.statistics),
-        })
-    }
-
-    /// Mutate only an explicit, valid preset; opening the UI never normalizes values.
-    pub fn apply(&self, config: &mut EditorConfig, choice: usize) -> bool {
-        if choice >= self.labels.len() || self.active(config) == Some(choice) {
-            return false;
-        }
-        match self.setting {
-            Setting::Theme => return false,
-            Setting::Blink => config.cursor_blink_ms = BLINK[choice],
-            Setting::StatusFont => config.status_bar_font_size = FONT[choice],
-            Setting::HoverDelay => config.hover_delay_ms = HOVER_DELAY[choice],
-            Setting::Surround => config.auto_surround = choice != 0,
-            Setting::Brackets => config.bracket_matching = choice != 0,
-            Setting::Scrollbar => config.show_scrollbar = choice != 0,
-            Setting::IndentGuides => config.indent_guides = choice != 0,
-            Setting::EditorConfig => config.editorconfig = choice != 0,
-            Setting::Hover => config.hover_on_mouse = choice != 0,
-            Setting::InlayHints => config.lsp.inlay_hints = choice != 0,
-            Setting::FormatOnSave => config.format_on_save = choice != 0,
-            Setting::AutoReload => config.auto_reload = choice != 0,
-            Setting::AutoSave => config.auto_save.mode = AUTO_SAVE_MODES[choice],
-            Setting::AutoSaveDelay => config.auto_save.delay_ms = AUTO_SAVE_DELAY[choice],
-            Setting::AutoSaveFormatting => config.auto_save.format_on_save = choice != 0,
-            Setting::IndentStyle => {
-                config.text.indent_style = [
-                    None,
-                    Some(crate::model::IndentStyle::Tab),
-                    Some(crate::model::IndentStyle::Space),
-                ][choice]
-            }
-            Setting::IndentSize => {
-                config.text.indent_size = [None, Some(2), Some(4), Some(8)][choice]
-            }
-            Setting::TabWidth => config.text.tab_width = [None, Some(2), Some(4), Some(8)][choice],
-            Setting::LineEnding => {
-                config.text.end_of_line = [
-                    None,
-                    Some(crate::model::LineEnding::Lf),
-                    Some(crate::model::LineEnding::Crlf),
-                    Some(crate::model::LineEnding::Cr),
-                ][choice]
-            }
-            Setting::SessionRestore => config.session.restore = choice != 0,
-            Setting::SessionSave => config.session.save_on_exit = choice != 0,
-            Setting::CompletionEnabled => config.completion.enabled = choice != 0,
-            Setting::CompletionMenu => config.completion.menu.enabled = choice != 0,
-            Setting::CompletionWords => config.completion.menu.words = WORD_MODES[choice],
-            Setting::CompletionMinLength => {
-                config.completion.menu.min_word_length = WORD_LENGTHS[choice]
-            }
-            Setting::InlineEnabled => config.completion.inline.enabled = choice != 0,
-            Setting::InlineDelay => config.completion.inline.debounce_ms = INLINE_DELAYS[choice],
-            Setting::InlineSuffix => {
-                config.completion.inline.max_line_suffix = INLINE_SUFFIXES[choice]
-            }
-            Setting::InlineStatistics => config.completion.inline.statistics = choice != 0,
-        }
-        true
-    }
-}
 
 #[derive(Debug, Clone)]
 pub(crate) enum RowKind {
@@ -440,10 +24,14 @@ pub(crate) enum RowKind {
     FormPreset,
     FormActions,
     FormInfo,
+    FormToolInfo,
+    FormInstallCommand(usize, usize),
+    FormInstallGuide(usize),
+    FormRecheck,
     KeymapBase,
     KeymapBinding(Option<usize>, crate::keymap::Command),
     CaptureActions,
-    Preset(usize),
+    Preset(Setting),
     LspMaster,
     ServerEnabled(String),
     ServerCommand(String),
@@ -458,7 +46,65 @@ pub(crate) struct SettingRow {
     description: Cow<'static, str>,
 }
 
+pub(crate) struct PickerValue<'a> {
+    pub label: &'static str,
+    pub value: &'a str,
+}
+
 impl SettingRow {
+    pub(crate) fn category(&self) -> Option<CategoryId> {
+        match self.kind {
+            RowKind::Preset(setting) => pages::placement(setting).map(|(category, _)| category),
+            RowKind::AddProvider | RowKind::Provider(_) => Some(CategoryId::AiProviders),
+            RowKind::AddServer
+            | RowKind::LspMaster
+            | RowKind::ServerEnabled(_)
+            | RowKind::ServerCommand(_)
+            | RowKind::ServerStatus(_) => Some(CategoryId::LanguageServers),
+            _ => None,
+        }
+    }
+
+    fn group(&self) -> Option<pages::GroupId> {
+        match self.kind {
+            RowKind::Preset(setting) => pages::placement(setting).map(|(_, group)| group.id),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn picker<'a>(&self, config: &'a EditorConfig) -> Option<PickerValue<'a>> {
+        match self.kind {
+            RowKind::Preset(setting) => match setting.descriptor().control {
+                catalog::Control::Picker { labels, value, .. } => Some(PickerValue {
+                    label: labels[0],
+                    value: value(config),
+                }),
+                catalog::Control::Choice { .. } => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn search_text(&self) -> String {
+        let mut text = format!(
+            "{} {} {} {}",
+            self.category().map_or("", CategoryId::label),
+            self.section,
+            self.name,
+            self.description
+        );
+        if let RowKind::Preset(setting) = self.kind {
+            let descriptor = setting.descriptor();
+            text.push(' ');
+            text.push_str(descriptor.key);
+            for keyword in descriptor.keywords {
+                text.push(' ');
+                text.push_str(keyword);
+            }
+        }
+        text.to_lowercase()
+    }
+
     pub fn choices(&self) -> &'static [&'static str] {
         match self.kind {
             RowKind::AddServer => &["Add language server…"],
@@ -467,13 +113,16 @@ impl SettingRow {
             RowKind::FormField(_) | RowKind::FormChoice(_) | RowKind::FormInfo => &[],
             RowKind::FormEnabled => BOOL_LABELS,
             RowKind::FormAdvanced => &["Show"],
-            RowKind::FormPreset => &[],
+            RowKind::FormPreset | RowKind::FormToolInfo => &[],
+            RowKind::FormInstallCommand(..) => &["Copy command"],
+            RowKind::FormInstallGuide(_) => &["Open installation guide"],
+            RowKind::FormRecheck => &["Check executable again"],
             // Form-owned actions depend on the draft's kind and confirmation state.
             RowKind::FormActions => &[],
             RowKind::KeymapBase => crate::keymap::preferences::BaseKeymap::LABELS,
             RowKind::KeymapBinding(..) => &[],
             RowKind::CaptureActions => &["Save", "Cancel", "Literal"],
-            RowKind::Preset(index) => DESCRIPTORS[index].labels,
+            RowKind::Preset(setting) => setting.descriptor().labels(),
             RowKind::LspMaster | RowKind::ServerEnabled(_) => BOOL_LABELS,
             RowKind::ServerCommand(_) => &["Configure…"],
             RowKind::ServerStatus(_) => &[],
@@ -489,9 +138,13 @@ impl SettingRow {
             | RowKind::FormAdvanced
             | RowKind::FormPreset
             | RowKind::FormActions
-            | RowKind::FormInfo => None,
+            | RowKind::FormInfo
+            | RowKind::FormToolInfo
+            | RowKind::FormInstallCommand(..)
+            | RowKind::FormInstallGuide(_)
+            | RowKind::FormRecheck => None,
             RowKind::KeymapBase | RowKind::KeymapBinding(..) | RowKind::CaptureActions => None,
-            RowKind::Preset(index) => DESCRIPTORS[*index].active(config),
+            RowKind::Preset(setting) => setting.descriptor().active(config),
             RowKind::LspMaster => Some(usize::from(config.lsp.enabled)),
             RowKind::ServerEnabled(id) => Some(usize::from(
                 config
@@ -550,15 +203,9 @@ impl SettingRow {
 }
 
 fn settings_rows(config: &EditorConfig) -> Vec<SettingRow> {
-    let mut rows: Vec<_> = DESCRIPTORS
+    let mut rows: Vec<_> = categories()
         .iter()
-        .enumerate()
-        .map(|(index, d)| SettingRow {
-            kind: RowKind::Preset(index),
-            section: d.section,
-            name: d.name.into(),
-            description: d.description.into(),
-        })
+        .flat_map(|&category| pages::preference_rows(category))
         .collect();
     rows.push(SettingRow {
         kind: RowKind::AddProvider,
@@ -624,13 +271,14 @@ fn settings_rows(config: &EditorConfig) -> Vec<SettingRow> {
             },
         ]);
     }
+    rows.sort_by_key(|row| row.category().map(CategoryId::index));
     rows
 }
 
 #[derive(Debug, Clone)]
 pub struct SettingsState {
     pub(crate) form: Option<forms::SettingsForm>,
-    pub category: usize,
+    pub category: CategoryId,
     pub tab: keymap::SettingsTab,
     pub keymap: keymap::KeymapSettings,
     pub(crate) editable: EditableState<StringBuffer>,
@@ -655,7 +303,7 @@ impl SettingsState {
         let rows = (0..entries.len()).collect();
         Self {
             form: None,
-            category: 0,
+            category: CategoryId::All,
             tab: keymap::SettingsTab::General,
             keymap: keymap::KeymapSettings::default(),
             editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
@@ -738,9 +386,12 @@ impl SettingsState {
 
     /// Row labels and sections in the same order used by rendering and input.
     pub fn filtered_rows(&self) -> impl Iterator<Item = (&str, &'static str)> + '_ {
-        self.rows
-            .iter()
-            .map(|&id| (self.entries[id].name.as_ref(), self.entries[id].section))
+        self.rows.iter().map(|&id| {
+            (
+                self.entries[id].name.as_ref(),
+                self.section_title(&self.entries[id]),
+            )
+        })
     }
 
     pub(crate) fn resolve_rows(&mut self) {
@@ -757,18 +408,19 @@ impl SettingsState {
         let mut matcher = Matcher::new(Config::DEFAULT);
         let mut needle_buf = Vec::new();
         let needle = Utf32Str::new(&query, &mut needle_buf);
-        let category = categories().get(self.category).copied().flatten();
+        let category = self.category;
         self.rows = self
             .entries
             .iter()
             .enumerate()
             .filter_map(|(index, d)| {
                 if self.tab == keymap::SettingsTab::General
-                    && category.is_some_and(|category| d.section != category)
+                    && category != CategoryId::All
+                    && d.category() != Some(category)
                 {
                     return None;
                 }
-                let text = format!("{} {} {}", d.section, d.name, d.description).to_lowercase();
+                let text = d.search_text();
                 let mut haystack = Vec::new();
                 (query.is_empty()
                     || matcher
@@ -781,16 +433,33 @@ impl SettingsState {
         self.scroll_offset_px = 0;
     }
 
+    fn section_title(&self, row: &SettingRow) -> &'static str {
+        if self.form.is_none()
+            && self.tab == keymap::SettingsTab::General
+            && self.category == CategoryId::All
+        {
+            row.category().map_or(row.section, CategoryId::label)
+        } else {
+            row.section
+        }
+    }
+
     pub(crate) fn sections(&self) -> Vec<(&'static str, std::ops::Range<usize>)> {
         let mut sections: Vec<(&str, std::ops::Range<usize>)> = Vec::new();
+        let mut previous_group = None;
         for (index, &id) in self.rows.iter().enumerate() {
-            let section = self.entries[id].section;
+            let section = self.section_title(&self.entries[id]);
             if let Some((title, range)) = sections.last_mut() {
-                if *title == section {
+                if *title == section
+                    && (self.category == CategoryId::All
+                        || self.form.is_some()
+                        || previous_group == self.entries[id].group())
+                {
                     range.end = index + 1;
                     continue;
                 }
             }
+            previous_group = self.entries[id].group();
             sections.push((section, index..index + 1));
         }
         sections
@@ -800,6 +469,58 @@ impl SettingsState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_all_and_search_keep_each_category_contiguous() {
+        let mut state = SettingsState::default();
+        for query in ["", "save", "format", "completion"] {
+            state.editable.set_content(query);
+            state.resolve_rows();
+            let sections = state.sections();
+            let titles: std::collections::HashSet<_> =
+                sections.iter().map(|(title, _)| *title).collect();
+            assert_eq!(
+                titles.len(),
+                sections.len(),
+                "repeated heading for {query:?}"
+            );
+            let categories: Vec<_> = state
+                .rows
+                .iter()
+                .filter_map(|&id| state.entries[id].category())
+                .map(CategoryId::index)
+                .collect();
+            assert!(categories.is_sorted());
+            assert_eq!(
+                sections.iter().map(|(_, rows)| rows.len()).sum::<usize>(),
+                state.rows.len()
+            );
+        }
+    }
+
+    #[test]
+    fn settings_search_uses_catalog_keys_and_keywords_after_regrouping() {
+        let mut state = SettingsState::default();
+        for (query, expected) in [
+            ("cursor_blink_ms", Setting::Blink),
+            ("blinking", Setting::Blink),
+            ("auto_save.delay_ms", Setting::AutoSaveDelay),
+        ] {
+            state.editable.set_content(query);
+            state.resolve_rows();
+            assert!(state.rows.iter().any(|&id| matches!(state.entries[id].kind, RowKind::Preset(setting) if setting == expected)), "{query}");
+        }
+    }
+
+    #[test]
+    fn settings_formatter_preferences_share_one_unheaded_form_section() {
+        let config = EditorConfig::default();
+        let mut state = SettingsState::new(&config);
+        state.category = CategoryId::Formatting;
+        state.form = Some(forms::SettingsForm::formatter(None, &config));
+        state.refresh_entries(&config);
+        assert_eq!(state.sections(), vec![("Formatting", 0..state.rows.len())]);
+    }
 
     #[test]
     fn lsp_settings_rows_follow_registry_and_resolve_current_command_values() {
@@ -834,8 +555,12 @@ mod tests {
 
     #[test]
     fn settings_presets_roundtrip_and_reject_invalid_choices() {
-        for d in DESCRIPTORS.iter().filter(|d| d.setting != Setting::Theme) {
-            for choice in 0..d.labels.len() {
+        for d in Setting::ALL
+            .iter()
+            .map(|id| id.descriptor())
+            .filter(|d| matches!(d.control, catalog::Control::Choice { .. }))
+        {
+            for choice in 0..d.labels().len() {
                 let mut config = EditorConfig::default();
                 d.apply(&mut config, choice);
                 assert_eq!(d.active(&config), Some(choice), "{}", d.name);
@@ -854,12 +579,8 @@ mod tests {
             hover_delay_ms: 444,
             ..EditorConfig::default()
         };
-        for d in DESCRIPTORS.iter().filter(|d| {
-            matches!(
-                d.setting,
-                Setting::Blink | Setting::StatusFont | Setting::HoverDelay
-            )
-        }) {
+        for d in [Setting::Blink, Setting::StatusFont, Setting::HoverDelay].map(Setting::descriptor)
+        {
             assert_eq!(d.active(&config), None);
         }
     }
@@ -867,10 +588,7 @@ mod tests {
     #[test]
     fn settings_fuzzy_search_sections_share_flat_order() {
         let mut state = SettingsState {
-            category: categories()
-                .iter()
-                .position(|&category| category == Some("Editor"))
-                .unwrap(),
+            category: CategoryId::Editor,
             ..SettingsState::default()
         };
         state.editable.set_content("brackets");
@@ -879,8 +597,8 @@ mod tests {
         assert!(state
             .rows
             .iter()
-            .any(|&id| DESCRIPTORS[id].setting == Setting::Brackets));
-        assert_eq!(state.sections(), vec![("Editor", 0..2)]);
+            .any(|&id| matches!(state.entries[id].kind, RowKind::Preset(Setting::Brackets))));
+        assert_eq!(state.sections(), vec![("Editing assistance", 0..2)]);
         state.editable.set_content("zzzz-no-setting");
         state.resolve_rows();
         assert!(state.sections().is_empty());
