@@ -765,6 +765,7 @@ fn spawn_terminal_command_adds_session_to_model() {
     session.pty.write(b"exit\n".to_vec());
 }
 
+#[cfg(any(test, debug_assertions))]
 #[test]
 fn terminal_spawn_result_is_discarded_when_request_is_cancelled() {
     let mut app = App::new(800, 600, empty_startup_config(), None, None, None);
@@ -817,6 +818,7 @@ fn pending_terminal_spawn_is_kept_after_the_panel_moves_docks() {
     );
 }
 
+#[cfg(any(test, debug_assertions))]
 #[test]
 fn closing_terminal_tab_preserves_other_session_and_does_not_reuse_identity() {
     use token::terminal::{PtyHandle, TabAction, TerminalSession};

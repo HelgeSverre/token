@@ -1604,6 +1604,7 @@ mod tests {
     use token::terminal::{PtyHandle, TerminalSession};
     use winit::keyboard::{KeyCode, PhysicalKey};
 
+    #[cfg(any(test, debug_assertions))]
     fn focused_terminal_model() -> (AppModel, mpsc::Receiver<Vec<u8>>) {
         let mut model = AppModel::new(800, 600, 1.0);
         model.dock_layout.bottom.activate(PanelId::TERMINAL);
@@ -1886,6 +1887,7 @@ mod tests {
         assert_eq!(model.ui.focus, FocusTarget::Editor);
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn terminal_character_key_writes_utf8_to_active_session() {
         let (mut model, pty_rx) = focused_terminal_model();
@@ -1902,6 +1904,7 @@ mod tests {
         assert_eq!(pty_rx.try_recv().unwrap(), "å".as_bytes());
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn terminal_key_input_follows_terminal_to_the_right_dock() {
         let (mut model, pty_rx) = focused_terminal_model();
@@ -1924,6 +1927,7 @@ mod tests {
         assert_eq!(pty_rx.try_recv().unwrap(), b"x");
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn terminal_ctrl_c_writes_control_byte_to_active_session() {
         let (mut model, pty_rx) = focused_terminal_model();
@@ -1970,6 +1974,7 @@ mod tests {
         assert_eq!(pty_rx.try_recv().unwrap(), vec![0x03]);
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn terminal_cmd_v_requests_clipboard_paste() {
         let (mut model, pty_rx) = focused_terminal_model();
@@ -1989,6 +1994,7 @@ mod tests {
         assert!(pty_rx.try_recv().is_err());
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn terminal_escape_returns_focus_to_editor() {
         let (mut model, pty_rx) = focused_terminal_model();
@@ -2511,6 +2517,7 @@ mod tests {
         );
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn terminal_shift_page_up_scrolls_scrollback_without_writing_to_pty() {
         let (mut model, pty_rx) = focused_terminal_model();
@@ -2539,6 +2546,7 @@ mod tests {
         assert!(pty_rx.try_recv().is_err());
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn terminal_shift_page_down_scrolls_toward_bottom_without_writing_to_pty() {
         let (mut model, pty_rx) = focused_terminal_model();

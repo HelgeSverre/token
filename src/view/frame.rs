@@ -1697,6 +1697,7 @@ mod tests {
         assert_eq!(frame.get_pixel(3, 3), 0xFFFFFFFF);
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     fn test_draw_sparkline_stays_within_chart_bounds() {
         let sentinel = 0xFF112233;

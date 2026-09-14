@@ -2660,10 +2660,8 @@ impl App {
                 let msg_tx = self.msg_tx.clone();
                 std::thread::spawn(move || {
                     let result = open_in_default_app(&path);
-                    let _ = msg_tx.send(Msg::App(AppMsg::OpenInDefaultAppFinished {
-                        path,
-                        result,
-                    }));
+                    let _ =
+                        msg_tx.send(Msg::App(AppMsg::OpenInDefaultAppFinished { path, result }));
                 });
             }
             Cmd::RevealFileInFinder { path } => {
@@ -6871,7 +6869,7 @@ impl ScrollAccumulator {
     }
 }
 
-#[cfg(any(test, debug_assertions, cargo_bench))]
+#[cfg(test)]
 #[path = "app_tests.rs"]
 mod tests;
 

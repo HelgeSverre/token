@@ -860,6 +860,7 @@ mod tests {
     use token::panel::{DockPosition, PanelId};
     use token::terminal::{PtyHandle, TerminalSession};
 
+    #[cfg(any(test, debug_assertions))]
     fn terminal_model_with_history() -> AppModel {
         let mut model = AppModel::new(800, 600, 1.0);
         model.dock_layout.bottom.activate(PanelId::TERMINAL);
@@ -873,6 +874,7 @@ mod tests {
         model
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn terminal_link_hover_requires_modifier_and_yields_to_selection() {
         let mut model = terminal_model_with_history();
@@ -1159,6 +1161,7 @@ mod tests {
         assert_eq!(model.editor_area.focused_editor_id(), Some(focused));
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn mouse_wheel_up_over_terminal_dock_scrolls_scrollback() {
         let mut model = terminal_model_with_history();
@@ -1169,6 +1172,7 @@ mod tests {
         assert_eq!(model.terminal.active_session().unwrap().scroll_offset, 3);
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn mouse_wheel_down_over_terminal_dock_scrolls_toward_bottom() {
         let mut model = terminal_model_with_history();

@@ -877,7 +877,7 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
     }
 }
 
-#[cfg(any(test, debug_assertions, cargo_bench))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::AppModel;

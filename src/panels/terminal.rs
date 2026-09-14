@@ -733,6 +733,7 @@ mod tests {
         }
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn rendering_preserves_the_callers_enclosing_clip() {
         let mut model = AppModel::new(100, 100, 1.0);
@@ -972,6 +973,7 @@ mod tests {
         assert_eq!(scrollback_indicator_text(0, 10), None);
         assert_eq!(scrollback_indicator_text(3, 10), Some("3/10".to_string()));
     }
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn terminal_pointer_uses_painted_cells_and_scrollback_at_both_scales() {
         for scale in [1.0, 2.0] {

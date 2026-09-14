@@ -472,8 +472,7 @@ fn prepare_open(
     // Get file metadata once for size checks later
     let metadata = match validate_file_for_opening(path) {
         Ok(()) => {
-            std::fs::metadata(path)
-                .with_context(|| format!("Failed to stat {}", path.display()))?
+            std::fs::metadata(path).with_context(|| format!("Failed to stat {}", path.display()))?
         }
         Err(FileOpenError::NotFound)
             if request.policy == token::model::FileOpenPolicy::CreateOrOpen =>
@@ -495,12 +494,10 @@ fn prepare_open(
     let mut document = if is_supported_image(path) {
         // Images require the full file to be loaded, so enforce size limit
         if ByteSize::bytes(size_bytes) > max {
-            anyhow::bail!(
-                FileOpenError::TooLarge {
-                    size: ByteSize::bytes(size_bytes)
-                }
-                .user_message(&filename_for_display(path))
-            );
+            anyhow::bail!(FileOpenError::TooLarge {
+                size: ByteSize::bytes(size_bytes)
+            }
+            .user_message(&filename_for_display(path)));
         }
         // Fit against the actual target pane when the reply is installed.
         let image = token::image::load_image(path, 0, 0)
@@ -511,23 +508,20 @@ fn prepare_open(
         doc
     } else if is_likely_binary(path) {
         // Binary files only read first 8 KiB for detection, so no size limit
-        tab_content =
-            TabContent::BinaryPlaceholder(token::model::editor::BinaryPlaceholderState {
-                path: path.clone(),
-                size_bytes,
-            });
+        tab_content = TabContent::BinaryPlaceholder(token::model::editor::BinaryPlaceholderState {
+            path: path.clone(),
+            size_bytes,
+        });
         let mut doc = Document::new();
         doc.file_path = Some(path.clone());
         doc
     } else {
         // Text files require the full file to be loaded, so enforce size limit
         if ByteSize::bytes(size_bytes) > max {
-            anyhow::bail!(
-                FileOpenError::TooLarge {
-                    size: ByteSize::bytes(size_bytes)
-                }
-                .user_message(&filename_for_display(path))
-            );
+            anyhow::bail!(FileOpenError::TooLarge {
+                size: ByteSize::bytes(size_bytes)
+            }
+            .user_message(&filename_for_display(path)));
         }
         Document::from_loaded_text(
             &std::fs::read_to_string(path)
@@ -819,7 +813,15 @@ mod tests {
         std::fs::write(&broken_image, "not an image").unwrap();
         // Write actual text content (no nulls) to ensure it's classified as text, not binary
         let large_text = "a".repeat(1024 * 100); // 100 KiB of text at start
-        std::fs::write(&oversized_text, format!("{}\n{}", large_text, "b".repeat(token::util::ByteSize::mebibytes(51).as_usize()))).unwrap();
+        std::fs::write(
+            &oversized_text,
+            format!(
+                "{}\n{}",
+                large_text,
+                "b".repeat(token::util::ByteSize::mebibytes(51).as_usize())
+            ),
+        )
+        .unwrap();
         for path in [
             dir.path().to_path_buf(),
             invalid_utf8,
@@ -863,11 +865,7 @@ mod tests {
         else {
             panic!("expected FilePrepared with Ok")
         };
-        let PreparedFile::Loaded {
-            tab_content,
-            ..
-        } = &**prepared
-        else {
+        let PreparedFile::Loaded { tab_content, .. } = &**prepared else {
             panic!("expected Loaded")
         };
         assert!(matches!(tab_content, TabContent::BinaryPlaceholder(_)));

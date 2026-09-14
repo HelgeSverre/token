@@ -198,6 +198,7 @@ mod tests {
         AppModel::new(800, 600, 1.0)
     }
 
+    #[cfg(any(test, debug_assertions))]
     fn push_test_session(model: &mut AppModel, rows: usize, cols: usize) {
         let (pty, _pty_rx) = PtyHandle::new_for_test();
         let (msg_tx, _msg_rx) = mpsc::channel();
@@ -216,6 +217,7 @@ mod tests {
             .saturating_sub(session.term().grid().screen_lines())
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn terminal_copy_preserves_wrapped_unicode_and_scrollback_without_editing_document() {
         use alacritty_terminal::index::{Point, Side};
@@ -282,6 +284,7 @@ mod tests {
         assert!(update_terminal(&mut model, TerminalMsg::CopySelection).is_none());
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn switching_terminal_tabs_keeps_history_and_reveals_the_active_tab() {
         let mut model = test_model();
@@ -373,6 +376,7 @@ mod tests {
         assert!(matches!(cmd, Some(Cmd::Redraw)));
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn scroll_up_clamps_to_available_scrollback() {
         let mut model = test_model();
@@ -395,6 +399,7 @@ mod tests {
         );
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn pty_output_clamps_stale_scrollback_offset() {
         let mut model = test_model();
@@ -415,6 +420,7 @@ mod tests {
         );
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn scroll_down_clamps_stale_scrollback_offset() {
         let mut model = test_model();
@@ -436,6 +442,7 @@ mod tests {
         );
     }
 
+    #[cfg(any(test, debug_assertions))]
     #[test]
     fn clear_resets_terminal_grid_and_scrollback_offset() {
         let mut model = test_model();
