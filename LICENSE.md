@@ -1,4 +1,4 @@
-Copyright (c) 2025 Helge Sverre
+Copyright (c) 2026 Helge Sverre
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
