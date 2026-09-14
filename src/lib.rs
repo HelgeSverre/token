@@ -37,6 +37,7 @@ pub mod settings;
 pub mod syntax;
 pub mod terminal;
 pub mod theme;
+pub mod tooling;
 pub mod tracing;
 pub mod update;
 pub mod util;

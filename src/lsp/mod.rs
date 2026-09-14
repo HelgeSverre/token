@@ -62,115 +62,22 @@ pub enum ServerState {
     ShuttingDown,
 }
 
-/// A seed preset for new configurations, never a runtime fallback.
-///
-/// Deliberately *not* a field on `syntax::registry::LanguageDefinition` —
-/// that struct is built by a positional macro with many call sites, and
-/// only a subset of languages need an LSP def. A side table keyed by `LanguageId`
-/// (`lsp_server_def`, below) gets the same "one place to register a
-/// server" ergonomics without touching every call site or growing the
-/// macro's arity.
-#[derive(Debug, Clone, Copy)]
-pub struct LspServerDef {
-    /// Suggested ID for a new independent configuration record.
-    pub id: &'static str,
-    pub command: &'static str,
-    pub args: &'static [&'static str],
-    pub languages: &'static [LanguageId],
-    /// Filenames that mark a directory as this server's project root
-    /// (see `client::resolve_root`).
-    pub project_markers: &'static [&'static str],
-}
+pub use crate::tooling::presets::{
+    LspTemplate as LspServerDef, GOPLS, PHPANTOM, RUST_ANALYZER, SEMA, TY,
+    TYPESCRIPT_LANGUAGE_SERVER,
+};
 
-impl LspServerDef {
-    /// Copy a preset into an independent, fully editable configuration record.
-    pub fn configuration(&self) -> crate::config::LspServerConfig {
-        crate::config::LspServerConfig {
-            command: Some(self.command.into()),
-            args: Some(self.args.iter().map(|arg| (*arg).into()).collect()),
-            languages: Some(self.languages.to_vec()),
-            root_markers: Some(
-                self.project_markers
-                    .iter()
-                    .map(|marker| (*marker).into())
-                    .collect(),
-            ),
-            enabled: Some(true),
-            ..Default::default()
-        }
+/// Compatibility lookup for bundled LSP templates, never a runtime fallback.
+pub fn server_def_by_id(id: &str) -> Option<&'static LspServerDef> {
+    match &crate::tooling::preset(id)?.template {
+        crate::tooling::Template::Lsp(template) => Some(template),
+        crate::tooling::Template::Formatter(_) => None,
     }
 }
 
-pub static RUST_ANALYZER: LspServerDef = LspServerDef {
-    id: "rust-analyzer",
-    command: "rust-analyzer",
-    args: &[],
-    languages: &[LanguageId::Rust],
-    project_markers: &["Cargo.toml"],
-};
-
-pub static TYPESCRIPT_LANGUAGE_SERVER: LspServerDef = LspServerDef {
-    id: "typescript-language-server",
-    command: "typescript-language-server",
-    args: &["--stdio"],
-    languages: &[
-        LanguageId::TypeScript,
-        LanguageId::Tsx,
-        LanguageId::JavaScript,
-        LanguageId::Jsx,
-    ],
-    project_markers: &["package.json"],
-};
-
-pub static PYRIGHT: LspServerDef = LspServerDef {
-    id: "pyright",
-    command: "pyright-langserver",
-    args: &["--stdio"],
-    languages: &[LanguageId::Python],
-    project_markers: &["pyproject.toml"],
-};
-
-pub static GOPLS: LspServerDef = LspServerDef {
-    id: "gopls",
-    command: "gopls",
-    args: &[],
-    languages: &[LanguageId::Go],
-    project_markers: &["go.work", "go.mod"],
-};
-
-pub static PHPANTOM: LspServerDef = LspServerDef {
-    id: "phpantom",
-    command: "phpantom_lsp",
-    args: &[],
-    languages: &[LanguageId::Php],
-    project_markers: &["composer.json"],
-};
-
-pub static SEMA: LspServerDef = LspServerDef {
-    id: "sema",
-    command: "sema",
-    args: &["lsp"],
-    languages: &[LanguageId::Sema],
-    project_markers: &["sema.toml"],
-};
-
-static ALL_SERVER_DEFS: &[&LspServerDef] = &[
-    &RUST_ANALYZER,
-    &TYPESCRIPT_LANGUAGE_SERVER,
-    &PYRIGHT,
-    &GOPLS,
-    &PHPANTOM,
-    &SEMA,
-];
-
-/// Built-in defaults by server ID. Use `resolve_server` for runtime configuration.
-pub fn server_def_by_id(id: &str) -> Option<&'static LspServerDef> {
-    ALL_SERVER_DEFS.iter().copied().find(|def| def.id == id)
-}
-
-/// Built-in defaults in a stable order. UI lists use config-aware `server_ids`.
+/// Default seeds only. Available presets live in `tooling` independently.
 pub fn all_server_defs() -> &'static [&'static LspServerDef] {
-    ALL_SERVER_DEFS
+    crate::tooling::presets::DEFAULT_LSP_TEMPLATES
 }
 
 /// Stable ordering for the configured catalog, without privileged preset entries.
@@ -246,7 +153,7 @@ pub fn languages_for_server(id: &str) -> &'static [LanguageId] {
 /// serves all four (matching how `typescript-language-server` itself
 /// handles JSX via `languageId`).
 pub fn lsp_server_def(language: LanguageId) -> Option<&'static LspServerDef> {
-    ALL_SERVER_DEFS
+    all_server_defs()
         .iter()
         .copied()
         .find(|preset| preset.languages.contains(&language))
@@ -411,7 +318,7 @@ servers:
             ..Default::default()
         };
         config.servers.insert(
-            "pyright".to_owned(),
+            "ty".to_owned(),
             crate::config::LspServerConfig {
                 command: None,
                 args: None,
@@ -421,7 +328,7 @@ servers:
                 ..Default::default()
             },
         );
-        assert!(resolve_server(PYRIGHT.id, &config).is_none());
+        assert!(resolve_server(TY.id, &config).is_none());
         assert!(resolve_server(RUST_ANALYZER.id, &config).is_some());
     }
 
@@ -432,14 +339,14 @@ servers:
             ..Default::default()
         };
         config.servers.insert(
-            "pyright".to_owned(),
+            "ty".to_owned(),
             crate::config::LspServerConfig {
                 initialization_options: Some(serde_json::json!({ "python": { "pythonPath": "/usr/bin/python3" } })),
                 settings: Some(serde_json::json!({ "python": { "analysis": { "typeCheckingMode": "strict" } } })),
-                ..PYRIGHT.configuration()
+                ..TY.configuration()
             },
         );
-        let resolved = resolve_server(PYRIGHT.id, &config).unwrap();
+        let resolved = resolve_server(TY.id, &config).unwrap();
         assert_eq!(
             resolved.initialization_options["python"]["pythonPath"],
             serde_json::json!("/usr/bin/python3")
@@ -452,7 +359,10 @@ servers:
 
     #[test]
     fn all_server_defs_matches_the_registry() {
-        assert_eq!(all_server_defs().len(), ALL_SERVER_DEFS.len());
+        assert_eq!(
+            all_server_defs().len(),
+            crate::tooling::presets::DEFAULT_LSP_TEMPLATES.len()
+        );
         assert!(all_server_defs()
             .iter()
             .any(|def| def.id == "rust-analyzer"));

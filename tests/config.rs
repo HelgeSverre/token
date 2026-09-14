@@ -128,6 +128,7 @@ fn test_config_serialize_deserialize() {
         hover_on_mouse: true,
         hover_delay_ms: 300,
         lsp: token::config::LspConfig::default(),
+        formatters: token::config::default_formatters(),
         completion: token::config::CompletionConfig::default(),
         format_on_save: false,
         auto_save: Default::default(),

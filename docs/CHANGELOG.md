@@ -11,6 +11,11 @@ All notable changes to Token are documented in this file.
 - Remember the command palette query after dismissal or navigation, and select
   it when reopening Search Everywhere or its Files tab so typing replaces it.
 
+### Formatting
+
+- Default Python language services to ty and whole-document formatting to Ruff.
+  Existing saved language-server configurations remain unchanged.
+
 ### Workspace
 
 - Use right/down chevrons instead of plus/minus signs for File Explorer folders.

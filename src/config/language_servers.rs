@@ -30,6 +30,9 @@ impl Default for LspConfig {
 /// Missing arguments/root markers mean empty lists, not implicit preset values.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct LspServerConfig {
+    /// Optional source for installation guidance; never used to inherit settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub languages: Option<Vec<LanguageId>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -158,11 +161,7 @@ mod tests {
             crate::lsp::server_id_for_language(LanguageId::Python, &config),
             Some("my-python")
         );
-        assert!(config.servers["pyright"]
-            .languages
-            .as_ref()
-            .unwrap()
-            .is_empty());
+        assert!(config.servers["ty"].languages.as_ref().unwrap().is_empty());
         let saved = serde_yaml::to_string(&config).unwrap();
         assert!(saved.contains("catalog_version: 1"));
         assert_eq!(serde_yaml::from_str::<LspConfig>(&saved).unwrap(), config);

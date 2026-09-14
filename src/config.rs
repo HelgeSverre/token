@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+mod formatters;
+pub use formatters::{default_formatters, FormatterConfig};
 mod language_servers;
 pub use language_servers::{LspConfig, LspServerConfig};
 
@@ -89,12 +91,16 @@ pub struct EditorConfig {
     #[serde(default)]
     pub lsp: LspConfig,
 
+    /// External whole-document formatters, keyed by language.
+    #[serde(default = "default_formatters")]
+    pub formatters: std::collections::HashMap<crate::syntax::LanguageId, FormatterConfig>,
+
     /// Autocomplete settings (see `CompletionConfig`).
     #[serde(default)]
     pub completion: CompletionConfig,
 
-    /// Run `textDocument/formatting` before every save (default: false).
-    /// Saves unformatted when the server can't format within ~2 s.
+    /// Format before manual saves (default: false), using a configured command or LSP.
+    /// Formatter failures save unformatted and display a warning.
     #[serde(default)]
     pub format_on_save: bool,
     /// Automatic saving of file-backed documents, off until enabled.
@@ -491,6 +497,7 @@ impl Default for EditorConfig {
             hover_on_mouse: true,
             hover_delay_ms: default_hover_delay_ms(),
             lsp: LspConfig::default(),
+            formatters: default_formatters(),
             completion: CompletionConfig::default(),
             format_on_save: false,
             auto_save: AutoSaveConfig::default(),
