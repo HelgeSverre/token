@@ -26,6 +26,24 @@ struct DocParseState {
     highlights: Option<SyntaxHighlights>,
 }
 
+/// The host tree plus the previous inputs needed for incremental highlighting.
+struct ParsedDocumentTree {
+    tree: Tree,
+    change: TreeChange,
+}
+
+enum TreeChange {
+    Unchanged,
+    Full,
+    Incremental {
+        edit: InputEdit,
+        // The previous tree has already received the edit, as required by
+        // Tree::changed_ranges. Highlighting decides how to use these inputs.
+        previous_tree: Tree,
+        previous_source: String,
+    },
+}
+
 /// Convert byte column to character column (handles UTF-8 multi-byte chars)
 fn byte_to_char_col(text: &str, byte_col: usize) -> usize {
     let byte_col = byte_col.min(text.len());
@@ -462,6 +480,62 @@ pub struct ParserTiming {
 }
 
 impl ParserState {
+    /// Parse a host document and update its cache. Language-specific passes
+    /// retain responsibility for highlighting and embedded-language parsing.
+    fn parse_document_tree(
+        &mut self,
+        source: &str,
+        language: LanguageId,
+        doc_id: DocumentId,
+    ) -> Option<ParsedDocumentTree> {
+        let parser = self.parsers.get_mut(&language)?;
+        if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
+            if cached.language == language {
+                let Some(edit) = compute_incremental_edit(&cached.source, source) else {
+                    return Some(ParsedDocumentTree {
+                        tree: cached.tree.clone(),
+                        change: TreeChange::Unchanged,
+                    });
+                };
+                cached.tree.edit(&edit);
+                if let Some(tree) = parser.parse(source, Some(&cached.tree)) {
+                    let previous_tree = std::mem::replace(&mut cached.tree, tree.clone());
+                    let previous_source = std::mem::replace(&mut cached.source, source.to_owned());
+                    return Some(ParsedDocumentTree {
+                        tree,
+                        change: TreeChange::Incremental {
+                            edit,
+                            previous_tree,
+                            previous_source,
+                        },
+                    });
+                }
+                tracing::warn!(
+                    ?language,
+                    "Incremental parse failed, falling back to full parse"
+                );
+            }
+        }
+
+        // Drop invalid trees and highlights before attempting a full parse, so
+        // failure cannot leave an edited tree paired with the previous source.
+        self.doc_cache.remove(&doc_id);
+        let tree = parser.parse(source, None)?;
+        self.doc_cache.insert(
+            doc_id,
+            DocParseState {
+                language,
+                tree: tree.clone(),
+                source: source.to_owned(),
+                highlights: None,
+            },
+        );
+        Some(ParsedDocumentTree {
+            tree,
+            change: TreeChange::Full,
+        })
+    }
+
     /// Get cached tree for a document (for outline extraction on worker thread)
     pub fn get_cached_tree(&self, doc_id: DocumentId) -> Option<(&tree_sitter::Tree, LanguageId)> {
         self.doc_cache
@@ -626,147 +700,47 @@ impl ParserState {
             return highlights;
         }
 
-        let parser = match self.parsers.get_mut(&language) {
-            Some(p) => p,
-            None => {
-                tracing::warn!("No parser for language {:?}", language);
-                return SyntaxHighlights::new(language, revision);
-            }
-        };
-
-        // Try incremental parsing if we have a cached tree for this document
         let parse_started = Instant::now();
-        let tree = if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
-            if cached.language == language {
-                // Same language, try incremental parse
-                if let Some(edit) = compute_incremental_edit(&cached.source, source) {
-                    let old_line_count =
-                        cached.source.bytes().filter(|byte| *byte == b'\n').count() + 1;
-                    let new_line_count = source.bytes().filter(|byte| *byte == b'\n').count() + 1;
-                    if let Some(highlights) = &mut cached.highlights {
-                        highlights.shift_for_edit(
-                            edit.start_position.row,
-                            old_line_count,
-                            new_line_count,
-                        );
-                    }
-                    // Apply the edit to the cached tree
-                    cached.tree.edit(&edit);
-
-                    tracing::trace!(
-                        "Incremental parse: edit at byte {}..{} -> {}..{}",
-                        edit.start_byte,
-                        edit.old_end_byte,
-                        edit.start_byte,
-                        edit.new_end_byte
-                    );
-
-                    // Parse with the edited old tree for incremental reuse
-                    match parser.parse(source, Some(&cached.tree)) {
-                        Some(new_tree) => {
-                            let line_count =
-                                source.bytes().filter(|byte| *byte == b'\n').count() + 1;
-                            let mut changed_ranges: Vec<_> = cached
-                                .tree
-                                .changed_ranges(&new_tree)
-                                .map(|range| {
-                                    range.start_point.row.saturating_sub(1)
-                                        ..(range.end_point.row + 2).min(line_count)
-                                })
-                                .collect();
-                            if changed_ranges.is_empty() {
-                                changed_ranges.push(
-                                    edit.start_position.row.saturating_sub(1)
-                                        ..(edit.new_end_position.row + 2).min(line_count),
-                                );
-                            }
-                            merge_line_ranges(&mut changed_ranges);
-                            self.last_changed_line_ranges = Some(changed_ranges);
-                            // Update cache with new tree and source
-                            cached.tree = new_tree.clone();
-                            cached.source = source.to_owned();
-                            new_tree
-                        }
-                        None => {
-                            // Incremental parse failed, fall back to full parse
-                            tracing::warn!(
-                                "Incremental parse failed for {:?}, falling back to full parse",
-                                language
-                            );
-                            self.doc_cache.remove(&doc_id);
-                            match parser.parse(source, None) {
-                                Some(t) => {
-                                    self.doc_cache.insert(
-                                        doc_id,
-                                        DocParseState {
-                                            language,
-                                            tree: t.clone(),
-                                            source: source.to_owned(),
-                                            highlights: None,
-                                        },
-                                    );
-                                    t
-                                }
-                                None => {
-                                    tracing::error!("Full parse also failed for {:?}", language);
-                                    return SyntaxHighlights::new(language, revision);
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // No edit (source unchanged), reuse cached tree
-                    tracing::trace!("Source unchanged, reusing cached tree");
-                    cached.tree.clone()
-                }
-            } else {
-                // Language changed, do full parse
-                tracing::debug!(
-                    "Language changed from {:?} to {:?}, doing full parse",
-                    cached.language,
-                    language
-                );
-                self.doc_cache.remove(&doc_id);
-                match parser.parse(source, None) {
-                    Some(t) => {
-                        self.doc_cache.insert(
-                            doc_id,
-                            DocParseState {
-                                language,
-                                tree: t.clone(),
-                                source: source.to_owned(),
-                                highlights: None,
-                            },
-                        );
-                        t
-                    }
-                    None => {
-                        tracing::error!("Parse failed for {:?}", language);
-                        return SyntaxHighlights::new(language, revision);
-                    }
-                }
-            }
-        } else {
-            // No cached tree, do full parse
-            match parser.parse(source, None) {
-                Some(t) => {
-                    self.doc_cache.insert(
-                        doc_id,
-                        DocParseState {
-                            language,
-                            tree: t.clone(),
-                            source: source.to_owned(),
-                            highlights: None,
-                        },
-                    );
-                    t
-                }
-                None => {
-                    tracing::error!("Parse failed for {:?}", language);
-                    return SyntaxHighlights::new(language, revision);
-                }
-            }
+        let Some(parsed) = self.parse_document_tree(source, language, doc_id) else {
+            tracing::warn!(?language, "Unable to parse document");
+            return SyntaxHighlights::new(language, revision);
         };
+        let tree = parsed.tree;
+        if let TreeChange::Incremental {
+            edit,
+            previous_tree,
+            previous_source,
+        } = parsed.change
+        {
+            let old_line_count = previous_source
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count()
+                + 1;
+            let line_count = source.bytes().filter(|byte| *byte == b'\n').count() + 1;
+            if let Some(highlights) = self
+                .doc_cache
+                .get_mut(&doc_id)
+                .and_then(|cached| cached.highlights.as_mut())
+            {
+                highlights.shift_for_edit(edit.start_position.row, old_line_count, line_count);
+            }
+            let mut changed_ranges: Vec<_> = previous_tree
+                .changed_ranges(&tree)
+                .map(|range| {
+                    range.start_point.row.saturating_sub(1)
+                        ..(range.end_point.row + 2).min(line_count)
+                })
+                .collect();
+            if changed_ranges.is_empty() {
+                changed_ranges.push(
+                    edit.start_position.row.saturating_sub(1)
+                        ..(edit.new_end_position.row + 2).min(line_count),
+                );
+            }
+            merge_line_ranges(&mut changed_ranges);
+            self.last_changed_line_ranges = Some(changed_ranges);
+        }
         self.last_timing.parse_ms = Some(parse_started.elapsed().as_secs_f64() * 1000.0);
 
         // Extract highlights
@@ -953,83 +927,12 @@ impl ParserState {
     ) -> SyntaxHighlights {
         let language = LanguageId::Markdown;
 
-        // Step 1: Parse block structure with existing block parser
-        let parser = match self.parsers.get_mut(&language) {
-            Some(p) => p,
-            None => {
-                tracing::warn!("No parser for markdown");
-                return SyntaxHighlights::new(language, revision);
-            }
+        let Some(parsed) = self.parse_document_tree(source, language, doc_id) else {
+            tracing::warn!(?language, "Unable to parse document");
+            return SyntaxHighlights::new(language, revision);
         };
-
-        // Try incremental parsing if we have a cached tree
-        let block_tree = if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
-            if cached.language == language {
-                if let Some(edit) = compute_incremental_edit(&cached.source, source) {
-                    cached.tree.edit(&edit);
-                    match parser.parse(source, Some(&cached.tree)) {
-                        Some(new_tree) => {
-                            cached.tree = new_tree.clone();
-                            cached.source = source.to_owned();
-                            new_tree
-                        }
-                        None => {
-                            self.doc_cache.remove(&doc_id);
-                            match parser.parse(source, None) {
-                                Some(t) => {
-                                    self.doc_cache.insert(
-                                        doc_id,
-                                        DocParseState {
-                                            language,
-                                            tree: t.clone(),
-                                            source: source.to_owned(),
-                                            highlights: None,
-                                        },
-                                    );
-                                    t
-                                }
-                                None => return SyntaxHighlights::new(language, revision),
-                            }
-                        }
-                    }
-                } else {
-                    cached.tree.clone()
-                }
-            } else {
-                self.doc_cache.remove(&doc_id);
-                match parser.parse(source, None) {
-                    Some(t) => {
-                        self.doc_cache.insert(
-                            doc_id,
-                            DocParseState {
-                                language,
-                                tree: t.clone(),
-                                source: source.to_owned(),
-                                highlights: None,
-                            },
-                        );
-                        t
-                    }
-                    None => return SyntaxHighlights::new(language, revision),
-                }
-            }
-        } else {
-            match parser.parse(source, None) {
-                Some(t) => {
-                    self.doc_cache.insert(
-                        doc_id,
-                        DocParseState {
-                            language,
-                            tree: t.clone(),
-                            source: source.to_owned(),
-                            highlights: None,
-                        },
-                    );
-                    t
-                }
-                None => return SyntaxHighlights::new(language, revision),
-            }
-        };
+        drop(parsed.change);
+        let block_tree = parsed.tree;
 
         // Step 2: Extract block-level highlights
         let mut highlights = self.extract_highlights(source, &block_tree, language, revision, None);
@@ -1420,83 +1323,12 @@ impl ParserState {
     ) -> SyntaxHighlights {
         let language = LanguageId::Html;
 
-        // Step 1: Parse HTML structure
-        let parser = match self.parsers.get_mut(&language) {
-            Some(p) => p,
-            None => {
-                tracing::warn!("No parser for HTML");
-                return SyntaxHighlights::new(language, revision);
-            }
+        let Some(parsed) = self.parse_document_tree(source, language, doc_id) else {
+            tracing::warn!(?language, "Unable to parse document");
+            return SyntaxHighlights::new(language, revision);
         };
-
-        // Try incremental parsing if cached
-        let html_tree = if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
-            if cached.language == language {
-                if let Some(edit) = compute_incremental_edit(&cached.source, source) {
-                    cached.tree.edit(&edit);
-                    match parser.parse(source, Some(&cached.tree)) {
-                        Some(new_tree) => {
-                            cached.tree = new_tree.clone();
-                            cached.source = source.to_owned();
-                            new_tree
-                        }
-                        None => {
-                            self.doc_cache.remove(&doc_id);
-                            match parser.parse(source, None) {
-                                Some(t) => {
-                                    self.doc_cache.insert(
-                                        doc_id,
-                                        DocParseState {
-                                            language,
-                                            tree: t.clone(),
-                                            source: source.to_owned(),
-                                            highlights: None,
-                                        },
-                                    );
-                                    t
-                                }
-                                None => return SyntaxHighlights::new(language, revision),
-                            }
-                        }
-                    }
-                } else {
-                    cached.tree.clone()
-                }
-            } else {
-                self.doc_cache.remove(&doc_id);
-                match parser.parse(source, None) {
-                    Some(t) => {
-                        self.doc_cache.insert(
-                            doc_id,
-                            DocParseState {
-                                language,
-                                tree: t.clone(),
-                                source: source.to_owned(),
-                                highlights: None,
-                            },
-                        );
-                        t
-                    }
-                    None => return SyntaxHighlights::new(language, revision),
-                }
-            }
-        } else {
-            match parser.parse(source, None) {
-                Some(t) => {
-                    self.doc_cache.insert(
-                        doc_id,
-                        DocParseState {
-                            language,
-                            tree: t.clone(),
-                            source: source.to_owned(),
-                            highlights: None,
-                        },
-                    );
-                    t
-                }
-                None => return SyntaxHighlights::new(language, revision),
-            }
-        };
+        drop(parsed.change);
+        let html_tree = parsed.tree;
 
         // Step 2: Extract HTML-level highlights
         let mut highlights = self.extract_highlights(source, &html_tree, language, revision, None);
@@ -1624,83 +1456,12 @@ impl ParserState {
     ) -> SyntaxHighlights {
         let language = LanguageId::Vue;
 
-        // Step 1: Parse with HTML grammar (Vue SFC is structurally valid HTML)
-        let parser = match self.parsers.get_mut(&language) {
-            Some(p) => p,
-            None => {
-                tracing::warn!("No parser for Vue");
-                return SyntaxHighlights::new(language, revision);
-            }
+        let Some(parsed) = self.parse_document_tree(source, language, doc_id) else {
+            tracing::warn!(?language, "Unable to parse document");
+            return SyntaxHighlights::new(language, revision);
         };
-
-        // Try incremental parsing if cached
-        let tree = if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
-            if cached.language == language {
-                if let Some(edit) = compute_incremental_edit(&cached.source, source) {
-                    cached.tree.edit(&edit);
-                    match parser.parse(source, Some(&cached.tree)) {
-                        Some(new_tree) => {
-                            cached.tree = new_tree.clone();
-                            cached.source = source.to_owned();
-                            new_tree
-                        }
-                        None => {
-                            self.doc_cache.remove(&doc_id);
-                            match parser.parse(source, None) {
-                                Some(t) => {
-                                    self.doc_cache.insert(
-                                        doc_id,
-                                        DocParseState {
-                                            language,
-                                            tree: t.clone(),
-                                            source: source.to_owned(),
-                                            highlights: None,
-                                        },
-                                    );
-                                    t
-                                }
-                                None => return SyntaxHighlights::new(language, revision),
-                            }
-                        }
-                    }
-                } else {
-                    cached.tree.clone()
-                }
-            } else {
-                self.doc_cache.remove(&doc_id);
-                match parser.parse(source, None) {
-                    Some(t) => {
-                        self.doc_cache.insert(
-                            doc_id,
-                            DocParseState {
-                                language,
-                                tree: t.clone(),
-                                source: source.to_owned(),
-                                highlights: None,
-                            },
-                        );
-                        t
-                    }
-                    None => return SyntaxHighlights::new(language, revision),
-                }
-            }
-        } else {
-            match parser.parse(source, None) {
-                Some(t) => {
-                    self.doc_cache.insert(
-                        doc_id,
-                        DocParseState {
-                            language,
-                            tree: t.clone(),
-                            source: source.to_owned(),
-                            highlights: None,
-                        },
-                    );
-                    t
-                }
-                None => return SyntaxHighlights::new(language, revision),
-            }
-        };
+        drop(parsed.change);
+        let tree = parsed.tree;
 
         // Step 2: Extract HTML-level highlights (Vue uses same query as HTML)
         let mut highlights = self.extract_highlights(source, &tree, language, revision, None);
@@ -3314,6 +3075,49 @@ test:
             );
         } else {
             panic!("No highlights for line 1!");
+        }
+    }
+
+    #[test]
+    fn shared_parse_edits_match_fresh_highlighting() {
+        let cases = [
+            (LanguageId::Rust, "fn main() {\n    let label = \"hello\";\n}\n"),
+            (LanguageId::Markdown, "# hello\n\n**hello**\n\n```rust\nlet label = \"hello\";\n```\n"),
+            (LanguageId::Html, "<div>hello</div>\n<script>let label = 'hello';</script>\n<style>div { color: red; }</style>\n"),
+            (LanguageId::Vue, "<template><div>hello</div></template>\n<script lang=\"ts\">let label: string = 'hello';</script>\n<style>div { color: red; }</style>\n"),
+        ];
+        let document = DocumentId(900);
+        let mut incremental = ParserState::new();
+        let mut revision = 0;
+        // Reuse the same document across languages to cover cache invalidation.
+        for (language, original) in cases {
+            let unicode = original.replace("hello", "hèllo🦀");
+            let multiline = format!("\n\n{unicode}\n");
+            let renamed = original.replace("label", "renamed");
+            for source in [
+                original, original, &unicode, &multiline, &unicode, &renamed, "", original,
+            ] {
+                revision += 1;
+                let actual = incremental.parse_and_highlight(source, language, document, revision);
+                let expected =
+                    ParserState::new().parse_and_highlight(source, language, document, revision);
+                assert_eq!(
+                    actual.lines, expected.lines,
+                    "{language:?}, revision {revision}, source {source:?}"
+                );
+                assert_eq!(actual.revision, revision);
+                assert_eq!(actual.language, language);
+                let cached = incremental.doc_cache.get(&document).unwrap();
+                assert_eq!(cached.source, source);
+                assert_eq!(cached.language, language);
+                if matches!(
+                    language,
+                    LanguageId::Markdown | LanguageId::Html | LanguageId::Vue
+                ) {
+                    assert!(incremental.take_last_highlight_patch().is_none());
+                    assert!(incremental.last_changed_line_ranges().is_none());
+                }
+            }
         }
     }
 
