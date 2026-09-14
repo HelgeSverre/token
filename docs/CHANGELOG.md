@@ -13,6 +13,12 @@ All notable changes to Token are documented in this file.
 
 ### Settings
 
+- Add optional clangd, HTML, CSS/SCSS, JSON, YAML, Marksman, Lua and Bash language
+  server presets, plus Prettier, rustfmt, gofmt, clang-format and shfmt formatter
+  presets with installation guidance and copyable commands. Existing defaults
+  remain unchanged. Multi-language formatter presets select an unconfigured
+  language when available; each saved record configures one language.
+
 - Offer editable language-server and formatter presets with installation guidance,
   copyable commands, and an executable availability check in Settings.
 

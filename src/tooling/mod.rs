@@ -161,6 +161,111 @@ const RUFF: FormatterTemplate = FormatterTemplate {
 
 pub static PRESETS: &[ToolPreset] = &[
     ToolPreset {
+        id: "clangd",
+        tool_id: "clangd",
+        template: Template::Lsp(&presets::CLANGD),
+    },
+    ToolPreset {
+        id: "vscode-html-language-server",
+        tool_id: "vscode-html-language-server",
+        template: Template::Lsp(&presets::HTML),
+    },
+    ToolPreset {
+        id: "vscode-css-language-server",
+        tool_id: "vscode-css-language-server",
+        template: Template::Lsp(&presets::CSS),
+    },
+    ToolPreset {
+        id: "vscode-json-language-server",
+        tool_id: "vscode-json-language-server",
+        template: Template::Lsp(&presets::JSON),
+    },
+    ToolPreset {
+        id: "yaml-language-server",
+        tool_id: "yaml-language-server",
+        template: Template::Lsp(&presets::YAML),
+    },
+    ToolPreset {
+        id: "marksman",
+        tool_id: "marksman",
+        template: Template::Lsp(&presets::MARKSMAN),
+    },
+    ToolPreset {
+        id: "lua-language-server",
+        tool_id: "lua-language-server",
+        template: Template::Lsp(&presets::LUA),
+    },
+    ToolPreset {
+        id: "bash-language-server",
+        tool_id: "bash-language-server",
+        template: Template::Lsp(&presets::BASH),
+    },
+    ToolPreset {
+        id: "prettier",
+        tool_id: "prettier",
+        template: Template::Formatter(FormatterTemplate {
+            languages: &[
+                LanguageId::JavaScript,
+                LanguageId::TypeScript,
+                LanguageId::Jsx,
+                LanguageId::Tsx,
+                LanguageId::Json,
+                LanguageId::Css,
+                LanguageId::Scss,
+                LanguageId::Html,
+                LanguageId::Vue,
+                LanguageId::Graphql,
+                LanguageId::Markdown,
+                LanguageId::Yaml,
+            ],
+            command: "prettier",
+            args: &["--stdin-filepath", "{file}"],
+        }),
+    },
+    ToolPreset {
+        id: "rustfmt",
+        tool_id: "rustfmt",
+        template: Template::Formatter(FormatterTemplate {
+            languages: &[LanguageId::Rust],
+            command: "rustfmt",
+            args: &["--edition", "2021", "--emit", "stdout"],
+        }),
+    },
+    ToolPreset {
+        id: "gofmt",
+        tool_id: "gofmt",
+        template: Template::Formatter(FormatterTemplate {
+            languages: &[LanguageId::Go],
+            command: "gofmt",
+            args: &[],
+        }),
+    },
+    ToolPreset {
+        id: "clang-format",
+        tool_id: "clang-format",
+        template: Template::Formatter(FormatterTemplate {
+            languages: &[
+                LanguageId::C,
+                LanguageId::Cpp,
+                LanguageId::ObjectiveC,
+                LanguageId::CSharp,
+                LanguageId::Java,
+                LanguageId::Protobuf,
+            ],
+            command: "clang-format",
+            args: &["--assume-filename={file}"],
+        }),
+    },
+    ToolPreset {
+        id: "shfmt",
+        tool_id: "shfmt",
+        template: Template::Formatter(FormatterTemplate {
+            languages: &[LanguageId::Bash],
+            command: "shfmt",
+            args: &["--filename", "{file}"],
+        }),
+    },
+    ToolPreset {
         id: "rust-analyzer",
         tool_id: "rust-analyzer",
         template: Template::Lsp(&presets::RUST_ANALYZER),
@@ -197,7 +302,22 @@ pub static PRESETS: &[ToolPreset] = &[
     },
 ];
 
+const VSCODE_INSTALLATION: &[InstallOption] = &[InstallOption { id: "npm", label: "Install using npm", platforms: &[], prerequisites: "Requires Node.js and npm. This package provides HTML, CSS and JSON servers; install it once. Add npm's global executable directory to the application's PATH.", steps: &[InstallStep { explanation: "Install the tool globally", command: Some("npm install -g vscode-langservers-extracted") }], source_url: "https://github.com/hrsh7th/vscode-langservers-extracted" }];
+
 pub static TOOLS: &[ToolDefinition] = &[
+    ToolDefinition { id: "clangd", display_name: "clangd", description: "C and C++ language server", homepage: "https://clangd.llvm.org/", installation: &[InstallOption { id: "homebrew", label: "Install using Homebrew", platforms: &[Platform::MacOs], prerequisites: "Requires Homebrew on macOS. LLVM is keg-only; select clangd from its bin directory or add that directory to PATH. Configure compile_commands.json for your project.", steps: &[InstallStep { explanation: "Install the tool", command: Some("brew install llvm") }], source_url: "https://clangd.llvm.org/installation" }, InstallOption { id: "upstream", label: "Upstream installation guide", platforms: &[], prerequisites: "Follow the upstream guide for your OS and architecture, then select the installed executable.", steps: &[], source_url: "https://clangd.llvm.org/installation" }] },
+    ToolDefinition { id: "vscode-html-language-server", display_name: "HTML Language Server", description: "HTML language services", homepage: "https://github.com/hrsh7th/vscode-langservers-extracted", installation: VSCODE_INSTALLATION },
+    ToolDefinition { id: "vscode-css-language-server", display_name: "CSS Language Server", description: "CSS language services", homepage: "https://github.com/hrsh7th/vscode-langservers-extracted", installation: VSCODE_INSTALLATION },
+    ToolDefinition { id: "vscode-json-language-server", display_name: "JSON Language Server", description: "JSON language services", homepage: "https://github.com/hrsh7th/vscode-langservers-extracted", installation: VSCODE_INSTALLATION },
+    ToolDefinition { id: "yaml-language-server", display_name: "YAML Language Server", description: "YAML completion, validation and schema support", homepage: "https://github.com/redhat-developer/yaml-language-server", installation: &[InstallOption { id: "npm", label: "Install using npm", platforms: &[], prerequisites: "Requires a supported Node.js version and npm. Add npm's global executable directory to the application's PATH.", steps: &[InstallStep { explanation: "Install the tool globally", command: Some("npm install -g yaml-language-server") }], source_url: "https://github.com/redhat-developer/yaml-language-server" }] },
+    ToolDefinition { id: "marksman", display_name: "Marksman", description: "Markdown links and navigation", homepage: "https://github.com/artempyanykh/marksman", installation: &[InstallOption { id: "homebrew", label: "Install using Homebrew", platforms: &[Platform::MacOs], prerequisites: "Requires Homebrew on macOS. Add its executable directory to the application's PATH.", steps: &[InstallStep { explanation: "Install the tool", command: Some("brew install marksman") }], source_url: "https://formulae.brew.sh/formula/marksman" }, InstallOption { id: "upstream", label: "Upstream installation guide", platforms: &[], prerequisites: "Follow the upstream guide for your OS and architecture, then select the installed executable.", steps: &[], source_url: "https://github.com/artempyanykh/marksman/blob/main/docs/install.md" }] },
+    ToolDefinition { id: "lua-language-server", display_name: "Lua Language Server", description: "Lua completion, diagnostics and navigation", homepage: "https://luals.github.io/", installation: &[InstallOption { id: "homebrew", label: "Install using Homebrew", platforms: &[Platform::MacOs], prerequisites: "Requires Homebrew on macOS. Add its executable directory to the application's PATH.", steps: &[InstallStep { explanation: "Install the tool", command: Some("brew install lua-language-server") }], source_url: "https://formulae.brew.sh/formula/lua-language-server" }, InstallOption { id: "upstream", label: "Upstream installation guide", platforms: &[], prerequisites: "Follow the upstream guide for your OS and architecture, then select the installed executable.", steps: &[], source_url: "https://luals.github.io/wiki/usage/" }] },
+    ToolDefinition { id: "bash-language-server", display_name: "Bash Language Server", description: "Shell completion and navigation", homepage: "https://github.com/bash-lsp/bash-language-server", installation: &[InstallOption { id: "npm", label: "Install using npm", platforms: &[], prerequisites: "Requires Node.js 20 or newer and npm. ShellCheck enables extra linting; shfmt enables formatting. Add npm's global executable directory to PATH.", steps: &[InstallStep { explanation: "Install the tool globally", command: Some("npm install -g bash-language-server") }], source_url: "https://github.com/bash-lsp/bash-language-server" }] },
+    ToolDefinition { id: "prettier", display_name: "Prettier", description: "Formatter for web languages, Markdown and YAML", homepage: "https://prettier.io/", installation: &[InstallOption { id: "npm", label: "Install using npm", platforms: &[], prerequisites: "Requires Node.js and npm. Prefer your project's pinned Prettier executable; select it in the command field. This command installs a global fallback. Configure one language per record; repeat for other languages.", steps: &[InstallStep { explanation: "Install the tool globally", command: Some("npm install -g prettier") }], source_url: "https://prettier.io/docs/install/" }] },
+    ToolDefinition { id: "rustfmt", display_name: "rustfmt", description: "Rust formatter", homepage: "https://github.com/rust-lang/rustfmt", installation: &[InstallOption { id: "rustup", label: "Install using rustup", platforms: &[], prerequisites: "Requires rustup and the project's Rust toolchain. This preset uses edition 2021; change --edition for other editions. rustfmt reads project formatting config from the working directory.", steps: &[InstallStep { explanation: "Add the rustfmt component", command: Some("rustup component add rustfmt") }], source_url: "https://github.com/rust-lang/rustfmt" }] },
+    ToolDefinition { id: "gofmt", display_name: "gofmt", description: "Go formatter included with the Go SDK", homepage: "https://pkg.go.dev/cmd/gofmt", installation: &[InstallOption { id: "upstream", label: "Upstream installation guide", platforms: &[], prerequisites: "gofmt is included with Go. Install the Go SDK if needed, then select its gofmt executable or add the SDK bin directory to PATH.", steps: &[], source_url: "https://go.dev/doc/install" }] },
+    ToolDefinition { id: "clang-format", display_name: "clang-format", description: "Formatter for C-family languages and Protobuf", homepage: "https://clang.llvm.org/docs/ClangFormat.html", installation: &[InstallOption { id: "homebrew", label: "Install using Homebrew", platforms: &[Platform::MacOs], prerequisites: "Requires Homebrew on macOS. Add its executable directory to the application's PATH.", steps: &[InstallStep { explanation: "Install the tool", command: Some("brew install clang-format") }], source_url: "https://formulae.brew.sh/formula/clang-format" }, InstallOption { id: "upstream", label: "Upstream installation guide", platforms: &[], prerequisites: "Install clang-format from LLVM or your platform's package manager. Configure one language per record; repeat for other languages.", steps: &[], source_url: "https://clang.llvm.org/docs/ClangFormat.html" }] },
+    ToolDefinition { id: "shfmt", display_name: "shfmt", description: "Shell formatter with EditorConfig support", homepage: "https://github.com/mvdan/sh", installation: &[InstallOption { id: "go", label: "Install using Go", platforms: &[], prerequisites: "Requires a Go version supported by shfmt. Add GOBIN (or GOPATH/bin) to PATH.", steps: &[InstallStep { explanation: "Install shfmt", command: Some("go install mvdan.cc/sh/v3/cmd/shfmt@latest") }], source_url: "https://github.com/mvdan/sh" }, InstallOption { id: "homebrew", label: "Install using Homebrew", platforms: &[Platform::MacOs], prerequisites: "Requires Homebrew on macOS. Add its executable directory to the application's PATH.", steps: &[InstallStep { explanation: "Install the tool", command: Some("brew install shfmt") }], source_url: "https://formulae.brew.sh/formula/shfmt" }] },
     ToolDefinition {
         id: "rust-analyzer", display_name: "rust-analyzer", description: "Rust language server",
         homepage: "https://rust-analyzer.github.io/",
@@ -329,6 +449,42 @@ mod tests {
         let php = tool("phpantom").unwrap();
         assert_eq!(php.installation_options(Platform::MacOs).count(), 2);
         assert_eq!(php.installation_options(Platform::Windows).count(), 1);
+    }
+
+    #[test]
+    fn optional_lsp_presets_round_trip_and_route_without_changing_defaults() {
+        let original = crate::config::EditorConfig::default();
+        assert_eq!(PRESETS.len(), 20);
+        for item in presets_for(PresetKind::Lsp, None) {
+            let Template::Lsp(template) = item.template else {
+                unreachable!()
+            };
+            if presets::DEFAULT_LSP_TEMPLATES
+                .iter()
+                .any(|default| default.id == item.id)
+            {
+                continue;
+            }
+            assert!(!original.lsp.servers.contains_key(item.id));
+            let mut config = original.lsp.clone();
+            config
+                .servers
+                .insert(item.id.into(), template.configuration());
+            let restored: crate::config::LspConfig =
+                serde_yaml::from_str(&serde_yaml::to_string(&config).unwrap()).unwrap();
+            for language in template.languages {
+                assert!(crate::lsp::sync::language_id_str(*language).is_some());
+                assert_eq!(
+                    crate::lsp::server_id_for_language(*language, &restored),
+                    Some(item.id)
+                );
+            }
+            let resolved = crate::lsp::resolve_server(item.id, &restored).unwrap();
+            assert_eq!(resolved.command, template.command);
+            assert_eq!(resolved.args, template.args);
+            config.servers.remove(item.id);
+            assert!(crate::lsp::resolve_server(item.id, &config).is_none());
+        }
     }
 
     #[test]

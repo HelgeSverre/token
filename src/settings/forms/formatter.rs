@@ -42,7 +42,7 @@ impl SettingsForm {
         });
         form.choices = vec![FormChoice {
             label: "Language",
-            help: "One external formatter per language; selections still use LSP",
+            help: "Save configures only this language; add another record for other languages. Selections still use LSP",
             labels,
             active: LanguageId::all()
                 .position(|language| Some(language) == selected)

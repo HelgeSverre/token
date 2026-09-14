@@ -50,7 +50,11 @@ impl SettingsForm {
                 draft
             }
             (Some(Template::Formatter(template)), FormKind::Formatter(None)) => {
-                let language = *template.languages.first()?;
+                let language = *template
+                    .languages
+                    .iter()
+                    .find(|language| !config.formatters.contains_key(language))
+                    .or_else(|| template.languages.first())?;
                 config
                     .formatters
                     .insert(language, template.configuration(preset?.id));
@@ -166,7 +170,13 @@ mod tests {
         let mut config = EditorConfig::default();
         config.formatters.clear();
         let form = SettingsForm::formatter(None, &config);
-        let mut draft = form.draft_from_preset(1, &config).unwrap();
+        let selected = form
+            .presets()
+            .iter()
+            .position(|preset| preset.id == "ruff")
+            .unwrap()
+            + 1;
+        let mut draft = form.draft_from_preset(selected, &config).unwrap();
         assert_eq!(draft.preset_id.as_deref(), Some("ruff"));
         assert_eq!(draft.fields[0].input.text(), "ruff");
         assert_eq!(draft.choices[0].labels[draft.choices[0].active], "Python");
@@ -184,6 +194,42 @@ mod tests {
             .unwrap()
             .preset_id
             .is_none());
+    }
+
+    #[test]
+    fn multi_language_formatter_selects_an_unconfigured_language_and_saves_only_it() {
+        let mut config = EditorConfig::default();
+        config.formatters.insert(
+            LanguageId::JavaScript,
+            crate::config::FormatterConfig {
+                command: "existing-js-formatter".into(),
+                ..Default::default()
+            },
+        );
+        let before = config.formatters.clone();
+        let form = SettingsForm::formatter(None, &config);
+        let selected = form
+            .presets()
+            .iter()
+            .position(|preset| preset.id == "prettier")
+            .unwrap()
+            + 1;
+        let draft = form.draft_from_preset(selected, &config).unwrap();
+        assert_eq!(
+            draft.choices[0].labels[draft.choices[0].active],
+            "TypeScript"
+        );
+        assert_eq!(config.formatters, before);
+        draft.change(&config).unwrap().apply(&mut config);
+        assert_eq!(config.formatters.len(), before.len() + 1);
+        assert_eq!(
+            config.formatters[&LanguageId::JavaScript],
+            before[&LanguageId::JavaScript]
+        );
+        assert_eq!(
+            config.formatters[&LanguageId::TypeScript].command,
+            "prettier"
+        );
     }
 
     #[test]

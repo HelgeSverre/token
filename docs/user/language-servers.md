@@ -80,6 +80,19 @@ Server IDs, not language names, are the keys under `lsp.servers`.
 
 ## Add a custom server
 
+The **Start from** selector in a new server form also offers optional clangd,
+HTML, CSS/SCSS, JSON, YAML, Marksman, Lua and Bash presets. Selecting one fills an
+editable draft; it does not install the server or change existing configurations.
+The form shows prerequisites, copyable installation commands, an upstream guide,
+and Recheck for executable availability. Installation guidance is filtered by OS;
+package-manager availability is not checked automatically.
+
+Settings → Formatting offers Ruff, Prettier, rustfmt, gofmt, clang-format and
+shfmt presets with the same guidance. Save configures one language per record;
+add another record to use the same formatter for another language. Prefer a
+project's pinned Prettier executable when available. The rustfmt preset uses
+edition 2021; change its arguments if your project uses another edition.
+
 In **Settings → Language servers → + Add**:
 
 1. Choose an unused ID such as `clangd` or `lua-language-server`.

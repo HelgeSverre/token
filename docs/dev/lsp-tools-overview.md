@@ -2,6 +2,124 @@
 
 This document provides a comprehensive overview of popular Language Server Protocol (LSP) servers and code formatters across various programming languages.
 
+## Token status and rollout plan (2026-09-14)
+
+The survey below is a research backlog, not a list of bundled or validated tools.
+Check its installation commands against upstream documentation before promoting
+them into presets or executable installation recipes.
+
+### Current implementation
+
+- Six bundled LSP presets/defaults: rust-analyzer, TypeScript Language Server,
+  ty (Python), gopls, PHPantom (PHP), and Sema.
+- One bundled formatter preset/default: Ruff (Python).
+- The first optional expansion is implemented: eight additional LSP presets and
+  five additional formatter presets (twenty presets total). Defaults above remain
+  unchanged; prerequisite detection and automatic installation are still planned.
+- Both settings forms already show installation prerequisites, official guide
+  links, and commands that can be copied. Clicking a command emits
+  `Cmd::CopyToClipboard`; guide actions open the upstream URL. Recheck inspects
+  the draft's executable on the application's PATH. Update-handler tests cover
+  these actions.
+- Installation options are filtered by OS. Prerequisites are descriptive text;
+  package-manager/version detection and automatic installation are not implemented.
+- Presets copy into editable configuration records. Saved configurations remain
+  authoritative; catalog expansion does not change defaults or existing records.
+
+Sources: `src/tooling/mod.rs`, `src/tooling/presets.rs`,
+`src/settings/forms/tooling.rs`, and `src/update/settings.rs`.
+
+### First catalog expansion
+
+Implemented eight optional LSP presets: clangd, HTML, CSS/SCSS, JSON, YAML,
+Marksman, Lua Language Server, and Bash Language Server. Added five optional
+formatter presets: Prettier, rustfmt, gofmt, clang-format, and shfmt. The catalog
+now contains twenty presets while keeping the six LSP defaults and Ruff default.
+Selecting a multi-language formatter suggests an unconfigured supported language
+when available. Each saved formatter record still configures only one language.
+The rustfmt preset uses edition 2021; users of other editions must edit its arguments.
+
+Verify launch arguments, language IDs, root markers, executable names, platform
+support, prerequisites, and installation sources for each addition. Formatters
+must work with Token's stdin/stdout contract, not require in-place file mutation.
+Map only languages that Token actually recognizes. Review multi-language formatter
+preset selection so it does not silently imply every language was configured.
+
+### Conditional installation coverage
+
+These are implementation candidates, not completed compatibility tests:
+
+| Route | First-batch presets | Required checks |
+| --- | --- | --- |
+| npm | HTML, CSS, JSON, YAML, Bash LSP; Prettier (6) | Supported OS/architecture, compatible Node/npm, writable destination, verified package metadata |
+| rustup component | rustfmt (1) | Existing rustup/toolchain and component availability for the host/toolchain |
+| Existing Go SDK | gofmt (1) | Discover bundled executable; no separate package installation |
+| Native packages or Go tool install | clangd, Marksman, Lua LSP, clang-format, shfmt (5) | Individually verified OS/architecture route and prerequisites |
+
+All thirteen additions have plausible assisted setup routes on at least one
+platform. An initial npm/rustup implementation would target seven installable
+presets plus gofmt discovery. This is not a promise of universal support.
+HTML/CSS/JSON share one npm package: deduplicate jobs by package and destination,
+not by preset. Existing presets can reuse adapters as their recipes are verified.
+
+Sources checked during planning:
+[vscode-langservers-extracted](https://github.com/hrsh7th/vscode-langservers-extracted),
+[Bash LS](https://github.com/bash-lsp/bash-language-server),
+[Prettier](https://prettier.io/docs/install/),
+[Marksman](https://formulae.brew.sh/formula/marksman),
+[Lua LS](https://formulae.brew.sh/formula/lua-language-server),
+[clang-format](https://formulae.brew.sh/formula/clang-format), and
+[shfmt](https://github.com/mvdan/sh).
+YAML's npm installation and stdio launch are also verified against its
+[upstream integration guide](https://github.com/redhat-developer/yaml-language-server#building-a-custom-integration).
+Executable installation recipes still require platform validation during their
+implementation. Prettier recommends a project-local version; select its executable
+in Settings when available. The catalog's npm command provides a global fallback;
+automatic project-local resolution is not implemented.
+
+### Implementation sequence
+
+1. **Catalog and guidance:** add the thirteen presets with verified copyable
+   instructions and source links. Test mappings, preset selection, platform
+   filtering, clipboard actions, and formatter output. Smoke-test LSP
+   initialization for available tools. Preserve the default lists.
+2. **Prerequisite detection:** introduce typed requirements and asynchronous
+   runtime probes for OS, architecture, manager/runtime versions, toolchain,
+   installed executable, and destination. Report Installed, Ready to install,
+   Missing prerequisite, Unsupported platform, or Manual setup with specific
+   reasons. Use the app's environment and discovered manager paths. Separate
+   optional dependencies, such as ShellCheck for Bash linting, from requirements.
+3. **Structured installation recipes:** describe adapter, package/version,
+   requirements, scope/destination, arguments, and expected executables separately
+   from display instructions. Prefer a Token-owned user-writable npm destination.
+   Discover existing toolchain components and explain shared-toolchain changes.
+   Preserve project-local tools and custom executable choices. Handle Windows
+   npm launchers explicitly instead of assuming Unix process launching.
+4. **Opt-in Install action:** show method, package, destination, and prerequisite
+   status beside Copy command, Open guide, and Recheck. Install only after an
+   explicit action. Run typed recipes through runtime commands; never execute
+   display strings. Keep update handlers deterministic. Start with npm/rustup;
+   add uv, Go, and verified Homebrew routes later. Keep privileged, interactive,
+   source-build, and unsupported routes as manual guidance initially. Do not
+   install missing package managers or SDKs implicitly.
+5. **Job lifecycle:** track jobs independently of settings drafts, with bounded
+   logs, progress, cancel, retry, and useful failure details. Serialize jobs sharing
+   manager state. Cancellation must stop child processes and report partial
+   installation without claiming rollback. Verify resulting executables, then
+   offer the discovered absolute path to the originating draft. Save remains
+   explicit; a completed job must not overwrite another draft or custom command.
+   Recheck and normal Save/rebind handle activation.
+6. **Validation:** use fake manager executables to test eligibility and lifecycle:
+   missing/old dependencies, OS mismatch, paths with spaces, unwritable targets,
+   failed installs, duplicate requests, cancellation, and closed/stale drafts.
+   Run real installation smoke tests in disposable environments for each
+   advertised OS/architecture. Require executable verification after installation;
+   a zero exit code alone is insufficient.
+
+Track presets, distinct packages, and eligible installation recipes separately.
+Measure automation coverage after validating recipes rather than extrapolating
+from the number of copyable commands in the survey.
+
 ## Language Server Protocol (LSP) Servers
 
 ### JavaScript/TypeScript
@@ -15,6 +133,11 @@ This document provides a comprehensive overview of popular Language Server Proto
   - Extensions: `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.json`, `.jsonc`
 
 ### Python
+- **ty** - Token's default Python language server
+  - Documentation: https://docs.astral.sh/ty/
+  - Launch: `ty server`
+  - Catalog installation guidance: `uv tool install ty@latest`
+
 - **Pyright** - Microsoft's static type checker for Python
   - Repository: https://github.com/microsoft/pyright
   - Features: Type checking, completion, hover, go-to-definition, find references
@@ -70,6 +193,12 @@ This document provides a comprehensive overview of popular Language Server Proto
   - Modern Ruby language server with enhanced features
 
 ### PHP
+- **PHPantom** - Token's default PHP language server
+  - Documentation: https://phpantom-dev.github.io/phpantom_lsp/
+  - Launch: `phpantom_lsp`
+  - Catalog installation guidance: `brew install phpantom-lsp` on macOS;
+    upstream guide on other platforms
+
 - **Intelephense** - Commercial PHP language server
   - Features: Advanced PHP intelligence, completion, refactoring
   - Extensions: `.php`
@@ -153,6 +282,9 @@ This document provides a comprehensive overview of popular Language Server Proto
   - Extensions: `.ml`, `.mli`
 
 ### Other Notable LSP Servers
+- **Sema** - Token's default Sema Lisp language server
+  - Documentation: https://sema-lang.com/
+  - Launch: `sema lsp`; included with Sema, with upstream installation guidance
 - **CSS/SCSS/Less** - VSCode CSS Language Service
 - **HTML** - VSCode HTML Language Service
 - **JSON** - VSCode JSON Language Service
@@ -182,6 +314,11 @@ This document provides a comprehensive overview of popular Language Server Proto
 ### Language-Specific Formatters
 
 #### Python
+- **Ruff** - Token's default Python command formatter
+  - Documentation: https://docs.astral.sh/ruff/formatter/
+  - Catalog installation guidance: `uv tool install ruff@latest`
+  - Token invokes `ruff format --stdin-filename {file} --quiet -`
+
 - **Black** - The uncompromising Python code formatter
   - Repository: https://github.com/psf/black
   - Features: PEP 8 compliant, opinionated, deterministic, fast
@@ -407,7 +544,7 @@ Package manager legend: `brew` (Homebrew), `npm` (Node/npm), `pip`/`pipx` (Pytho
 
 ### Notes for one-click install in Token
 
-- Most tools resolve through one of: `npm i -g`, `pip`/`pipx install`, `cargo install`, `go install`, `gem install`, or `brew` — a per-tool "installer kind" enum (npm/pip/cargo/go/gem/brew/manual) plus package name covers ~90% of this table with no special-casing.
+- Many tools have package-manager installation routes, but a command and package name are not sufficient to establish automatic-install support. Use the typed requirements, execution recipes, and platform validation described in the rollout plan above; automation coverage has not yet been measured.
 - Anything requiring a JDK (JDT LS, Kotlin LS, ktlint, Google Java Format via jar) needs a JDK-present check first — don't attempt to auto-install a JVM.
 - Nix-based tools (nil, nixpkgs-fmt, alejandra) are Linux/macOS-only; hide or disable their install button on Windows.
 - ccls and SwiftFormat have no official Windows binaries — surface a "build from source" note instead of a button on Windows.
