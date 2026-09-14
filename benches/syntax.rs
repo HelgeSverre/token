@@ -647,3 +647,25 @@ fn edit_to_highlight_latency(bencher: divan::Bencher, lines: usize) {
         divan::black_box(highlights)
     });
 }
+
+// Alternate source versions so every iteration performs a real edit.
+#[divan::bench(args = ["rust", "markdown", "html", "vue"])]
+fn alternating_document_edit(bencher: divan::Bencher, lang: &str) {
+    let (source, language) = match lang {
+        "rust" => (RUST_SAMPLE, LanguageId::Rust),
+        "markdown" => (MARKDOWN_SAMPLE, LanguageId::Markdown),
+        "html" => (HTML_SAMPLE, LanguageId::Html),
+        "vue" => (HTML_SAMPLE, LanguageId::Vue),
+        _ => unreachable!(),
+    };
+    let modified = format!("\n{source}");
+    let mut state = ParserState::new();
+    let document = DocumentId(1);
+    state.parse_and_highlight(source, language, document, 0);
+    let mut revision = 0;
+    bencher.bench_local(|| {
+        revision += 1;
+        let text = if revision % 2 == 0 { source } else { &modified };
+        divan::black_box(state.parse_and_highlight(text, language, document, revision))
+    });
+}
