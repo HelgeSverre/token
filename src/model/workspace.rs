@@ -497,6 +497,15 @@ pub struct Workspace {
     pub scroll_offset: usize,
 }
 
+/// Last navigation synchronized with the explorer, independent of tree selection.
+#[derive(Debug, Clone)]
+pub(crate) struct AutoRevealTarget {
+    pub editor_id: super::EditorId,
+    pub path: PathBuf,
+    pub workspace_root: PathBuf,
+    pub explorer_visible: bool,
+}
+
 impl Workspace {
     /// Create a new workspace from a directory
     pub fn new(root: PathBuf, metrics: &ScaledMetrics) -> std::io::Result<Self> {

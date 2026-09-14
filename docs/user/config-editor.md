@@ -159,6 +159,19 @@ appear in the status bar. Move the affected JSON file out of `sessions/` to star
 saving a fresh session. Metadata is limited to 4 MiB, 512 tabs, 128 panes and
 4,096 selections per tab.
 
+### File Explorer navigation
+
+**Settings → Files & Session → File Explorer → Reveal active file** controls
+whether navigating to a file expands its parent folders, selects it, and scrolls
+it into view. This is enabled by default; set `explorer_auto_reveal: false` in
+`config.yaml` to disable it.
+
+Automatic reveal keeps keyboard focus where it is and leaves a hidden explorer
+closed. Manual tree selection and scrolling remain in place until you navigate
+to another file or editor pane. Files outside the workspace and untitled tabs
+leave the tree selection unchanged. The explicit **Reveal Active File** command
+still opens and focuses the explorer when automatic reveal is disabled.
+
 ### External file changes
 
 `auto_reload: true` (the default) reloads open, unmodified text files when they

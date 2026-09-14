@@ -71,6 +71,10 @@ pub struct EditorConfig {
     #[serde(default = "default_true")]
     pub auto_reload: bool,
 
+    /// Reveal the active file in the explorer without moving keyboard focus.
+    #[serde(default = "default_true")]
+    pub explorer_auto_reveal: bool,
+
     /// Status bar font size in logical px (default: 12, editor text is 14)
     #[serde(default = "default_status_bar_font_size")]
     pub status_bar_font_size: f32,
@@ -493,6 +497,7 @@ impl Default for EditorConfig {
             show_scrollbar: true,
             indent_guides: true,
             auto_reload: true,
+            explorer_auto_reveal: true,
             status_bar_font_size: default_status_bar_font_size(),
             hover_on_mouse: true,
             hover_delay_ms: default_hover_delay_ms(),

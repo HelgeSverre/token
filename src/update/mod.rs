@@ -194,6 +194,7 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let result = merge_cmds(result, find_search);
     let result = merge_cmds(result, workspace_symbols::reconcile(model));
     let result = merge_cmds(result, hover::reconcile(model));
+    let result = merge_cmds(result, workspace::reconcile_auto_reveal(model));
     if was_loading != model.ui.is_loading && result.as_ref().is_none_or(|cmd| !cmd.needs_redraw()) {
         merge_cmds(result, Some(Cmd::redraw_status_bar()))
     } else {

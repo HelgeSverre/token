@@ -90,6 +90,8 @@ fn test_default_config() {
     assert!(legacy.indent_guides);
     assert!(config.auto_reload);
     assert!(legacy.auto_reload);
+    assert!(config.explorer_auto_reveal);
+    assert!(legacy.explorer_auto_reveal);
     assert!(config.session.restore && config.session.save_on_exit);
     assert!(legacy.session.restore && legacy.session.save_on_exit);
     let opted_out: EditorConfig =
@@ -124,6 +126,7 @@ fn test_config_serialize_deserialize() {
         show_scrollbar: true,
         indent_guides: false,
         auto_reload: true,
+        explorer_auto_reveal: false,
         status_bar_font_size: 12.0,
         hover_on_mouse: true,
         hover_delay_ms: 300,
@@ -139,6 +142,7 @@ fn test_config_serialize_deserialize() {
     assert_eq!(parsed.editor_font, "Menlo");
     assert_eq!(parsed.ui_font, "Inter");
     assert!(!parsed.indent_guides);
+    assert!(!parsed.explorer_auto_reveal);
 }
 
 #[test]

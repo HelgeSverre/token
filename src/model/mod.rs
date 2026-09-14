@@ -556,6 +556,16 @@ impl AppModel {
                 self.dock_layout.left.is_open = workspace.sidebar_visible;
                 self.dock_layout.left.size_logical = workspace.sidebar_width_logical;
                 self.workspace = Some(workspace);
+                self.ui.explorer_auto_reveal = None;
+                if let Some(position) = self
+                    .dock_layout
+                    .find_panel(crate::panel::PanelId::FILE_EXPLORER)
+                {
+                    self.dock_layout
+                        .dock_mut(position)
+                        .activate(crate::panel::PanelId::FILE_EXPLORER);
+                }
+                self.recalculate_viewports();
                 self.ui
                     .set_status(format!("Opened workspace: {}", root.display()));
             }

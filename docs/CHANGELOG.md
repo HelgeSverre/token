@@ -22,7 +22,13 @@ All notable changes to Token are documented in this file.
 
 ### Workspace
 
+- Automatically reveal the active file in File Explorer when navigating, without
+  moving keyboard focus or opening a hidden explorer. Disable this in Settings →
+  Files & Session → Reveal active file or with `explorer_auto_reveal: false`.
+
 - Use right/down chevrons instead of plus/minus signs for File Explorer folders.
+- Opening a workspace shows File Explorer and refreshes the full window so the
+  command palette disappears after using Open Folder.
 
 ### CSV
 
