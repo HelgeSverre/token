@@ -692,6 +692,29 @@ mod tests {
     }
 
     #[test]
+    fn reveal_active_file_re_expands_a_collapsed_root() {
+        let mut model = AppModel::new(800, 600, 1.0);
+        let mut ws = test_workspace();
+        ws.collapse_folder(&ws.root.clone()); // simulate the user collapsing the root row
+        assert!(!ws.expanded_folders.contains(&ws.root));
+        model.workspace = Some(ws);
+        model.document_mut().file_path = Some(PathBuf::from("/test/src/deep/nested/file.rs"));
+
+        update_workspace(&mut model, WorkspaceMsg::RevealActiveFile);
+
+        let ws = model.workspace.as_ref().unwrap();
+        assert!(
+            ws.expanded_folders.contains(&ws.root),
+            "revealing a file must re-expand a collapsed root, or every \
+             descendant stays hidden despite their own expansion state"
+        );
+        assert!(ws.expanded_folders.contains(&PathBuf::from("/test/src")));
+        assert!(ws
+            .expanded_folders
+            .contains(&PathBuf::from("/test/src/deep/nested")));
+    }
+
+    #[test]
     fn reveal_active_file_outside_workspace_keeps_status_behavior() {
         let mut model = AppModel::new(800, 600, 1.0);
         model.workspace = Some(test_workspace());

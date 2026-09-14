@@ -594,10 +594,12 @@ impl Workspace {
 
     /// Reveal a file in the tree (expand parent folders and select)
     pub fn reveal_file(&mut self, path: &Path) {
-        // Expand all parent folders
+        // Expand all parent folders, including the root itself — otherwise
+        // revealing a file while the root row is collapsed leaves every
+        // descendant hidden even though their own expansion state is set.
         let mut current = path.parent();
         while let Some(parent) = current {
-            if parent.starts_with(&self.root) && parent != self.root {
+            if parent.starts_with(&self.root) {
                 self.expand_folder(parent);
             }
             current = parent.parent();
