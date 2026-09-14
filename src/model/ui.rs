@@ -1709,6 +1709,7 @@ impl UiState {
     pub fn open_modal(&mut self, state: ModalState) {
         self.find_selection_drag = None;
         self.scrollbar_drag = None;
+        self.remember_palette();
         self.active_modal = Some(state);
         self.focus = FocusTarget::Modal;
         self.modal_hover_row = None;
@@ -1721,12 +1722,22 @@ impl UiState {
     pub fn close_modal(&mut self) {
         self.find_selection_drag = None;
         self.scrollbar_drag = None;
+        self.remember_palette();
         self.active_modal = None;
         self.focus = FocusTarget::Editor;
         self.modal_hover_row = None;
         self.modal_hover_choice = None;
         self.settings_hover_action = None;
         self.modal_close_hovered = false;
+    }
+
+    /// Preserve search state on every dismissal, including modal replacement.
+    fn remember_palette(&mut self) {
+        if matches!(self.active_modal, Some(ModalState::CommandPalette(_))) {
+            if let Some(ModalState::CommandPalette(state)) = self.active_modal.take() {
+                self.last_command_palette = Some(state);
+            }
+        }
     }
 
     /// Set focus to the editor

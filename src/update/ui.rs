@@ -200,17 +200,7 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
                     ModalState::Settings(state)
                 }
                 ModalId::CommandPalette => {
-                    // Cmd+Shift+A: Search Everywhere, pre-focused on All
-                    // (overlay-surface.md Phase 4 "Bindings").
-                    let mut state = model.ui.last_command_palette.clone().unwrap_or_default();
-                    state.files_available = model.workspace.is_some();
-                    resolve_palette_rows(&mut state, &model.command_history);
-                    state.active_tab = SearchTab::All;
-                    // Rebuild (not just lazily fill) on every open — the
-                    // workspace/file tree may have changed since the index
-                    // was last cached in `last_command_palette`.
-                    state.files = build_file_finder_state(model, &state.input());
-                    ModalState::CommandPalette(state)
+                    ModalState::CommandPalette(reopened_palette(model, SearchTab::All))
                 }
                 ModalId::GotoLine => ModalState::GotoLine(GotoLineState::default()),
                 // Needs the caret context captured at request time.
@@ -262,12 +252,7 @@ pub(super) fn update_ui(model: &mut AppModel, msg: UiMsg) -> Option<Cmd> {
             // Files tab (overlay-surface.md Phase 4: the standalone File
             // Finder modal is retired). With no workspace, Files is
             // `Unavailable` rather than refusing to open.
-            let mut state = model.ui.last_command_palette.clone().unwrap_or_default();
-            state.files_available = model.workspace.is_some();
-            resolve_palette_rows(&mut state, &model.command_history);
-            state.active_tab = SearchTab::Files;
-            // Rebuild on every open, see `ToggleModal`'s CommandPalette arm.
-            state.files = build_file_finder_state(model, &state.input());
+            let state = reopened_palette(model, SearchTab::Files);
             model.ui.open_modal(ModalState::CommandPalette(state));
             Some(Cmd::Redraw)
         }
@@ -553,12 +538,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
     }
     match msg {
         ModalMsg::OpenCommandPalette => {
-            let mut state = model.ui.last_command_palette.clone().unwrap_or_default();
-            state.files_available = model.workspace.is_some();
-            resolve_palette_rows(&mut state, &model.command_history);
-            state.active_tab = SearchTab::All;
-            // Rebuild on every open, see `UiMsg::ToggleModal`'s CommandPalette arm.
-            state.files = build_file_finder_state(model, &state.input());
+            let state = reopened_palette(model, SearchTab::All);
             model.ui.open_modal(ModalState::CommandPalette(state));
             Some(Cmd::Redraw)
         }
@@ -1259,7 +1239,6 @@ fn confirm_search_everywhere(model: &mut AppModel, state: CommandPaletteState) -
                 let cmd_id = cmd_match.def.id;
                 model.command_history.record_execution(cmd_id);
                 let history = model.command_history.clone();
-                model.ui.last_command_palette = Some(state);
                 model.ui.close_modal();
                 let exec = execute_command(model, cmd_id).unwrap_or(Cmd::Redraw);
                 return Some(Cmd::Batch(vec![exec, Cmd::SaveCommandHistory { history }]));
@@ -1289,7 +1268,6 @@ fn confirm_search_everywhere(model: &mut AppModel, state: CommandPaletteState) -
                     let cmd_id = cmd_match.def.id;
                     model.command_history.record_execution(cmd_id);
                     let history = model.command_history.clone();
-                    model.ui.last_command_palette = Some(state);
                     model.ui.close_modal();
                     let exec = execute_command(model, cmd_id).unwrap_or(Cmd::Redraw);
                     return Some(Cmd::Batch(vec![exec, Cmd::SaveCommandHistory { history }]));
@@ -1904,6 +1882,21 @@ fn modal_scroll_to(model: &mut AppModel, position: Option<usize>, delta: isize) 
     }
     *scroll = new_scroll;
     Some(Cmd::Redraw)
+}
+
+/// Restore the live query when retargeting, or the last dismissed session.
+/// Rebuild derived results because command history and workspace files can change.
+fn reopened_palette(model: &AppModel, tab: SearchTab) -> CommandPaletteState {
+    let mut state = match &model.ui.active_modal {
+        Some(ModalState::CommandPalette(state)) => state.clone(),
+        _ => model.ui.last_command_palette.clone().unwrap_or_default(),
+    };
+    state.files_available = model.workspace.is_some();
+    resolve_palette_rows(&mut state, &model.command_history);
+    state.active_tab = tab;
+    state.files = build_file_finder_state(model, &state.input());
+    state.editable.select_all();
+    state
 }
 
 /// The remembered find state, with its selection scope re-captured from
@@ -2933,6 +2926,92 @@ mod tests {
             UiMsg::Modal(ModalMsg::SetInput(query.to_owned())),
         );
         (model, dir)
+    }
+
+    #[test]
+    fn palette_reopening_selects_remembered_query_for_every_entry_point() {
+        for query in ["", "alpha", "é漢🙂"] {
+            for open in [
+                UiMsg::ToggleModal(ModalId::CommandPalette),
+                UiMsg::OpenFuzzyFileFinder,
+                UiMsg::Modal(ModalMsg::OpenCommandPalette),
+            ] {
+                for dismiss in [
+                    UiMsg::Modal(ModalMsg::Close),
+                    UiMsg::ToggleModal(ModalId::CommandPalette),
+                    UiMsg::ToggleModal(ModalId::GotoLine),
+                ] {
+                    let mut model = AppModel::new(80, 60, 1.0);
+                    update_ui(&mut model, UiMsg::Modal(ModalMsg::OpenCommandPalette));
+                    update_ui(&mut model, UiMsg::Modal(ModalMsg::SetInput(query.into())));
+                    update_ui(&mut model, dismiss);
+                    update_ui(&mut model, open.clone());
+                    let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal else {
+                        panic!("expected palette");
+                    };
+                    assert_eq!(state.input(), query);
+                    assert_eq!(state.editable.selected_text(), query);
+                    update_ui(&mut model, UiMsg::Modal(ModalMsg::InsertChar('x')));
+                    let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal else {
+                        panic!("expected palette");
+                    };
+                    assert_eq!(state.input(), "x");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn palette_retargeting_uses_live_query_and_tab_switch_preserves_selection() {
+        let (mut model, _dir) = workspace_model_with_query("alpha");
+        update_ui(&mut model, UiMsg::OpenFuzzyFileFinder);
+        assert_tab(&model, SearchTab::Files);
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::NextTab));
+        let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal else {
+            panic!("expected palette");
+        };
+        assert_eq!(state.editable.selected_text(), "alpha");
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::MoveCursorLeft));
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::NextTab));
+        let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal else {
+            panic!("expected palette");
+        };
+        assert!(!state.editable.has_selection());
+    }
+
+    #[test]
+    fn palette_command_confirmation_remembers_query() {
+        for tab in [SearchTab::All, SearchTab::Commands] {
+            let mut model = AppModel::new(80, 60, 1.0);
+            update_ui(&mut model, UiMsg::Modal(ModalMsg::OpenCommandPalette));
+            update_ui(
+                &mut model,
+                UiMsg::Modal(ModalMsg::SetInput("Open File".into())),
+            );
+            let Some(ModalState::CommandPalette(state)) = &mut model.ui.active_modal else {
+                panic!("expected palette");
+            };
+            state.active_tab = tab;
+            assert_eq!(state.matches[0].def.id, CommandId::OpenFile);
+            update_ui(&mut model, UiMsg::Modal(ModalMsg::Confirm));
+            update_ui(&mut model, UiMsg::Modal(ModalMsg::OpenCommandPalette));
+            let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal else {
+                panic!("expected palette");
+            };
+            assert_eq!(state.editable.selected_text(), "Open File");
+        }
+    }
+
+    #[test]
+    fn palette_file_confirmation_remembers_query() {
+        let (mut model, _dir) = workspace_model_with_query("alpha");
+        update_ui(&mut model, UiMsg::OpenFuzzyFileFinder);
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::Confirm));
+        update_ui(&mut model, UiMsg::Modal(ModalMsg::OpenCommandPalette));
+        let Some(ModalState::CommandPalette(state)) = &model.ui.active_modal else {
+            panic!("expected palette");
+        };
+        assert_eq!(state.editable.selected_text(), "alpha");
     }
 
     #[test]

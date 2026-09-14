@@ -176,6 +176,30 @@ fn workspace_symbols_follow_workspace_scope_and_per_server_enablement() {
     assert!(!palette(&model).symbols.available);
 }
 
+#[test]
+fn palette_symbol_navigation_remembers_and_selects_query() {
+    for tab in [0, 3] {
+        let (mut model, _directory) = fixture();
+        modal(&mut model, ModalMsg::SetInput("symbol".into()));
+        modal(&mut model, ModalMsg::ActivateTab(tab));
+        let request = model.ui.workspace_symbol_request.clone().unwrap();
+        reply(&mut model, request, 1);
+        let row = if tab == 0 {
+            token::update::search_everywhere_sections(palette(&model))
+                .iter()
+                .take_while(|(title, _)| *title != Some("Symbols"))
+                .map(|(_, count)| count)
+                .sum()
+        } else {
+            0
+        };
+        modal(&mut model, ModalMsg::ActivateRow(row));
+        assert!(model.ui.active_modal.is_none());
+        modal(&mut model, ModalMsg::OpenCommandPalette);
+        assert_eq!(palette(&model).editable.selected_text(), "symbol");
+    }
+}
+
 fn file_request(command: Cmd) -> Option<token::model::FileOpenRequest> {
     match command {
         Cmd::PrepareFileOpen(request) => Some(request),
