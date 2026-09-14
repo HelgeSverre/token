@@ -2454,13 +2454,14 @@ fn handle_left_click(
             if *group_id != model.editor_area.focused_group_id {
                 update(model, Msg::Layout(LayoutMsg::FocusGroup(*group_id)));
             }
+            let mut cmd = None;
             if let Some(editor) = model.editor_area.focused_editor() {
                 if let token::model::TabContent::BinaryPlaceholder(ref state) = editor.tab_content {
                     let path = state.path.clone();
-                    update(model, Msg::Layout(LayoutMsg::OpenWithDefaultApp(path)));
+                    cmd = update(model, Msg::Layout(LayoutMsg::OpenWithDefaultApp(path)));
                 }
             }
-            EventResult::consumed_with_focus(FocusTarget::Editor)
+            EventResult::consumed_with_cmd(cmd, FocusTarget::Editor)
         }
 
         // Dock resize handle
