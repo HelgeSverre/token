@@ -295,6 +295,15 @@ bindings:
   - key: "cmd+backspace"
     command: DeleteLine
 
+  - key: "alt+shift+up"
+    command: MoveLinesUp
+
+  - key: "alt+shift+down"
+    command: MoveLinesDown
+
+  # ponytail: Cmd+Shift+Up/Down are intentionally unbound. Revisit semantic
+  # code-block movement only if Token gains a compelling syntax/LSP-based design.
+
   # Tab handling - context-aware
   # Partial acceptance takes priority over movement only while ghost text shows.
   - key: "cmd+right"

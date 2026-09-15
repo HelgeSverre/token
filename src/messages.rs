@@ -158,6 +158,10 @@ pub enum DocumentMsg {
     Paste,
     /// Duplicate current line or selection (Cmd+D)
     Duplicate,
+    /// Move current or selected lines up (Alt+Shift+Up)
+    MoveLinesUp,
+    /// Move current or selected lines down (Alt+Shift+Down)
+    MoveLinesDown,
     /// Indent selected lines (Tab with selection)
     IndentLines,
     /// Unindent current line or selected lines (Shift+Tab)

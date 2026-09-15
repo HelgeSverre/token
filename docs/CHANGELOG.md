@@ -6,6 +6,10 @@ All notable changes to Token are documented in this file.
 
 ## Unreleased
 
+### Editing
+
+- Move the current or selected lines up and down with Alt+Shift+Up/Down.
+
 ### Command line
 
 - Add `token --completions <shell>` to print shell completion scripts for bash,

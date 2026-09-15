@@ -163,6 +163,10 @@ pub enum Command {
     DeleteLine,
     /// Duplicate current line or selection
     Duplicate,
+    /// Move current or selected lines up
+    MoveLinesUp,
+    /// Move current or selected lines down
+    MoveLinesDown,
     /// Indent selected lines
     IndentLines,
     /// Unindent selected lines
@@ -498,6 +502,8 @@ impl Command {
             DeleteWordForward => vec![Msg::Document(DocumentMsg::DeleteWordForward)],
             DeleteLine => vec![Msg::Document(DocumentMsg::DeleteLine)],
             Duplicate => vec![Msg::Document(DocumentMsg::Duplicate)],
+            MoveLinesUp => vec![Msg::Document(DocumentMsg::MoveLinesUp)],
+            MoveLinesDown => vec![Msg::Document(DocumentMsg::MoveLinesDown)],
             IndentLines => vec![Msg::Document(DocumentMsg::IndentLines)],
             UnindentLines => vec![Msg::Document(DocumentMsg::UnindentLines)],
             InsertTab => vec![Msg::Document(DocumentMsg::InsertChar('\t'))],
@@ -806,6 +812,8 @@ impl Command {
             DeleteWordForward => "Delete Word Forward",
             DeleteLine => "Delete Line",
             Duplicate => "Duplicate Line",
+            MoveLinesUp => "Move Lines Up",
+            MoveLinesDown => "Move Lines Down",
             IndentLines => "Indent",
             UnindentLines => "Unindent",
             InsertTab => "Insert Tab",

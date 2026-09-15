@@ -4,6 +4,7 @@ mod common;
 
 use common::{buffer_to_string, test_model, test_model_with_selection};
 use token::messages::{AppMsg, DocumentMsg, Msg};
+use token::model::Position;
 use token::update::update;
 
 // ========================================================================
@@ -439,6 +440,69 @@ fn test_duplicate_can_be_undone() {
 // ========================================================================
 // Delete Line tests (Cmd+Backspace)
 // ========================================================================
+
+#[test]
+fn test_move_current_line_down_and_up_preserves_column() {
+    let mut model = test_model("one\ntwo\nthree", 1, 2);
+
+    update(&mut model, Msg::Document(DocumentMsg::MoveLinesDown));
+    assert_eq!(buffer_to_string(&model), "one\nthree\ntwo");
+    assert_eq!(model.editor().primary_cursor().line, 2);
+    assert_eq!(model.editor().primary_cursor().column, 2);
+
+    update(&mut model, Msg::Document(DocumentMsg::MoveLinesUp));
+    assert_eq!(buffer_to_string(&model), "one\ntwo\nthree");
+    assert_eq!(model.editor().primary_cursor().line, 1);
+    assert_eq!(model.editor().primary_cursor().column, 2);
+}
+
+#[test]
+fn test_move_selected_lines_preserves_reversed_selection_and_undo_redo() {
+    let mut model = test_model_with_selection("zero\none\ntwo\nthree\n", 2, 2, 1, 1);
+
+    update(&mut model, Msg::Document(DocumentMsg::MoveLinesUp));
+    assert_eq!(buffer_to_string(&model), "one\ntwo\nzero\nthree\n");
+    assert_eq!(model.editor().selections[0].anchor, Position::new(1, 2));
+    assert_eq!(model.editor().selections[0].head, Position::new(0, 1));
+    assert_eq!(
+        model.editor().primary_cursor().to_position(),
+        Position::new(0, 1)
+    );
+
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(buffer_to_string(&model), "zero\none\ntwo\nthree\n");
+    assert_eq!(model.editor().selections[0].anchor, Position::new(2, 2));
+    assert_eq!(model.editor().selections[0].head, Position::new(1, 1));
+
+    update(&mut model, Msg::Document(DocumentMsg::Redo));
+    assert_eq!(buffer_to_string(&model), "one\ntwo\nzero\nthree\n");
+    assert_eq!(model.editor().selections[0].anchor, Position::new(1, 2));
+    assert_eq!(model.editor().selections[0].head, Position::new(0, 1));
+}
+
+#[test]
+fn test_move_lines_preserves_crlf_and_unterminated_final_line() {
+    let mut model = test_model("one\r\ntwo", 1, 1);
+
+    update(&mut model, Msg::Document(DocumentMsg::MoveLinesUp));
+
+    assert_eq!(buffer_to_string(&model), "two\r\none");
+    assert_eq!(
+        model.editor().primary_cursor().to_position(),
+        Position::new(0, 1)
+    );
+}
+
+#[test]
+fn test_move_line_at_document_boundary_is_not_recorded() {
+    let mut model = test_model("one\ntwo", 0, 0);
+    let undo_count = model.document().undo_stack.len();
+
+    update(&mut model, Msg::Document(DocumentMsg::MoveLinesUp));
+
+    assert_eq!(buffer_to_string(&model), "one\ntwo");
+    assert_eq!(model.document().undo_stack.len(), undo_count);
+}
 
 #[test]
 fn test_delete_line_first_line() {

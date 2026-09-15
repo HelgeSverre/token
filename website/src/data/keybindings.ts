@@ -41,6 +41,8 @@ export const keybindings: KeybindingCategory[] = [
       { action: "Select All", keys: "⌘A", command: "SelectAll" },
       { action: "Duplicate", keys: "⌘D", command: "Duplicate" },
       { action: "Delete Line", keys: "⌘⌫", command: "DeleteLine" },
+      { action: "Move Lines Up", keys: "⌥⇧↑", command: "MoveLinesUp" },
+      { action: "Move Lines Down", keys: "⌥⇧↓", command: "MoveLinesDown" },
       { action: "Delete Word Backward", keys: "⌥⌫", command: "DeleteWordBackward" },
       { action: "Delete Word Forward", keys: "⌥⌦", command: "DeleteWordForward" },
       { action: "Indent", keys: "⇥", command: "IndentLines", when: ["has_selection"] },

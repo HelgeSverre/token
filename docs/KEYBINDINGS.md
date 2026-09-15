@@ -201,6 +201,8 @@ All navigation commands work with Shift to extend selection:
 | Delete Word Backward| Alt+Backspace   | `DeleteWordBackward` |               |
 | Delete Word Forward | Alt+Delete      | `DeleteWordForward`  |               |
 | Delete Line         | Cmd+Backspace   | `DeleteLine`         |               |
+| Move Lines Up       | Alt+Shift+Up    | `MoveLinesUp`        |               |
+| Move Lines Down     | Alt+Shift+Down  | `MoveLinesDown`      |               |
 | Indent              | Tab             | `IndentLines`        | has_selection |
 | Insert Tab          | Tab             | `InsertTab`          | no_selection  |
 | Unindent            | Shift+Tab       | `UnindentLines`      |               |

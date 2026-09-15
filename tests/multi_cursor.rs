@@ -8,7 +8,7 @@
 
 mod common;
 
-use common::test_model;
+use common::{test_model, test_model_multi_cursor};
 use token::messages::{DocumentMsg, EditorMsg, Msg};
 use token::model::{Cursor, Position, Selection};
 use token::update::update;
@@ -321,6 +321,43 @@ fn test_edge_cursor_helpers() {
 // ========================================================================
 // Multi-Cursor DeleteLine Tests
 // ========================================================================
+
+#[test]
+fn test_move_lines_down_moves_disjoint_multi_cursor_blocks_atomically() {
+    let mut model = test_model_multi_cursor(
+        "line 0\nline 1\nline 2\nline 3\nline 4\nline 5",
+        &[(1, 2), (3, 3)],
+    );
+
+    update(&mut model, Msg::Document(DocumentMsg::MoveLinesDown));
+
+    assert_eq!(
+        model.document().buffer.to_string(),
+        "line 0\nline 2\nline 1\nline 4\nline 3\nline 5"
+    );
+    assert_eq!(model.editor().cursors[0].to_position(), Position::new(2, 2));
+    assert_eq!(model.editor().cursors[1].to_position(), Position::new(4, 3));
+    assert_eq!(model.document().undo_stack.len(), 1);
+
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(
+        model.document().buffer.to_string(),
+        "line 0\nline 1\nline 2\nline 3\nline 4\nline 5"
+    );
+    assert_eq!(model.editor().cursors[0].to_position(), Position::new(1, 2));
+    assert_eq!(model.editor().cursors[1].to_position(), Position::new(3, 3));
+}
+
+#[test]
+fn test_move_lines_up_leaves_boundary_block_and_moves_other_block() {
+    let mut model = test_model_multi_cursor("zero\none\ntwo\nthree", &[(0, 1), (2, 2)]);
+
+    update(&mut model, Msg::Document(DocumentMsg::MoveLinesUp));
+
+    assert_eq!(model.document().buffer.to_string(), "zero\ntwo\none\nthree");
+    assert_eq!(model.editor().cursors[0].to_position(), Position::new(0, 1));
+    assert_eq!(model.editor().cursors[1].to_position(), Position::new(1, 2));
+}
 
 #[test]
 fn test_delete_line_multi_cursor_deletes_all_lines() {

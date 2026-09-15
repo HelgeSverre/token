@@ -96,6 +96,35 @@ fn undo_pane_state_redo_restores_nonempty_selections_and_new_branch_discards_red
 }
 
 #[test]
+fn move_lines_undo_redo_restores_author_and_peer_pane_states() {
+    let mut model = common::test_model("zero\none\ntwo\nthree", 2, 2);
+    let peer = model.editor().id.unwrap();
+    update(
+        &mut model,
+        Msg::Layout(LayoutMsg::SplitFocused(SplitDirection::Vertical)),
+    );
+    let author = model.editor().id.unwrap();
+    model.editor_mut().cursors = vec![Cursor::at(1, 1)];
+    model.editor_mut().selections = vec![Selection::new(Position::new(1, 1))];
+    let author_before = state(&model.editor_area.editors[&author]);
+    let peer_before = state(&model.editor_area.editors[&peer]);
+
+    update(&mut model, Msg::Document(DocumentMsg::MoveLinesDown));
+    assert_eq!(model.document().buffer.to_string(), "zero\ntwo\none\nthree");
+    let author_after = state(&model.editor_area.editors[&author]);
+    let peer_after = state(&model.editor_area.editors[&peer]);
+    assert_eq!(author_after.0[0].to_position(), Position::new(2, 1));
+
+    update(&mut model, Msg::Document(DocumentMsg::Undo));
+    assert_eq!(state(&model.editor_area.editors[&author]), author_before);
+    assert_eq!(state(&model.editor_area.editors[&peer]), peer_before);
+
+    update(&mut model, Msg::Document(DocumentMsg::Redo));
+    assert_eq!(state(&model.editor_area.editors[&author]), author_after);
+    assert_eq!(state(&model.editor_area.editors[&peer]), peer_after);
+}
+
+#[test]
 fn undo_pane_state_typing_captures_before_selection_normalization() {
     let mut model = common::test_model_multi_cursor("abcdefgh", &[(0, 1), (0, 6)]);
     model.editor_mut().selections = vec![

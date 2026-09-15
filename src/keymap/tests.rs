@@ -205,6 +205,35 @@ fn test_context_aware_tab_with_selection() {
 }
 
 #[test]
+fn test_move_lines_default_bindings() {
+    let keymap = Keymap::with_bindings(default_bindings());
+    let modifiers = Modifiers::ALT | Modifiers::SHIFT;
+
+    assert_eq!(
+        keymap.lookup(&Keystroke::new(KeyCode::Up, modifiers)),
+        Some(Command::MoveLinesUp)
+    );
+    assert_eq!(
+        keymap.lookup(&Keystroke::new(KeyCode::Down, modifiers)),
+        Some(Command::MoveLinesDown)
+    );
+    assert_eq!(
+        keymap.lookup(&Keystroke::new(
+            KeyCode::Up,
+            Modifiers::cmd() | Modifiers::SHIFT
+        )),
+        None
+    );
+    assert_eq!(
+        keymap.lookup(&Keystroke::new(
+            KeyCode::Down,
+            Modifiers::cmd() | Modifiers::SHIFT
+        )),
+        None
+    );
+}
+
+#[test]
 fn test_context_aware_tab_without_selection() {
     let keymap = Keymap::with_bindings(load_default_keymap());
     let tab = Keystroke::key(KeyCode::Tab);

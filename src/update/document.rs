@@ -591,6 +591,119 @@ fn insert_at_cursors(
     apply_at_cursors(model, &planned, &ends, before)
 }
 
+#[derive(Clone, Copy)]
+enum LineMoveDirection {
+    Up,
+    Down,
+}
+
+fn moved_line(line: usize, runs: &[Range<usize>], direction: LineMoveDirection) -> usize {
+    for run in runs {
+        match direction {
+            LineMoveDirection::Up => {
+                if run.contains(&line) {
+                    return line - 1;
+                }
+                if line == run.start - 1 {
+                    return run.end - 1;
+                }
+            }
+            LineMoveDirection::Down => {
+                if run.contains(&line) {
+                    return line + 1;
+                }
+                if line == run.end {
+                    return run.start;
+                }
+            }
+        }
+    }
+    line
+}
+
+fn move_lines(model: &mut AppModel, direction: LineMoveDirection) -> Option<Cmd> {
+    let document_id = model.editor_area.focused_document_id()?;
+    let editor_id = model.editor_area.focused_editor_id()?;
+    let document = model.document();
+    let line_count = document.line_count();
+    let covered = lines_covered_by_all_cursors(model);
+    let runs: Vec<_> = merge_ranges(covered.into_iter().map(|line| line..line + 1).collect())
+        .into_iter()
+        .filter(|run| match direction {
+            LineMoveDirection::Up => run.start > 0,
+            LineMoveDirection::Down => run.end < line_count,
+        })
+        .collect();
+
+    if runs.is_empty() {
+        model.reset_cursor_blink();
+        model.ensure_cursor_visible();
+        return Some(redraw_with_syntax_parse(model));
+    }
+
+    let mut planned = Vec::with_capacity(runs.len());
+    for run in &runs {
+        let affected = match direction {
+            LineMoveDirection::Up => run.start - 1..run.end,
+            LineMoveDirection::Down => run.start..run.end + 1,
+        };
+        let contents: Vec<_> = affected
+            .clone()
+            .map(|line| document.get_line_cow(line).unwrap_or_default().into_owned())
+            .collect();
+        let endings: Vec<_> = affected
+            .clone()
+            .map(|line| {
+                let raw = document.get_line(line).unwrap_or_default();
+                let content = document.get_line_cow(line).unwrap_or_default();
+                raw.strip_prefix(content.as_ref())
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+            .collect();
+        let reordered = match direction {
+            LineMoveDirection::Up => (1..contents.len()).chain(0..1).collect::<Vec<_>>(),
+            LineMoveDirection::Down => (contents.len() - 1..contents.len())
+                .chain(0..contents.len() - 1)
+                .collect(),
+        };
+        let inserted =
+            reordered
+                .into_iter()
+                .zip(endings)
+                .fold(String::new(), |mut text, (index, ending)| {
+                    text.push_str(&contents[index]);
+                    text.push_str(&ending);
+                    text
+                });
+        let start = document.cursor_to_offset(affected.start, 0);
+        let end = if affected.end < line_count {
+            document.cursor_to_offset(affected.end, 0)
+        } else {
+            document.buffer.len_chars()
+        };
+        planned.push(PlannedEdit {
+            start,
+            deleted: document.buffer.slice(start..end).to_string(),
+            inserted,
+        });
+    }
+    planned.sort_unstable_by_key(|edit| std::cmp::Reverse(edit.start));
+
+    let mut state = EditorEditState::capture(editor_id, model.editor());
+    state.map_lines(|line| moved_line(line, &runs, direction));
+    model.reset_cursor_blink();
+    apply_planned_edits(
+        model,
+        document_id,
+        &planned,
+        EditCarets::Restore {
+            editor_id,
+            state: &state,
+        },
+    )
+}
+
 fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> {
     // Skip text operations for non-text tabs
     if !matches!(model.editor().tab_content, crate::model::TabContent::Text) {
@@ -667,6 +780,9 @@ fn update_document_inner(model: &mut AppModel, msg: DocumentMsg) -> Option<Cmd> 
         }
 
         DocumentMsg::Duplicate => duplicate_at_cursors(model),
+
+        DocumentMsg::MoveLinesUp => move_lines(model, LineMoveDirection::Up),
+        DocumentMsg::MoveLinesDown => move_lines(model, LineMoveDirection::Down),
 
         DocumentMsg::IndentLines => indent_lines(model, false),
         DocumentMsg::UnindentLines => indent_lines(model, true),

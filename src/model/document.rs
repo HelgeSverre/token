@@ -68,6 +68,16 @@ impl EditorEditState {
         editor.occurrence_state = None;
         editor.clear_selection_history();
     }
+
+    pub(crate) fn map_lines(&mut self, mut map: impl FnMut(usize) -> usize) {
+        for cursor in &mut self.cursors {
+            cursor.line = map(cursor.line);
+        }
+        for selection in &mut self.selections {
+            selection.anchor.line = map(selection.anchor.line);
+            selection.head.line = map(selection.head.line);
+        }
+    }
 }
 
 /// Document state - the text buffer and associated file metadata

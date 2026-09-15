@@ -369,10 +369,14 @@ impl EditPositions {
     }
 }
 
-/// Most edits retain mapped selections. Completion may instead place the
-/// accepting pane's carets at feature-owned final offsets (e.g. a snippet stop).
+/// Most edits retain mapped selections. Feature-owned edits may instead restore
+/// a complete post-edit pane state or place carets at final offsets.
 pub(crate) enum EditCarets<'a> {
     Preserve,
+    Restore {
+        editor_id: EditorId,
+        state: &'a EditorEditState,
+    },
     Place {
         editor_id: EditorId,
         offsets: &'a [usize],
@@ -411,6 +415,9 @@ pub(crate) fn apply_planned_edits(
     // cursor/selection offsets only to overwrite them below is redundant. Keep
     // the general mapping for partial placement and all other panes.
     let mut positions = match &carets {
+        EditCarets::Restore { editor_id, .. } => {
+            EditPositions::capture(model, document_id, |id| id != *editor_id)
+        }
         EditCarets::Place {
             editor_id, offsets, ..
         } if model
@@ -454,35 +461,42 @@ pub(crate) fn apply_planned_edits(
     super::folding::after_edits(model, document_id);
     positions.restore(model, document_id);
     let doc = &model.editor_area.documents[&document_id];
-    if let EditCarets::Place {
-        editor_id,
-        offsets,
-        before,
-    } = carets
-    {
-        if let Some(before) = before {
-            if let Some(state) = editors_before
-                .iter_mut()
-                .find(|state| state.editor_id == before.editor_id)
-            {
-                *state = before;
+    match carets {
+        EditCarets::Restore { editor_id, state } => {
+            if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
+                state.restore(editor);
             }
         }
-        if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
-            for ((cursor, selection), &offset) in editor
-                .cursors
-                .iter_mut()
-                .zip(&mut editor.selections)
-                .zip(offsets)
-            {
-                let (line, column) = doc.offset_to_cursor(offset);
-                *cursor = Cursor::at(line, column);
-                *selection = Selection::new(cursor.to_position());
+        EditCarets::Place {
+            editor_id,
+            offsets,
+            before,
+        } => {
+            if let Some(before) = before {
+                if let Some(state) = editors_before
+                    .iter_mut()
+                    .find(|state| state.editor_id == before.editor_id)
+                {
+                    *state = before;
+                }
             }
-            editor.deduplicate_cursors();
-            editor.occurrence_state = None;
-            editor.clear_selection_history();
+            if let Some(editor) = model.editor_area.editors.get_mut(&editor_id) {
+                for ((cursor, selection), &offset) in editor
+                    .cursors
+                    .iter_mut()
+                    .zip(&mut editor.selections)
+                    .zip(offsets)
+                {
+                    let (line, column) = doc.offset_to_cursor(offset);
+                    *cursor = Cursor::at(line, column);
+                    *selection = Selection::new(cursor.to_position());
+                }
+                editor.deduplicate_cursors();
+                editor.occurrence_state = None;
+                editor.clear_selection_history();
+            }
         }
+        EditCarets::Preserve => {}
     }
     // Completion can place its caret after the mapped positions are restored.
     // Refresh every affected pane only once those final positions are known.
