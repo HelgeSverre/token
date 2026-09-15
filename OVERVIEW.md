@@ -275,6 +275,7 @@ render()
 | **Update dispatcher**      | `src/update/mod.rs`       | `update()`                                   |
 | **Cursor movement**        | `src/update/editor.rs`    | `update_editor()`                            |
 | **Text insertion**         | `src/update/document.rs`  | `update_document()`                          |
+| **Move selected lines**    | `src/update/document.rs`  | `move_lines()`, `moved_line()`               |
 | **Split/tab operations**   | `src/update/layout.rs`    | `update_layout()`                            |
 | **Undo/redo**              | `src/update/document.rs`  | `handle_undo()`, `handle_redo()`             |
 | **Multi-cursor logic**     | `src/update/editor.rs`    | `add_cursor_*`, `merge_*`                    |
