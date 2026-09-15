@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:0a43365c4d888f384bbee7024ee750a6803554e66d0086c38fae5e6b7281db71",
+  "claims": [
+    {
+      "id": "claim_13ca8352d738440fa043a047e6c2b8db",
+      "statement": "A workspace canonicalizes its root, builds a recursively scanned FileTree with an initially expanded root, and the explorer filters hidden/generated paths, sorts directories before case-insensitive alphabetical files, and falls back to an empty tree for a non-directory root.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/workspace.rs#L224-L253",
+          "version": "repo-lines-v1:sha256:af7eb52d41ec8c7361adb3e2693e501eb9b6c0752038cf726bb628d974187aed:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhNDY2YTc4MmVlNzYxOGMwOGY3OTMxODExOTJjZjIwYWFmNmE4ZDk4NTc4MzYwOTJmYTdhODQ3YTQ2M2FkZTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2NTRkMzRhOGNkOWEwNGE0OTY1ZDAzZjNiYTg5MzliYTEzZDI1YjIzOTRmNzA4OGIwNjY2MTQ5ZDg4YjJjYTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlMDk5YzcyZjlhY2Y3NWMwMWY1NzdlNjE1N2RlNzlkZWVjM2M3NDEyMDk0MzcyY2I4Mzk1NTRhZTcyZWY4NDcifQ"
+        },
+        {
+          "resource": "repo://src/model/workspace.rs#L255-L324",
+          "version": "repo-lines-v1:sha256:9b67e6e705156e031a29c975e76bf35b0a0f5a03959990337ecc98d8be3c6e4f:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlYTk0ZDBmNjk2ZWZkYzdlNmRmNmRiZmI2NDkzYzg2YTlhYjk1ZGQ4MTk0MDRlNDM2ZTFlYTk2MTY4MjBmZDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImViOWEwOGJjMjlmNmViZWJlOWE1ZjAxOTAzZDk4NDVkYmNiNTg0MmE0NTVmMDdkNWY0MDAyZGFjMzJhNWM2MDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjNzdkYzBjZDI5MWUxMDJlMjRjYTFlZDdmYjIzY2Q1YjE3MGY3NzRjZDgzNTQ0NjdiMDZlNzVlM2E3ZTE5MjUifQ"
+        },
+        {
+          "resource": "repo://src/model/workspace.rs#L509-L531",
+          "version": "repo-lines-v1:sha256:657c56b1270185b5d3009504fb1386f79e537601870bff4122e11b7277292387:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4NGY1ZDkxNzk5N2Q1MjFiZDA1YzY5ZGQ0YzJmNzAxNzg0MzQzMTMxN2M1OTFlYjE1ODdmMzY0NWVjNjg3ZTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdlMjI3M2IyMmI3N2JiMzNjODhjMmQyNDZhYWRmMTFiZGE2MjQwNzk0NWE2MzM5ZTdhZDk3MmU1MjNiMzI0YmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkYjQ3MzZhODUzN2NkODk5Mzg0OTJjOTg1MzNkMjM5ZWIxYmIwOTUzZjBlMzhjMGJhY2UwOWYwYzJlOWY5NjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dad452c1b2a24def9269f70eb63e3350",
+      "statement": "The workspace model owns explorer selection, expansion, reveal, and scrolling, while update::workspace translates those messages into redraws and delegates file opening to the layout pipeline; collapsing a folder clears expansion state throughout its subtree.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/workspace.rs#L475-L498",
+          "version": "repo-lines-v1:sha256:cb48cbd3b915eac470729cf674d3758d1d6eb85ccb7a82612965ae0dd5a409c6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkOTYxOGFjYThhOGEwZGNkOTFmYmEwZjE0ODU1Y2RlYjY2NzliMTUyYjU4MWUzNjE3YzQ1NGU1MDZlY2ZjZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI1NGUyYzNkOTJhOTgxNjhkZmZlZGM3Yjc5NjM0OWI2YmZjZWRiNTI1ZDYzOWRiMjAyZDU0MWZjYzQyMzQxYTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI2NGY1YWM1YjFlMzdjZGJkYjQ1YmE4NGRhYzgwZTIxOTcyODA5NjExYzlmMjVkNGRmMGE3OWQwMWI4M2M1NjIifQ"
+        },
+        {
+          "resource": "repo://src/model/workspace.rs#L543-L610",
+          "version": "repo-lines-v1:sha256:0a5bae3aa2c1b7a69863865bf3362b93fb08be4c41b7ed9cf4a3c16216fbff6e:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzZDJlNWVkNDA2ZWUxZjQ5MjQ0NjVkN2E5ZTgwZjYwOWVjNjA3YzFjYTYxMGJjMmFiZDY5ZTJiODE2OGMwNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUxNjYxNzQ3ZTM5NGMwY2U0ZjBiMjk2MWIzNTM1NDAwOTRmOWUzNTBhNTNjMGY4NjAyNjFmZWIyNTM2ODlkMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyMGVlNGRiYTdmYzE4MDk4YTc4NjQ1N2ZhNDAxYTUxMGZhMWUzNjBmOTlhYzkxZWM4MWQzYWZmMmQyMGY0NTgifQ"
+        },
+        {
+          "resource": "repo://src/update/workspace.rs#L10-L125",
+          "version": "repo-lines-v1:sha256:7aba0b366528895de84622a1b7f56e07cc8c05ddc2d6637357785643fdce72fe:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlYTA3NTYzN2U3YjUzNThhNDgxM2I2ZTZkYzNmNTVhNGY2N2NmNTlhMDk1MGEyYjcxMGZiYTU2NDcxNDBlYzA4IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlNmIwNDQ5MTQ2OTcyMmU4MzYzYTk0ZTQwNDQ1MzhlMDEzYTJhMjE3ZTM2YjFlNTY4YmE2MGFjYjdiNGM4ZjJlIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJmMTcwZmFhYjI5MDM2N2EyNDlkOGUxZjA1NWEwYzUyNjA5MzM0OGEyMTcyMjllMmJhODQ4NzRkMDliNDhmMTVmIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2YjdjYmQ0ZjNkZmNlZTZkMjNkNjA3MDFmMWMwNjcwYjkzZWIxNGVhNzVkMjU0ZmNhZWI5YzY4MmE0OTgwODYxIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_80598b2d9a0041398015510b767646d2",
+      "statement": "The recursive workspace watcher uses a 500 ms debouncer, drains events non-blockingly, ignores hidden/generated paths, skips continuous-event spam, and deduplicates repeated Changed events by path.",
+      "evidence": [
+        {
+          "resource": "repo://src/fs_watcher.rs#L120-L153",
+          "version": "repo-lines-v1:sha256:f58723c18ff9b472c16cf8604eeaa1e8806e3ec4fe7b19439a32f9e0e39c8922:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NGQ2YjY3MzRhZjE4YmJjODg0ZWEzYmJiMDZjNGNhZjI3MWJkODIyZDk4MjM2MjMwYTVmYjM3N2Y3MjcyMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIxOWMzZWQ2Y2UyYjIzMWM0YzMyMTMwMTM3NGU2MWNhYjgzN2Q5OGI0YmE1NjQyOWY3NzA3MmNhNGM5YjA5NjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        },
+        {
+          "resource": "repo://src/fs_watcher.rs#L24-L53",
+          "version": "repo-lines-v1:sha256:ed92eced7a1fda0c38f77b75324bb6b44c3db2ef625dd173db5ba2111ce12883:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiZTc0ZTNlYjQ5NDVlYWQxZjgxYTc2MjAwYjQ0MTUxNmFkMGQ1NDc2NmQ4MDFjN2ZlYmFiNWRmZjViYjAzYTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4ZGM0ZmFhMmY2ZjgwZGZhNzY4M2MxYTMzYzgzM2Y2ZDFkODNlZjE3NDk2OGNiODBlYzhhMGU2NmU4YjU1ODQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU0MDVjYTgxMmI1ODMyOThjM2E1ZDU2ZmM2ZDE2MjJkMTlhZTg5NzQ4NzIwNmI1ZmY1ODdkNTgzNzc1MDExYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFiYzI2OTZlNWNiOGU5NDhiYTNiYjAwMDY0NGJjOGUxNjg3Zjk4ZmU1ZDU1YzYxZGFmODkyMzdkNWFhOWNiMmQifQ"
+        },
+        {
+          "resource": "repo://src/fs_watcher.rs#L69-L118",
+          "version": "repo-lines-v1:sha256:5aa4f246e43eb3baf293146ef08b65da632aa619b3da7deac463ba7b64f4db00:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjMjMxNTZiNzljN2QwNDQyZmNhNmQ3OGQzNzg0YWRlNDRmOTVjMjgwZjdlZmYzN2YxNzY1NmFlZDJkY2M5MjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwZTA4MGFhNDhkMzI1ODVhY2NkZDA0MDEzODc3YjgzNjViODYyODUzMDVjNWMxNzQwZWYxN2RjOTgwMTJkZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwMGU5NGUxY2JkYTE0NWE0MjgzYWY2MGU1ODE3NTgwYmZlODViYWQxYmMxOWYyNjgzNzMwMTdiNDgyYWU2M2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_43d841db8eba4b4c87c747a7e99ccb95",
+      "statement": "Workspace file-tree changes are applied incrementally to changed-path parent directories, but empty/invalid or more-than-ten-parent change sets and missing directories fall back to a full rescan.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/workspace.rs#L326-L380",
+          "version": "repo-lines-v1:sha256:9344e8bf34637e2bbca1bc1b69b95dd362259a2a3f934975dcb4042abdb9fc5b:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlYmJmNGM3ZDllYTZhZTU0Zjc2NTM5Zjc2N2NlNmI5MjRhNmFlY2FkZTg4ZTBhYWQ2NzNkZWYwZmQ0YTk1NzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyY2MwZDQ0ZGRlMzkxMDE4YTQ1OWMwNmIwOTBlZWVjOGRmNTA0MTg4Mjk3MzIwMmQwYTc2NWZjOTM1NjRjYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhMjczNmJmMjY1ZDg4ZmQ0NDljZjAyOTZlYjFiY2MyNTlkY2ZlNzEzN2M5OTQxNzA0ZWIxY2UxNTY1OWRhZmUifQ"
+        },
+        {
+          "resource": "repo://src/update/workspace.rs#L207-L231",
+          "version": "repo-lines-v1:sha256:913713868fed2d179852fa1ed0a6e6887fa2e52840b45768c3f00fe062a3e46c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzNzkwMmYwNDFiMjJmZjJkNDc4MDgwYWU1MmMyODJmOWU0NDkwY2Q4ZWU2MjllZWJkM2M0YWZkY2U3MzA2M2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMwOTlhMzZmZTMwYWYxYzkwYzdiZTEyMDUyOGUyMTM2MGI2NzBlYjM1NTc5OTVkNzJlYmNlYmYwMGQ0ZDM5YjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_87b3f7d6b996435d91e11b80bd467ec1",
+      "statement": "The open-document watcher is lazily owned by the ordered file-io worker, watches up to two existing ancestors non-recursively, synchronizes subscriptions without duplicates, rearms a containing directory after replacement, and emits sorted/deduplicated non-access FilesChanged messages.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/file_io.rs#L559-L605",
+          "version": "repo-lines-v1:sha256:284d496e4032fcd6efbfbfe5fff7bcd9c55870cd640a489185c58ff17f15d902:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1YjI4MzJlMmI0MzU3YTc0ODA0MWE5YmQ0MjUyN2E3ZWU5MjI5NmVjYWNhZGRkOTE1MWM3ZGEzYzg0ZWZiMGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNjNjNGQxYWY4Y2Q4OWJiMGJkZDc2NTdmZmNiZjY4MDZhNjEwZDc5ZDZjOGQ0YzMwN2MyNDFkZjM5MDA1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYzk4ZDZiMGRjNDkyYzUwMTZkZjEwODA1YTNhNTRlYjljMTg0YTVhNjEzN2U3ZjRiZWNmYTBjMjIwNTUwZDAifQ"
+        },
+        {
+          "resource": "repo://src/runtime/file_watch.rs#L10-L97",
+          "version": "repo-lines-v1:sha256:899fd0584378f19673851e1c752ef3cf9df4170f75c49c9f87e32f23694daaa9:eyJzZWxlY3RlZExpbmVDb3VudCI6ODgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3M2VjMDI3ZDZmMzI5YzBhODdhNmU4ZDA3ZjQ2NzUyYzBhYjY3Yzk5YjFjYzRhYTY0N2FhODc3OTJlYmE2MWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1MzM4NjUzYmNmNTY4ODBjNzg1MDI2MDE5ZTIxOWMwMjQxNWU0NmQ4NDY0YjkyNGRiMzA5OTZhZWI5ZmNlZWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYzk4ZDZiMGRjNDkyYzUwMTZkZjEwODA1YTNhNTRlYjljMTg0YTVhNjEzN2U3ZjRiZWNmYTBjMjIwNTUwZDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7e626d9e6b2b40a1870cadba7cdf3fa9",
+      "statement": "File identity snapshots preserve source spelling, resolved path, and LSP URI and are created at I/O boundaries; observation detects identity changes independently of byte changes and refreshes diagnostics and LSP routing when identity changes.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/file_change.rs#L83-L112",
+          "version": "repo-lines-v1:sha256:4f6eb3b473834489c332c21c064b3dffba1184f8fba2ed23f4f22eba9da019b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3NjYyMjE5NmJlNjNiZjA4ZDRlN2M5MDhhNWY3ODYwMjhhZDNjYmZkODA1MzJmNTIzYmRiODE0NDE2Mjc3ZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlNTc1NDIyYTFjZDk4NDUyZjA1YzNjMzgyODBlNDM1ODkxMGVjYjNlOGZjYmY1MWZhZjg2OWRkZThiMDMwMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxZTBmNzk3NzU3NzQzYzIxMmEzZTY3OGJmOWEzNzNlOTdlMDMzZTYwYWE4MDI0NmE1YTkxNmY2ODhjMTgyMmEifQ"
+        },
+        {
+          "resource": "repo://src/util/file_identity.rs#L5-L51",
+          "version": "repo-lines-v1:sha256:d096caf17424cf8a91655f8b26c1f4183f9a85873f4d78ca963faa09cd65c0db:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjOWMzZmQ3YmE0MDEzYjY4NzBkYmM1ZDhkNjFjODU1NTQzMDc4NzUwM2M2Mjg3NGFiNmY4OTZmYmI1Nzk1MDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlZWYyZDcyYmIwM2Y3ZjllY2ZmMzg5NTdhNzYwZjBhYTkxMmI2YmFjNGQ0MTczZDU5NzczY2M5YjI0NjA2OTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        },
+        {
+          "resource": "repo://tests/file_identity.rs#L9-L60",
+          "version": "repo-lines-v1:sha256:481c99694c4596ba5767288add1602480f8247f88b71dd1debfe5634b28549e9:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljZTFhYjJmOWNiZGI5MGQ1YWM5ODhhNDY3MjUwMjFkYmM1ZDllMjE4NWZiNDUyN2ZmOTYzNTIyYzk0MTIzZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4NGJkZjU2NjFjZWRiMzMzMDk2MGM4MjlmMjViMzgyZTdhOTU5ZTdhNDcyZjdhYTFlODZjMzMyZjM5ZTE0ZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjliNzY5MzMyYzM1MTIxM2QyOTBhMjljZjhhNGZmNDIyYjg4MDQzZGRiYzgxNzJhNzI5ODY0ODZkNTcxNGJiZDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_74ba166bfde2439691a50c6e3fc83efc",
+      "statement": "Filesystem notifications mark matching open documents for observation without reading disk in the update layer; reconciliation waits for pending file operations and uses saved-content, clean-buffer, auto_reload, revision, and identity checks to choose clearing, automatic reload, or an external-change conflict modal.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/file_change.rs#L114-L166",
+          "version": "repo-lines-v1:sha256:fe5aa7ca7ab32ec250dec073e78a30f8c410cdc152f5d1b0df76361ad381ee10:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiZjQ2NjJjNTdiNDRjMmVhZWVlZWFiZGZmMmI3MmYyMTYzYjI4OWE0NzFlODRjZjk0ZDRjOGM2YzQ1ZmU5NzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlNTc1NDIyYTFjZDk4NDUyZjA1YzNjMzgyODBlNDM1ODkxMGVjYjNlOGZjYmY1MWZhZjg2OWRkZThiMDMwMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzNmZhZTg5Yjg3NTI1ZDhjZTdjODNhNGRjMjY3MmNkYzZiMDdjMGUyYjQwYmNlYTZkMjRmYWExNjVjZTA2YzQifQ"
+        },
+        {
+          "resource": "repo://src/update/file_change.rs#L168-L285",
+          "version": "repo-lines-v1:sha256:903b0e8041bc5dfe140f37cc7a28772936b904b4a6e8fd1a491390979c919574:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJmOTBlNmE1MDFlNDIyYjM4MDViZGRlMTIwZjMxMmIwM2VjNzg4ZTVmMDJmM2Y3NGQxOTIwMjc2ODZiOTJkOGYxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJiMzgxMGI2MTcxYzA0YThmMDI5YzhjNmJmMGEyYTAzOTJmODYzNGFkYjM3NzkwNzc1Mzc0ZTU0ODRhYzIxYzE4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJiNDkzMDM3M2IyMjliYWNmNDc0MjRiYjBmN2FiNzIzMmQ1Y2IzYmVhZDQ0NzBlNGE2MTlkYjQ4M2ZlOGZhZTZmIn0"
+        },
+        {
+          "resource": "repo://src/update/file_change.rs#L23-L80",
+          "version": "repo-lines-v1:sha256:dd6c1f40411e53809dc41cae18c92ca83799658bdb848bb47161c7d7fbc7a268:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1MzhlNzRmMDA4NDVlYWViN2JkY2E5MjQ4MDRlMmQ5ODcwNjQyZmM4YzdiNzRhOTg1MjBhMzM1NDEzN2MyMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiMzljNTQ0MDBjYTZlNjM1ZmUzZTIzMzA3NDg0ZjBlMmM2NjhiOWEwZTIzYjg0OGJiMjYwODk0YTAwMDcwOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNjNjNGQxYWY4Y2Q4OWJiMGJkZDc2NTdmZmNiZjY4MDZhNjEwZDc5ZDZjOGQ0YzMwN2MyNDFkZjM5MDA1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkxMDk1YmJmMDQ5ZjJiNTZiNzlkNzhkMTA4ZTliZjg3N2JiOTcyNmE5MmVkMjgxNzQwOTMxYmEzYzY0OTQ5M2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1cd28dd7df994339b5e71c672af62840",
+      "statement": "EditorArea owns shared documents, editor states, groups, tabs, previews, and the layout tree; tab titles resolve through tab-to-editor-to-document state, and known file identities can be reused across groups instead of opening duplicate buffers.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/editor_area.rs#L189-L250",
+          "version": "repo-lines-v1:sha256:8e6d19ba66c2f11735bdf7f675eef13be9c4bf428fc548dc934a3a86b57a2439:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2ZGJiN2JiZTU4ZDkwOGUyNzNjMDE5YTNlZjEwYzVjNmZjMjc1ZTQ3YWY0MzkxMTVlOTViODRlZmMxMjQwZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkwOTQ5YmIzNDZjNTFhNWZhNDYzMTk0NmNiYzgzMzUzMGZkY2NjM2U5MmU1ZjkzOTlmOWFiMmZjNTBkMTNmOTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4ODFlYmRkMDk3ZGRlNGMyMTllNTY2Zjk4NzU1NWZkMzM5YTYzMGU3ZTFjNDBhNDUxZmQxOWQ3NTMxMTQ2YmMifQ"
+        },
+        {
+          "resource": "repo://src/model/editor_area.rs#L252-L271",
+          "version": "repo-lines-v1:sha256:8f9b6da41e344bf417327efd72c7269a819f33b0d652efae6f2e48d1311e554d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxZTllMDkyNWYzMjEzYTYyNGRhMzFhN2ZkZjBkNGRhZDZmYWQ5MjU0ZjZkYzkxZTlmNjlhOTliNDU3N2Q2M2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU0ZmRjNDA4YjdiZWE3YzdhZGViNDIwMzgwNjEzYjUzNjViZWRiYjZjYWQ5NWU1YjlkMTYyMDlhN2RjOTc3MzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwZDI2ODc0OGM0M2QzY2MyNjI3YzRhZWI2ZjBlM2RlMjhlMWU2ZDI1MGZkMTM4ZjhlYWI4NTk5NGI1NzRkM2UifQ"
+        },
+        {
+          "resource": "repo://tests/file_identity.rs#L47-L60",
+          "version": "repo-lines-v1:sha256:0d0785aec122fd690e56f443bddd85a2d733e676b8ef8f5226b94f5351370f3a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4MWM3Yzg0NjdlOTM2MTY3NDA0MmVkMmZhY2Y5YTY0OTYyNTZjNDk4ZWEyZjEwMWUwZDYxMTEzY2Y0YzliZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFlY2ZmMzBkOWQ0MzhlMmJjODMzMWUxMDU1ZWI1MDg2NTM4MzI4MzU5NWUwNDg4YWMyMjBmMmE4OGE5OGJhYmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjliNzY5MzMyYzM1MTIxM2QyOTBhMjljZjhhNGZmNDIyYjg4MDQzZGRiYzgxNzJhNzI5ODY0ODZkNTcxNGJiZDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fd835240afa14cf8b1edc10887ce7223",
+      "statement": "RecentFiles persists an MRU list capped at 50 entries with workspace context, open counts, and pinning; loading defaults safely and prunes missing files, while the UI groups entries into Pinned, Today, Yesterday, and Earlier.",
+      "evidence": [
+        {
+          "resource": "repo://src/recent_files.rs#L10-L30",
+          "version": "repo-lines-v1:sha256:3bf06fa5bdeca1a17c238db48d7a306154f70ffdf36b472e95deb228c1bbfcaf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmOTZiYzMwMzJlYTZhMDc0YjFjYWY1Mzk2YzY0NDI5ZWNjNGFhYzQ5NWI1YzEwMTUwZTQwMjA3OWYzY2Y4NzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1MTEwZTA2MDIxZWMxY2I1NGFkNDg2NTRjNTMxNDFiMDRhNDBhY2Q4ZmU5ZDYxN2FlYzcyZDViMDA4YzdkYWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk0MGIxMDAzMmY3YjI1ZWRmMDUwMzg0NWYxOWNhZDg2MTZjMzFkZGVmMDI5NGVhMjM2OGU2ZjYxODU0NWQyMjIifQ"
+        },
+        {
+          "resource": "repo://src/recent_files.rs#L111-L125",
+          "version": "repo-lines-v1:sha256:376af42f9c058e260e9f96e7fc0750aeb7a155be391e1216d355befe79baf0cd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkOTEwNmIxMDNiNzk3MzRiNmRiNDFhMTc2NmZmMzAwY2E5OTA3NDNjMjI0ZDAyMmJjZWUyOTE0MzBiMzBjYzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMwMjc0MDM0YjE5NTI5MjE0ZjdiYjYyYzFjZTVlNDI2NjgxNjY0NzcxNmI5NTkyZTA2YWExMmJiMDc0MGZhNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1ZGEzYmYzZjdiOTQ0ZWRhOGE2ZmM4MTNlMzU0YjY2MTVmNTBmYTE4MGE3MTMxNjQzN2JhZDdhNDQzNzc0ZGYifQ"
+        },
+        {
+          "resource": "repo://src/recent_files.rs#L135-L184",
+          "version": "repo-lines-v1:sha256:c2bf9891306dab922d8dc55c6af3551e1e8e1e98b8669da5ecceecdc6b72a0ba:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkODc1ODVlNDRlOTFjOWExZTkxNjMzMTNiNjJiN2U4MzRhNWIwZjRhMzJhZjAzMTI3ZGZjZjk1NjgwZDdiMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiMTE2ODY0NDJjNDA5NDY1NmVkNThlNDZkMWY4MzRiYTYxZTVlMjNhNDYxYTc1MzU4MjIxMGU4ZDhlNThiNzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0MGE0NDkyODUxNTE5MGFhZDQwNzVjNzllNmEwNDVlMmJjNzA5MTRjYmU0MmY2ZTMzNTk5MDMxN2M2OTY4NWMifQ"
+        },
+        {
+          "resource": "repo://src/recent_files.rs#L186-L236",
+          "version": "repo-lines-v1:sha256:592ea836a144a287b914781836040ef457f686c185b7241dff05a8011f9057fa:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyNjllMTU3YTkxZmVkNWJmZDc3MWM1NTQxMzhkZmNiOGFiOTI0YTE1YWI2YjVmYWE3MzZhNjI3ZWJmNGVlNjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE4MTI2YzBjZGM0MzFmYmIyYWY1YzZmNmY5NDFjMTA2NmViY2UwMzBkNjk4ZTlhZjAxMDNhNTA2YzQwNzMzMDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllZmJiNjA1YzEzMjY1MGNjMDVjYjg3YWQ0MzczNzM4MGZjOTVkY2VlZGRlOTNmZGJmN2ZlZjJlZjAwZWUzN2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_716fc2f9ecb84be7b2db0b261708e740",
+      "statement": "Outline, Problems, and Usages navigation are revision-aware: Outline schedules parsing for stale focused-document outlines and clamps symbol jumps, Problems shares a path/diagnostic row authority with current-file or workspace-wide scope, and Usages rejects stale or superseded searches while sorting, deduplicating, and capping results.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/outline.rs#L107-L123",
+          "version": "repo-lines-v1:sha256:a8be394db791f3bf856d6acecd4432b4d0cefbb6d81c93baa0efb34abad9ad82:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2OTQ1ZmYyMjFmZDNlOTA3ODcyYTAzMmQ4YjY3ZjBjNmNjZjBlYjk1Zjg5Mzc3MWQwYWM3MDAyZTIwODgwMTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNjNjNGQxYWY4Y2Q4OWJiMGJkZDc2NTdmZmNiZjY4MDZhNjEwZDc5ZDZjOGQ0YzMwN2MyNDFkZjM5MDA1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkYjlmYThhYzM4ZGMwMzE4MjA1YjYxYWQ1OGJhYWEyZmI2YjVhYWNkZTc3Y2RkNjI3OTZmYzY4ZjI1Y2RiN2IifQ"
+        },
+        {
+          "resource": "repo://src/update/outline.rs#L26-L105",
+          "version": "repo-lines-v1:sha256:4ee04ce01bcdeabfd1f44d4c4beebe8cca79bd051af8f513f217e51cd20b9ef5:eyJzZWxlY3RlZExpbmVDb3VudCI6ODAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5OTdlZDExMWQ4OTUwYjdkYWE2ZjFjNWUzZDFiZDEyZjkwM2Y0M2IxYjliNWM4YjliM2EzMmVmNzIwNTRiNjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNjNjNGQxYWY4Y2Q4OWJiMGJkZDc2NTdmZmNiZjY4MDZhNjEwZDc5ZDZjOGQ0YzMwN2MyNDFkZjM5MDA1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU5ODM5YjZmZDk5OTI4N2VlYjdhOTI5NzI0NjJiN2I4NWY0YTFiNTVmMGQyZTE2MmU2ZTZjZDA2MTViNTY0Y2QifQ"
+        },
+        {
+          "resource": "repo://src/update/problems.rs#L27-L77",
+          "version": "repo-lines-v1:sha256:cbdd5e1c28b051371fd559582684d6556d2123586f95b0d91d2091dc5040ec0c:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI5MjFkZDBjZWZjN2QzZTJjYzM5OWU1ZjRmNzRhMDgzM2QyMTA4MGRjYWQxNmY2ZTZhOTA3YWQ5YmViY2U1YmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1MjY2OTEyMjUwOWMxMWEyYzcyODdmNjYzMGQ1NTEzYjgyNGMwOGM2NWJjYWUzZmJmMWYyMzZhNWZmMDNjYjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhOTBkNTkwNTMxNjIzNjNmYWI4ZDY2ZmQyOGU1M2EyOTMwZDY1NzZkZDE3YTRhMzg1NGY2NzI4MmE2YjYwMGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwZmJhOGQ1ODlhMDY1ZTdmNjRhYmExNDI1YmZlNTg1ZDYyZDhmYjY5MTZiZDBkMjVkNDJjZGM1OWYxZDNkZDAifQ"
+        },
+        {
+          "resource": "repo://src/update/usages.rs#L12-L61",
+          "version": "repo-lines-v1:sha256:7efd9252aae26e34308d4adf4561160506df40a42a93c9f24c3d6bf509c04fe9:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0NWU5MDMzYThlNTYxMTQ4Mzc0OWM5ZDcxMGIzNTE0MTMyYjIzMzk4YjFlMWUwYzYzNzUwZGIwNjFmNjUwMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjNTk0MDUwM2FiODNhYmIwODY2NmEyYzhkMDIyOTc2NDc3ZTI5NGY5MDliNmY4MjA3Yjk0Mjc2N2I2YjMyYTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVlOTczYjg4Y2I3NzZkNmU0N2I1OGEyOWY4OGM5NzkzZDkyNGRkZmJhNTY1MDBlOGVkODI2YWMwYzNkNzBlNzgifQ"
+        },
+        {
+          "resource": "repo://src/update/usages.rs#L90-L150",
+          "version": "repo-lines-v1:sha256:5d016a2bab03a790ff446fefcb2ac85f31cb5e5adb5679fe961115fa20792dfd:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1ZjQyM2NlNDg3OTU2MzFjYzkzYTBlNzE1OGQyOWY3NDE4NzdiZDBhZWU2MmI2MDFiODQzYmNlOTA2MjQwNGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2MWVmNzVhZjJkZTZkZGI1ZjgwYzBmODBjMzc4N2RiNzE3NTU1NGM3ZjBlMGY3MmJkZjY0MzQxNDMxMmI3YWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjZjkwMjcwZDdiYmU5YTAzYTQ3NGRhYTc3YTNkODZkZDcwZjgzNWYzM2E4M2U0YjRhZGFhYjE0ZWMxMTkxNDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1OWZlMGE0NTBhZWQ2ZDVjMTZjZDVhZDdlMTU2M2UxOGRkMjE4M2IxMjM1MjlmMDY0ODgyOGIxYzBlMWJhOGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b486f05440754ca190c9c62edd342fd8",
+      "statement": "The path command palette exposes RevealInFinder, CopyAbsolutePath, and CopyRelativePath; saved files produce the Finder command, unsaved files report status, and relative copy falls back to an absolute path without a workspace.",
+      "evidence": [
+        {
+          "resource": "repo://tests/file_path_commands.rs#L100-L167",
+          "version": "repo-lines-v1:sha256:599e953d70c41794af67d94e5b4eb0c70caaefa902dbfec306a731041ed331a1:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2MDM2YjM1Nzg4OWZlZGExN2M0ZmJlZmM4YjM5MjY4NzU4NzNlMjg2MjY5ZmIzNGZlMDJjOTlkZmVjZDM4NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmMzcxMGNiZTU2NjNiOTc2ZWQ1OThlYTdjN2EzMDlmMWZmNzIwNWI3Y2U1Mzg1N2Y4OGEzYTViZDY3NzQxOTAifQ"
+        },
+        {
+          "resource": "repo://tests/file_path_commands.rs#L173-L212",
+          "version": "repo-lines-v1:sha256:33ececceb21187b8a437bec25338c4c1b5917320d6dbda5b26bd5f8255157530:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmNGFkZmE1MWFkODlkYjFmYjliMjQ2NTdhYTNhMzViODA4Nzg5YWIyMzQzYzhkNzVkOTY5YjU5NzNjZjNmNDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://tests/file_path_commands.rs#L21-L57",
+          "version": "repo-lines-v1:sha256:39e47bee8a05a18973dfe82f41a63cd3edd903a2e4b0a8702a0bf00b5f32de44:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzNjFiMDZlN2U3YjJiYzMwZDdjYTgyYTMxNzk1Y2I5NTkxMzYxMjQzZjQ1ZjJlNDg3M2I5ZTg4ZjMzYWQ5ODUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5YTNjNzVlNTRhMWFmNThjNWIyNWQ2NDMwNTQ3MDU3MWUwMmZiYzk5MTUwNjc0NTNhZGZmMWUyYTg3Y2Y3YzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUxNTMxYzQ4YTU3NjZmZGFlN2M0MGVhNTVmZmVmMDI4ODMyNzE4YjdlYTZhOWYzNGU5NzZhYTAxYTczOTE4MzcifQ"
+        },
+        {
+          "resource": "repo://tests/file_path_commands.rs#L63-L94",
+          "version": "repo-lines-v1:sha256:97bf1d4db43a2c139f136b59d648920ad157797e8232def9049f5255a88bfccc:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkMDQ3ZjU2NjAwZWFjNTJjNmIzZjNjNjA0ZjRjOTU1ZTZiNDQzNzliNmNmYTFhMjZhZjljNzJmYTBjZGJiNmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExNTRlZjZkZTUxMzhiZDdhOWFmMjdlZmUyMjA0M2EyZmRkNzI2ZjVmYTg4NTIyYjM5MDZlZjgyOGFjZjk5MGQifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T20:35:11.754Z"
+  }
+}

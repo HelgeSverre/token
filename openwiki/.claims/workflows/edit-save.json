@@ -1,0 +1,292 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:3dc46adbe69fd37e8dcf7dd93c5c9ec5c5652b8130af44f68b7cec37f214e1a8",
+  "claims": [
+    {
+      "id": "claim_61a166b501fd446f988d6e848a8dd094",
+      "statement": "Document dirty state is derived from the current buffer versus the content snapshot and saved path from the last successful write, rather than undo-history depth; successful writes clear save errors and external-change state, while a new nonexistent target starts modified without a saved snapshot.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L269-L283",
+          "version": "repo-lines-v1:sha256:5f36652bf4cbc159467bc3e0be6cb107c79d13104c803f4b4c9deb72062c769d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlMjkwYWE1MzM3MGJiNDNlZGM2ZWU4OGEyYWI0ZDE3N2Q3Y2Y2MDM5NDkxN2FlODkyNzNkOWFlYjMyMGIyZTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwMGZhMGU2YWJhNWRkZWVlN2QzMTgzYWMwMGZiODUwMjEyY2UwYWE2NmJiMzc2ZTY4YjkwZGRmMzc1ODdmZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmMWI2YjA0NzAxNmY3MzA4NzFkY2ExMzdlOWFhOTgxNjkzY2Y4YTUzNjdmZjhlYzZkZjBhYmU5NGFlMmNlN2EifQ"
+        },
+        {
+          "resource": "repo://src/model/document.rs#L313-L344",
+          "version": "repo-lines-v1:sha256:7859d4eaaab2e1d25047f67be69209d8b31a5c8735f3f0c25d2e966c49c6d89f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1ZTlmOTU4NThhNmZjOGNjMmE1Y2I1NjE0NTNkN2FhNDYxYzMzZDNiOWE1ZDlkNDY4YmNhZWZiOGI3ZDBjZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImViOWEwOGJjMjlmNmViZWJlOWE1ZjAxOTAzZDk4NDVkYmNiNTg0MmE0NTVmMDdkNWY0MDAyZGFjMzJhNWM2MDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhNzEwZjY1MmVkNTA1ZTNjMTA2ZjE5NGVjNTRhZjg5Yzc3MmRhMTA0YjgyMDYyNzYzN2I4MGQ5ZDQyNjRiZTQifQ"
+        },
+        {
+          "resource": "repo://src/model/document.rs#L83-L119",
+          "version": "repo-lines-v1:sha256:ffd071819f290db75ca8e6d882f1a44bd5fb49685356afcca42f901ea8dbe200:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMDgxZGRjYjIyYzNjNGM2MDgzODIwMTE0YzI2NjRmN2M1OTFkOTdhYjc2ZjhlMTk2NzhiMWIwYzgwOTE1OTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlOTBhNzc0YTQzNzJiNDY4MWIxY2I2MmQ2YmMyMTcyY2QxN2E3YWJhY2M1NWJiYTVhYTE3NTRmMjFmZTkzZjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlNWY1YjhhMjliYWM1MTRiZTM4MDVjYjkxYmYwYWU0MjQ4MWQwZGUzMTgzMzA4ZDJkMzc1ZjUwZDYwZDgzZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9abdd23ae6f54d17ac9d877c2bfff120",
+      "statement": "Save operations capture the initiating document, revision, source path, physical identity, and a supersession token; replies are accepted only for the current intent and matching file-operation sequence, so focus changes, stale asynchronous replies, and duplicate completions cannot redirect or overwrite newer document state.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L286-L310",
+          "version": "repo-lines-v1:sha256:eb7c61b3da27ff79219c342f2d3c32525a7098e8342e51d93604bf5d75c91ef5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkODNjOWQwZTQ4OGZjNzM5Yzk2YmE0NWU5YmQ3NmE0M2M0ZWJkZjM5YmUzNDE3NTgyNjI0NWE4ODhlZDlhMzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YjE5ODJlOGRkNzQ4MTE4MTQ2YjM5YTJkMDA2MmY0MDgxZTM0Nzc5Yjg2NzVjMjM0YzRmYjEyNGRjMzkzOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYTdmZDZjNjUwZmI5MTU1MTRiOTY4NDM5NzZkZTIxOGI2YjhjNGJjZmNkNzY0Y2RhMTQyMDc0NjcwN2E1YWQifQ"
+        },
+        {
+          "resource": "repo://src/model/save.rs#L22-L75",
+          "version": "repo-lines-v1:sha256:68d83b3c9383c0e6266deb07373df1b8c62e1c4e2d05cc02cedf7ceeb63d6a3e:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjMTc4NzAwODhjMGVkZmMwNWQ3ODE2MzU2MGU1Y2QzMDUxY2JkZWE4YTc2ZjgzNGNmOGViMWZhMDE3MDA4OTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmN2VjZTAwNDQ1MjhjNzM3NTBlODQ0MmNkYmVhZDRkYzM3YTk0NzlhYmMwZGMwOTM5YTRmMjEwMWExNmI1YWEifQ"
+        },
+        {
+          "resource": "repo://src/update/app.rs#L380-L415",
+          "version": "repo-lines-v1:sha256:0278594155ccb0ab438af76e09e575ac6808517ac2f2d3fb3d78f76fc2ba696e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2RmMzM1YzdjMWNlNWQ1MTA4NWNkYmY5NjhiYzkwZDVhZGFlZWIxZWM4OGVjZjNkZGJhNTM1ZGJkMjM2Y2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0MmVmYjhkZDk2NDdjMjFkZDQ2MGUzYzRkOWYyYzUzNDI2M2E2YzkwOTliMmU3ZTA2NDdlMTYwZjEwNGQ5ZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFiYmNlYmQ5ZmZiMzAxNmIzODQ1ODI5NjU4ZDlhZmI1ZDc0NDE1NTZkOTY2ZDg5OGQ4NTljMWRhNDAxOWExNjYifQ"
+        },
+        {
+          "resource": "repo://src/update/app.rs#L543-L586",
+          "version": "repo-lines-v1:sha256:97ef878d7e69004592ad2738e163212ad6b321fc2f94f8d482b65d274cbf62f6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5MWE0OWI4NDJkYzUwMTgxMDY4MjdiYzE5OWUzOTMzMjk5YjIyYmUwZmUxNzFlMjE1YzM0ZDQ2MmFlODY3NDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4YjY2NDFjMjQ0NTYyZjAyNTJlZDk3ZDk5YTMyNGYzZjRjODRjZWI3NTk0ZDExMDA3NWUwMmQyYjVkYzQ4NmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk4YzczYWVkYTYzZjNlMzE4ZDc1ZDZmMDlmMDhhNTk2ZWMyMzE2NDZkNDYwNTUzNmRhZTY2YTNiN2JmMDc3YWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiMTQxZDMzZjk0YmMzZTlkNDE2OTU5ZGRiZTRlNzFhYWQzNjc1ZDM3ZjI5ZWM2N2Q2MjRlMzVkZDhlZGEwYmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a8ffdd3190fd491aa9c3e7eec82f6e19",
+      "statement": "The save pipeline resolves EditorConfig asynchronously, optionally formats before saving, applies text cleanup, and then queues an asynchronous write; stale formatter results are discarded when revision, language, text-policy generation, or policy resolution no longer match, while formatter failure falls back to saving unformatted content with a user-visible status.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/app.rs#L394-L415",
+          "version": "repo-lines-v1:sha256:fe5f7ac48169a4253eba8aae248fb43a03d42a519d51b935b5cadff77b4902d2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhMTAwZGZhODk4NDYyMWEwNzE0ZGFkMTYyNWQyNWI2NGY4NzE3NGZkNzk5ZmI4NTU4MzEwY2FmNDMwMjk5N2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkODM4MjI4ODEyZGI3Y2JmMmQ5OGIyZjhjZTc0NTFlMGUzMzNjMWRlMDAxYTkxZDhjODQ2YzYxYjI2ZThmNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFiYmNlYmQ5ZmZiMzAxNmIzODQ1ODI5NjU4ZDlhZmI1ZDc0NDE1NTZkOTY2ZDg5OGQ4NTljMWRhNDAxOWExNjYifQ"
+        },
+        {
+          "resource": "repo://src/update/app.rs#L417-L473",
+          "version": "repo-lines-v1:sha256:ef3924934d6737bbd11a06032c0915a59ccbaa80ce9c3174064d916451fdbe28:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0OGQ0ZjA2OTgyOWJjY2U5ODc4OTg1OGVhMTVlZWE1M2Y4ZjJlOWMyMjEyZjQ5OTlmNTI5Nzc5ZDc4NjBiMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljNDg3OWU3N2NkMjdlODdiMTllODYxODdmMmI3YjJjNjYwYjljY2YxMThjNDMyNDZhZDk4OTBiOTMzOGVkYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlNDMxYjMyYWE0ZTg4MTlhZjhlYmNjNDIxYjBmODNlNDEwZjRmYjQzNzMzMzc3N2NlMWZlM2Q1ZGUwZmIxMWQifQ"
+        },
+        {
+          "resource": "repo://src/update/app.rs#L476-L523",
+          "version": "repo-lines-v1:sha256:27f2d9aaa1474584438f1b2fbae46759a87819a8e7693ca35340e4ac276c75ca:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5MjM5ZDA5ZjMxNTNiODBmMGMyZTI2YTE1ZjYzOGU2YTYwOGJjZDI0MTZhMmYxNTljYjU4OTY3MGVlZWU2OTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0NzVlOTRhOTA0YWM0OWIzMTU0ZDQ2NzJhNjZlODYyOWI4NmRhYzc0ZTNlMjkzN2JlNjkyN2FlM2RhMTFjNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImViOGM0ZTc4OTU0OTg0NDA3YWJjNGQyNjljNWIyODg5Y2VkNWVjMjY3OTFhMmRjMzY1YjdiNWIxMTVkYzY3MTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZmZGY1Y2Y5M2Y5NWJhODU3MWRjNWYyMWEyZjVmOTZlYjAwZWY5M2NlZjVmZTVlYWI4OGM5M2IyYzNhZDZkZmUifQ"
+        },
+        {
+          "resource": "repo://src/update/file_policy.rs#L138-L186",
+          "version": "repo-lines-v1:sha256:7d717d0010d474b2e57ba59cde77d90d9c87a8b38e3e79a215858fdcc60a999d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiY2RkZjgwZDYxZmZhM2NkNTllYjQzZTdlM2RmZjRmMzI1YWFlNzg3Y2JmZDdhNDlmNzRiYzY5OTVlMTVmYTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjYzI1NGQ3ODhkOTVkYmQwMThhYTZhNWRlNzg2YWNhYTdmOTRkNmVkMWQyNmNlZmVkMmEyNWI2ZDI0ZjhjNGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlNTc1NDIyYTFjZDk4NDUyZjA1YzNjMzgyODBlNDM1ODkxMGVjYjNlOGZjYmY1MWZhZjg2OWRkZThiMDMwMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY0NDAyYTM3ODc1M2Y4NmUyZmJhNzhkMTRhODkyNGI4YzEzZmQzMzM5OTUxODcwM2Y5YzcyMDY1ZjExMjAwYjIifQ"
+        },
+        {
+          "resource": "repo://src/update/file_policy.rs#L189-L234",
+          "version": "repo-lines-v1:sha256:dde63a0fbb39cf30d12369054fac500a165f7c03ab9bb36692024ce7089a4d72:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2MDQ0OTliOTViZGYwNzUzZDA4NWM1ZDJmNjk0ZmIzMDZlNWFlNjFjMThlNDQ0MmU2Y2I5MWJmMTU5MGRlNjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyMGJkNTJhOTM4YmM4MTQ5N2QzN2QwNjgwYWFkM2JmNjc3ZDJhOGFjODhmZDRiY2Y3YjliNDE2OGU0YjQ3ZjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyMTFhODkzNjE4YmMzNzlkM2NmNTFjNWYyY2RhMzUzMzRmNjljZGRjYmM2MzRlYTMyZWJmZTJlYzk4N2E0MjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2ZjQxMWFhMjhjN2I0MTFlYWZlNTA4YTlkZTczNzZiZjhjNDQ1NDdiMjQ2NWM4ODU1ZjJiZmJmM2MzOTc5OWQifQ"
+        },
+        {
+          "resource": "repo://src/update/formatting.rs#L121-L183",
+          "version": "repo-lines-v1:sha256:bce5e6365ad792bb4eff2b858da83b87499367b631bbdeb02ed2698ce8af9d13:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhYzJiYzc1YjdhMWI4N2QwZjFlMjJjMGMyNDVmYmM5MzZiNmVkYzAyYzI2NjQ4OWMxMzliYWMxNjJhMjIwNzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0NzVlOTRhOTA0YWM0OWIzMTU0ZDQ2NzJhNjZlODYyOWI4NmRhYzc0ZTNlMjkzN2JlNjkyN2FlM2RhMTFjNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0OTM5N2RiNDk0NWNmNjZhYjVjNTY2YzBjZmUwZDA4NTE0ODRhZjEzMjViNjY3NTNjZDdiMjQ5YzE4NDg4OTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0OWM5M2IzYmZjYTBmMDAyYmM4Mzc5ZDdmMTQ3MDIyNmM0ZDk2MDdhNmFiZGM0MzcyYTZmMWExM2NiMDg2NGQifQ"
+        },
+        {
+          "resource": "repo://src/update/save_cleanup.rs#L8-L87",
+          "version": "repo-lines-v1:sha256:652d5599e70e099622875ae7fd812373ee22c92af4e7747c3c989f2a7c05b999:eyJzZWxlY3RlZExpbmVDb3VudCI6ODAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkODdmM2FiMGEwYTc2M2Q4ZGQ5ZDQ4MWM0MTY3NTg2MzE3YWQ1ZGJkNmUyMWEyZjQxOTM1ZTgyM2ZhZTkzMTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4MGUxNjM3MDcyYzY1YmE1MWU3NmUyY2EzNTJiZGExNjRiYjAwMjUyMjYyODMxOTI3OWI1MzE5NzdlOGZmMjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYzk4ZDZiMGRjNDkyYzUwMTZkZjEwODA1YTNhNTRlYjljMTg0YTVhNjEzN2U3ZjRiZWNmYTBjMjIwNTUwZDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f4a136cc6c8a4bd4814c76b79dfa6790",
+      "statement": "Normal writes are guarded by exact byte comparison against the saved or still-queued snapshot before truncation; missing-file creation uses exclusive creation, deletion or outside changes fail without losing the buffer, and a Save As destination that resolves to the original physical file cannot bypass the original identity guard.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/file_io.rs#L182-L213",
+          "version": "repo-lines-v1:sha256:6c6c830eb68e11b0093d8754a452be0bceb81a1e7fa23999a43e9bae1a321ff3:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwN2RlNzNjMjY2MmNjZjJhZTU0NmE3N2Y3ZjIyNDk2ZTcwYmUzYjkzNTI5ZDY0NWYzNzI2YzIzNTE1MmYzNWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiMzUzMTJjZDM0NWI4YjYxOTNmN2E5MTAxNzU4ZWU5OGMwNWJmM2NjNDA3OWJkNGY0Y2MzOGE1NjNhMWIyMzMifQ"
+        },
+        {
+          "resource": "repo://src/runtime/file_io.rs#L331-L388",
+          "version": "repo-lines-v1:sha256:a1e358199b33a408f98a2d71efd453a361bdac17321cb1ae8e9ad47b7760041e:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4MDJlOGY4YzYwMDczMTE0ZTZiMDlkMDZjNmQ2OGFjYmY3NTliNDUyYTY3MDA1YTAzZjU1YTU4NTAyMDg3ZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmNmRmMjk3NjUyNjZhOWZlNGI5OGRhODA5NGRmNTlmMjJmM2NlMDRjMmRlMmY5NDExOTdlZWM1MzhhZTE3YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIzMGRlNDQ2NTIyZmUwYmFkMDI3ZjQ0NjJlNDA2ZmJlNjhjOTE0M2M5ZDY4YThmOTBiYjdmYmFhZmRkYjBiYTMifQ"
+        },
+        {
+          "resource": "repo://src/runtime/file_io.rs#L398-L419",
+          "version": "repo-lines-v1:sha256:95859464e169019314488733959337343740e5b47bef0eb4b76a657979877036:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDhjZTJlOTRkOWYyMmE0ZmQ4ZGRmOGYxMDQ1YmU3MDM1OTY2MTEyY2Y2ZTZiZTNjNzcyODMyMGUyMGJmMDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdlZWI0YzAzOTFiYTk1YWEyM2E0NmFkYmFjZDUzMWQxZjQ4YmJmZTQ3ZGVkOWQ1ZjFhNmRhYjUyZmMxOTIwYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlY2JlOGM2NjAxYWFiYTU1NzdhNzBlNDgzOGFhZmVmZTE0NTkzZjFjYmEwODk0NTFjMDRiYzAzZTlhMTE4YzgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0f0033563b6e4708912a494c427fec9d",
+      "statement": "A successful save installs the new path and identity only after the worker succeeds, records the written content as the saved snapshot, updates language/diagnostics and LSP routing for renamed destinations, and otherwise emits a did-save notification; failures retain dirty state and record a revision-specific error for user-visible reporting.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L313-L319",
+          "version": "repo-lines-v1:sha256:be15bff57fad9e20df88af85a14e52503f0fe20dd4bd29f17a1e435c830b3d9e:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTVlOWY5NTg1OGE2ZmM4Y2MyYTVjYjU2MTQ1M2Q3YWE0NjFjMzNkM2I5YTVkOWQ0NjhiY2FlZmI4YjdkMGNkNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWI5YTA4YmMyOWY2ZWJlYmU5YTVmMDE5MDNkOTg0NWRiY2I1ODQyYTQ1NWYwN2Q1ZjQwMDJkYWMzMmE1YzYwNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTZjMWE4YTE5ZTQ0M2YxMGYzOWRhMThjYTM3ZGIyOTg5NzI5ZGEzZDUwMDhmMjQ1OTU5MmY1ZjlhMzhiNmRiMiJ9"
+        },
+        {
+          "resource": "repo://src/update/app.rs#L543-L615",
+          "version": "repo-lines-v1:sha256:51f7e8862ba47c7a1cdcf8ec439a25171be2f074add709910bbaebb2d3fe653f:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5MWE0OWI4NDJkYzUwMTgxMDY4MjdiYzE5OWUzOTMzMjk5YjIyYmUwZmUxNzFlMjE1YzM0ZDQ2MmFlODY3NDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk4YzczYWVkYTYzZjNlMzE4ZDc1ZDZmMDlmMDhhNTk2ZWMyMzE2NDZkNDYwNTUzNmRhZTY2YTNiN2JmMDc3YWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg3YjE3MWYyYjdjMTFhZTVmZWY5YWVjNTg5MTNmY2MzMjgzNTJjNjgwNzYxNzYxYTYxMWQyMjRjOWZmZjg1OTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_43db1708c3904cadbffaf8b96927ecd2",
+      "statement": "Auto-save is per-document and revision-aware: idle and focus-loss modes schedule independent requests, unchanged notifications do not postpone an idle deadline, requests are deferred during composition or ineligible/pending-write states without a busy loop, and automatic saves never open a native dialog.",
+      "evidence": [
+        {
+          "resource": "repo://src/config.rs#L136-L160",
+          "version": "repo-lines-v1:sha256:b332bdf3845fc6d315e10d92adeee48c20a28847655a11c9cb3df26f459a0f84:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3OGUwMGZhZjQyNDVhZGUyNjY4ZGFkNjUwYWQ0MGI0N2EwYWUxMzBhNWUyOWY5OWJhMjk3MGE3YTM2MzAzY2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkM2JiMTU0ZTAzMTQ3ZTExYjVjZjJhOTFmMTY4NDUzNWYxYTIzMTBhMzk4NWI4OTRiYmY0NmEzOTU0M2ViNDQifQ"
+        },
+        {
+          "resource": "repo://src/model/save.rs#L7-L19",
+          "version": "repo-lines-v1:sha256:883f7b33d449bf7e6858309a9b01ba5eeef7d3d47fe1cdcca5b5a206d944154c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkYWI3M2VlODMxYTg5MDczMTczYjY4MDM5OTRmZTE2YTY2YmQyYzhkOGQzZTYzN2M3MTI1NGFmMTM5YzMwMjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiNjgxNTRiMjYxNzE2Y2U0ZmU2MmUwM2JjOWFjMjE3NTYzNjkxNWZiZjRlNjFmZmI0OTM1ODRjOTIwZjk4MTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4NzFiYmRhNzAyY2E3NjU1ZThlNTk2YjkwOWY2MWQyYThmZDQ5NTdlOGFiMWUzYmQ0MDc4Y2VlZTBiZGY0MTkifQ"
+        },
+        {
+          "resource": "repo://src/runtime/auto_save.rs#L36-L154",
+          "version": "repo-lines-v1:sha256:6ba2de5863209810ef362ab97901d34375d6aac908f3629bf0980815fea4cc27:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJjYjUwYzExYjE5MWNhZWQ1ODYwZWQyZTQ1NjhlMGZmMzlmZjA2NzJmYmI3MjUzYTE2NDA0OTg4OWRmNWFjOTcwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODkzZjQwZTM3ODFlYjg5NmM4MmQwNDZhMDgwNjdhMTFlMzVjZGYyZjFkZmFmMjZmZWE5MGI4ZGI2Njc2NDEzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIxOWU3NjM1NWNmMTE5OTQ4MGMzZjk5ODM2YjE0ODZjODQxZDg5MWZhYWQ5MDRjNjA4ZTA5MzAyMmQzNzU3YWVlIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhNTIxNjA0YjM1ZmM0MGFmMDBjYmE0ZWVhMmZkNWUyYzNhZjE4NjNiMzkxMTg1ZDdiZjRiYjA5ZTcyZDBjOGIzIn0"
+        },
+        {
+          "resource": "repo://src/update/app.rs#L330-L377",
+          "version": "repo-lines-v1:sha256:aa63af74c371dc2436404473dd852cd7f9b1e5beef891442e92aaf399b602396:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkOWZmNzhmNTk2NTcxNzZkYmYyNWZjZTE5MzFlNDg2ZjFhY2VlYmEzMzYwOWUxODJkZDRmNzgzOTlkMzY4NTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3ZjYxZmViODgzNjRiOTlkZDFjNDExZmE0NzY4ZjFhNjAxZmM4ZDc3YzdkYWE0YzJhMzY2NWM3MGZiNTkwM2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAxZjA4NTcyZjVmOTlmMzZjY2RmZmI3NDUxMGVmOTQ1NmI5NjBlZTFlNGVlMjc0YmNmNmUwYTQxNThkNzAyYmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE2MDZmMzkxNTJiODQ2YzU0MzM4MzhiMWEwNjIzODA0ZGEyMjczYzliYTA5Y2Q0NDYxODA2NTAxZWYwMjY1NzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8a9de9f5e4ec43d7b20413ee6a9c27de",
+      "statement": "Filesystem change reconciliation observes eligible documents only when file operations are not pending, compares observed disk content with the saved snapshot, auto-reloads clean documents when configured, and otherwise records an external-change marker for explicit conflict resolution; physical identity changes also refresh LSP routing even when bytes are unchanged.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/file_change.rs#L23-L80",
+          "version": "repo-lines-v1:sha256:dd6c1f40411e53809dc41cae18c92ca83799658bdb848bb47161c7d7fbc7a268:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1MzhlNzRmMDA4NDVlYWViN2JkY2E5MjQ4MDRlMmQ5ODcwNjQyZmM4YzdiNzRhOTg1MjBhMzM1NDEzN2MyMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiMzljNTQ0MDBjYTZlNjM1ZmUzZTIzMzA3NDg0ZjBlMmM2NjhiOWEwZTIzYjg0OGJiMjYwODk0YTAwMDcwOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNjNjNGQxYWY4Y2Q4OWJiMGJkZDc2NTdmZmNiZjY4MDZhNjEwZDc5ZDZjOGQ0YzMwN2MyNDFkZjM5MDA1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkxMDk1YmJmMDQ5ZjJiNTZiNzlkNzhkMTA4ZTliZjg3N2JiOTcyNmE5MmVkMjgxNzQwOTMxYmEzYzY0OTQ5M2QifQ"
+        },
+        {
+          "resource": "repo://src/update/file_change.rs#L83-L166",
+          "version": "repo-lines-v1:sha256:03c41ae00c53258d672d3faba6df74f5ce54540dd19cbca2d51ceddb0f63e014:eyJzZWxlY3RlZExpbmVDb3VudCI6ODQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3NjYyMjE5NmJlNjNiZjA4ZDRlN2M5MDhhNWY3ODYwMjhhZDNjYmZkODA1MzJmNTIzYmRiODE0NDE2Mjc3ZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlNTc1NDIyYTFjZDk4NDUyZjA1YzNjMzgyODBlNDM1ODkxMGVjYjNlOGZjYmY1MWZhZjg2OWRkZThiMDMwMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzNmZhZTg5Yjg3NTI1ZDhjZTdjODNhNGRjMjY3MmNkYzZiMDdjMGUyYjQwYmNlYTZkMjRmYWExNjVjZTA2YzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_be175c843f1e447ea44d08c6bf288956",
+      "statement": "External conflict resolution provides explicit Keep Editing, Reload, Overwrite, and Save As actions; reload discards local undo/redo state while preserving view state, overwrite uses the observed disk content as its write precondition, and a conflict becomes invalid if path, revision, or observation changes while the dialog is open.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/file_io.rs#L229-L274",
+          "version": "repo-lines-v1:sha256:5c21b9fc8475bb2529ba2f1cb733386004f318322ce8857f1c572cf1b22dc3bb:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwN2RlNzNjMjY2MmNjZjJhZTU0NmE3N2Y3ZjIyNDk2ZTcwYmUzYjkzNTI5ZDY0NWYzNzI2YzIzNTE1MmYzNWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiNjY1ZmEyM2FhMjlmMzE1MzU3NmRjNjkyZjAyZWY5NzA2NGMyMDAzNGM3M2RmY2FiNWZjY2NhYzdmMmQyY2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjYmRlMDhhMTJlZTNlYTcyNGU5M2JhMjJkYzlhOTUzYjgyYjBkYjU2Njg2YmIyNGI1YWY4ZjZhYjUyYzc2ODcifQ"
+        },
+        {
+          "resource": "repo://src/update/app.rs#L617-L753",
+          "version": "repo-lines-v1:sha256:5b547f4c4f10991917a31e437db49694ae2bde182ba3ed7665dfcb6fa01734db:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI2ZDFlNjc3ODY0ZDZlNGE3MGQ3ODEyN2VmZDdjODU5MGQzZWY0MTliMWE5NDI0OTg3ZmNhNjk3M2JmNjMxZGM1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlODI3YTU0ZjU5MjYxNmVkYzY0NWVjNWUyYjAwNDMzNTIyYzAwMGRmOWE4NjJhZjkwOWYxNjEzZWZhY2IwMTJlIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJkMjgxM2RmOGMyMGFlODhmM2M1N2ZjMWRkYzlmYmI0MTk1ZTFjMDFmOGM3YzM0ODE3MWFmNDk5ZjlmMWUzMjEwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJjODgxYjg4NGM1NGQ4ZGJhZDZjYzhkY2QyNWJjMDlmZmE1YzM4YzMxNzM1MWVkNjM5NzUyMDVlYWE5OTkwNzM4In0"
+        },
+        {
+          "resource": "repo://src/update/file_change.rs#L168-L280",
+          "version": "repo-lines-v1:sha256:0ec820c9a2d1996bdef963cd8af4c28ee9929fada68d2faf33b377437f66b1cb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJmOTBlNmE1MDFlNDIyYjM4MDViZGRlMTIwZjMxMmIwM2VjNzg4ZTVmMDJmM2Y3NGQxOTIwMjc2ODZiOTJkOGYxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJjNzhlNmI2ZDU1MmQwMmJlMGYxNWU1ZmNjYzcwZDNlOThjOTcxNWQxMmFmOWViNTY3NmEyZWU0YTI4NDczYzBiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJiMzgxMGI2MTcxYzA0YThmMDI5YzhjNmJmMGEyYTAzOTJmODYzNGFkYjM3NzkwNzc1Mzc0ZTU0ODRhYzIxYzE4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIwMzEzMGI0MDBmZDVkNjNjMmY2NDdkODM4ODYxYzNmN2ZlODUwZDk3YWE5OWM5OWM2MjAxNmFhYWIwNjYzNzEzIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_9173bd549e1b40fca5b01dd5fcd033a1",
+      "statement": "The ordered file worker performs reads, observations, policy work, and writes off the UI thread, returns correlated completion messages, and drains queued writes during shutdown by joining the worker thread.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/file_io.rs#L135-L161",
+          "version": "repo-lines-v1:sha256:9d0485c1f2df41b876383057a84af4200f051e8ff7e3d902646296d311871d22:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljM2FiZTU4MDQxMDhhMDY2MzdlYzQ5YjQyOTgxZGNmZmEwZjgxNGNlNDNlMGEwZmZjNTM2YjgzMzU3NzQ4NjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwYjBhYWJjZDNhZDczNTgzMTcxOWY1NTk2NDg5YmU0YjI0MDIzZTRiYjJjZjk3NDc2MzAzNDU2NjM5OGZhNmMifQ"
+        },
+        {
+          "resource": "repo://src/runtime/file_io.rs#L15-L35",
+          "version": "repo-lines-v1:sha256:614ee2e77b2adf55ac15549cbcc93a871bf733a053b55c43153a00d3c44de93f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmZjQ0YmMxMTkyMzdkMWFlZDZjNzIxYzMxNTkxNzQ3OGU2MzQ2ZGU0ZmI0NDc1ZmEyOTA5MGQ5MzgzMjk5MDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmNWI2OWU4NWE2ZmU0OWY1ZTFmYmU0NjBjY2Y3MTY5NjUzM2FlMTNiOGMzYzIwZTI0OGE0ODhkZGVmNDczZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiNzg0NWQ0MzFiMjcyOWY0YjA4MzJhYjE4MGJiMzkwY2M5ZTNjMGI2OTM2M2YzNDM4NDE0NjY0N2E4MGE2NjEifQ"
+        },
+        {
+          "resource": "repo://src/runtime/file_io.rs#L163-L239",
+          "version": "repo-lines-v1:sha256:5e0900218df13ae3b4b5716cee9dd9da615e58cb6bf65df7660680b32c646362:eyJzZWxlY3RlZExpbmVDb3VudCI6NzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiYmM0NjYzN2FiOTc2MjI4MmZlNGUxZGUxOTNkMjZmNWM5ZjY4NWExNDUzY2JiNDgxMjM5Zjc2YmJlNDAzYTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYTdhMWEyYTRlMDk4YTk3Njg0M2Q3NWRlOGVmM2ZhODlkNzA3ZTdlNzEwNDI3YjdhMTY0MGJmNjc2ZWE3ZGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_127e120150284bb79762b15885f666a8",
+      "statement": "Focused tests cover saved-snapshot and in-flight-write ordering, identity-safe Save As and stale reloads, external-change behavior, policy continuations, cleanup idempotence and text settings, and auto-save deadline/deferral semantics.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/save_cleanup.rs#L89-L158",
+          "version": "repo-lines-v1:sha256:3a11dd9641105fd34b96792c25fa52d03e4a062fd9ceb6dcdc1959d5023dfb2d:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1Y2Y1ZmMyM2YyYTZkMjNjM2VhNTFlNzJmNWU4OTZjNzU1NWZiYWEwNWNkNWIxZWExODJiZjk2MThhOGU4MWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkYjUzMjdiNDYwYTJlMWM3M2MxNGYwNTFhZGFkMmZiM2UzNWEyZGYyNDUzYjA3NmRjNjJjOTJkZDU3OWVjODYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/auto_save.rs#L178-L280",
+          "version": "repo-lines-v1:sha256:f19ed214bd68b45c9f9cc1ab713b03de8d894782e150d7b240e0eff83b07c3da:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyNzI1ZThiZThlYmU0YmIyMjAxNTM1MGZhMDhiZDU0Y2ZlNTNhOWFjOGY4MjRiYjYxMDZkNGU5M2E3YTAxYTY1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIyNTMwYjUzZTY0YzRlY2UzZmRiZWRiOWNlZGQxNmVlMzk0YTNmOGNlMGVmZTA4ZWM3ZTFiYWUwMjZkNGE2NjMwIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJhOTUxN2JhZmM4NzBhMDUxZWU5N2E5ZjBjMGI1ZWVlMDQ4YzlhOTc0YmU5ODg5ZTQ0ZTdjYjNkNTgzOTA3OTMyIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJjNGI2ZjRkYTc2NjllMTFkMDQwZWZkYTlkMzIyNGI0MmRiOTdjNzZiMmNhZDdiYjI4OTc5MmUzMDVlOWMxNzgzIn0"
+        },
+        {
+          "resource": "repo://tests/file_io.rs#L138-L201",
+          "version": "repo-lines-v1:sha256:03e1bb2c718a944d259705db3475425a9aa457b595ddd0265a7c26e4b370c1c9:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY4YTQzMDkyMjFjNmEyZjA0MDQ3MWJjZWVjNDY4MjZlZjY0Mzc5NmVmMTUyNWNkYzI4YWIyZGQxMDUxYjlhYTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwYjk5NmZmYjc5ZGVjYzRhMTU4ZWE3NzI3ZmI1NmE2MzIzYjg0ZmViMWVjODEyYmVhZWE5YjMyOGMyMWIwZTEifQ"
+        },
+        {
+          "resource": "repo://tests/file_io.rs#L203-L221",
+          "version": "repo-lines-v1:sha256:000106b686965e9ed8fe150157331a761f66f8fd0304515be62265ac945ed192:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyN2FkNWJlMDVlYzdlNTMyNmZlNGEyYTI3MzA3N2I0YTY0ZDZhM2VmNzRlZTQ3ZjhiZjQyYTUyMmM2N2JlZDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmNmU4MGFhYzBmYzAyMjQ1OWU3MDY5ODgxNWJmYWRjODhjODcxYzU0MWRmN2U4YmFhZDNjN2JkYzRiOTU4Y2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiOWJmNTMwYzg4N2UyZTg2MzQzMzRiNGQ0YTQ4ODljNDMyMmJkMjI3ZjE3ZWFkOWQ0YTY0ZDZlYjZjOGUyODIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_94aec53539434b82af72ea34e62f2e94",
+      "statement": "MoveLinesUp and MoveLinesDown enter the same planned-edit pipeline as other text mutations: they produce character-offset replacements, mutate the shared document Rope, record one EditOperation::Batch, and schedule normal redraw, parsing, and didChange effects.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/document.rs#L707-L789",
+          "version": "repo-lines-v1:sha256:e1978e131060081cf89c372ea7eefb5fa6ae9d5dc887ebc370d09bcc217aacab:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyMjQ5ZWJhYzhmYWViMDdiOWY4MWJjZjA3OTBmYTA0OWUyMGEzMGEzZDdlZTI2YjNlZGUxNDIyZmZmNDIwMTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5NmY4Y2IwODNmYTgwMGE0ZGNkMjk2OTcyMmQ3YjkyNjg2YWRkOWViZTM2NTU0OTJmYTY3MmIxYTdjZWQyNDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmMzc5OWQwNWU4MzE5ZDI5ODUzZmJjNDBhYmM1YWIwYmRhZjliZGQ2YTBlYTgyNWNmNjAzOTc2N2M2OGZlZjQifQ"
+        },
+        {
+          "resource": "repo://src/update/text_edits.rs#L388-L535",
+          "version": "repo-lines-v1:sha256:9b6dc4c5916a59397a4ff7bd3dd71a2b8cbe3a2967fb6ce987f0b9fe8af081dd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQ4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwNDQ5MDQ3M2VhZDliMjgzOWQ3OTE3NzFkYTI5MjlmMjM0YWM5MzQwZWNhMjkxYzU3ODg4NTMxMWU0YWI4ODU2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI4ODMxMjMzZDI4ZDk1MzVkN2IzNzYxZDIxYTNlOWFlNDNkODE2MGZkNTEwMzVhMTUzN2QwMTgyZTg2ODhmODlhIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2NzZhNTQ0Y2MwMjNlZDQwNWUzYjk4YjhhMzU0MDkwZmFkMTZlOWUxOGQ1ZWU5ZjdiYTZjM2U3MDA1MzAwOWQxIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3MTI1OTc4MDY4M2VkODc5NGZkY2M2MDdiOTUxYjliZDM3YzJmODBmZWVmMjg2ZDIxZjQ0YmNjY2RlMjI5NzRhIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_add9edcb0d9145c38838a3040e5fd7bd",
+      "statement": "Selected-line movement collects and merges lines covered by all cursors, moves each movable run with its neighboring line, preserves each line's original ending including CRLF and an unterminated final line, and supports disjoint runs in one batch.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/document.rs#L624-L705",
+          "version": "repo-lines-v1:sha256:9f141df3e04571c40bcf966c4d410e791429319e09954f4a839343d8b4616404:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0NDliY2U1Mjg0MTUyYzVjNDUzMjRjMWNlZGUyMjgzNjRlZjBjNmJkMjdlMzA5NjI5YTExNjQ0ZWMwNTY3ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1ZmY3OTVhYmFlYTJjYmIyMTMyYzA0YzM4MjIyNmUyNmI5YzliNGJjNDg4ZWQwOGFiNjYwYTRjYmZiNjRmOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiNDk0OWQ3NjAzMmUwMjA4NTIyNTM5MmNhOWI4ZDFjODdmYWYwNDExODBkM2EzMTNlMWMzMmRhNzc5M2VhMjEifQ"
+        },
+        {
+          "resource": "repo://tests/text_editing.rs#L460-L505",
+          "version": "repo-lines-v1:sha256:c4b952997c04569e13703fd76f03d0e9d218190b08911843908b7fdc66d3157d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxYjIxY2IzZjAzNWUxNjYzNDk1YWZkNWYwM2RlMjIyZGY1YTcwY2QyMWNjODQxMWE2MDkxZTk4ZTg5ZmEzMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmOWFkNDYzYmU3MWM1ZjQyMDk0NmFmYmYwN2QwZmU5ZjVmMTFkYTgyZjFlOTQ5MDNjYzMzOTVkOGMxYTBiMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmZTNkODA3MmJlOGUwMzkwOGMxNmZiN2ViNWMzMmVlZDczZThlMjlkOTRhMTQ0YjFkMDkzODM2OGIzYzNiYWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2fa209a4c352416985fefd91bbc2fcd0",
+      "statement": "Line movement maps the initiating pane's cursors and selection endpoints with the line permutation and maps peer panes through the same planned edits, preserving reversed selections and active-cursor state across the shared document.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/document.rs#L600-L705",
+          "version": "repo-lines-v1:sha256:415805ff9fa42a47ccd3daaefb87fbe2ffcc8290ac96f4f6f2fb946b519f1d92:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiYTAxMmExNmI5MGU2NjU3MzVkNzlmZWIzOGFkN2Q1NmI1MDY5Y2RiZDExZDRjOTI0Yjg3MDYyY2U1NjBlMjIwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI3MjJkODY5NTJjMmM0OGM5YmI0ZDljYTI3NTJiNjkzOGQ2OGQyZjI4YTIzZWUzNDliODI3YTM5OGQyOTA0ZDFjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI4YjQ5NDlkNzYwMzJlMDIwODUyMjUzOTJjYTliOGQxYzg3ZmFmMDQxMTgwZDNhMzEzZTFjMzJkYTc3OTNlYTIxIn0"
+        },
+        {
+          "resource": "repo://src/update/text_edits.rs#L409-L525",
+          "version": "repo-lines-v1:sha256:642cecaeb4b8928b91b8b32b660263a443d263991f182b988fd6551bf439658d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlOGZhZjdhNTE4OTdmNjc1MzdiNGIyMWZhNzVjYmFlYjU4NDAyMGFmMDk4YTAyNDNkNTg3YjY5NTAxZTFiMWI1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1OWMxMzU5MDY2NTYzMjNkMWM1ZWE0MTY1NGVlNjZhZmI1ODVhY2RjZmFlYWNhMTIxZDVlMzBiZjE5M2VlZGQ3IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJmMjUyN2NhMjI5ZTBjZjQ4ZWI1ZWEyZTk3MTA5ZGE4NTVjNjU2Mjk1NWUyZjE3MDgxMDYwNDgyZGEwZTRjMTJiIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3N2M0ZjA4MDJhODdmMDFjYWEwZDhkOTc0MWI4M2FjMzI5NWQ1ZWUwMDI1ZTBjN2U5ZDYwMzhjYzVmY2U4YjgzIn0"
+        },
+        {
+          "resource": "repo://tests/text_editing.rs#L460-L481",
+          "version": "repo-lines-v1:sha256:4a2dc9a99e13546969ee2dd7a19fae56d51effe63f9c10927bc4e4f6057c7b3b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxYjIxY2IzZjAzNWUxNjYzNDk1YWZkNWYwM2RlMjIyZGY1YTcwY2QyMWNjODQxMWE2MDkxZTk4ZTg5ZmEzMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmOWFkNDYzYmU3MWM1ZjQyMDk0NmFmYmYwN2QwZmU5ZjVmMTFkYTgyZjFlOTQ5MDNjYzMzOTVkOGMxYTBiMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkMzI3YjA2ZTRlOTc0ZjgxMmRhMWRlZDgwZWU2MTE5NWE3MjNjYmY5NmIxMGZhMDZlYTIxOWRmOWEzNDdlYWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7c611fda7e6d4639bddb0c7569754132",
+      "statement": "A line-movement boundary no-op redraws and resets cursor visibility without adding undo history, while a real movement uses push_edit to clear redo, mark the document modified, and increment its revision; consequently only real movements participate in dirty-state and auto-save eligibility.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L479-L488",
+          "version": "repo-lines-v1:sha256:3512e183ec068a8fa8db6c9d53e60052204a3cba56cb412fcd2d18e7d81cb936:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExMzhmMmViNjdmODk3MGI4OTliNjAwZGMwNzI5ZGIxZmVjZTVkZWNmYTRjOGQ4Mzk3YTBlOTcyZmRiMWVjMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFjNjBmZWMxMGE3MWQyZmM1OGQ1ZWNhM2FmMTE1OGRhZjc0MTRkZTUyZmUxNmJkZGVmN2E0ZThjZDYwOWQ1NGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiMjdjZjdjMjBiMGUwZDAzMzIzMmIwZWNhZDg5NjMxMDZlYTRjZTRjNTVmZjRkMDM2YjJlNzk5MjRhN2U1ODIifQ"
+        },
+        {
+          "resource": "repo://src/update/document.rs#L624-L642",
+          "version": "repo-lines-v1:sha256:0430412871ddeae12b982b73c7d1b9caa7184d508a3f77380a32ccd2a9c0fee9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0NDliY2U1Mjg0MTUyYzVjNDUzMjRjMWNlZGUyMjgzNjRlZjBjNmJkMjdlMzA5NjI5YTExNjQ0ZWMwNTY3ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1ZmY3OTVhYmFlYTJjYmIyMTMyYzA0YzM4MjIyNmUyNmI5YzliNGJjNDg4ZWQwOGFiNjYwYTRjYmZiNjRmOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5NGU3NGFkMmQzMjlkNTI5MzkwMjU3MzYwOTI0OGI5YjkzMTY5Yjc1NTJkYjQ5MGRjOWE0YzRhOThmM2YxZDMifQ"
+        },
+        {
+          "resource": "repo://tests/text_editing.rs#L496-L505",
+          "version": "repo-lines-v1:sha256:b6ba5b47241b0fd11dfefd65bcea308434d0616164c25ac2ce72b837b2d954b7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE1OTM3Njc5MWU2OTQ3NmY3YTA3MTg5NmRjMjViOTEzN2VmODQyM2UzZTk2MzQwY2NmYWMzMzIzZDQyY2E1MWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmZTNkODA3MmJlOGUwMzkwOGMxNmZiN2ViNWMzMmVlZDczZThlMjlkOTRhMTQ0YjFkMDkzODM2OGIzYzNiYWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bb8be72f86d04f0799956398d5156ee7",
+      "statement": "Edits made while a save is in flight remain in the live buffer and dirty state, and save completion snapshots only the content captured by that write, so selected-line movement cannot bypass asynchronous persistence or redirect an in-flight save.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L83-L115",
+          "version": "repo-lines-v1:sha256:990d7e2a702b90660ebb2acf81288a593bffbce279f7f6711257d9d2dc7388ae:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMDgxZGRjYjIyYzNjNGM2MDgzODIwMTE0YzI2NjRmN2M1OTFkOTdhYjc2ZjhlMTk2NzhiMWIwYzgwOTE1OTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjMDY2NDQ1ZmRlMDQ2MmIzNWU3NDYxNDc1YTRkNzdjZDBkMzc2M2RlZjRhZjg4YmE3NjIyZmMyNDFkZTRhYTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhNjYwNTEzODBhOWQ5ZDc4YjU4NjA5NzgxMDBhMTllMjI4MmY5MjE0NjE5YTg1MTFkYjVkNGMyM2M0YzNkYjcifQ"
+        },
+        {
+          "resource": "repo://src/update/text_edits.rs#L388-L535",
+          "version": "repo-lines-v1:sha256:9b6dc4c5916a59397a4ff7bd3dd71a2b8cbe3a2967fb6ce987f0b9fe8af081dd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQ4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwNDQ5MDQ3M2VhZDliMjgzOWQ3OTE3NzFkYTI5MjlmMjM0YWM5MzQwZWNhMjkxYzU3ODg4NTMxMWU0YWI4ODU2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI4ODMxMjMzZDI4ZDk1MzVkN2IzNzYxZDIxYTNlOWFlNDNkODE2MGZkNTEwMzVhMTUzN2QwMTgyZTg2ODhmODlhIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2NzZhNTQ0Y2MwMjNlZDQwNWUzYjk4YjhhMzU0MDkwZmFkMTZlOWUxOGQ1ZWU5ZjdiYTZjM2U3MDA1MzAwOWQxIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3MTI1OTc4MDY4M2VkODc5NGZkY2M2MDdiOTUxYjliZDM3YzJmODBmZWVmMjg2ZDIxZjQ0YmNjY2RlMjI5NzRhIn0"
+        },
+        {
+          "resource": "repo://tests/file_io.rs",
+          "version": "repo-file-v1:sha256:06b0d2550a9c7f0a1ce629986d7d3e15443ea682bd2802465cb3e88416d30c14"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T22:42:43.154Z"
+  }
+}

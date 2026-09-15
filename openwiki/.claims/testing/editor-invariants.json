@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:1014121ce15aea202272f82f2113690c32a9247d6007ebf26581080a1f5adbcf",
+  "claims": [
+    {
+      "id": "claim_97edc34cd46a497ea6a2c87a3b7311e8",
+      "statement": "Editor positions use zero-based logical line and Unicode scalar-value character coordinates; Cursor additionally preserves a desired vertical column that horizontal movement clears.",
+      "evidence": [
+        {
+          "resource": "repo://src/editable/cursor.rs#L3-L67",
+          "version": "repo-lines-v1:sha256:8e7ecf58d7a24ab26a463605fbf2b07b001e5e6ffb5e0141dffb51a2c6901c18:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkZDIxODY2NmE3YWU4YTg2M2Q1MGE1NmU5ZTJkMjcyODg0YzAyMmIzZTZiY2E3NmI2ZDU1YTQ3ZWFiYmFjODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNTlmNGY2MmM2MzQxYzEwYmJlZjdmNzRhZGU0YTY4OGRmNjEzN2I0MTFkMDNhZjI1NDFlYWZhOTEzM2UxYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJlMGUzYTkxNzAyMTUxZWZiZjc5M2M1NjY1NmNhM2Q5MTllMjM5MjcxNGFmMzM0YWNhOGU4MGUxOWQ0NWMyZjYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_06647393cbd642cfb92dc73f173ad48e",
+      "statement": "Document coordinate conversion uses Rope character offsets and clamps out-of-range lines, columns, and offsets; line length excludes recognized CRLF, LF, or CR endings.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L360-L455",
+          "version": "repo-lines-v1:sha256:027e599ce270f2df437cc3ca7e915be600ff67cee65513bd9426767b773b82dd:eyJzZWxlY3RlZExpbmVDb3VudCI6OTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3NmMzZjY1ZTliODFlMWY4Nzg2YTc1Nzk2ODA5YmNiNWVlMzk0NjI5OTA2ZDhiZTBmNjNhMWQ4OWEwYWM4M2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIxMzg2N2JkZjk0NjA2NGQwYjI3Y2M0N2VjNmM1YmI4NGYxNzBkODVjM2E5ZTQ2M2QwMTU0ZTkxMTFkMGFmOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5NTg2YWVlNDdlYWE3YjVkZmRkYzkwOTcxZjg1MGYwNDAyMmEyM2UwZTI2Nzk3ZTU1ODdjNzUxZjRhNTg2N2UifQ"
+        },
+        {
+          "resource": "repo://tests/save_cleanup.rs#L109-L123",
+          "version": "repo-lines-v1:sha256:ceba3a3ac93ceeabe732aabb66c6ea686002d1cddd6aaf260422c3e3dde3d01f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhhZjYzNmU4NTc3ZTBkODI0M2IwNjg2OTBhYzg4YzNkNTMzNzk4NGRmZDY1MTIyMzQ1ODQ0NmNlMjMyMjhkMzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwMjgwNmVkN2E2OThjMTRhNjEzMjViNTc1YzBkZjY0ZjlkZTkxNzc3ZmI1ZGMzYjZjYjU3NDM3M2UzM2M0ZTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ba998e344fb1497f8249d798a0a22d83",
+      "statement": "Text edit planning resolves ranges against the pristine buffer, applies non-overlapping edits in descending start order with deterministic equal-start ordering, and drops vanished or overlapping ranges rather than risking corruption.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/text_edits.rs#L46-L109",
+          "version": "repo-lines-v1:sha256:ca0413334fe97ec04a8cd6ebd5755a1c3812096aec9de49fa37771df6fc57ba0:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0Njk3NmE1ZDZjNTViNGEyNjEwZjEwYTdkMjViMWQyZmU4OGY1YjllZTNjZDg0ZTY0ZDUwZTA1NTJkZGFhOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3OGQyZTY5YTljNjlkMGE4NmRmMGJkYmRkNjYwMjA1YWQ4M2U3MDQyNDA5Zjc4MGUzZGQ0ZWI0MTAzNjM2NWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_84950b8157da442ba03796ad71940e2d",
+      "statement": "A planned document edit is applied as one undo batch while mapping cursor and selection endpoints in every pane showing the document, updating folds, and scheduling syntax and LSP resynchronization.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/folding.rs#L169-L253",
+          "version": "repo-lines-v1:sha256:47a02451142313ea95d428e3be2fa5e21086574defdb73f3abdf6bfc45336f6c:eyJzZWxlY3RlZExpbmVDb3VudCI6ODUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5NTA3YWE2YTMxMDMwNDc4NjgyMGEzZDA4YTNhOWE3ZDEzYzIxNjFhZTNjNTMwZjBjMTk3M2I4OTI4Y2Y4MTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlNTc1NDIyYTFjZDk4NDUyZjA1YzNjMzgyODBlNDM1ODkxMGVjYjNlOGZjYmY1MWZhZjg2OWRkZThiMDMwMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://src/update/text_edits.rs#L388-L535",
+          "version": "repo-lines-v1:sha256:9b6dc4c5916a59397a4ff7bd3dd71a2b8cbe3a2967fb6ce987f0b9fe8af081dd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQ4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwNDQ5MDQ3M2VhZDliMjgzOWQ3OTE3NzFkYTI5MjlmMjM0YWM5MzQwZWNhMjkxYzU3ODg4NTMxMWU0YWI4ODU2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI4ODMxMjMzZDI4ZDk1MzVkN2IzNzYxZDIxYTNlOWFlNDNkODE2MGZkNTEwMzVhMTUzN2QwMTgyZTg2ODhmODlhIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2NzZhNTQ0Y2MwMjNlZDQwNWUzYjk4YjhhMzU0MDkwZmFkMTZlOWUxOGQ1ZWU5ZjdiYTZjM2U3MDA1MzAwOWQxIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3MTI1OTc4MDY4M2VkODc5NGZkY2M2MDdiOTUxYjliZDM3YzJmODBmZWVmMjg2ZDIxZjQ0YmNjY2RlMjI5NzRhIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_42b2dd362f36499bb0fae20ca2d11ee3",
+      "statement": "Each accepted edit clears redo, marks the document modified, increments its wrapping revision, and prevents stale semantic highlights from being used when revision or language no longer matches.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L479-L510",
+          "version": "repo-lines-v1:sha256:8950867aee0a3ac212a287b6a1c3b04016da76cb2f8e07da1e00a2bd86ebae1b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExMzhmMmViNjdmODk3MGI4OTliNjAwZGMwNzI5ZGIxZmVjZTVkZWNmYTRjOGQ4Mzk3YTBlOTcyZmRiMWVjMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1NmUwNDI1YTFlZTJiYTYwNWVkYTVkNGE1OTE4NmZjODY2Y2Q5Y2ExMTIzNzk0NjYyY2UyOGMxMjJjZGZjZTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFjNjBmZWMxMGE3MWQyZmM1OGQ1ZWNhM2FmMTE1OGRhZjc0MTRkZTUyZmUxNmJkZGVmN2E0ZThjZDYwOWQ1NGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2OWNlM2RkMDRjODVhZTUzZTJkNjA3ODMyOWM4NTJiNDdkM2Q1M2Y1MTkxYTA1YWI4ZTU4YmIzYjJlMDJmNzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_77f00a9dc18e4450bb8676ef0ca7d8e2",
+      "statement": "Undo batches retain lossless cursor, selection, and active-cursor-index state for each existing pane, allowing undo and redo to restore pane state without restoring layout or closed panes.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L10-L80",
+          "version": "repo-lines-v1:sha256:10c6e02c009b58e9ac62b9f4f9e650130bc82f79550a123642e5f6e103f3a82b:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4MDlmM2Q5YmQ2YTJmYzJhYzYwOGI2NDMzN2M3YjI0MTcxOWU2OWQyZDk1OWMyODNiM2E3NTZhZjg1MDZhODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzNGM4Mjg2ZGUyZTJkYTJhNjhiMjViZmZlNjNhNzhmYzY1MGJiMDVkMzJkMjJiYTcyOTI1MTI2NGZiMTMzYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllYzc3Y2Y0YjVlYWQyYTJkYmJhYTg3NzM5Yzg1OTM1NWM4NzFhYmYyM2UyOTZhOTBiNzk0NDk3MTdhN2M1ZDIifQ"
+        },
+        {
+          "resource": "repo://tests/undo_pane_state.rs#L16-L179",
+          "version": "repo-lines-v1:sha256:41919ddb4953365050932f2b36a7f293be7c5e2fd006f2b1c5f81d7d24fda909:eyJzZWxlY3RlZExpbmVDb3VudCI6MTY0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkMmNkNGRiNDhhMzUwZThmMGI0Nzk0NGM0NmUzZmZkYmJhMTMyZDIyOTBhOTFkNzAxMmI1NmViNDZjOGFiNGY2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlOTZmOGNiMDgzZmE4MDBhNGRjZDI5Njk3MjJkN2I5MjY4NmFkZDllYmUzNjU1NDkyZmE2NzJiMWE3Y2VkMjQyIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_42a50663b07647919847a7b2c4ee50f3",
+      "statement": "Folding is view state rather than document history: fold navigation and collapse do not dirty the document, while edits map unaffected regions and discard or expand touched regions.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/folding.rs#L169-L253",
+          "version": "repo-lines-v1:sha256:47a02451142313ea95d428e3be2fa5e21086574defdb73f3abdf6bfc45336f6c:eyJzZWxlY3RlZExpbmVDb3VudCI6ODUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5NTA3YWE2YTMxMDMwNDc4NjgyMGEzZDA4YTNhOWE3ZDEzYzIxNjFhZTNjNTMwZjBjMTk3M2I4OTI4Y2Y4MTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlNTc1NDIyYTFjZDk4NDUyZjA1YzNjMzgyODBlNDM1ODkxMGVjYjNlOGZjYmY1MWZhZjg2OWRkZThiMDMwMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://tests/folding.rs#L153-L181",
+          "version": "repo-lines-v1:sha256:2334a2d4401e841204b9da2ccc473b7593085195658b46b363f72d3e3fb16a48:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0ZTQyMDhjZDZmZmI4YzRhMzU0N2IyZjU0YWRhMTk5NzhjM2YzNjVlNzhmOTUwMmVmNTE0NWNkZDJhYTg1NDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkzNDFjMWY1ZmFiOWE5NjVhZWVlNDNiYTIyZDUxMGI0MWQ2N2FiOTI5NGNiN2UzYmM1OTcyZWI1YWM2NWFmZDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a6d6213205cc42bcb1ec079f92fc2e08",
+      "statement": "File identity and saved content are path-bound: an identity is usable only for its source path, and a saved snapshot cannot authorize overwriting or clean-state comparison after an unrelated path change.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L229-L259",
+          "version": "repo-lines-v1:sha256:9a0e9a0dabd331f6a2ac069928fe068ba619c3d3e44bfae69ccd47063c4a695f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlNjNkMDFjOTA2NmNlZDE4NTUzYzI4MjU4YTNlZGJmMTU4MjYzMzFlY2Y5MmEwOGEwNDUxMWUzYjQyNzcxMWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjNzI2MDA2MjFkOWJhNTRjYWI5ZWJiMWIzNTUwZDdkODQ3MmNiMDNmNDdlZWEwYjBlODkzMWYyNjM2YTk5NTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRlNTE2Zjc4NTAzYzNjOWFkODk5NzU4MDVjOGZiZDM3Mzc3YzBjNTFjZWQyMzI2MjBkZjZmZjAxMDcwZjRkYTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0YTM1YTE3ZWI0OTljZTY3ZGVkZmRiYWZiMWY1MWVkOGQ4NjY2NzVmMzM1ZGQ5NWY2NDZkOWE2ZjVjODE2YWMifQ"
+        },
+        {
+          "resource": "repo://src/model/document.rs#L313-L343",
+          "version": "repo-lines-v1:sha256:8ef7b035c888f423cafc46728f2fd73c2ce49c434051368366d5c9c73cd8f1b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1ZTlmOTU4NThhNmZjOGNjMmE1Y2I1NjE0NTNkN2FhNDYxYzMzZDNiOWE1ZDlkNDY4YmNhZWZiOGI3ZDBjZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhYTRjNTM0MzYxOWE0MjNkNzk3ODE0NmE1YTRkZDlkNjQ3OWRjMDE2YTQxZTQ3NDhmMzJiYjM2YjIxMzBkODUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImViOWEwOGJjMjlmNmViZWJlOWE1ZjAxOTAzZDk4NDVkYmNiNTg0MmE0NTVmMDdkNWY0MDAyZGFjMzJhNWM2MDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmNDZkMjI1YThhNGMyMTQ0MjgyNTViNTJiZTQ3MWY0OWY1YzIyYjE0MjYwMzgxZDM4MDdiM2U1ZDMxZTk1M2YifQ"
+        },
+        {
+          "resource": "repo://src/model/document.rs#L83-L114",
+          "version": "repo-lines-v1:sha256:317b74ff0076f3bdd8daab1b8e439f2df22a214a3db9dd65b6fad0ce15de7d43:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMDgxZGRjYjIyYzNjNGM2MDgzODIwMTE0YzI2NjRmN2M1OTFkOTdhYjc2ZjhlMTk2NzhiMWIwYzgwOTE1OTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlM2E3NDNkMGI0NjFiMjgyN2EzNzM2MGE4OTNhMjhiNzk0MGZlZGRlMzQ4ZGQwMTE3MDAyYjEyOTRlMWE5OWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg0NzYwYWE4NTBhNmM2N2Q0Y2RkMzdmYTA1NDA3Y2U1MmM3M2QyMzk1YzZjZTgzYmU2NWJmZmQxMGZhNzU5ZWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e01fbdf0ca7e4825aa2bcf0b4747af29",
+      "statement": "Known file paths and symlink aliases reuse an existing open document instead of rereading it, preserving unsaved buffers and diagnostics; the focused group is preferred when reusing a known path.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/file_io.rs#L76-L93",
+          "version": "repo-lines-v1:sha256:7bb880f0a5ef778a7828a140675a35e148889754a4c3de92fbcc25463a615435:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiNzFlM2JmNWE2MWQwY2M1MmQyYWMwMmI4OTY1OWEzMTA1NTAzOGY0YzAwNzljZWMzMjk1MGM5NTZjZWNmYjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkYzcwZDkzNzhlNmU4NGI0YzJhODAzNjlkMTJiNWU5MWQ2OTljOWY0NmMyYTAxNWEwMTNhNmQ0Njc1ZDY3NzcifQ"
+        },
+        {
+          "resource": "repo://tests/file_identity.rs#L9-L80",
+          "version": "repo-lines-v1:sha256:7781d4d541b677135a6fd8f997bb9ab21b4c77951a53e5f57ffe5d322f953dce:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljZTFhYjJmOWNiZGI5MGQ1YWM5ODhhNDY3MjUwMjFkYmM1ZDllMjE4NWZiNDUyN2ZmOTYzNTIyYzk0MTIzZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0ZTQyMDhjZDZmZmI4YzRhMzU0N2IyZjU0YWRhMTk5NzhjM2YzNjVlNzhmOTUwMmVmNTE0NWNkZDJhYTg1NDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4NGJkZjU2NjFjZWRiMzMzMDk2MGM4MjlmMjViMzgyZTdhOTU5ZTdhNDcyZjdhYTFlODZjMzMyZjM5ZTE0ZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_298e1edd06ca4f3284a9e34feacaed5e",
+      "statement": "Save cleanup applies configured text policy as one undoable transaction; successful completion records the saved snapshot and clears modified state, whereas failed writes retain modified state and save_error, and no-op saves do not add history.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L313-L343",
+          "version": "repo-lines-v1:sha256:8ef7b035c888f423cafc46728f2fd73c2ce49c434051368366d5c9c73cd8f1b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1ZTlmOTU4NThhNmZjOGNjMmE1Y2I1NjE0NTNkN2FhNDYxYzMzZDNiOWE1ZDlkNDY4YmNhZWZiOGI3ZDBjZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhYTRjNTM0MzYxOWE0MjNkNzk3ODE0NmE1YTRkZDlkNjQ3OWRjMDE2YTQxZTQ3NDhmMzJiYjM2YjIxMzBkODUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImViOWEwOGJjMjlmNmViZWJlOWE1ZjAxOTAzZDk4NDVkYmNiNTg0MmE0NTVmMDdkNWY0MDAyZGFjMzJhNWM2MDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmNDZkMjI1YThhNGMyMTQ0MjgyNTViNTJiZTQ3MWY0OWY1YzIyYjE0MjYwMzgxZDM4MDdiM2U1ZDMxZTk1M2YifQ"
+        },
+        {
+          "resource": "repo://tests/save_cleanup.rs#L30-L107",
+          "version": "repo-lines-v1:sha256:d8acf08d8e619bc3bddb74069db94a70c620a068ff86826a5d9ad67fee4191b2:eyJzZWxlY3RlZExpbmVDb3VudCI6NzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1ODNhY2Q5NDVlNWVjNzJkMmQ0NWU3MGI5ZmRlZGIzYWNmZjgyNDIzOTc0ZTFiODBmZjA2Y2E1ZTA3ZGUyNTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_049971e3df304dba8643caa1291ac523",
+      "statement": "Close saves are guarded by a modal snapshot and final rechecks: changes during confirmation, busy or failed saves, external conflicts, and failed CSV commits cancel closing and leave tabs open; only a live save confirmation may complete the close.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/closing.rs#L130-L241",
+          "version": "repo-lines-v1:sha256:c38f4372a491704e0443f0651b563557b44e67cae84f55e4e8542887d2ed4366:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI4YzJjNmNhNGE2NTQwZjQyMzEyZWZjNzcxNzU1ZTIwNzcwMDc2ZWZjMWM4NDllYWI3ZTgzMmRlZDZlYjliODVlIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODkzZjQwZTM3ODFlYjg5NmM4MmQwNDZhMDgwNjdhMTFlMzVjZGYyZjFkZmFmMjZmZWE5MGI4ZGI2Njc2NDEzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIxOWU3NjM1NWNmMTE5OTQ4MGMzZjk5ODM2YjE0ODZjODQxZDg5MWZhYWQ5MDRjNjA4ZTA5MzAyMmQzNzU3YWVlIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MSwiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIn0"
+        },
+        {
+          "resource": "repo://src/update/closing.rs#L71-L125",
+          "version": "repo-lines-v1:sha256:1e81a8b8ba4918d8a3ecc536ffd3007823430e8c29215ee2533c4a1c7b185acb:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2ZGE5NjdjOTY5YzY5ZTAxYmMwYTc1NTI0YjZiMjlkZDU5ZmYwYTljYjRmZTU3ODM2NTJlYjBmY2UxYjMxMDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2OTg5Nzk3Y2I4YmEyZjAyYzU4Nzc4NDU2YTc2ZGI3ZDkwODg0YmYwMGY3ZmNiZmZlNTllMTc5MDYwMmEwMTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjczODE5OTE2MWM3NWNmMDFjOTZhZDgwNzdiZmY5ODljZmRkMGM4N2UwN2FjYzYwMDBmMDhkMDRkZDY2NTRlZmYifQ"
+        },
+        {
+          "resource": "repo://tests/closing.rs#L1-L260",
+          "version": "repo-lines-v1:sha256:fcd494baf5aeac0067c08b6ddae6c554420d0b4ec816023d5717f253d6f43029:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI1NjY2ZWNlYmVlNzJjNTRjNmNjMTBlZDE3NmQ2NzM0ODg4M2E4MzczNjRhZmEwMjE5MjVlMzE2ZmQ3YzkxMmUzIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJiMGY1MTlmZmYwOTA3ZjJkMGM0YjljNzk3NDIyYjQ2ZjhmMmI4ZDUxYWEzMzM0ODVmNTNiZjM3ODgyODkzMTEwIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5ZjZiNWI5NTgxNWEwMjBlNDY5NDRmOTcyNDBhOGVlZGI0YTg4YTM2ZTNlYzJmNzIyYjljM2JiMjlmZjg4ZTZkIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_4ec5148f919643acb1738a2ab00ff98a",
+      "statement": "Line movement plans each movable contiguous cursor-covered run as a rotation of the affected line contents, preserves each original line ending, maps the focused editor's line state explicitly, and applies the result through the shared edit batch so cursor columns and reversed selections remain recoverable.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/document.rs#L624-L705",
+          "version": "repo-lines-v1:sha256:9f141df3e04571c40bcf966c4d410e791429319e09954f4a839343d8b4616404:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0NDliY2U1Mjg0MTUyYzVjNDUzMjRjMWNlZGUyMjgzNjRlZjBjNmJkMjdlMzA5NjI5YTExNjQ0ZWMwNTY3ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1ZmY3OTVhYmFlYTJjYmIyMTMyYzA0YzM4MjIyNmUyNmI5YzliNGJjNDg4ZWQwOGFiNjYwYTRjYmZiNjRmOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiNDk0OWQ3NjAzMmUwMjA4NTIyNTM5MmNhOWI4ZDFjODdmYWYwNDExODBkM2EzMTNlMWMzMmRhNzc5M2VhMjEifQ"
+        },
+        {
+          "resource": "repo://tests/text_editing.rs#L444-L494",
+          "version": "repo-lines-v1:sha256:4f76553a7c8c4a94612e8db225786ca1be65d50f8940a3924973f01821e670e8:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ2ZThmNWI0NWE2NWQ3MTliMmIyYTI5NTlkOWE3Y2FiODJlY2YwMWExZDUwNzlhZmZiY2Q1MDljYTZiNjVmMDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlOGMxZWY1NGMzZTMzYjNiYzYyYjQwZjk3YTQ3MWJhMjcyOThlODY2OTBmODBkNGU3OWQ0ZTJlOTI2MGFmYzMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_96935e400d8748abacbd48b141625614",
+      "statement": "Line movement at a document boundary is a no-op without an undo entry, while disjoint multi-cursor blocks move atomically and blocks touching an edge remain in place.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/document.rs#L629-L642",
+          "version": "repo-lines-v1:sha256:335292091f32e66331baa720a94d7872e3ff473c2a1d00f9f2f554d9ed7e4bff:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyM2NmZTkxOTI5ODY1NTUzYjA1ODJhZjA2ZGZjNjI0NGM3MjBkZmFiMjBjMzc4YjEzNjgxYTg0NzIzNjRkZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlOTFmZDE3N2M1ZDA4ZmFiMmQzYzA3ZjkzNzIwNDUzYzM1NTc0YTVkMTkzNWFkODEwNDMwMDNmY2M2N2Y3YTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5NGU3NGFkMmQzMjlkNTI5MzkwMjU3MzYwOTI0OGI5YjkzMTY5Yjc1NTJkYjQ5MGRjOWE0YzRhOThmM2YxZDMifQ"
+        },
+        {
+          "resource": "repo://tests/multi_cursor.rs#L325-L360",
+          "version": "repo-lines-v1:sha256:9f16901a5c9b307549b1485df51c456b919ad9c388d9fe88d5bd62d4a18e9e2e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRiOWQwY2ZiZmMxYzYxNWZkNGVkNDEwNTFhYWZhMGIwZmI1MTQzOTRmMzIwMjMyMjdmYmFiNmQ3YmNmZTNjN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg3YTMzODNkYjI0OGNjODk1OGY0NzNkMTk4NWUwZWE2NWZlYzYwY2VkZmFjZmQzYjY5NmU0NWU3Yzk1Y2Q1OWQifQ"
+        },
+        {
+          "resource": "repo://tests/text_editing.rs#L496-L505",
+          "version": "repo-lines-v1:sha256:b6ba5b47241b0fd11dfefd65bcea308434d0616164c25ac2ce72b837b2d954b7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE1OTM3Njc5MWU2OTQ3NmY3YTA3MTg5NmRjMjViOTEzN2VmODQyM2UzZTk2MzQwY2NmYWMzMzIzZDQyY2E1MWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmZTNkODA3MmJlOGUwMzkwOGMxNmZiN2ViNWMzMmVlZDczZThlMjlkOTRhMTQ0YjFkMDkzODM2OGIzYzNiYWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_458629f703334aefa03d4a52307ddab9",
+      "statement": "The edit planner converts LSP UTF-16 ranges against the pristine document into character offsets, preserves protocol order for equal starts, and drops vanished or overlapping ranges instead of applying them against shifted text.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/text_edits.rs#L61-L109",
+          "version": "repo-lines-v1:sha256:1c20912d691a95e9f5f08d4086d6f27b13c49d0bd86392aa4e7617a269a3f5b8:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViODg1ZmJiYjU4MTUwMjM3Yjg5YTkwZWQxMDk3NjVjMWM3MDI3ZWM5MDA3YTJjNjI2MmM4YThjMWQyNTk2YWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3OGQyZTY5YTljNjlkMGE4NmRmMGJkYmRkNjYwMjA1YWQ4M2U3MDQyNDA5Zjc4MGUzZGQ0ZWI0MTAzNjM2NWYifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T22:42:43.154Z"
+  }
+}

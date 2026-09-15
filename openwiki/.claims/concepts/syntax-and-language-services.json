@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:8ce2568e2dbd3da42c5d335f48da7d3e8aaf4cedbecadc88bb26345463fc7d72",
+  "claims": [
+    {
+      "id": "claim_95ce080b1ed34519bb7d9f4676a6e81e",
+      "statement": "Language detection checks registered filenames and compound suffixes before ordinary extensions, falls back to PlainText, and a Set Language choice is a non-persisted session override that survives reload and Save As.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L123-L129",
+          "version": "repo-lines-v1:sha256:1bdbaa8453eecab775576fc21040e9e5ece23cdb2f3311ae51cb811138e7efd9:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTRlMjZjYzJmMWNhM2I5NTkxZWJkMTY4N2JjYTQxYWFmNzVkYzM3Y2Y5MWE4NDE1MDI1NjlkZTNhMzRlZGU5NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDU0ZDViMTYyOWNkY2MwMmFlYzJmNjc3NTIwNzA0NmQwODQ0ZjU4YTZkYjZlMzEzMTFmZWY1OTcwZWMyN2ViZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2U1ZjViOGEyOWJhYzUxNGJlMzgwNWNiOTFiZjBhZTQyNDgxZDBkZTMxODMzMDhkMmQzNzVmNTBkNjBkODNmNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTYxYTA0OWYzYjZhYzU0OGExMGZlYTg3ODMyZTcxMGMyNWUzMTBlZmQ2MWRjMDVmNGIzMDI2NWUxMDQwNTQ0OCJ9"
+        },
+        {
+          "resource": "repo://src/syntax/languages.rs#L22-L41",
+          "version": "repo-lines-v1:sha256:6435100ca37d5ae7422861f547cb748abdfa7de759fec2c0ed73c696d6f4a1c5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjZjhhNmFkNDUxZjI3MDAzNTBkMDVjODc1NmEwYjQ5NjU3MTVkOWE0MzZjNzM3YmM0OTM4ZDc4MDRiMDQyYmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1MzUzYjljNDZjNDBkNGJhOWNjN2Q3ZWVmZWU0NjI4MjA1YmRjYjViNWZkMmNjZmE2MzI5ZWEyZDM5YThiYTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmYmJhZTNkZGUwZjZhYTQ1MDI3OWY2NmU3MzNiOTg4NWJlYWRkZDYyYTJmOTVjYjg3NTM3Y2QxYmJiOWY3NTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4NmE3MGYyZjUzY2YxOTAyMjI0NzA3OGVlYjkyNjFiN2RiZTU1OTkxNmY0NDliOWUzZDY0NTQ5MTU4ZTlkOTQifQ"
+        },
+        {
+          "resource": "repo://src/syntax/parser.rs#L100-L125",
+          "version": "repo-lines-v1:sha256:b39de84cde2807f029f4677c5abd72a24080b7cb8c4ee174d0bd213c7d05899d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwNjZlYmJmOGRlNTJmOGRjNjc2M2E3MzQ1M2IwOTBlNzNkM2ExNGMwNGQyMGZhMzRiMjIwNGE5YjBmZjAxNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjYzI1NGQ3ODhkOTVkYmQwMThhYTZhNWRlNzg2YWNhYTdmOTRkNmVkMWQyNmNlZmVkMmEyNWI2ZDI0ZjhjNGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkNDYyYzc0YWY2MTY5YmNiZDU0MjU4MDA3ZmZhYTFiODJjZGRiMjBkNDhhNDZiMDVlNjJiYzkzOGNmYmViMmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_60950b32b1c440f4b1300144be21ff7d",
+      "statement": "ParserState is worker-local and caches parsers, compiled queries, and per-document parse state; edits use Tree-sitter incremental parsing when possible and invalidate to a full parse when incremental parsing fails.",
+      "evidence": [
+        {
+          "resource": "repo://src/syntax/parser.rs#L459-L535",
+          "version": "repo-lines-v1:sha256:5b3613c767f5ad3e3e5dc0b7b7976beb8326c3fbbb9f35f20b9152526300f8cb:eyJzZWxlY3RlZExpbmVDb3VudCI6NzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5YTk1ZWY4ZTQ2MDQ2MDFmYTU3ZDljMTg2MGM2NWE3MWQyYmMxYmJiYTk0MTQzYTFjZWEyZDdlNzJkZDE1MTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmNzczNzIzMGNiODFhZWExOWNiMmI0YjVlYTk1MDk0MDhjODc2MzM5MjY4OWU2NzE5ODNhZTY2M2Q0MjkzNGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRlYjczYmU0MmJjZmRhNmU0OTdlY2UyMTUyYTdmY2Y0YmU1NDJkYjhjNGFmYTkwZWZkZTZmYmFhZGRjZDJkNTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViOWEwOGJjMjlmNmViZWJlOWE1ZjAxOTAzZDk4NDVkYmNiNTg0MmE0NTVmMDdkNWY0MDAyZGFjMzJhNWM2MDUifQ"
+        },
+        {
+          "resource": "repo://src/syntax/parser.rs#L666-L707",
+          "version": "repo-lines-v1:sha256:98ebb448b077ac1e0551b92b9b938e7cf6c2278a4245e129900ede9fae4ef31c:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4YTViNmNiYjc1NDNjYjViZjdhNTY1YWE4NjMzMWEzYmYzZjQyNDgzYzRmNjE3M2MyNWFiYTdmNWFmOWVmMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1Y2RlZjgwODVhZTc0YWI2MzZkNjQ1OWY1YzZkNWZiZmIwZGIyNjRmMWIwZDc1YmFjNTE5YzliM2Y2NzE3YWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4ODA1NDk4YjEzZTNlNGE0YzEwMTcxOTNjZmQyOTFhYjExYjUxMDI3ZWQ5OWQ2Y2ZmMzQ0OWUyZmUyMTQxYTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dc9ec4d50bea4af4813e19ec6c324cfa",
+      "statement": "Tree-sitter host documents support language injection, and syntax tree snapshots retain document-relative injected ranges plus the document revision for structural consumers.",
+      "evidence": [
+        {
+          "resource": "repo://src/syntax/parser.rs#L100-L177",
+          "version": "repo-lines-v1:sha256:ed75863f9532e079153dca333b1f2fc9df47916ff1085834de9017873d3324fc:eyJzZWxlY3RlZExpbmVDb3VudCI6NzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwNjZlYmJmOGRlNTJmOGRjNjc2M2E3MzQ1M2IwOTBlNzNkM2ExNGMwNGQyMGZhMzRiMjIwNGE5YjBmZjAxNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyOGY0YjY3MDMzNTE0Zjc4Mjc2NWNjM2RkM2NlMTc1NmUxZTcxNzVmYjBmYTJiYTBkYzBlMjQyNDYzYzgyMTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRkMTdlZjIwNTJjZjg0MjBlYmZlNGI5MDUwNDQ3NDE1NzIwNWQxMmIzNTgxMGY5NzgyMzFjMTI2NDQzZDFhYzgifQ"
+        },
+        {
+          "resource": "repo://src/syntax/parser.rs#L546-L585",
+          "version": "repo-lines-v1:sha256:fd7c20c61cc17d297c8f540015fe78ada32cb1ae4ec58b5a39e904d75bf4c147:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwYjdjNmFjMjYzOGFlNzRmNjYzOWNmOWI4ZmYyNzkzMWNkNzU1ODA0OGQ2ODY1NTg4OGE3OWI0YmI0ODBkOWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4MGRiZTlhMDhkYTZkMDAxMjU2OTFiMDZiZGU3NWMyZDMwMTlmMWZjZmIzNjllOTczZTBjMzVjZGVkMGQxMDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVhNmE1ODgyZGNkZTE5NTE1Yzg2MjRjNjY2NWZjMWI1MWIxYzA1MmE1MDE3OTYyZTRkODQ0NGU4NzFmYTExNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwOTZkMjkyYmY2ZTQxYzYzMjQ3NWRmOTdkY2JjM2JlMWQ2OGNjY2RlMTc0NTNmYzczMTc2NTBiZmNlOTRmODIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_53fd3efefd424cc3bcf9f3352c6b9390",
+      "statement": "Folding uses a same-language, same-revision, error-free syntax snapshot for supported documents within a 32 MiB bound, otherwise falling back to indentation folding, then normalizes and fingerprints candidates.",
+      "evidence": [
+        {
+          "resource": "repo://src/syntax/folding.rs#L94-L138",
+          "version": "repo-lines-v1:sha256:e4e323143d6e4c5be5c6941f8501ef638a7afbdc4a7876392e6a0b6f46ecb1fc:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2NTk2OTYzNTUxOWY0NWJhNDk5YzhkMzFlYzU4ZDk0Y2RiYTgwYzRlMzZhNGM2NDQwNzE3NWVhZmFmNTg3ZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNjNjNGQxYWY4Y2Q4OWJiMGJkZDc2NTdmZmNiZjY4MDZhNjEwZDc5ZDZjOGQ0YzMwN2MyNDFkZjM5MDA1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ0NWU4YjI1ZTI5N2Q5NzJhNGE5MDM2MzU5MzM5MDc2ZTZhMGY1MGRmYzhkOWNlYjM0ZDNjYjlmOWE4ODM5YWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f3399dbe01da405a81c3caf1b68a6469",
+      "statement": "LspManager, rather than the model or protocol modules, owns server processes, server/root routing, open-document associations, diagnostics, pending requests, restart state, and shutdown/crash distinctions.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/mod.rs#L2-L8",
+          "version": "repo-lines-v1:sha256:07e0c5f9b3722d1410d8b2712cc05773e62e74d77bb6b7418ed61f9d066a3f37:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjA2NTczN2UwNzFmOWZiY2RmNTRiOGFkMzhlNjZlNGI2ZjFmOWZhMWMwMWVkNmFmOWQ5NjY0ZDIyMmE5NjQwMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjhiNGM1YWJhODgwZTNlYTk2Zjc1NGQzODczYTQ2MjBjZDI3OTUwNWYwYzAxYzUwMTcyNzhhYzc2NDJmOGE4OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjEsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGE3YWU0MTZiOTE3YTJhMzllYTMwNjBjYjMyOWU3MTEzZDIzZTZkNmJkZTNkY2E0OGQ2YjVkODE0NmRiYjBmYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjdlMTFhY2RmNDM1YzIzZjY1ZDZkZTg4NWQzMWViNmJiNDUwY2ZlZjQ1NGQ5M2U0NGYwYTQyYTc3ZWE3NTQyNSJ9"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L422-L526",
+          "version": "repo-lines-v1:sha256:afa04c5b3796df5fd2a4dedd5b08b2a14c8f9d1686c950d7b30101e7643f1496:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkNTJkZDA5NDRhYTk4NDlkOTFhZGI0OTZkNjc0YTRjYzU4NDcyNTFjZGNhOTcyYzliZTNhYzdhNGRkYmJhMDUwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJjYTMxOGJjYjljYTBjMzFmYjA5NWRiMzIxYjQzODYxNGJiNjBlZTVlY2ZjNjZlMDZjYTM3YTljYmExNDFmODQ0IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyYzBiYzVhZTNlZTkyZDhjMWM3YzlmZTg5ZGIwOTEyZjY2ZWNhYWNlZWU4YjFiYjNjOGIwN2VjYzY0MTNkYTVjIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_0c0133976cd947b89d7a6ae20b65ecc6",
+      "statement": "The LSP client isolates each server into writer, reader, and stderr-drain ownership threads; transport uses flushed UTF-8-byte Content-Length JSON-RPC frames and robust buffered parsing.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/client.rs#L2-L12",
+          "version": "repo-lines-v1:sha256:daec54bcfa81edb99a9d35c250f0197ded9570050dd22f20f8a57ebc47c78692:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4ZTU2ODY4ZjAyYWQwYzhiMDU2ZTdkYTdmNjRkNDA5MTM4YzUyOWE3Mzc4NjA5ZmJiMDlkMDA4MWFiODU2NjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0YzA4NWU2MDE1MmE4Y2Y0OTFhZDM1ZDI3NTc1MzYzMzE1MzU2MzRmMWFiNjM2OWZmNTdkMGJlOGY0NjBmZTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3YTVkNGFmM2MwNGNhYjBhOGQ0NzVhNDNiOTcxMjg2NjY5ZGFlNWQzZDA1YTUyYzRmOWQ5NGFhYTU0Njk2NGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmYWMzNjQ2YWEzYmQxMDIyMGViMDg4OTcxMTcwMDFhNWNlMDBjY2Q5ZTIzZDkwMTJkMTc3YTg0OWI0NWMyY2UifQ"
+        },
+        {
+          "resource": "repo://src/lsp/transport.rs#L11-L72",
+          "version": "repo-lines-v1:sha256:80772a771a61f3edd1b96a345844a85751f6c522216d787485b4c185d26ebfd7:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxOTNkMDM2MDRlOTRlNGM3OTMyYmI4NjFkMzc0ZWZjM2Q4MDA1YmFiZjUzMzBjNTFlNDJlMTIzOGJkMWJkNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0NGQxNjI3YTk0NzQzNWRjMmZlYzVhMzc5NDg3YjQ0M2I3YmY1NjZlY2Y3MmJlM2NjZDBiY2U0YmNkYWZjMjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzMWMzMjcwZmE2MTNiYjczMjM5ZjNiMmU3OTY0ODAzYzUyOTE4MTVjNGZhMjM4Yjk5MTdhOTcyZjY3MTFhNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_df4e8a75b59541a9a88a7b5298731ded",
+      "statement": "Server capability parsing gates document synchronization and language features: absent, numeric, and options-form textDocumentSync are distinguished, while save support separately controls didSave and includeText.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/client.rs#L187-L301",
+          "version": "repo-lines-v1:sha256:15cdb0ae6b385f3fbe8bbee43cc9de05acc5fb68dd1a80aa2927052d45f89f87:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI3YjgxMWZkNDQzYjFlZDViMjM3ZDkyMmRmMjY4Nzk2MDlmZjJjN2ZlYTI4MWNkZWVkNzNjMzg1N2U4NDc0ODQzIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI3NDAxNmYzMWYxMmNhY2RmZGRmYzQ1Mzc5N2E5NzNmYTE5NjY0MzZlNzY4YzdhZGIzNGYxYmNhZWViMDVmNzQzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI3MDUxNTI5YWFiMzYzMDgwNTgwNjc0NTRhMWQ3ZjhmMDkxNjUwODIxMzkwODY1OGFjOTE3NjM0NTRiZTNmYjk5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmNWFjMTQxNzQzZTU4ZTg4MTlkZDlmNzkxY2Q4OWM0ZmU3NzljYTVlOWM4Y2YzYzI2NGU3ZGY2NGE1NmFlZmFlIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_f107c8de8fa54f9ca71ee35734febce2",
+      "statement": "Document changes are debounced for 30 ms with a 300 ms maximum wait from the first edit, and pending changes carry the latest revision for flush and send decisions.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/sync.rs#L16-L24",
+          "version": "repo-lines-v1:sha256:f63741838b9c38fa507e3597f41277e414f7c3814a3a0261db7d02cc45ebe9c4:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2JjZjRjYzVkODkzODc0NGZkMDZmYTdlYTNlYzFmZDQ3YTQzNGViZWEyYjVjMTU1YjcxMmQ0MzhiOTE2MGY3NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjgxOGNmZjlhMDZiYzJiMmU2ZmNhOTU0MThlYzIyZmVmNTc1ZTRhYjM4ZGJhN2RmNzUwMTE4OTVhZDg0NDVmZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2M3N2FkNjJhMzIxODIwNWU4MTY3MDI3ZmU0MDQ3YjVlMTE5ZTIyNTk3MWQzMGYxMjliNWQ0YWI0YzEwMGIwNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjgwNGE1NzU0MGZlMTU0NDgzMjJlYWUwOWM1NWY3ZTU3NmU1NzA2YjY2NWJhYTBjMmY5YzA2Zjc4YTI5OTUzMyJ9"
+        },
+        {
+          "resource": "repo://src/lsp/sync.rs#L71-L129",
+          "version": "repo-lines-v1:sha256:9b7c21d09bc799f0c374f85cef2f7fa49fb55e6f39c5657775d048dcadd1d77d:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiMGI3N2M2Y2IwMjg1ZGJiY2FiZWViZWQ5MGU1MmZhN2YzYmI1MTMyNjdiNjBhYTI0M2VhMTQ4YTI5NmMxNTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYzk4ZDZiMGRjNDkyYzUwMTZkZjEwODA1YTNhNTRlYjljMTg0YTVhNjEzN2U3ZjRiZWNmYTBjMjIwNTUwZDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7e71a1be07b94bd89659edb29128950e",
+      "statement": "LSP coordinates are represented with UTF-16 code-unit columns, converted to and from editor character columns with clamping; diagnostics whose start line vanished are skipped rather than rendered on a clamped line.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/position.rs#L16-L81",
+          "version": "repo-lines-v1:sha256:5a7258a0b9fe497d93d833036171617c4ce13c4b30184c4ab60a7c6ee453811c:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmYmUwZWRkMTRlZjAxOWFmMjI2Mzc0MDhiMTMxMzcwM2U0YWQ5YWFkNzI0MzljZjhiODE0ZjZhNjBiYTIxNGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliNWNlZWQ1NTQwMjFkNTA3MjU0ZTI5MDIyOTRjNjBmOWZjM2YxMzdmMTBiY2NkMWE2MzNlOWQwYjQwMzVhODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhhNWM2MmI2ZDJmNDBiZDAwNzdkZWJmMjhjYTRmNTMxYjBkNDIwMjg2YTc2Y2QzZWI5MTk5YzBmOTAzODI2ZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        },
+        {
+          "resource": "repo://src/model/document.rs#L140-L149",
+          "version": "repo-lines-v1:sha256:92bdf660cafb2c1bce5327217f8f5fe5c9d58c2d92b7ca41a9e19076578f0ef5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0MjdiMWYzNzRkMWI5NWRmYjA1NGUyM2Q0MzI5NDA3YjQ3NjcwOGY2ZmI2ODc1N2M2OGI3NDVjOTFlMjM0YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3YWE2YWM4ZGRkOWRhYjRkMjA5ODE2NWI2Y2YwMTcwNGRiZTdmYWI1MDk4OWMyZjJiZjVkY2E1MDgwZDIyODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE3YzY1NDk5YThhYWNjMzA4Yjc5MTRmOTMyNzRlYzMzM2VkNmM1NGUzZjFjYWEwN2E2YTAzYWU4NTA3ZjllODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmY2NiMTM0MDFhMmM0Mjg5N2EwMjZlMDM5MDE0Y2ZiMmYwYzA1ZGE4NGQ3NmRjODQ4MTBkZDZmYmExOTYwZGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_511f33702c19456c9f60f8be6d83feee",
+      "statement": "FeatureSlot enforces one current request per document while retaining superseded requests until response or deadline, supports cancellation and timeout cleanup, and clears request state by server/root scope.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/lsp_slot.rs#L15-L133",
+          "version": "repo-lines-v1:sha256:e7e7f589479da9240a413d5eb5f4b27f40b2af35b19ce30b17296755bbd9d813:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJmMzdjOTI2NjU1MTY4YWM0ZDQyMzkwMWU1Mjc1MzY0Y2U2ZDEwZGI2NjA0MWExMDViYzcwY2M5NjgxNTkyZGY1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJiNWM0MWRjM2RiNDY2YmVjNTM1ZmNiYmU1NmU3MDIzMTc3MDM3MDliNzNjZDJhY2FiZTYxMjBjOTZjNmU4ZjA3IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3YmM5OGQ2YjBkYzQ5MmM1MDE2ZGYxMDgwNWEzYTU0ZWI5YzE4NGE1YTYxMzdlN2Y0YmVjZmEwYzIyMDU1MGQwIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_14c2070976c440dea48cef488159746f",
+      "statement": "Asynchronous LSP feature responses are guarded by document existence, revision equality, and focus; diagnostics instead use authoritative per-URI replacement and server version ordering, with the open-document diagnostics vector as a projection.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L140-L149",
+          "version": "repo-lines-v1:sha256:92bdf660cafb2c1bce5327217f8f5fe5c9d58c2d92b7ca41a9e19076578f0ef5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0MjdiMWYzNzRkMWI5NWRmYjA1NGUyM2Q0MzI5NDA3YjQ3NjcwOGY2ZmI2ODc1N2M2OGI3NDVjOTFlMjM0YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3YWE2YWM4ZGRkOWRhYjRkMjA5ODE2NWI2Y2YwMTcwNGRiZTdmYWI1MDk4OWMyZjJiZjVkY2E1MDgwZDIyODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE3YzY1NDk5YThhYWNjMzA4Yjc5MTRmOTMyNzRlYzMzM2VkNmM1NGUzZjFjYWEwN2E2YTAzYWU4NTA3ZjllODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmY2NiMTM0MDFhMmM0Mjg5N2EwMjZlMDM5MDE0Y2ZiMmYwYzA1ZGE4NGQ3NmRjODQ4MTBkZDZmYmExOTYwZGMifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L465-L477",
+          "version": "repo-lines-v1:sha256:34ccf289c33b1962ba6062feb7adb13d1757a7831ddbe80751390901d37b6fb1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhNzFjN2Q0OWVmOGY3NWI3MmRlNTA1Y2IyMWFmMzYwMTRiZWI2NjJiNzk1ZWE5YjVmNDVlZjU4OTA5MDY3MzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2YmMzN2MwYmMzYjAyMTQyM2MyYWM1ZGFkNzkxNWMzNzczZjMxYTI3MTU0YzA0M2MyZjBjZDE2MDA5NjQ2MWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmNjY2YWQ1MmI0ZDVmZjhjZDdhZjE4NmYyODY1MTI5MDA1NTY5MDZiZWU0ZTlkMWQ3YmY0MDA1ZDhlNDQ4MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxZmYxY2ZiYzBmNGI1YjIzMDYyMzlkNTA1MDYwZGQxMzhlYTg4MmI5YTU3ZTQ4NGMzZTA4OWQ4MTExNjk0ODYifQ"
+        },
+        {
+          "resource": "repo://src/update/lsp.rs#L169-L196",
+          "version": "repo-lines-v1:sha256:c1a10177e4e3ae890dafacab895e1c321c56182f70374ad70787202b5d7b5a6c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2ZDM5YzE4ZDc5NGI4YmIzMDRhZWMwODgyM2E1ZDUxNmU5YjAxMDU4MmMwYTc3MDRkYWRhMGEwMzRhOWRhNzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5ZDJjYzEzZGMxMDIxODc3YWJlMDc3NmM0NDZlM2NkY2U4MDY1NGRhZGRlYzFjY2VhMTBiNjc4MTU2ODMyNGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxODBkNjUxOWZjMzI2MzQ0Y2FmNmUyMzBiOGEwOTJmNDdhZGY1YjhiZTYzNDNhNGFjM2VhMmZiMDQyMTZhZWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2a505d1a44dd47cba03bd61f0915e0c9",
+      "statement": "Path-bearing documents are opened by ensuring a matching server/root and then didOpen, while untitled documents remain unsynchronized; tracked documents are re-opened after server restart and didClose is tied to document release rather than tab closure.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L450-L464",
+          "version": "repo-lines-v1:sha256:d8a8d37151baf212786e1664b659d88a48d5528f63691c898b7b0ec4efff34e7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3MjJmMWUzODFkOTY0OGNlMzRjZDkyZTRiNTdlMzdiMjMyNmNhZjk3MzRmM2U1YmE0ODA1MmUzYzg1YWQxYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyMDNmOTdiMTZmNzM5NGEzNDk3YmZjYmVhOWRkY2NiODllNTcyY2EwMzMxMjcxYzYxNTVjOGZkZTgwNzk1MGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIwZTY3ZDVlZmQ5NzQxMzJlNmMyYjIxM2NhNjkzZWM0N2U2ZTA1YTc0NDg5ODIwNTFjYWY4NmM5NmI2YTFmYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ3MWIxYWQyZGY5ZWFjNjFhMWYxN2VjYjE1ZWMxZGMyY2I1ZmIzNzA1MDQ3MTFiODYzMzlhZTZlOWYxNWIzZTIifQ"
+        },
+        {
+          "resource": "repo://src/update/lsp.rs#L32-L73",
+          "version": "repo-lines-v1:sha256:8f70a93c21bbc558fe2fa080671ddde2007bc7643154c21dfebfd7dbd1250e0a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyNGNkMmQ0YWU0YmI4Y2IxMmViMDdhOTE0NzVhOWRiMzFiOWRiZjhjZTc1MDE1MmFmMzIzNGFkYjRhNzJiYWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyMDIyZTY1MDk1MzNiYjkyYjU2ODNiMDA2ZWMzZDhlY2U1MjgzMmNiZGNmOWI4YjJjMGQ0NjE3YjVkYjZjZTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkZDhmMTIyZGE1OWZhZGEwZjY2YmYwMTQ5ZTdkNjA3OWE2NjNiY2RiY2E1NzY3ZGY5M2NmZjc1MWMyMjBlOGMifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T20:35:11.754Z"
+  }
+}

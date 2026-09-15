@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:b509620ab02b1a87077938a678f505aef5ac87e715ac5a00498f37b986f4a349",
+  "claims": [
+    {
+      "id": "claim_4fb71dad12ba43ab9e795bb2d606806f",
+      "statement": "The binary entrypoint in src/main.rs handles automation and MCP subcommands, parses CLI arguments, performs running-instance handoff, starts renderer and application preparation, then constructs a winit event loop and runs App.",
+      "evidence": [
+        {
+          "resource": "repo://src/main.rs#L42-L105",
+          "version": "repo-lines-v1:sha256:ccf74f678539d7418a23c0d6ecb89100c448a93acace97696ebe7146a0f19a9e:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjZDRkNjlkMTEwNDNjNmNkOTNjNGJjNmE5YWQ1YjRlODExZDgyNzdkOTI0NTVlZTZkMWU2NjY0MGU5ZWI1M2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmNDMyNjI2MDM4YmNmZDk5NDhjNGUyZDFjYzc4ODYwN2Q5YzI0NTY5ZTE2NjA4NTcxNzIyMTdlMjFkNjMwNDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkYThhOTE4MDU0MTU2MTcyYWE1YTAyNmUyYzgwMDFjOWM3NDFmMjY2MmFkNTc3OWU1MTA0YzZhY2U3YzNiYjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExZmIzNmYwNDZkNDFlYmExZjMyMzRjOTg0MmFiNGIyZDM0NzUyNmQxNjQ3OTY4YjU4NWU5MGMxMThlYWU1ZGEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_04f99bb325d647cb809dda3e838b4443",
+      "statement": "AppPreparation prepares startup state off the event-loop thread: it creates the keymap and deterministic AppModel, loads configuration, opens a workspace, restores session state when enabled, prepares startup files, and applies demo mode and an initial cursor position.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L144-L170",
+          "version": "repo-lines-v1:sha256:ba8a95b662a4f70446f33023eb2bfeb5637952cf080eeaf59ffa703f9d4d7885:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhN2RjOGZmZjQ2MDBjZDYyZTUzYTUxOTFjYTBiYjFiMTliODNmYTU1YzFiYWEzZGUzNWU4ZjRmYjA4NzMyMGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5MzQ0OTljNzdlODJlMDJmYmU4NDcyZmMyMWJiMzkzZjFiNTIyNTFkMzAxM2E3Y2ExNTYyZGRmY2RhYTM4MmEifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L172-L232",
+          "version": "repo-lines-v1:sha256:5c3bc6fca0153801f3c4c35cf36f059c620807073b50aa7b1cadf3419edac86b:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5OGQwNWQ2OTBlNjA2NDhhMTJmMTM3MmFkMmI4ZGY4MjNhZmM1OGZmM2UzNWEwNjI2YmI1MTI0MDVlZWJiNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiOTgzMjVmZjFkZmU0MzY2ZDhlMGNmOGU2MjEwNzA5ZTZkNzQ3OGVkMzhmNmFkZWE4MmIxOWViMmQxZmJkYzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a4644e18acb6406cb4543e90ab3f319a",
+      "statement": "AppModel is the authoritative application state boundary: EditorArea owns documents, editor states, groups, tabs, and layout, while AppModel also owns UI, configuration, theme, workspace, docks, terminal, language-service state, recent files, and navigation history.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/mod.rs#L410-L462",
+          "version": "repo-lines-v1:sha256:f0e9af17a3a70a5ec8d1e723e55e42b8af87fcdccb2c61496dbe8e65368c654b:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyYjhjZmFkMDU1OTQwZDUyYjA1OWY3NDc4NDI2MTkwMzQ3ZTA0ZjFhZmI0MGIwNzExM2E1OTlkNjY2YzkwMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM5NzQwMjA5ZjRlNDIzMjQxODYxZDQxMmQ4ZDIyMDBlZDAyNjU4NjBlNzhhNDAzZTkxOTM4ZGNkYzI4ZTA5OTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVjMTM5NmE0OGNiODNjNGE2OGIwYTVhZDczMDhiN2Q4NjY5MGVkZWRiMjhhZjdiMWRlN2RkZDczZjM3OTdmYjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_019811fafb0443cc9f8a659c47e958e1",
+      "statement": "The public update(model, Msg) function is the mutation and routing boundary; it dispatches messages to specialized handlers and performs cross-cutting reconciliation including file policy, closing, auto-save, folding, completion cleanup, workspace symbols, hover, and redraw/status consequences.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/mod.rs#L114-L203",
+          "version": "repo-lines-v1:sha256:486136cd9ce6eb0334ee61f967f8bec3788796535062693adcb0b6f1197c27cb:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0Y2VjYWQ1ZTg5MzhiMjMwYjE1YmQ0ZGVhYWExODhjZWQ1N2Y3OTY4NGE0OTdlMzNmZDM1OWIwNDZlMGEwZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhhODZmNDBiOTI3MTRlZGM3MDYyODkyNzQyZmIwZTE4N2Q2OWJhNWFjMDZmZjZiOWQ2MDliNGRkMzVhM2E2MGMifQ"
+        },
+        {
+          "resource": "repo://src/update/mod.rs#L2-L7",
+          "version": "repo-lines-v1:sha256:da253366c6ea29467d53cbe2f3f374a06bed09a6ba34a3f44b551ef90869ff75:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjA2NTczN2UwNzFmOWZiY2RmNTRiOGFkMzhlNjZlNGI2ZjFmOWZhMWMwMWVkNmFmOWQ5NjY0ZDIyMmE5NjQwMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk4ZWMxMjY1MzdiMGUxODlhNTJmZGVjYWVlNTBlY2ZmMDFjNmQ5OTcxYjg3Y2NiNzJiODVkYjQ5ZTQwYTIyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjEsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGZhZTU3ODNjYTkyMGUzMWVlYjkxYTI1NGEzZjNkMjE1Yzc1MDMxODU3NTBkYzUwMzlhN2FmMGI1OGFkMDEyMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjJmZDljNzY3OGM2NWNiNmMzOWJiOGZkNDhlZjAzZTY2NDc0NjVhZjY1ODg3ZDNhODBjY2ZiMTkzOTVlMWEwMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_2070fceca4d9448c82b3cc2abc6f4fb0",
+      "statement": "The runtime translates window and worker activity into messages, passes them through update, merges command damage, executes commands, and requests redraws; about_to_wait additionally drains asynchronous work and polls file watching, syntax and LSP deadlines, auto-save, animations, and timers.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L5770-L5801",
+          "version": "repo-lines-v1:sha256:8a1a3243f43a9416eefec2d8a4920b294311fbe5807cd48268f5b800acc85c1a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmZThjMjg5ZjJjODc4NTk5OWJjMzg2OWJhYjU3YzJhMzZkN2FlOGFkYmIzYTI5NmJlZjZlM2IxOWIxZTI4NGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA1N2Y3ZjMyZjEwYWM5NTg0NDEyYmQzMGFkYWM2N2Y0NGIyMDNhNDE2NTlmZGFkYWM1Nzk5YjliMWE3ZDRhMDMifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L5832-L5959",
+          "version": "repo-lines-v1:sha256:f839970bda3aa82ecc2b78992a7aa1b4bdf83d4d89011861be58d394b2926693:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwMzAxMTJhNGM3NWIyNGEwYjIxOThkYTE2MGJkNzVjYWVkNThjZTRiNTQyZmY3YjI2NjJlYmNjMzhkNTVjMzIwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1NTIyYzQyY2QxOWM2ZDAzZDgwOGM0NTI3MjA1NTI4MjViN2VhMWM1YjQ5MWIyMTg1MTFjYWM3NDE1Y2Y5ZDliIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI4NjQ1OTYxOTU4ZDQ2ZmVlY2M1ODRmN2EyOTZhYmI1MjAyNGMzODM3YjM3NzMyZTIwOGJiNDEyYTcwZWE4M2IwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI4YTdjY2I3ODM2Y2EyMmMwZmMzNmUxMTkzYjcxYzljZDA0MGM1ZjE1MjBlZjRjNGM2ZWQxMTEwZmViYjk0YTA4In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_076af42be1664c8d88dcb6ce1e44f312",
+      "statement": "Shutdown drains selected file-operation replies, saves the session when configured, answers document waiters, stops the inline worker, releases clipboard and retrieval workers, and removes the process automation endpoint.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L5803-L5830",
+          "version": "repo-lines-v1:sha256:aef13bd452ae84eaa322a672a544037cc0cef9a5b8bbc6c7bf932391b65d65db:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhYzNhOTQxMjg3MDUwNTQ4YTU3MDE5OTljNDY3ZjFiYzZmM2U5YTk0MzAzMmQ0YjQwNmVkYWVkMDZkYjg0MTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4N2VkYTdkODNhMDllMmViNzc1ODk1OWJlMjhjNDk5MWMyNTYyNTdmNTk3ZGE1ZDM2N2Q3Y2Q1ZDQyMzBkNDIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c09e3a125bbd423bb1e1afdbba02c11e",
+      "statement": "AppModel::new and AppModel::with_document construct deterministic in-memory state without filesystem preparation; runtime startup owns configuration, history/session, path identity, and file preparation.",
+      "evidence": [
+        {
+          "resource": "repo://OVERVIEW.md#L5-L12",
+          "version": "repo-lines-v1:sha256:dfa8c03fe0a517c099c86a36c3cb13436615315e59e4647674973d4d0b29fbb6:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjczYWRjMTE0NDM5ZjZmZTI1ZjY0ZTEwOGVkNzhjM2ZlYzNlZWQ1MjVkNDE2Y2NjOTYyYWU2NTFlYWQ2ZjZkMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGEwNGMyMmU5NzhmZjBjMTI3YTZlNzg5MTgwZDE2MGZlZjNjYzE5YWMzYWQ1ZWM4MzcyMmI0ZThlZjc5OTUwYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2Y3OTkxZDZjOWJjZGRhNWUyYzU2OWU2YmMzOGE4MDUzYzJjMTA1NTM3ZTFhZDg0NTU5ZTMyYmQ3Y2RjZmE2MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTUyNTk1ZWE1ZWFjNmY2Nzk4YzllYTVlMGQzMTVkYjRhYzg3M2M5NmI5MWQ0ODIxNTc5YTYyYzJiM2NjZmQ0NSJ9"
+        },
+        {
+          "resource": "repo://src/model/mod.rs#L502-L510",
+          "version": "repo-lines-v1:sha256:d9f733eb232f689f786756b3cd157a970711583de2ecde2b0a3317cfc2e8e801:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGY1MmI0ZWEyYjgwYjVmYmZhMzg5YTU2NjRiNGZlMDczMDBlNzJmMjE5M2FlZmRkOGNiNDhiZGE3YzdiYTRmYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODE4MDNjZmI5MDY1MzliNjc2Mzk1OWVhMjE4Njc3ZDFhYzk2NjQ2MzVjMDQyYTVjZTU0ODU5MDJkMGYwZmYxMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWI5YTA4YmMyOWY2ZWJlYmU5YTVmMDE5MDNkOTg0NWRiY2I1ODQyYTQ1NWYwN2Q1ZjQwMDJkYWMzMmE1YzYwNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTBmZTFjZWM3YzlhNDMwOTYwN2E4NTczYTVlMjQyM2Q2ZThjOWE1MzNmMjBmMDMyODRlYjcwZWNjM2Y5YTMzMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1887bbe142594f51abc0211fd25c9bd1",
+      "statement": "Commands are the runtime effect boundary: update returns optional Cmd values, while the event loop accumulates command damage, executes commands, and uses redraw requirements to schedule presentation.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L5776-L5800",
+          "version": "repo-lines-v1:sha256:863a2fc9c4dd9ad8a22c615d21aa2782836e68f4e9be0748a1397a2898d36130:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjZjU2MmIwMmMzZWRmMzljNGUyN2VmMTVjZWI0ZjA3YTE2NTk1NjM5NmJmOTlkMDRmZjY4MGJjMGUzZTkwMzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQwOWJlNGQ5NzI5Zjk5MGJjMzQ4NWVmYWMwODQ1MDRmZGQ1N2ZjYTgzMmY1MmQ0YzFmMGVmOTczODE3ODRlMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgyMDEzNmRjMDc3ZDViNjFkMTdhNzdhYzllZDQ2ZDM5NGJkMmZiODZmZmEzYTRhNzRjNTQ0ZjM0NTlmYzVkNGQifQ"
+        },
+        {
+          "resource": "repo://src/update/mod.rs#L114-L119",
+          "version": "repo-lines-v1:sha256:c98144de83e9787afc1f67a7807fefe3ab0639d1db81ae81605a07ec72254591:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTRjZWNhZDVlODkzOGIyMzBiMTViZDRkZWFhYTE4OGNlZDU3Zjc5Njg0YTQ5N2UzM2ZkMzU5YjA0NmUwYTBmOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGQ3NjU5YzRhZmY4NWRkZjAxNDQwNGJiMTNhMDExYzllYWZhM2I4ZWJhZWUzNjVhNjk5N2Y1ZTk4M2FkYjcxZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTllNzYzNTVjZjExOTk0ODBjM2Y5OTgzNmIxNDg2Yzg0MWQ4OTFmYWFkOTA0YzYwOGUwOTMwMjJkMzc1N2FlZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTFkODgyYjRmMWEzNjA4MmE1Y2JlZTU0YTFkOTMxYzIwODRjMDgxMDg4MjYxYmNjNTBkNDMxMDgwYzNiMmU2YyJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T20:35:11.754Z"
+  }
+}

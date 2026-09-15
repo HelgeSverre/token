@@ -1,0 +1,308 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:b77a4904c0cfce5dbf8f69445e15530425b6abb7e6ce970af68754d854018a33",
+  "claims": [
+    {
+      "id": "claim_36027b46bc3d4693bc08ffdfbbe5943f",
+      "statement": "Configuration paths are centralized under a platform-specific token-editor directory: XDG_CONFIG_HOME or ~/.config/token-editor on Unix/macOS and %APPDATA%\\token-editor on Windows, with config.yaml, keymap.yaml, and themes/ beneath it; missing directories are tolerated for reads and created by saves.",
+      "evidence": [
+        {
+          "resource": "repo://src/config.rs#L573-L593",
+          "version": "repo-lines-v1:sha256:cf08d60818633cf68cffe8e397864fffba946090e9e5563e97bb75dd352c8885:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyYWZiYTg3MGZmZjE3NjkxZWJjNzRmNTYyYjJhN2U1ZTZhMmQwYzcyNzcxNjE4Mjc0ZDkwZTA2MmFmNGVlZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2ZDQ3YTEyN2FhZmY0YTAyNDRiNGI3NTM3NTFlNDIzNzEzOTM5MjdkZmE1OWZhZDYxZjVlMGVlMTlkMWUxZDAifQ"
+        },
+        {
+          "resource": "repo://src/config_paths.rs#L1-L49",
+          "version": "repo-lines-v1:sha256:8ad724094047d4193437a7b7e4e1af64ffe77413862246d937774aea3d24dae7:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmMWQ1Y2RkMTZjYzIyZGE0OTJhYzdkZjc2ZWU0ZTRlN2JhMDcxNTUyN2VhOTBmODY4Zjk2MGFlODQ2ZTZkZTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEzYzQ4MzI5NTEzMDlmMzdlODgyYjAyZjMwNTI1ODQ3NmRiNjMwZTIzZjA4MzU5MjNjMGM5MDczYTNlODY4NWEifQ"
+        },
+        {
+          "resource": "repo://src/config_paths.rs#L76-L88",
+          "version": "repo-lines-v1:sha256:49c8f788fe52b152f818a92434b4565b24af769fa1f90aaaca283733be7bf470:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiNDQwYjY5NDJhNTk1YzdkODU3MzliZmM0OTQyYWQxZDI0NTg2NmFmZjNhMTYwMGIzOGI2YjRlODM5NGJmMjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkMjQ1MzJlNzA1MTU1MTFjYmVjMTY1YTIzZTEyZWFkYThmNThlN2IwYTkwOTAxMmQ3ODBhOTk0MjY2MjRmMTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlYmU0ZDA4NDQ3NTg2MjJkYzRjYmQ0MDAzZmI2MmVkOTI4ZTUxNTYzMTBjYzc4YzAyZGM2Y2E4ZGExMTdmZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyNjllNDI3MWQ0YTdlZjQ3ZDYwZDQ4ZTMzN2EyYjg0ZWJkMGQ1YjU5NWQ2NjNlMDk2NmVhMGM1MjFiY2ZiYTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4a93237ecd59405c9f24b3786caeb18b",
+      "statement": "EditorConfig::load and reload distinguish no-directory, missing-file, read, parse, and successful outcomes, returning typed defaults for the failure cases; reload exposes the detailed status for runtime feedback.",
+      "evidence": [
+        {
+          "resource": "repo://src/config.rs#L12-L25",
+          "version": "repo-lines-v1:sha256:aa28bbb95e14b64305f61666d94b6cc62c367689ef85bffa1c7145d04cf601bd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0N2U0NzlkNmM5NWFlOTc4MjQyNTg2NjI1NzI3YzQ4Mzg3NzljYWE0MjY4ZWYyYjZiNmFhZDhiZDZiNDUwNzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI2Njk1NzlkZTllZDVmMTI1YTY3NTEyMTkyNDQzNzA1NTViZjEzZjIzZDIzYWIyMjhmNGRmOTcwMTQyN2U5ZmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhjYjQ4OTg2YzkzMzk4MWNkMzJiMTc5YzNhNTViNWQ2ZTQ2NDI1ZGMzYmI2OTQ3NGE3MjhmYThmZmE5MGJiN2EifQ"
+        },
+        {
+          "resource": "repo://src/config.rs#L520-L571",
+          "version": "repo-lines-v1:sha256:eafcb9d2438e08f0baadf38d78b194a350be66dd3f51f3d1208d6638c96ba6c1:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0NWFmYWJlMDc5MGY5ZmM3YzhmMjQ1ZDhjOGFjZWZkOTE0NDU5ZDYxZjhjMDgwM2NjNDJkN2Q2NDI5M2I5MzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5NWFiZjhkY2NlOGJjNTZkYTFiNmMwN2QxZDBjMTFlMjQwMGE4N2Q4YjliZGI4MGU0Y2U1ZmZiNzZiYTU5ZTgifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L2728-L2735",
+          "version": "repo-lines-v1:sha256:414eb1a31baea2f278317c077014e38135a0f5931136cc1bb9124611fab112c5:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTEwYWUwNjk3NTg0ZWQ0M2JmNGJjNDA3NzI0NzEyYTE1ZjUzY2NiMjMwMWY2NDQyOTk4NDdlYjEwOGRkNTkzNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTk2OWQ1MzhmMTdiYjRlOTUzYjNmMTU5ZDUyZTAxNWZiYWI1NjBlYjg3ODM3MzRmOTU0MGE2ZWYzMGFkZjdkOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzUxMTRhZDY4ZTI2MDBiZmU2YWQ1Y2RkNGQzNWZmYjY5NTE3ZGE5ZDhiMDM4NDFmNWRiY2VhZGRhN2FhNTBiMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmFlMGU2MmFiODdlNWUyMDY1ZWViMGE1NWQ3MWFiMTRiMWMwMjlhZmYxZjI5ODljZjAyZTExMzBiNTc2N2JlYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_75f0be392e29419faefc92231c2b3817",
+      "statement": "Application configuration defaults are applied for absent fields but do not repopulate explicitly empty formatter or language-server catalogs; formatter defaults are seeded only when the entire formatters field is absent.",
+      "evidence": [
+        {
+          "resource": "repo://src/config.rs#L485-L510",
+          "version": "repo-lines-v1:sha256:68dd0041337ebe44d63fb6f7dbed790fbbb73fa08039ca0e652a44985b38a10d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyMGQ1MzcxMTRhYzg3NjNkZWIzMWQzM2ZiY2VhZjgzNjRkNjRiNzVhMTNlNzhmMDhiNzQ1NTkzZTk4YjlkNmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5MmUyN2VlYmJlN2I0NTE2NjQ1ZmFiMjBlMjdmNjdlNmNkOWE0ZDA2MWJkMDU2NWRhMGQ4MTg5MWJlM2YzYzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI3OTdlM2Y2YTE0YzgxYTA1MjE1ODFiYjU2YTZiMTFlYzgzMWQ5MTZkM2FjZjY1ZjQzZTAyNmEyYjQ2Njg1MzIifQ"
+        },
+        {
+          "resource": "repo://src/config/formatters.rs#L32-L55",
+          "version": "repo-lines-v1:sha256:24e9cf47f6a4e422a867b95a409be367f4511414e3264cff383c371c3cbe8a9f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5Yzg4NTFmYzJlMjg5YzY1N2E0ZGE1ZWM2ZmI3OTNlMTc4MjNlYWE0NjQ0ZGYzNjk0ZDdmOWM0OGIzZDhjNDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        },
+        {
+          "resource": "repo://src/config/language_servers.rs#L10-L27",
+          "version": "repo-lines-v1:sha256:7fb81ed4b31fabd7c3570d79afdf88067c7b701baf57821cc0a8c704918812b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxZjJlOGNhOTMxY2Y1NzdiYjdhN2EyZjJjZGUyMjNjNTlmMDM5ZmI3YTU5OGNjOTM3NWY2OTdhYTg1YTc5YTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNjNzdhZDYyYTMyMTgyMDVlODE2NzAyN2ZlNDA0N2I1ZTExOWUyMjU5NzFkMzBmMTI5YjVkNGFiNGMxMDBiMDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkMDBmMTkzYTQ2YjBkNTU5NzFlNWRhMzVmNjU1MTc1NGYxNmRjOTg5ZTU4NDgyNmU5NWNkNTY0MjIxYzM0ZGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_75d587f9ec614b5793f864096c74fbb9",
+      "statement": "Configuration persistence preserves unknown YAML keys and refuses to overwrite malformed existing configuration, while serialization does not preserve comments or formatting.",
+      "evidence": [
+        {
+          "resource": "repo://src/config.rs#L573-L627",
+          "version": "repo-lines-v1:sha256:3fd4ce12a9987bfe77022e039d045c36c33390e6be25c413780d38f594255263:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyYWZiYTg3MGZmZjE3NjkxZWJjNzRmNTYyYjJhN2U1ZTZhMmQwYzcyNzcxNjE4Mjc0ZDkwZTA2MmFmNGVlZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkZTk3ODk2MDM2NTZlNTI2MGJjYWZmOTkwMmVmMGIyODhjNmE0YjAwNDgyZWRiYjc1MzQxOGUxNDc2ZDMxY2EifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ac696c07c1694eb1b8744398d661e990",
+      "statement": "Language-server configuration uses catalog_version 1, migrates legacy unversioned maps at the deserialization boundary, rejects unsupported versions, and treats missing server fields as absent rather than inheriting preset values at runtime.",
+      "evidence": [
+        {
+          "resource": "repo://src/config/language_servers.rs#L29-L49",
+          "version": "repo-lines-v1:sha256:0eb687bad322f1f338e0106a74021a969ad6620f4c13023c10e237f7e0dcb69e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjZjQ3OTFjNjBiMmJjNTgzYmQ3ZGFlMjY4YjJiYzIxNjI4MTBlZDEyMmE4NTZlZDUxMzM2MjMyZmUzMzY3ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwMDFkYzVlNTY1MjY3ZDc1YWMyYzU0Y2E0NjNkMDUwNDVjYWNmMDdmMmZmNmJlNDJjYzkzZjNkZTExYzBjZWIifQ"
+        },
+        {
+          "resource": "repo://src/config/language_servers.rs#L58-L109",
+          "version": "repo-lines-v1:sha256:ae199149348b99ac07a06c112d579fa372e5749663ef9e18d793d3bac3f72aac:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTc1OTk4OGI5ZWUzMjY2ZTYxZjdmNDdiZWFjMGY1MmNkZTNkZmE1NGE5ODZhZjI3MWZlY2RkYWMzZmNkZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhNmM5ZTcwOGI3MzgyMGNlMjkwNjUxNmJhNjcxMDA0YWM4MzE3MGJhYjU1N2E0ODlhYzUxMTlhNmRlNzYxNTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4ODU5MjEwZWJjYjEyY2Y2OGM2MTYyMjJmYzU2MGMxZjY4ZTJmYTMxZjYzMDQ5M2RmODA5NTg4ODdkNTdhZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFkMjQ5MTc5Y2U0Y2RlYjlmZTljOTM5YWQyMGNkMTk1ZTZiOWVlOGE1MDYzZDk4MTI5MmNjZWM0MDFjMjkwMDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b72ee8e07509452b9fc704e44ff61b95",
+      "statement": "Keymap YAML supports platform filtering, whitespace-separated multi-stroke chords, modifier and named-key parsing, commands, and conditional when clauses; malformed YAML entries produce parse errors rather than partial bindings.",
+      "evidence": [
+        {
+          "resource": "repo://src/keymap/config.rs#L15-L35",
+          "version": "repo-lines-v1:sha256:fed53873b2a7dae58de5a671c62be63965b0c8e58218e83d0a2e81cb325cbefc:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyNmE2NmY1MzIyMGQzZWMxMmY2NTg1ZDM3NTBkZmQ2MGZjOTNjMzBjZWNiNWQ0YmYyNDgwN2ZjOTgxM2JlZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjZjFkMDE4Y2NmOTdlYzliMzFmZTVmZTJiYmM3MDAyZjI0MmJhYTk4ZTM4NjY4OWEzYzZmZGM5YjgyYjI4ZDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0NWE1NGZjOWFiNTE2MzhjMmRhZTcwYmM0NjU3MDQzODVlYjZmYjVkNDk5NWQ3MjMwN2VhMjY5MGM1ZmQ5NzAifQ"
+        },
+        {
+          "resource": "repo://src/keymap/config.rs#L56-L84",
+          "version": "repo-lines-v1:sha256:5735dca7034b5e36b65c998696960a2134fc7170e4bea6a1a81da6801194b0c4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlOTUzYTliOGUwMzViMmY5MzU2Y2VlYjBkYzJiODJlYjIzMjUzMjVlMjA1ZjU2MTU3ZjdkZTRhNDZiNjM2ODQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIyYWY1MzEzMjU5ZTIwZWZjYzAwNzMyN2VlNTI4Yjk2MDE1M2I4OGZjNjNiMmZlYzk1YTljOTg5MTkzYmYyMTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYyMzU2MjhkNWJkYjA4NGQ3MzZkYTA0ZTcyOWU4NzUzOWVkMmE3YWUwZTA1ZTYxMzQ4MzgzZmMzMTAzOWVhNWMifQ"
+        },
+        {
+          "resource": "repo://src/keymap/config.rs#L86-L145",
+          "version": "repo-lines-v1:sha256:8a43f0d400d72f8e798e4d7786db6457504043198c87ad733ecd172a4ff57737:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0N2MyN2M5ZjdiM2VjYjRmZTRhOGU0YzYxNDcwMTQ1ZDkzMmMwY2NiMjc2MGYzZDdlOWU1N2U2ODk0MWM4NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA3MGI3ZDhhZmFjMmRhYTY4ZTI1OTI4ZmJjZTM3ZDZkN2QxNDM1ZWM3ZjU0ZWVkOGY1NzBjN2EwYmZhMjYzMjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ2ZDZjN2M4OGMyY2NlOGRiNDQ1NTRkYjE0YWNlOWE0ODIzYjg5NDA0NDdiNTUxOWM3YjkxZjc2NDg2ZDY0M2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4bf04af8adea49bebcb958328e2cc6c7",
+      "statement": "Keymap resolution filters bindings by current context and command availability before matching, prioritizes conditional bindings over unconditional ones, supports chord waiting, and resets pending chord state after execution or a miss.",
+      "evidence": [
+        {
+          "resource": "repo://src/keymap/keymap.rs#L142-L183",
+          "version": "repo-lines-v1:sha256:592a713007615ad2be284efc8fbff4ceec4ac76631e669decb442114932ab273:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2ZjM1MGZhZWY3OTE4ZDBmYTM5Yjk3NDg5OTQ3YWIwYTk4YzVjNDMwOTUxNWY4YmNjMWJkYmQyMWFmYzYzMjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyZWYxODBkYjZhZjk3MGY0M2E1NjNhZTk3ZWJkZGU4N2MxYjdhNzRmOWQ1NzIxNjQwZDc4YjE3ZmVmYWFjYzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjOGJjYjNiM2YxMjUyMTU5MjQxNmIyOTZkNmIxZTU1ZDJhOTZhNTM3ODI5OTUzODMyYzExMzc1N2RjYzdjZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQyYjY2NzczOGM2YTVlMjA0ODgyZDU0ZjUxNjczZmFlZjQ2MmFjMjJkYjIzYjQ5N2Q2MzQ4NjQzNTA2Y2Y2NTQifQ"
+        },
+        {
+          "resource": "repo://src/keymap/keymap.rs#L186-L221",
+          "version": "repo-lines-v1:sha256:1e09cbb9af7b5aafa10b58c0c030110d6eb1881eb4a11fc957086d37ac1a0806:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiOTk2NWExNjAxODc0NzJmYWVmMzA1ODMyMzdhNmIwOGJkM2I4MzgxNTdkMDM3YjE3NjJiNDA5NjI4NWU2YmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkYmUwZDM3MTg4OTY3YTVjYWI5MmRhZDg5ZmJjMzlmZTc3NTlhNWRlOWZiZDg0YTlkZTM5MjUwYzJiNDU0MGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ3NjRiY2M5MzhmMzYyZjI5YWI2NmM5ODc2OGI2YjM4MDBlMWEzOTc3MDZkYTA5OTkzOGQ0MTA1ZjJiMWE5NzMifQ"
+        },
+        {
+          "resource": "repo://src/keymap/keymap.rs#L86-L128",
+          "version": "repo-lines-v1:sha256:ba3ec022355c95f8d70ecab5f458cc3d5499a9d57d02677b567f1d1b0218f05f:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiZjZhZmRlYmIzZTYxMWVlYTM4ZDQ4YzkwZWUwMGVlNzhhYThiN2M5MDU4ZDA5NmU1MzA3NjQ3ZDU3MzYyYTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwNDQyOTAwYzJiYjk4NWMwNWNkMjQ1NDk3OTNiZjNmN2ZhYzNiY2NiNWU5MWFiYWM2MGQzZGMzNmJmZTQwOTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0NmVmMWM4NjM2ZmJhMzAwZjQ1NzdkZjc1NTNjYWEzZGRlYzcxYjkyMGZmOTU5ZmNiYTE1ZDNlYmJiNWNlNjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2NjFhYTdiYTZhNTQ1OWFiYTg2MzUyYjZmZGFjOGVhOGUwYjg2MTcyZTQyYmExYzVhN2FkMmRjM2Y5OTc5N2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_94117b8b1c224ddcbaf10f2eb989efc2",
+      "statement": "Keybinding contexts are derived from model focus and transient state, including selection, cursor count, modal state, editor/sidebar focus, overlay key routing, and inline suggestion visibility; multiple conditions are ANDed.",
+      "evidence": [
+        {
+          "resource": "repo://src/keymap/context.rs#L8-L59",
+          "version": "repo-lines-v1:sha256:4edd94fc6f175e8c7eb77dc9a55e194848e2a183aa93c67e587478e093620b09:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5OTY5NGNmOGJkYjdjMDM3MGE0NzY0MzI2ODgwMzhmNDYxZmE0N2ViMGY2Yzk0NGQwNTM2ZGVlZjQ3Yzc2NmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyNzVhZjI5NTk0ODM4MTFjZjk5NzI3Yzc4MjZiNmY4MTIwMzkzNWI0MjFkZDhmNThiYzc4YWRhZTBlYjBhM2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMDE3ZDNhMWI4ZjcxZmE4ZGVhMDM0ZWRmMDYyYTdlNmFmNDNiZDM4N2QyOTIzMTE3MTQ4Mjg5MTI0MjQwNzMifQ"
+        },
+        {
+          "resource": "repo://src/keymap/context.rs#L88-L136",
+          "version": "repo-lines-v1:sha256:6139d75b2a547d5ae31c4818acad737f4e1b81a42b8fa0ddbab53f05f855b868:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZWRmMTg5YjI4YTFlNTlkMTFjODJlM2FiOTdiNjFmMDRiZDE3ZDYxZjBkNzhkNzY5MDBlMDM0MmU0OWRlMmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ab6517d76831487c9b98be052409a586",
+      "statement": "Settings keymap editing bounds input to 1 MiB and captured sequences to four strokes, uses locking and expected-source comparisons, and atomically writes changes while refusing unsafe, stale, invalid, read-only, or identity-changing files.",
+      "evidence": [
+        {
+          "resource": "repo://src/keymap/preferences.rs#L10-L20",
+          "version": "repo-lines-v1:sha256:0f68f34abb1938af439dafe686f14fc4768c0b4afa0c5757e671517dd6588b89:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YTI0NWJiZGNhNzRiMDhjNTJjMWI0YmJhNzU3ZTg2YjBhOThiMjFmY2E4OThjMDAyMWU3MDZiMjU5NTJjMGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmMGNkYjk3MmE3YmZiN2VkMjQ2ZjlmZjY3MjM4NWU1NWY0OTY4ZmMxMTA0M2RjNWI2ODRkNTFkZmEzMWRiY2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0NWNjY2VlMmExOTdjNDkxOTFkNTA0ODBjYjMzY2Q5MDg2NDhlNDFkNWQzZTg3ODk4YzA4NjhiYTk1NDY5NTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExYjFmNTlmODkxMTdlZTVkMTBhNzExOWI3NmU5NWQ5NTk3ODJiMzRiNjM5NDVkZGUxMzM1ZmZhNTkxOGVlYjYifQ"
+        },
+        {
+          "resource": "repo://src/keymap/preferences.rs#L79-L120",
+          "version": "repo-lines-v1:sha256:4a7d0530fad3cb04919e9f9761876af19bb375e361ad8ed28cf685e65051ab41:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxMjM3YmE4NWI2ZDU4YWZkMjYwMjk2MzY2YWIwNWQ0OThhNjViMmMyMDIwMWI3MjgwN2IzODdmYWQ1ODdhY2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YjE5ODJlOGRkNzQ4MTE4MTQ2YjM5YTJkMDA2MmY0MDgxZTM0Nzc5Yjg2NzVjMjM0YzRmYjEyNGRjMzkzOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFhNjcwYWM2ZmIzN2IyOTdmMTdlZjQ2NDMxOGE4NmEzNjVhNDUzNTE1MTliZWVmMmFmNDU4OWUzYjljMTE5YWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU1NjRlZmJmMGY3MGJmODU3YzMyY2ZjM2Q1NWNiMzY0YTNmYmViMmZiYzhhZmI4OGZhZTA5OWQwMDNmYWE5MWIifQ"
+        },
+        {
+          "resource": "repo://src/runtime/keymap_settings.rs#L14-L77",
+          "version": "repo-lines-v1:sha256:1cbae4d92022eb215acdb683f1ca41f6217c6240d8e64be04a71c657e0067684:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2ZWZjYzQ2MWM2NzQ2YzcxODdlMDBkZDQ3YjlkMTAxM2M2YzhjNDNmMGU4OWI3YWJhY2JmMWMwNGU2YTc3YjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwNWExOGMwZjQyZmZhMjVlY2VkMWJiMTBlZDI3NmJkM2JjMGM4YWYxMzcxMWU1NGQxYjlhNTM1ZDM5MjBmYTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEwNjU3ZWY1ZDU5ZGU1Yjk1NzFiNDU4NTQ2OGM3MGVkNWUwMWE0NGE4YzE4OGRjNzgxODI2YmI2ZjgxYTI1ODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk3YjhiYmVjYzI1NGY4ZmNkZDk4MDI2ZWE3ZTg0MDk5NzEyNDYwNGM1ZDBhZTFiMDEwZGIwMjA2YTQ0Y2ZkNTYifQ"
+        },
+        {
+          "resource": "repo://src/runtime/keymap_settings.rs#L87-L149",
+          "version": "repo-lines-v1:sha256:a1894adfd732561ffb5b347d3995d2f57f5d70231a9f5ff9e893297ccc23b95a:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmYzcxNGZkNmIxYzcxZDhmNDBlNDA5OGFlMmEyY2VjMzkyOTNjODQ3ZDdkNzQwZTMyZjFhYWYyYmE1YmY0MGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlOTI4MTExOTYyYmVmMjk1ZjM0YThkY2QwNDQwNzYwYTUyNzY1YTg5NDUyYzcxM2U3ZmE3ZjkxZTNhYWFkM2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU0MWQ3YmZiZDBjM2IzOWU3MWY4ZTA0YThhMTUzNmYxOTc4MjNkYjVmMzdhNTM1NDVhODUwZTdkNGE0MmUyNGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8d42a176a4dc425287832d3d2479f45e",
+      "statement": "Theme loading gives user themes at themes/{id}.yaml priority over embedded built-ins, and theme listing de-duplicates IDs with user entries winning.",
+      "evidence": [
+        {
+          "resource": "repo://src/theme.rs#L138-L211",
+          "version": "repo-lines-v1:sha256:e195be11501f5c2fe0621b5f3e3c0a01af9db54e4b425a1adc93e402fba8adb7:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViNWY1MDg4MjdiMzAwYWUwNjQ4ZWMwMDUzNjY2YzllZDcwYmUyNzg3YTFlYjMwNzlkMWYzMjU5Mjc1NzVlMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxMWE5Mzk2NTgyMzQ0MDFkYjIxMTQ2MTg2MjBkNmY2ZWExZTE5YTYzYjJmNTc3Y2ZkN2NlNzY2Mjc4MmRiYTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkwYTFiZGE3Njg0ZDhmZDE4YjRkYWZhYzM0YWJmNjhmZjdkNDUzYTNhMjU1ZjQxMjc5N2VkZTExYmIxZWIzMzEifQ"
+        },
+        {
+          "resource": "repo://src/theme.rs#L14-L25",
+          "version": "repo-lines-v1:sha256:f39810875e5f2c7f755e4f0c617c702d1bef5b7ea4ad175c23da2f2e05eff5c9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1MGMyYjA0MjBiN2E0YjcwYzI2YWYyZTk0NmNhM2NhYzlhYWI1ZTUwZmE0MDMwZDVmMWIzMGI3NGI3ZDM3MmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzZTNhNjI2YmI1NmM2MjJhYjU2MmFlYzA5N2IzNTJhNjQ3ZGQ0OWY1NTg2ZGU5ODQwMGI0ZDUyNGVmNmZiZDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1Y2UyZTgxOTFmNDMxNTAzNzZlZGIyZjU0Y2Y1MmZlOTkxYmE3NDlhNjA0MjMwNDg1OTRhZjVhMjQ5NzFiZmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRiMmYxNTY4NTY5ZDU4ODE2ZDAyOWFjZmE0ZjlmMWFjZWE3Mzk5OTg3ODFhZWZmYzkwM2YxMjU2MjFmMzUxMjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e54cee199e8d4d9eb935d0a502cb3e77",
+      "statement": "EditorConfig layers are merged from enclosing to nearest, with the nearest matching layer winning while workspace boundaries do not stop traversal; resolved properties retain source path and line provenance and override application text fallbacks.",
+      "evidence": [
+        {
+          "resource": "repo://src/editorconfig.rs#L82-L143",
+          "version": "repo-lines-v1:sha256:1847a9dc361fd3426c4a47e98cebca563b168c5c19099809795a10d00ad3329b:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhMTExZGIyZWM5MjAyY2U1NmM4ZTM2M2QwODdiNjdkMjYxYTYyNjA2NmU1OTk4NjJkZmYyODJiMzE5YWVjYjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwNDY1ZmNkODE3YzM4OGRlZjI2YjRlMjEyMGQzNGE5ZWNjYjI5ZjhkY2RmOGRkMmIwODUyMGJjYmU4NmU4MGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjZmVlNzU5NjE2MGFlMTU2NWJkOWI1YzExODkxNDQ2NjMzMjRkMzdmY2YzYzk5YjVkOTNmNGVmOThkNTRmOWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_90d2311131d043afbf9219f9a8b7f590",
+      "statement": "EditorConfig resolution normalizes standard values, bounds indentation widths to 1..=256, supports indent_size: tab as tab-width inheritance, diagnoses invalid values and unsupported charsets, and preserves UTF-8/BOM behavior.",
+      "evidence": [
+        {
+          "resource": "repo://src/editorconfig.rs#L144-L210",
+          "version": "repo-lines-v1:sha256:075951b140e6da24bfc37659506edd1ef05eac549644cc3dbd5211065e1681dc:eyJzZWxlY3RlZExpbmVDb3VudCI6NjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3YWQ2YjMyZmU0M2JmYTJkM2MzNzVkZTExMDYwNjQzZjNmNTcxMjY5Y2ZiMDczNTUzZjg2MmE4MTRmMGU1ODkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmZDk4YTg2MTZhMzk1OGQ3ZDU0MTFjN2Q4NzhmMjhlNWVlYzEyYjIxNWQ2M2YwZDYzMzM1MDk4OWExYTlmNzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljNzdjYzA5N2I2NTc2YWQ5MmEzZmViOTEwYzlmN2U1M2E5ZDlhNzFhZjJkM2UxOTQ3ZjMyZTE0MDI5NzU2NWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU2NGMxMDJjNjcxZmQ0N2IzNjRjMjIwZjEwNWY4YTFhMGJjYjBlZTAwZGJlY2NlNTVjZjRlZmZkYmYzMDJiYzcifQ"
+        },
+        {
+          "resource": "repo://src/editorconfig.rs#L213-L229",
+          "version": "repo-lines-v1:sha256:4834f38c17a8547fae1692d0fc552b84efd1c4db402bbfed9ef3ec4c6cf46397:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmMThlMjM2OWRjYzU0MTlmYmNkZDQ5OWE2MDczMDU1Y2ZlNTE4YzE3Y2E5YjkyNWM0NzgyMDcyMjZhZWU0NjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3Mjk5N2RkMzMzYmFjODBhYjgwNmM0MzQ5NmY2OWRhM2I1NzNkZTQ0MDg5N2I5NmZmMzg0ZmFjMWRkNTM1YmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_050aafe5379e455c891dabcead9c4261",
+      "statement": "EditorConfig policy resolution is asynchronous and generation-checked; stale replies are ignored, successful policies are installed into document settings, failed reloads retain the last successful values, and incomplete destination policy cancels Save As.",
+      "evidence": [
+        {
+          "resource": "repo://src/editorconfig.rs#L18-L79",
+          "version": "repo-lines-v1:sha256:8bd7f13203a39fb1b80e4ebbd850e6c3631cefce0bcbe32ecfbf40ea0666ab3b:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0OWM1ZDBhYWY2ZGE0MjM0MmUwNzMxNGE4YTBiYmNkMzM4YjE3ZTBhMjNmMTE5ZjVkMGFiNTFmNDYwZTIwYWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkNmVjMDAyNjM2ODk2NmQ3YWY2ZDJlMDcyY2Q3YzY4MmU2ZmFjN2MxOThiOTBmMTE1MTRkOTZiZjc0ZDJjMGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY2YmFhMWFjYjFkMjZkNTBlODA1Y2Y2ZmI0MDQxODBlYjM5Y2E0NDhjNWI5ZmVmNjkwMzc0ZjM4MGVmNzZlNGQifQ"
+        },
+        {
+          "resource": "repo://src/update/file_policy.rs#L103-L126",
+          "version": "repo-lines-v1:sha256:8293bc8c2664a0b441df4dbcffc6d797665ab4fc7c7f3f7b1b9ba61686f7af98:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5YTA5MGIwMWQ1ODAxZTY2MjMyNzIxNDJjNjIwY2ZiYjJmMzhkMDk4ZGE5MjkzYjc3NjMxOTFjNzE1ODkwMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhMWNhNmY3MDIwNWEzNDBlMWNiYjYwMzViZTMyYWMzMmRhODJjYjcyZDM1ZjllZDY1MmEzNWE0MjEzNDdmN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNhYWEyOGIyYjc2ZDRiMmM4MzdmNDk4ZjJkZDNhZWUzOWI4YzA3ZTA5Mjc2MDY4MWM1ODNmMDQ3YzMzMTYxMzMifQ"
+        },
+        {
+          "resource": "repo://src/update/file_policy.rs#L189-L237",
+          "version": "repo-lines-v1:sha256:457b2d884bddc25a9881bdac86569bd09ed0b97a80525befea52c61524dc8f21:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2MDQ0OTliOTViZGYwNzUzZDA4NWM1ZDJmNjk0ZmIzMDZlNWFlNjFjMThlNDQ0MmU2Y2I5MWJmMTU5MGRlNjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyNWU5M2RhMTlhY2Y5MjZmOGYxOTFmODFiNThhODU4YjI2OTE0MzFlNTgzYTIyYjQzYzAyYjY4MzBiZjdhN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyMTFhODkzNjE4YmMzNzlkM2NmNTFjNWYyY2RhMzUzMzRmNjljZGRjYmM2MzRlYTMyZWJmZTJlYzk4N2E0MjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFlYWI3NDg4ODk2OGNhMGM5NTA5ZDMyYWU3OTNiZGVjYmE3OTllYjU3MjNjOTk3YmJlM2QwYWRhNjhmNGY5YzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4e085c9500c94a15a23b7e290be741ec",
+      "statement": "Autosave supports independent focus-loss and delay triggers and is off by default with delay clamping, while format-on-save can use a configured formatter or LSP and saves unformatted with a warning when formatting fails.",
+      "evidence": [
+        {
+          "resource": "repo://src/config.rs#L102-L112",
+          "version": "repo-lines-v1:sha256:f0dfc3a0560d25ddda29bcf94f72b6c358659b0e116b20d012e5a415235b1d09:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlMzMzMzc5OWIxZDE5NTg4YTFmNjM3NTFhNjkzYjJmMzljNjRkNDZjNDRmNTcxNDVkM2E4OGJhMWI3ZWJjNTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmYjhlMWViOTRlZGRhNDc1OGE3NzE4MmUyNjU0NzY0OTAxNTlhOTYzZTM5ZGNkNmJhYzU2NjRkYjJlNTk5ZjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImViM2YxOWE0Y2JiNzY1MjEzNzMxMzkxOWVmNGVmOWMxNzljOTA1NzY4MmQ2ODg2ZTMwNjYxM2NkZWM5ZjY1ZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiM2FmYTY3Y2IwNGIxNTA4NTQ0MDY1ZGY4ZDEyN2JhNDJmZGJlNjJkMzJmOGUxNzIzZDg3NTlkM2JkMWY3NjMifQ"
+        },
+        {
+          "resource": "repo://src/config.rs#L115-L160",
+          "version": "repo-lines-v1:sha256:37cf63d6335ea7e5542158743a1f08707214d6cbabbf4cf41738f0f18c4c8e36:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5NDMwZDExMmE2YzNlZWY0MjUyYjEzYThkOGY5NTIyNWQwMmQyZGE2MWM1N2E3NWVmMDJmNmRmYzRjNzgxNzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiMDBhZGIxNTM2MWQ1ODgzMGVkMjM2YTNkYWE0ZjNhZjRmYjUxNjA1ZTZhN2E5ZDM2NmVmZTJhZjBiMGJhMDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkM2JiMTU0ZTAzMTQ3ZTExYjVjZjJhOTFmMTY4NDUzNWYxYTIzMTBhMzk4NWI4OTRiYmY0NmEzOTU0M2ViNDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_741a9b041c1c4112a9ed14feeb507dc4",
+      "statement": "The keymap compatibility surface is defined from the `Command` enum declaration: a macro generates each command's canonical YAML spelling, `FromStr` parser, and complete `Command::all()` registry, and a generated test parses every variant name through keymap YAML.",
+      "evidence": [
+        {
+          "resource": "repo://src/keymap/command.rs#L14-L51",
+          "version": "repo-lines-v1:sha256:9fbec16e3eddbabe06db23cac909a3dcacca99098ac45c3f120b07191f8f7bfd:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzNDcxNjU4MWFjYzQzYzRiNWIxOTdlZjExMTU3ZmI5M2RlMWIxYWQxOTllZGNmZTE5OTcxNjVmYzg2NTYzZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkwY2VmZjY2ODUyNDE0ZmFlNjg5NjFhNDAxMDk2MTE5NGFmNjk1YzlmMGRlMjBjZmY4MmNiY2I5ZGUzYjk0OGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk0Njc2ODc1NTBiYzA5MjhjYWFlYjI1NDk5YzYzZjgzYTYwNzQyYzZjMTYwMGRmZTBiYmI4YmIxMjc0MjU1OTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a3cc304c32124747a6ecaeee7e7b29a8",
+      "statement": "The effective keymap starts from embedded `keymap.yaml` defaults; Settings can select `token` or `conventional` bases, then user entries replace matching keystroke-and-condition bindings, add bindings, or use `Unbound` to remove a sequence.",
+      "evidence": [
+        {
+          "resource": "repo://src/keymap/defaults.rs#L10-L52",
+          "version": "repo-lines-v1:sha256:b25085fe2737c341baf8c83428287847e68dc0671c4a9207bee6f049448c4a8f:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2ODUwZGZiZTA0ODU0YTA1N2UwOGRhOGNkY2MwY2JiNTMwMjY5YjliMmEwMGMxNTExZTg5MmExNjJmNDQyNzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkMGQ3ZTlkMzk5MzVhNjUyNDlmZDhkODQyYmY4NDIxM2VlMDY2OGYwZDE1OGE0MjQyODEyZTI3MzI1N2NlMDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM5MzdjNTljZjJkNmNjNjExZTU1NjNlZTc3MjcwZWM3NWRjYjNjMzI5N2MyYzQzYzk1Y2QxNjc1ZTIzYzc3YWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1M2YyMDU4ZjcyNzE2NDViMGU1YTA5MzIxZmFjNTgzYzI3MGMyODgyZGE2NmZlNjMwMDViYzEyZjg3ZGQwYzgifQ"
+        },
+        {
+          "resource": "repo://src/keymap/preferences.rs#L29-L63",
+          "version": "repo-lines-v1:sha256:b99b76fac76695200430db9f1fc2485c1d8ce14a95e102015c1a0b63159ab08b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwYTcyNGE5ZDJjZmYwOWM1MDcxMDM3ZjE3YmVlMWU4NDdmMGU4YTk4MjczYjJiYjkyOWNhY2E2NzE2MjFjN2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiZmYzZjAyYTY4MzBkMTZjZGExN2FhYzgzZWJiMjU3ZTE4MjI3NmE4NjE5Mzk5MzMwY2FiNzcxYjQxZWI5NmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE2OTBjNjBjOTRlYTE1NDY2ZWRiMmJhNGI0NTgxODZiZThkZDRmMDMwZDU0OGEzZTNiNTgyMzJmOTFmZDhiZjYifQ"
+        },
+        {
+          "resource": "repo://src/keymap/preferences.rs#L79-L120",
+          "version": "repo-lines-v1:sha256:4a7d0530fad3cb04919e9f9761876af19bb375e361ad8ed28cf685e65051ab41:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxMjM3YmE4NWI2ZDU4YWZkMjYwMjk2MzY2YWIwNWQ0OThhNjViMmMyMDIwMWI3MjgwN2IzODdmYWQ1ODdhY2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YjE5ODJlOGRkNzQ4MTE4MTQ2YjM5YTJkMDA2MmY0MDgxZTM0Nzc5Yjg2NzVjMjM0YzRmYjEyNGRjMzkzOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFhNjcwYWM2ZmIzN2IyOTdmMTdlZjQ2NDMxOGE4NmEzNjVhNDUzNTE1MTliZWVmMmFmNDU4OWUzYjljMTE5YWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU1NjRlZmJmMGY3MGJmODU3YzMyY2ZjM2Q1NWNiMzY0YTNmYmViMmZiYzhhZmI4OGZhZTA5OWQwMDNmYWE5MWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d2afde7886324bf8a1e23e682b3a2f18",
+      "statement": "Keymap resolution filters bindings by runtime context before matching, prioritizes an eligible single-stroke binding over a chord prefix, and uses `Execute`, `AwaitMore`, or `NoMatch` outcomes with pending chord state reset after execution or a miss.",
+      "evidence": [
+        {
+          "resource": "repo://src/keymap/keymap.rs#L142-L183",
+          "version": "repo-lines-v1:sha256:592a713007615ad2be284efc8fbff4ceec4ac76631e669decb442114932ab273:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2ZjM1MGZhZWY3OTE4ZDBmYTM5Yjk3NDg5OTQ3YWIwYTk4YzVjNDMwOTUxNWY4YmNjMWJkYmQyMWFmYzYzMjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyZWYxODBkYjZhZjk3MGY0M2E1NjNhZTk3ZWJkZGU4N2MxYjdhNzRmOWQ1NzIxNjQwZDc4YjE3ZmVmYWFjYzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjOGJjYjNiM2YxMjUyMTU5MjQxNmIyOTZkNmIxZTU1ZDJhOTZhNTM3ODI5OTUzODMyYzExMzc1N2RjYzdjZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQyYjY2NzczOGM2YTVlMjA0ODgyZDU0ZjUxNjczZmFlZjQ2MmFjMjJkYjIzYjQ5N2Q2MzQ4NjQzNTA2Y2Y2NTQifQ"
+        },
+        {
+          "resource": "repo://src/keymap/keymap.rs#L86-L128",
+          "version": "repo-lines-v1:sha256:ba3ec022355c95f8d70ecab5f458cc3d5499a9d57d02677b567f1d1b0218f05f:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiZjZhZmRlYmIzZTYxMWVlYTM4ZDQ4YzkwZWUwMGVlNzhhYThiN2M5MDU4ZDA5NmU1MzA3NjQ3ZDU3MzYyYTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwNDQyOTAwYzJiYjk4NWMwNWNkMjQ1NDk3OTNiZjNmN2ZhYzNiY2NiNWU5MWFiYWM2MGQzZGMzNmJmZTQwOTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0NmVmMWM4NjM2ZmJhMzAwZjQ1NzdkZjc1NTNjYWEzZGRlYzcxYjkyMGZmOTU5ZmNiYTE1ZDNlYmJiNWNlNjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2NjFhYTdiYTZhNTQ1OWFiYTg2MzUyYjZmZGFjOGVhOGUwYjg2MTcyZTQyYmExYzVhN2FkMmRjM2Y5OTc5N2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d71c963274144415813a1a5a5ccddb8c",
+      "statement": "The shipped default bindings move lines with `alt+shift+up` and `alt+shift+down`; `cmd+shift+up/down` are intentionally unbound, and focused tests assert these defaults.",
+      "evidence": [
+        {
+          "resource": "repo://keymap.yaml#L277-L305",
+          "version": "repo-lines-v1:sha256:564ba156722dc3875f55f8da5055e9a341afd5efeb607994ad02a2504503b13e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhMTUwOWE0NDRjODI4YzY3ZjNkNWNjNDI4YTdjNDZhZTE1ZjVhYzFlNjI2N2MyZGQ5MmQ5MTVlZmFlZDY3MDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjZmM3YTFiMmU0N2IzYzY2NjEwYmJjMWE2MTFjNTdkNjVlZDgxY2IyMTM0MGI1Y2M3ZmY2MDdjY2E4YjRmMTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiNDk4MTYyOWU0YzMzMjM2ZWEyNWQ4YWY2NDQxMzljNjI0Mjk4NTVjZmU0NWFkMzM4OTg3OTBkYTI3MzAxZWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZjNWM1ODUwMzJiOGE1ZTViNzJjZGY5ZTRiZTk2NWExNDEzZGVmNDU0ODhhMDBlMmY5NjlkNzczMjM0Y2ZmMmEifQ"
+        },
+        {
+          "resource": "repo://src/keymap/tests.rs#L207-L234",
+          "version": "repo-lines-v1:sha256:f00e489532dfdecf14a8dd6211e393a28fe4a5432502950da10ad53824ffbcfa:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2NDYxY2EwM2U4N2VlMmI2MzM1ODVhMjBhNGJiYmEzOWY3YTdjMmIzYzNmZTRhZjAzYjNmMzQ5MmMxMjQwNjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViYWMyZTg5MjE2M2Y2ODljNDNhYjFkZjkyY2M5MzJlYjJkNGY3YjE5ZjIyMmVlNmFhMWQwMTU5MTg3ZGE2MzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9b83de0dff2245b2a5bd3accf085753e",
+      "statement": "The human-readable shortcut reference and website keybinding data are compatibility-facing representations of command enum spellings, including the MoveLinesUp and MoveLinesDown entries, and focused tests verify embedded YAML parsing and context-sensitive default behavior.",
+      "evidence": [
+        {
+          "resource": "repo://docs/KEYBINDINGS.md#L194-L208",
+          "version": "repo-lines-v1:sha256:42de0ffceb750b003600c631c0e95d177df473db1128f787732d0a4bd73a3a08:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0ZDVmYzRmZjgwYjljZGI2N2JmMTA3YjZiODA5MTgyZDlhYzU5NzM0ZWUyMjNkNjYyODk3NmQ0YmU4ZWQ0MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjOGFmZWVjMGQwZGJlZTNlYTE2NDdkOWIxODhlNzRiNzBjNjczNzQ1OGYwMTI4M2MyNWM1ZTllYzI5Zjg2N2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmOWQwMTAwMTc0MTJiZDQ5NWNkYWRkODFlY2I2NDIyMzA3NzRkY2QyZDJjN2ZlMGM5NGZjMWZiNGEyN2E4ZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4ZjI1ZmU5NTNjMzQyNTUwNmU4NDAwMjZjOTZkNGNmYjFmMDY5OTc2YmEyY2QxODlmMzNlYTc1ZjM2Y2YxZTAifQ"
+        },
+        {
+          "resource": "repo://src/keymap/tests.rs#L395-L462",
+          "version": "repo-lines-v1:sha256:5028bf5a4f03636efa9ee330c2ce89e5d6329592c99ba66a69b05d75e0d15a35:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyYzQwOTk0ZmRiYWJiNGZiMDAzMjI3NmFkZjNkNjFkZWYxMmFmMmIyMjM1ZDQxNDRmZmMxZTlmYTUyNzhlYTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNhZDE1NThlMWMwZjVlOTg3N2MxNmI5ZWQ1YTQ0ZmYwZTgxODMzYTdhOTliOWUxODgxY2VjMDViOWNiZWVlZmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://src/keymap/tests.rs#L8-L23",
+          "version": "repo-lines-v1:sha256:1d95842129991a55390ebeb26e099095e1bbc93820230e614b6a1535e60bff4d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiZmVjZDYzODUyOTE1MmRkNzg1YmM2NWJmYjk0YmZkMjFhZmViNDRjNjY2ODAyMjVjZWYyMzBlOTM3OGJhNzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3YjQzYzY2Y2ExMzQ5NTg0OWVhZDY0MmFhYjQ5ZmFmN2E2ZGU2NDg5NTNmMGVmNGNkNGY2MWRkYzllYmI2MjAifQ"
+        },
+        {
+          "resource": "repo://website/src/data/keybindings.ts#L32-L51",
+          "version": "repo-lines-v1:sha256:050065701b6a99f5f6705bc224e02bed39cc7370026519ea96d934b38604a684:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxMzhlMGYwNTdkZDkzOTkzMjBkZDQzZWNhMDlmYmNmMjRiNzlmZWQ1Y2VmMzAwOTNlODVlZWYzYTBkMGI1MWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2M2Q1MzVjZTM4MDYzZDZiNGM1MWQ4YzM4NmE3ZjliM2U1ODBhMTRhMTBjMDdiMTk4ZGZhZjE5YzkzYTNiZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyZjQ1NzY1OTFmMWY1ZDRkZTI3NTZmNGE4OGNjOGUxNGZlMThjNzI5NmYxYjZjMDRlNzYwYmM3M2QyYzg3ZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4ZDMxMzM5MjhiOGE2ODc4NDdhZmUwZThmNTlmZjJmM2VmMjkzOTU3NmMxZGU1NmE2YmViMjQ2Mjk0Y2VjNTMifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T22:42:43.154Z"
+  }
+}

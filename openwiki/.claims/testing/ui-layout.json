@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:c69b51ecc3e89a5edbb8f092bb23c91029028226c2aaf001034673f436ba1f48",
+  "claims": [
+    {
+      "id": "claim_ae8229cf6bf840c0af35814a0dab9a66",
+      "statement": "The layout engine produces a queryable LayoutSnapshot that is shared by rendering, hit testing, and update-layer geometry queries, preventing independently derived surface geometry.",
+      "evidence": [
+        {
+          "resource": "repo://src/layout/mod.rs#L1-L11",
+          "version": "repo-lines-v1:sha256:89331ecd9b9c7c22a5ed06aad97e2b5ca3024db41db40f1e089b2d8bcd13eed5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4OTdhZDAyN2VjMTBmMzA4ZTI2ZGU3YWIzMGZhYTM5ZWE3OTE3MzlkOGU3ZWNiMWRhNTdiNTkwZmY1ODU1MmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0MDMzZmQyYjgyYmU0OWRmMjU2OTg3MmEzOWYwZTQzYWVjODIwYmIyMmJkZGQ1MTdhZTRhM2Q0ODhjNWFjMTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ2Y2NjNWVjMTk2OWMxYWEzZmQxYWEyYzY2ZDY2N2E3NWU0MWE0MzA0MDFiNGUxNzU4ZmJjZTM0ZTVjYTAxMjYifQ"
+        },
+        {
+          "resource": "repo://src/layout/snapshot.rs#L1-L6",
+          "version": "repo-lines-v1:sha256:a77837238cf8fa244bb64cded8eab800b8f5f09482bb61c2ae148542ddc55020:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDgzMDc5YjliZmFmZTFlZDRiMTk2YWVmMjlmMTE3MWZmMjY4MTkyMTkzZGIyYjIyZGU5NTBlY2U0NGU0MjZiMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGU2NjAyY2EzYWMzNGZhMDVmYmJhNmFiYTEyOGM5ZDYzM2YxNDk5MDJkNjQ5OWVhNWFkYmNlNTY5Njk4ZjFhYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWZiY2M0Yzk5ZTUwNDFhMmY4OThlZTE3YjA0NjcwNWE2ZTRkMDU0ODI5YWMxYWUzOGMwMmQwYjIwMGY5ODhlZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_5ce7a6d06ebc43c6a24ba78cf73aa1e1",
+      "statement": "LayoutSnapshot hit testing searches reverse draw order, honors ancestor clips, and resolves an unkeyed hit to its nearest keyed ancestor.",
+      "evidence": [
+        {
+          "resource": "repo://src/layout/snapshot.rs#L72-L123",
+          "version": "repo-lines-v1:sha256:173553b23485a246b36cf763f3c153cf2aaf50f51c0907f978e17ccfc1e4a8ca:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNTJiOTJlZGFlNzM3OTAwY2RjMjcwZTM3ZjhiOTMzYTIzODE3YWRiZTZiOTc5NzAxMWEwMDZmYWVhYTFmYmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlYWNmMDY1NDQ2YjY1OTQzNWE5MmU4MzZiZmYwOGY4YTNmYjk2MzhmZmFkMDg2MzFiMWM2MTE0MWI2NGJhODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhNWI2YTMxNzJmNWViNWNiN2YxOTQ1ZmJmOTg1ZWRkZDkxNmUyNGY1YThiMDNkNGJmNjUyYzg5OGRhMGNlOWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_09301350605d4adebda3e25136c5305a",
+      "statement": "RowListView is the shared geometry authority for uniform-row panels: it derives capacity, drawn ranges, row hit mapping, reveal behavior, and scroll clamping from one viewport and row height.",
+      "evidence": [
+        {
+          "resource": "repo://src/layout/snapshot.rs#L148-L219",
+          "version": "repo-lines-v1:sha256:da1cde683d061b6ecd01f894315772bcc50d74c82229673f831b450158023a17:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhNDg0YjAyZDIxZTEyZGZkZTg3ZWVkZWNjMjRlMTZhYWY1ZmMxYTJkZmMzODllZWE0YjE5YmRlNTVmMmFjNTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI0OTI1YjQ4YmYzZjFlZjIwMTAzODk5ZjFkZGU3NWQwOThiODBmMWU3YTllM2RkNGQ1ZDAxZjNiYjA0OTQ5NGQifQ"
+        },
+        {
+          "resource": "repo://src/layout/snapshot.rs#L237-L275",
+          "version": "repo-lines-v1:sha256:8995abb67ef0151a3ce5eba2c7b7e3cee9f2bd0481114b2c490517c061201197:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwN2E1ZDVhMWUyYTI4NTJmY2Y0NWYwOTc0MmIwNjNlNmJiZmNmY2YzZTcxNGExY2UxMzQ3NzExMjJhYmVkOWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5ZDQ3YzQ4ZGJiNmMxMWQ3NTgwNDZiOGQ3YzhmMDk3MmFkNmIxM2YzMGEwMWNhNTQ4ODc2OGMzMmRhMWQ4ZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiOWM1NTFmY2Q5NTU0ZTIxMWFlNGNkNTM4NDEyOTlmMmY0NDY5NDFmODRlNDgwNmM3NDAyNWUzOGM5NDg0NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwMWE0NDMwMWJkZjRjMjg3YmY5ODI4OGEzOTM2ZDY0YjZmODY3NTJmZGU3OTgyMWI5NTVjM2ZlNGQzMDMwZTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_64f72ff3107747a4b691c24f620b59d2",
+      "statement": "The main UI hit-test function applies a fixed priority from cursor overlays and modals through status/sidebar/docks/splitters/previews to editor groups, so higher-priority surfaces prevent underlying editor targets from receiving events.",
+      "evidence": [
+        {
+          "resource": "repo://src/view/hit_test.rs#L1026-L1115",
+          "version": "repo-lines-v1:sha256:4a2b3371f26709e83a2a44c354cca719953b8323d08d7d450ae7074967f66f76:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0MzdmNTJhOTMzZTdhNjFlMmU1MTMzMzZiOWNkOTJkNGViYWM2ZjQ3YTIwY2I3N2ZmOTY1ZDNjZTJjOTY0ZTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYzk4ZDZiMGRjNDkyYzUwMTZkZjEwODA1YTNhNTRlYjljMTg0YTVhNjEzN2U3ZjRiZWNmYTBjMjIwNTUwZDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1b4fed1453434952a99d3cc69389995d",
+      "statement": "Keyboard handling gives settings capture, splitter Escape cancellation, modal focus, find-bar focus, and cursor-overlay handling precedence before ordinary editor key dispatch.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/input.rs#L191-L240",
+          "version": "repo-lines-v1:sha256:bd52c47886cc58456f5ae5b6ede2cc97e4a4aac51944f34fb6ef59947243a28d:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2MjkzNDI5ZmMyZjg2N2VkZDBlNWJmNTgzMDdjZTQyNzlhNTFlMDVjNDA2ODk0MTc0OGViMDRlMzRkNGFlNGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiZjAwYzk3MjY0MWQ4OTBmMTUzZThkYjcwMDA4OWRkMmRkY2U2YWI2YWIyNjkxYWE2Njk4YTYxNjU4N2Y1OGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_098ab9e40bef47e09c50361da1e104f4",
+      "statement": "Layout messages synchronize viewports after creating or splitting groups, reject invalid group focus, keep active tabs visible, and cancel splitter drags explicitly.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/layout.rs#L177-L199",
+          "version": "repo-lines-v1:sha256:4bd2c2cf305fb0d07f31655bfee21ef79b7d7d6b283384b77d690590853a5228:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4NWNjOGY1ZTJhMDdjNzA1N2M5OGZlNjJjMzZiZWRjYWYzNmM3YjdhOWRmNjg3YTViMDU1ZWM5YjBkNjkyMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5YjAwOGYxZWYxZWFiMjM5YjIwN2UyNzlhOTAwOGZkMDBhODlhNzhhY2M1N2NkZmE1OWIyMDJlZjc3MDI2YzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUifQ"
+        },
+        {
+          "resource": "repo://src/update/layout.rs#L37-L57",
+          "version": "repo-lines-v1:sha256:2b6fdaea0d3307f5cfffe456e9e784bb319919b82529b6ba92c7746368cf7cab:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0ZGRjMzE0MjYyYjc1MWE4YWViYjQ2NzMwODQ5NzBjZjlhMGRjZDA3MGY5ZjY1Mzc0MmM5ZTc4Y2YwNWI1OTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhOWQ2NzM5YjZhYzJlODAzZjA3MjA4ZTNjZjdjZGE4MzM1Mjg5NTY4Y2MwN2EwMGM1OTg3NGNlNTBiNTE1ZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2Yzk1NTE1MGMzMThlMWJkZmUzYTRlZTE0ZTM4NjM2N2Q1ODc0M2Y0OWI5OWRhYTcxOWEwZTIwYzU4ZDFmNjMifQ"
+        },
+        {
+          "resource": "repo://src/update/layout.rs#L76-L105",
+          "version": "repo-lines-v1:sha256:4f7cd69fe83c2593256d12880cd2104f08847a4493086c73bb710b99a19c5734:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxNWNkMmJmZDM5MTQwMGYzN2VhOGFhYjMzZGE4MmJlMGYyMjFhYTI2NzYwNmJmZDU1NmJhMGRlNGYzMzczMmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmMTNmN2I0NDliYTdmMzJjOTJjNDI3ZGE1NDVjZGZiNjcyY2Y4ZTU5MDc5YWIwMWQ5ZDg0MzZkNDcyZGUwMjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExYTJiNDk3YmZlY2Q4YWZjNWM4Y2MyMzJkMjZjYjVkMDhjYzVhNjJjOThkYmFmMTA0Zjk3ZTE0Mzc0MTM0ZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2M2JhNTQ2MjFlNDJjNzNhMGNmMWVkYmU0YmRiN2NkNTI1ZGQzZWNlY2M5NjYyNTU0ODhlNGQwYWY4ZDY1ZjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_55b17de3802e4b87b870e8120d709a54",
+      "statement": "The shared integration test model fixes document, cursor/selection, viewport, window, metrics, theme, and empty workspace state so UI tests can run deterministically without a native window.",
+      "evidence": [
+        {
+          "resource": "repo://tests/common/mod.rs#L14-L70",
+          "version": "repo-lines-v1:sha256:f80004482f63d073aeafabd119fc539933358aa082fc4fcf0c5c4876f31f9c09:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlM2ZhYjBjZDZmYThmMTM4YWViMDdjMGY4NWFhOGIzYTZmNjVjODNlMTcxNzZlZmZmNjUwZTYzNjdlY2NlYWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyODQwN2YxOTUxZGFiNWJkMWM3ZmM5ZTFlNWIwZGI0MTgyMGMxMzA2NDMyMzUxNWRiZmZmNWViNWUyOTU4ODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiM2NlNDU0MDE4OTI2N2FmNTI5ZTBmOWU3MzNlNmZiOTk2YWM3NjY4MWRlZDM2ODQ0ZmNkZTllYzNlNGFiYjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_58313fa140544a1e914db00a9570207e",
+      "statement": "Chrome layout tests verify deterministic repeated solves, shell/full-chrome agreement, dock and sidebar tiling, active-panel row ownership, shared sidebar row geometry, partial-row hit behavior, and scroll clamping.",
+      "evidence": [
+        {
+          "resource": "repo://tests/chrome_layout.rs#L117-L198",
+          "version": "repo-lines-v1:sha256:1759de9d0c3fec10ee826c85249c668a6e80a56a1eec9bb0f44348026c484bd1:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI4ODBhN2NkMjJjYTk0ZWUyZjM2ZDRjOTJhMWMwODUzNWRlMzBhMjQyOWZhNzZkOWQxMDhiYTE1OTU2YWI3MWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwOWE0NjY4NmY4NjFhNzI5NzNjOGIwZDFhYmIzMzE3NzRkOWZiZDBkYTFhOGFiOThmMmNmNmMzZjYxN2YxM2YifQ"
+        },
+        {
+          "resource": "repo://tests/chrome_layout.rs#L200-L325",
+          "version": "repo-lines-v1:sha256:ee192ee932fabbe39555068fc4e84cafc396a81b033101193209881dfa69eba8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkMmNkNGRiNDhhMzUwZThmMGI0Nzk0NGM0NmUzZmZkYmJhMTMyZDIyOTBhOTFkNzAxMmI1NmViNDZjOGFiNGY2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI4NGU0MjA4Y2Q2ZmZiOGM0YTM1NDdiMmY1NGFkYTE5OTc4YzNmMzY1ZTc4Zjk1MDJlZjUxNDVjZGQyYWE4NTQzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIwYWU0ODI1NGJjMWFiYTMxNzkwMTgwYjUxYzBhZTBmNGQzZmJhMTllMDE0OWNmMWYwMTUxNTQ5NjQxYTY2NGVhIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0M2I0NmRkNWYzMWY4M2NhOTg2MDU5ZDJlY2NiNTJiMzRjOWFkM2IyMjM5NTFhZDA2YzA2N2IzMzM2NTQ1ZDAwIn0"
+        },
+        {
+          "resource": "repo://tests/chrome_layout.rs#L59-L81",
+          "version": "repo-lines-v1:sha256:6d5f192ab9906a378864a432ffa398d6b4a3c49caf89e3d77492f483a919f40b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1MmYzYmFmYzE5MWRlYWRmNjY4MzRkY2VlNTYyNTczMzk4ZTViZTcxMjY0OTlkZGU5ODA0MzVmYzMzYjcwYTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYxMzU4Mjk1MmE5OTMxYWUwMTkxMTJlMTAxOWM0MGNmZmU4YTRmYjI1MjcxMjczNzk0OGYwNmYwNmQwZWIwMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZlZWI4NDliMGU2MzU1ZmUyMmM2ZmRiZjVhZmY5MjE5MWU2YmM2ZDY0ZjA2YjEyMTVlNGQ3ZDM0MzljNmM2NWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_721f04798f334ebebf90d1adf7d26780",
+      "statement": "Find-bar tests verify focus and viewport lifecycle, preservation across modal use, document-scoped selection-only search, multi-scale geometry and hit agreement, field-only pointer editing, and restoration on close.",
+      "evidence": [
+        {
+          "resource": "repo://tests/find_bar.rs#L15-L69",
+          "version": "repo-lines-v1:sha256:6643d39a1d445748bbe4368c4f6b7d3cbe23e05c97417b8e690c0c12e4c22216:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0NzMzZWY0YmVjYmJkMTEzZmJjOTllM2E1NWJjMjdmNGQ1Y2NjMGIxOWVjODI5NmQzMWNmYmYwYzg1MDFhNjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM1MDQ5YTVjZmIzYjQxZjM1MmE3ZmI3YTcyYjEwNWY2N2VmOWU4YzQ2OWIzZDcwNzAwNWU4ZTE0YmNkNWY3N2IifQ"
+        },
+        {
+          "resource": "repo://tests/find_bar.rs#L189-L223",
+          "version": "repo-lines-v1:sha256:9c1c9db6f4af49131937502013a13088ed3f8567f992ea1b170644684f1e7064:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExM2NkZjNlZGUyOGE4ZWY2ZWVlNDdkMzhlYjJlMDA0NTI5M2MzMDNiNzg1YjZjNTU3MTk4NzgyZGE0Mjc2N2QifQ"
+        },
+        {
+          "resource": "repo://tests/find_bar.rs#L71-L187",
+          "version": "repo-lines-v1:sha256:d74f3192c4f8b47a5c8e401f4d8f7be2847f1b5bba85549a0174d92664ef0107:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkMmNkNGRiNDhhMzUwZThmMGI0Nzk0NGM0NmUzZmZkYmJhMTMyZDIyOTBhOTFkNzAxMmI1NmViNDZjOGFiNGY2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2MzhjZGRjMTQ1ODY1NzI0M2YyZTMzNjkzMjRkMGNjZTM1NDdjY2FjZjQxNzk2NWI0ZjhiMWE5ODAxMjMzZTIyIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmNDRjMGUyZWZkZjhhZjNlNzM3YjViMzZhNGExZmYxMzdiNmM1OTJlMzc5NWQ2MTlkY2U1NDc5ZTk1YWVjMjRmIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_c85c0656dabf483eaafc8c89ed431539",
+      "statement": "The renderer stores one solved chrome snapshot in RenderPlan and supports distinct webview-chrome-only and native-markdown preview modes, establishing a boundary between deterministic geometry tests and native/render integration tests.",
+      "evidence": [
+        {
+          "resource": "repo://src/view/mod.rs#L85-L113",
+          "version": "repo-lines-v1:sha256:a2adcf39b2288e167786d7d7a02b0e715b822c74c854197c981bf0455c888965:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0YmZhNGY5NDkxZTEyOTY0YmJlMjI0N2Q4NTE0OWIwMTQyMGMxOTBjZmVkMTA1MTA4OWJjZDQ3MzdkZjU4MDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4NmZlOGI5M2NhZDM4M2RkMWRiODAzZmQ2OTFiYzVhOWNkMjg2YzNhZjRkOWQ5MDAwNjhjNDc2NzZmMDY2ZjMifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T20:35:11.754Z"
+  }
+}

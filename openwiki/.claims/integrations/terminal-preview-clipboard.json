@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:67a0341fe22a2d330c220bb9cb0f5759402a6ae55257b216cd94a9a627fe27d2",
+  "claims": [
+    {
+      "id": "claim_76f0decdae3949458a193b6d6c028199",
+      "statement": "The terminal integration separates command/model updates from runtime effects: terminal updates allocate session ids and request spawning, while the runtime chooses a working directory and spawns PTY work asynchronously, allowing only one pending terminal spawn.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L2786-L2825",
+          "version": "repo-lines-v1:sha256:eed7b11543d32ba0e2f10041d7a607f451c68dc6b039e4945c574471325148c1:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyZjhjNGE5ZWUzOGExMmZlNGVkNDEyMDRkMjdkNTU1ZmRhM2RlNjNiZmI5OWMwMjQyZWM1ZjI3MWNhZDhmMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkOTllN2M0OTcxM2MzMzc2Njc3MTI5MWRiY2NjMzc2NGM0OTk1N2U5N2U0NjgyN2U3ODIxMzliM2FiZjk5NDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZkYmE5YWM5ODQ0ZTNhYjk3ZDQ0YTFhOTRjYjlkMzhhYmJhNWI0MWM1YmJiYTAwNjI5YjY2MWQ2MDg0MDAwM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4ODE4M2E5NzUzN2E2YmJlNTg0YzU0ZTQ2MTMwODdmMDI2M2I1NzgwYWZmOWNhZDMwMDUxZDIzNDgwMWRkOGYifQ"
+        },
+        {
+          "resource": "repo://src/update/terminal.rs#L43-L67",
+          "version": "repo-lines-v1:sha256:1123c68c63c0239621ef0835c38b5372cb46557590d354d046c535b0fe1cb931:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1MjQ2MDljNTY0OWYwNGQxZjAyNjdiZTUyNjVjZjg1ZjM5ZDA3YTlkYTFhYTQyN2IxNmFjZTA2YWU1YzU0OTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhMzEzYzMwY2VlYWM4OWU0ZjI3ZmQ2MWRhYzA1NmY5NmVlOTQxZjFjZjRlNjE0NjZiMTQ5NDcxNWY2NDAzMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzNTkxZDhmZjI4MGI4NjI1OGYyOTU4M2Q1YzQ4OTdiNWFjM2ZjZGI3NzE5YWIzNDZjODEzMjExZGY0YTJlMzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dfb13de1a9be4f60a4fdf34d1f178d46",
+      "statement": "A spawned PTY uses the user's SHELL with platform fallbacks, starts in the requested directory, supplies xterm-256color when TERM is absent, and uses separate writer and reader workers with bounded 32 KiB or 16 ms output coalescing.",
+      "evidence": [
+        {
+          "resource": "repo://src/terminal/pty.rs#L141-L172",
+          "version": "repo-lines-v1:sha256:e52c1993a9cfb2dae932e1cf95d8ee2ed47890bf54b4bdd7600261dd6a83934d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YTE5ZjRmZjM0MTY3MDU4ZGYxYWFmYTUzODg4NjYxYmM4MmJhZjA2YmZiN2IyNzFjNDVhZWNhOWE0NmNmYjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1MzA5NDAzYWM1ZTA0YjBiNjJhN2MwZTVkZGI1Y2FlN2VhNmE4NmIyNzY4Yzg2YTZhODc1YWNiMjQyNWE5YTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwNGUxNWQ4YWQxYTJjOWVhNDY0OTk0ZmYxYjBkNWVlNzk2ZTkyNTU5ZmVlNzcwNDBjYTk5NDcxYzgwMmVmZjEifQ"
+        },
+        {
+          "resource": "repo://src/terminal/pty.rs#L192-L301",
+          "version": "repo-lines-v1:sha256:70ba3f59ad8d6f0571e6f3f7f33f1f30620d3116128f7c08d381a3748bfad0a4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI3MmNlZTg4OTBlYjMzOWJkZThkNDgwYzg0MWMzOWQ1NTZiMWY5NjczNzQyODlmMDMzYWI0YjM5ZTM5ZThkZDI5IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI2NDc1ZTk0YTkwNGFjNDliMzE1NGQ0NjcyYTY2ZTg2MjliODZkYWM3NGUzZTI5MzdiZTY5MjdhZTNkYTExYzUzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJmYWMxOTVmMTlhM2Y0MzI3ZjEzMzY4ZTA3MDRjNmY0NGUxYTg1MzUxMmIxZmJkODZlOTk2MDkyODFkNDU5OTc3IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhNTIxNjA0YjM1ZmM0MGFmMDBjYmE0ZWVhMmZkNWUyYzNhZjE4NjNiMzkxMTg1ZDdiZjRiYjA5ZTcyZDBjOGIzIn0"
+        },
+        {
+          "resource": "repo://src/terminal/pty.rs#L20-L27",
+          "version": "repo-lines-v1:sha256:409895ec1a000d3471cf445b654049970afc4351ed971503b518a573cf51a9fe:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2M2YWU4MmUxZDBjNzgyM2E5ZWRjMjczYmVmZDE4MGRlZmE5MGUyZDQ1OTU0ZGZkZDk4ZGFiNGJhMTNjMjQ4NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTI5Y2ZjM2ZiYzgwNDhmZTVjZmFiMTcyYjQzMzAxYzg4Y2ZjNDNkYzcwYzc2MTI3MzcxOTkyOGM3YzI3ODMxZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMThmNGRjYWQzZGU2NGI1OWJkYWFmNDg0OWVhMWUyM2NlNDdjOTlkZTE2MDkyNjEyN2E3MDU5YjcwYTUyOTc3ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmVjNTVmNzgyODhhNDk4Y2RhNGU0NjlmNjk2YzAxM2E5YzFhNDA3NTQ3NGJiODBiOWI0ZjNjMDEwZGE0MDA1MiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_84c13749de4f4b618218e434ff2fba71",
+      "statement": "TerminalSession owns the ANSI parser and alacritty terminal grid/scrollback, routes emulator events through TerminalEventProxy, and forwards PTY query responses, title changes, bells, and redraw requests through the application message loop.",
+      "evidence": [
+        {
+          "resource": "repo://src/terminal/session.rs#L108-L157",
+          "version": "repo-lines-v1:sha256:de177bf6d004d6d64079982a14c6388bfdd1ed9e29cf5e8b936ff2cb5401335f:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkMTQxOTVjZGExZmYxNWE2ZDM1ZWZhNmY0MmMzYWQ0ODUyNGRiYzQ1YzNhNmJhZGYxMGM4MTI2NjQxNWM1ZDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFkMDIwNTU1ZmUwZTI1YWNjOTBjZDU1NDNmMGZiZGZhODc3NjJmMjRjZDVjNDU2M2FkZWI1ZGYzZDJmYzhkYjcifQ"
+        },
+        {
+          "resource": "repo://src/terminal/session.rs#L44-L105",
+          "version": "repo-lines-v1:sha256:b6114aee46384585346ae6794e4026af467f68cf4b71a4c88af81880971550cb:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhZTkyOTAzYWViZjVjZTQ1ZDRiZDFmZTVjNWFmNGQxY2E4ZWFjZTBlNTYyNGVlNDdkNmVjNzY2ZWI0ZmVmMGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1OTdmYTc1YjNmYTczMzVmYWNhZTIxMDQwZWUwNGUyNGQ0ZmRmMDE5NTljZDIwMjJlNWY4NTI4M2M2MzFhYWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7ff15ed18a9e466cb44501f6d603bc3c",
+      "statement": "Terminal input and selection stay within the active terminal session: paste and keyboard/emulator writes go to the PTY, copy produces a clipboard command from terminal selection, and output/scroll/resize preserve or clamp scrollback state.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/terminal.rs#L21-L42",
+          "version": "repo-lines-v1:sha256:8601797a125ef22b02a04ead34705520a639483934f8fefd8c302b8560187795:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzNzFkYzRmZGQzYTNlMDE4YWZmZmI4ZjBhOWM2YTg0NmNhNzQwZmI3YmI2NmFiYmU4M2E5ODA0Mjk3MWU1ZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2NzE5OWJjZGJhNzkzMmM1NTVmNDdkYTdhZTFhYTlmZjEwMzZiNGZjNjM4MDlkMjVkN2EwZTViOTBmODE1MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ5YWY2YTE1NDZjMDA1ZjU4MDA1ZmE4NDAyNjJmYTUxZGE4ZGZhOGNkZTVjODg3MWY4MGRlMzRlOGE5ZGMyYjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExNzE2NDk1ZGQzZjM2MWU0YWI5Mjk3YzlmNTRlMWFmYzdjMjY4NzMwYTU5MmY1ZWE0ZTk1NzA2MDgwMzg0YTEifQ"
+        },
+        {
+          "resource": "repo://src/update/terminal.rs#L93-L183",
+          "version": "repo-lines-v1:sha256:7289e426dd026cccd5f16970b72460a53098af6c36f70acae2c4467ace02f90d:eyJzZWxlY3RlZExpbmVDb3VudCI6OTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1NTRjMjIxMzFjMDgzNTczMWJiMTQ5YTc2MDEzYjdhOTc1ZDYyYjRmNzg4YTk5Mzc0NDJjNzUzMDRlYTMxYWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjZGE3OTUxNDNjNDU2OTJlZDc4YmQxOTgwY2I3YjljZTNhNGJkMjRhOThlYmJkZDI5MDlkNWM0OGY5OWZhMTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5ddccf1b5cb6415280c4b9343e5d0004",
+      "statement": "Terminal link detection handles wrapped plain HTTP(S) URLs and OSC hyperlinks, bounds scans to 4096 cells, trims unsafe trailing punctuation, rejects hidden/out-of-grid cells, and requires URLs to have an HTTP or HTTPS scheme and host.",
+      "evidence": [
+        {
+          "resource": "repo://src/terminal/links.rs#L19-L103",
+          "version": "repo-lines-v1:sha256:b7f098b5c1c52852e7474d01fab39bfbdd81dd66656ce93d378df27d33359f3e:eyJzZWxlY3RlZExpbmVDb3VudCI6ODUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjZTdhNDVlOGFlYTEwN2Q2OWI0YzFjMGYyNzM1NjA2YWNmZjM4Zjc4MjZmZjIwZWZiZTQyNjFjMmU1YzcxN2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYxYzRjZDlkNjNkMzllY2UwMjcyYmZhMmMyZWZjODNjODRmOWIwNGE5YWY5YzIyMzFiNzU1NzAzMzdjODdiYjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYzk4ZDZiMGRjNDkyYzUwMTZkZjEwODA1YTNhNTRlYjljMTg0YTVhNjEzN2U3ZjRiZWNmYTBjMjIwNTUwZDAifQ"
+        },
+        {
+          "resource": "repo://src/util/mod.rs#L12-L17",
+          "version": "repo-lines-v1:sha256:bd4e8fcf8814e1dd7dcdaf20af4b05aa83f6fdc5b93c5e56a4bef8804e4b274d:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzdkNGRkOTlmYzAyMmViZTFhZmFhMmVlNTc3ODA3YTJiNmM0NTE4NmI0YTgwM2FjOWRiYmJlZjQ1YzdlNGNkNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjAzOGEwMzAzNmQ4M2Y1NzdjZjZhMzg0MTJmZGE4ZjM1M2YxYmE4ZTA1ODlkODJiZTBmZjI0YjExZjJhNjljMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDEwOTdlOWJlOWE1ZGIwMTVjMjBmYzM2MDM0MTg1MWE1N2RhZjVlZmEyYWI2MzMxNTIyYjc4ZWNkMWU3MzYxNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d21f38f7056a405b876ad883b97fa4b7",
+      "statement": "Markdown preview supports Markdown and HTML, uses pulldown-cmark extensions, adds source-line markers, and conditionally embeds repository-pinned syntax highlighting and Mermaid bundles without CDN or build-time downloads.",
+      "evidence": [
+        {
+          "resource": "repo://src/markdown/renderer.rs#L316-L368",
+          "version": "repo-lines-v1:sha256:a481ecfb74b4de71fbbbc1e2f1137645120505f73f4ecc156b0a0b3808c2fe16:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1MjYwYmViZmE0ZjdjZGQ4ZWJjY2RlZWE2Y2Q3YzFiNzhiM2RhNzkwMjE4ZDc2YWJjNzIxNWI4ZWUwYmVjZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNiMjU1ZjUyNjE0Mzg5ZWY3MDkzY2E0NGM0Zjg2ZjEzOTIxZGQxNDNkMjgzODU1MmJiNGE4MzgwNzhlMGE4N2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYzk4ZDZiMGRjNDkyYzUwMTZkZjEwODA1YTNhNTRlYjljMTg0YTVhNjEzN2U3ZjRiZWNmYTBjMjIwNTUwZDAifQ"
+        },
+        {
+          "resource": "repo://src/markdown/renderer.rs#L8-L71",
+          "version": "repo-lines-v1:sha256:85729dc740e4364b7e26d87e2bebefb1db377f5d976a911f8b945b0f225f9805:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0MDA1ZTUwMWZhNGYxMWJhMjQ5YTBmY2M3ZTUxYjQwYjk2NTRlMjNmMzE1YmViZWQxMGRhYWZkMzA2MDkyZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyY2JhNzY3Y2NmMjdhNzgwZGI5ODM2MTE2MTRlMDMyYTNiOGYwY2FmYzE3NTU3MTc2M2Q3N2I0NmU4NGRhM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5NWNjOTBiYzcwZWUxOWU1ZGJmODY1OWQ1NjEwMTI2YjNmNTU0ZDhmMTdiMjM1ZTZkMTEzMzFhNjMzMDNlM2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d050262b36394eccac40d68c742178f5",
+      "statement": "The preview browser script renders Mermaid from escaped textContent under strict security, leaves source visible with a status error on renderer failure, and posts debounced visible source-line notifications through the WebKit scrollSync handler when available.",
+      "evidence": [
+        {
+          "resource": "repo://src/markdown/preview.js#L1-L16",
+          "version": "repo-lines-v1:sha256:0750541c80078feaea47acb6bac1029f27d67a28153f304bb631f028a84f2fce:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyYjFkZGNlNGVlM2I4NTA5NDI1OTVhZWQ3MGNhY2ViMDY2ZmQ1MjMwMWYyZTdkNjRlMTI5N2ZmMDE3Njc4MzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkNTM1MmE0ZmQzYmVhMzk3MjA2MWE5NzY2NmE3MmYyM2EzNDBhOWQ1MTI1NDgxYzhhNWM2MWFhYjhkNTJiMzcifQ"
+        },
+        {
+          "resource": "repo://src/markdown/preview.js#L17-L73",
+          "version": "repo-lines-v1:sha256:da170a5806252d4ec48400b0b71089bfc9e15f98a07ad7a4a37cfbeac887cb2b:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2MzlhMDkxNGFjNWI4YmM5MDkzZTE4NWZmZmUxZjRmMDU4NjQxZTJkZTFiMDcwM2U5MDJjMGRlNGU4NDEwZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMWQxYTYzMzkwMjI5Yzc5ODM0N2U4M2EwNDA1NDQxYzk0MDAwMzUyODRhZDE2OGMxYmY2Y2RmMWQ3MGEzNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmNjdlOWM2MmQzYjBhZWEzYzdlNTAyNmEyYzZiMzBkMTVlYjU5MmE1NWJiYTcwNGYzMWU2NTlkYWY5ZmE3ZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ3ZDk0ZWU5NzkzZGMxYWU3OTU1N2Q2NjUyMDc1NjUxNjI2ZmQ3YmQ1YjgwMGY2M2RiOWUzM2ExYzhlYTUwYjYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f8944bb4f8e8442586fee5e911c629d3",
+      "statement": "WebviewManager owns one WebView and protocol-content entry per preview, creates idempotently, reloads content only for stale revisions, updates physical-pixel bounds as logical coordinates, and removes both WebView and protocol state on close.",
+      "evidence": [
+        {
+          "resource": "repo://src/markdown/preview.rs#L57-L85",
+          "version": "repo-lines-v1:sha256:d88efd4499fdaec1fda57770e445dfd94c72c18b7304edc682aeac43d04a963d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiYmI1ZTdkZDQ2YzVkMTQ4ODQ4ODZhMjU4ZTc0ZWEwMzk0NzdiYTYxNDYyN2E5ZWQxMjU5YjAzM2Y0NTA3ZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZjOTg1OWM5YmYzNDQyMzIwNWQwYTYyNDA5MTQ0MzY2NDAxMjUxMTJmNGNhNzlhY2FlMDU0MDcxMTIyYWZhNGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L2261-L2357",
+          "version": "repo-lines-v1:sha256:be7714847be2fa6905b268a49e648a0047d11057b26d6772e32d9efb11dc4389:eyJzZWxlY3RlZExpbmVDb3VudCI6OTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwMTk0NmU0MTgwNTU5NDEzOGM3NDQwOTEwYzU4N2NmYzRjMjBjMGM2MTUzZTY3MjJkMGJkOWI4N2Y5MDZhZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyZWQ3Mjg0NTQ3NjZlNTEzM2E4ZDMxYTA2NWRhNDA1ZjU2NmE5OWZmMmQwYzhmOTMzZGNlYzFjNTViYzA5YzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmM2UzN2Y2NzljZDY2NzAyYjcxZjNmOThkN2IyYjYyZTAwMGEzM2FkYjQ4OTE1NDdjNjZhOTJkNDEyNGIxNzkifQ"
+        },
+        {
+          "resource": "repo://src/runtime/webview.rs#L307-L320",
+          "version": "repo-lines-v1:sha256:ab724493208866ff7dcc579df9c42cb61de476864085f7c4ad5690086dcf9ce9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0Zjk3YTNhNGRkNzgzYTRiMTkxMzdjMzBiNzMwYWNhYzZlNWI4ZGFmMDA4OWU4YTBkZTBjMzE3NjQxYWM5YmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkNmI1NWM2ODQyOGJkOWU4ZDZiNGU0Y2YwYmJmYmI4Mjc4MWEzMjU4NjEwYWU5ZTAxMjI3NzA0NjM1MGQwN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYzk4ZDZiMGRjNDkyYzUwMTZkZjEwODA1YTNhNTRlYjljMTg0YTVhNjEzN2U3ZjRiZWNmYTBjMjIwNTUwZDAifQ"
+        },
+        {
+          "resource": "repo://src/runtime/webview.rs#L39-L163",
+          "version": "repo-lines-v1:sha256:3d234733b612fc4a2e3544c0ec4f347546166fa415aec133c4bf63a7743e7cd9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJjOGZhYWUxNDBiMzk4ZTgzMGZiNDU2NjYxNWYxNGM1NjZmOWFlOWJkODgxOTNlMWEzYjFkMWNkYmU5ZWFjNDViIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODkzZjQwZTM3ODFlYjg5NmM4MmQwNDZhMDgwNjdhMTFlMzVjZGYyZjFkZmFmMjZmZWE5MGI4ZGI2Njc2NDEzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIwOGEzYTVkNDNhZmMzNDg1NTk2OTY4OWEyN2I4MTFhZDk4OTE5Y2JhYmMxZmI4YzQ1MDIwMWQ4MjY5YjE1ZWI4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0NThkMzdhY2MzYzdjZTk0MGUxNWU4YmRjODdjNDg1YzYwOTdmZGNiNTU0YmY3YjQwYTU0ZjlkZjFkYWNjOWZkIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_588c8196a4c24d43b068ad576baf223a",
+      "statement": "The token custom protocol serves generated preview HTML and constrained local resources; resource requests reject traversal, enforce canonical containment under the HTML file's base directory, return explicit errors for missing or invalid resources, and infer MIME types by extension.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/webview.rs#L172-L218",
+          "version": "repo-lines-v1:sha256:40aa40ff843507288749d63b56b40c90bb61a86d75fa25f2dc7fbb3c2b77c0c3:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzOGI2YzhkOTdhYzc5NzcyNmI1ZjAzNTc1MWQyYzQ3MzIwMWFjNjNiMzI5YTczNmI0ZmE5MzAzNDNiNzVjMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUifQ"
+        },
+        {
+          "resource": "repo://src/runtime/webview.rs#L222-L305",
+          "version": "repo-lines-v1:sha256:1fadb262ce501ba7b90cd021557698ff16b30c2d98e803a0d204e812534c26e9:eyJzZWxlY3RlZExpbmVDb3VudCI6ODQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViNWRmYWJmYjdhNWNhZTAwOTRhMzQzOWMwYmFhMWQ3NmY2Y2EzYTFiZGQ1MzIwYThkOTUwZDU4M2QyZjU1YzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgyNDA0NTQ3MDljNTk3YzY3M2VkNGExZTgzMzQ2Y2FkNWM0YzA0N2MzZWY3NGFlMTlkMGY2ZjRmY2VhODY3MzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fd6792abfa2e46108035f643812a4189",
+      "statement": "Clipboard requests are serialized on a dedicated lazy arboard worker whose lifetime is retained through queue shutdown, while native open/save/folder dialogs run on worker threads and return cancellation or selections through application messages.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L2833-L2908",
+          "version": "repo-lines-v1:sha256:dd13b626122e841323730231d6b8e3d0b9df78d6e994fa48ef3d71370f232949:eyJzZWxlY3RlZExpbmVDb3VudCI6NzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1ZGZjYzNlMzlhMzhmYzU3MmQ1Njg2OTBjNmYxOWJkMGY0NTRkMThjYTkyODBkNTE5MTM4ZDgzODBjZjU3ZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkOTllN2M0OTcxM2MzMzc2Njc3MTI5MWRiY2NjMzc2NGM0OTk1N2U5N2U0NjgyN2U3ODIxMzliM2FiZjk5NDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE3NjFiZjRiZTFiMWZjOTM5NDEyZDdiNjhhY2VkZmUyNjNjMWNiYzIyMjMxMjEyZGYzOTA5YzcyMjljZDE2ZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwNDE3YjIzZDNlNTI3NGJmNTQ0OGQ0Yzk2MWUzOTJjOWU0MzA1OGM3OThjNjc3MjA3MjA2MDE1YjQxMTVhMDkifQ"
+        },
+        {
+          "resource": "repo://src/runtime/clipboard.rs#L8-L85",
+          "version": "repo-lines-v1:sha256:806fabe06f5a0534fc733b2cd0b79f9b237dcbf26b20528f3b669908c6751a71:eyJzZWxlY3RlZExpbmVDb3VudCI6NzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwNTkxYjY1ZGQxMjc1N2IyMTBkODFjYzViZjc3MzY0Mzk5NTAyZDQyNDJkMjYwZGQyMGIzMzc4ZTliYzE2OTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjM5MmIyOThlMThhN2MzMDVhZWVhMmVkMjdiMDU4MmQzNWI0OTM1MGVmNzYwM2VhZDU4ZWY4YmU5MDNjOGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a9135db6b55c4d19b4b6eed34eb98719",
+      "statement": "Terminal and preview external navigation share a validation boundary that accepts only host-bearing HTTP(S) URLs before asynchronously delegating to open::that; browser launch failures are logged without a model-side failure result.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/mod.rs#L37-L46",
+          "version": "repo-lines-v1:sha256:c420ad7fb2a146ff66ab64f061f58d2d4d0e449265bbf7a13e8b00f094ae5901:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxYTZjYWViNGI3NzhlZjgxNDJlZjc3YzliZWNkY2MyZGFhMGYxNTczYzk5Zjk1NWM3OTBjZmYxNjQ3NGI2YWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1MGMyOWM0Zjc2YjYzNmNiMWFlNzhiNDkzMjIxNDRkZGZhNmI3NzAzYTRkMzBhNmUwNjg2ODRiMmZiNjEwNjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://src/runtime/webview.rs#L79-L96",
+          "version": "repo-lines-v1:sha256:6b0c2d4a894494dc8ea0a09e607d1161c2159a13ddc0707d612445258f3ad81f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzYjAwNjFkOTE0ZDdmZGE0MGI1NDM0OTI0OWM1MmUwYjI4ZjE0OGJjYjM3OTdkMzBiZGU4MzVlZjdmMDYzMGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwN2NkNGJjM2Q1Nzc3OTg1ZWZlMTBjMWViYWY1MTMyMTI2ZGVmZGYyYjQzNWNlNWQ3OTUwOGFkYTg0YjRjMDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0YWVlNjQxNzM0NDViNWJmZGJjNGUyODM0MGU4NTIyMGNhYzg5ODRkOWIzYjU2ZGJkZDQzZjk4Y2EwYzU2ZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4ZjM0NmRmNmVkMTJlZGIyZTgzYTA2NTY1OTE5YzZlMzRmOGZlZjNjZDQ4ZjNjNDkyM2EwZDQwMzFiODQxNmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_92621aafd5e94ee0bccf6d49cb9417ee",
+      "statement": "On macOS, Finder/Dock open-URL delivery is dynamically attached to winit's application delegate and forwarded as the same OpenPaths automation request used by CLI handoff; missing delegate or method installation disables Finder opens with a warning.",
+      "evidence": [
+        {
+          "resource": "repo://src/macos_open.rs#L1-L53",
+          "version": "repo-lines-v1:sha256:efc7183d6c6f509a1fe959f24644abfdc5d0ef08630aaf1b6183ca3cdf3f287a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4MmMxMmQ4MzY1YmU0NDkxOTZhOThlNDI4ZmVlNGI4ODU5YmVkNzc0MjhhYzJkNWZiZDVmYzE3YzNlODEyZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4M2RiYzMzZjIyMDBlZmQ0ZGYwYzAzNTNmZWVjNzg3ZWMwNmVhZjZhNTczMzY4NzZmZGQzYzllYWI5OThiNTQifQ"
+        },
+        {
+          "resource": "repo://src/macos_open.rs#L55-L89",
+          "version": "repo-lines-v1:sha256:d9bdd8e87be9bc29686e61456fe3aca0bde4f50021e43be699baa03651db4d9b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3MWVkMmU5ZTA4YzE3OWMwYTkyZTgwMmM3YjdjNmZiYzk4YmQ4ZGI2ZjQwYzc3ZGZmNzM2NjE0MmE4NmQxZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0c14dda6721c48889dd72e5c311e913e",
+      "statement": "PTY child termination is independently killable even if the reader blocks; reader shutdown flushes accumulated output before ProcessExited, while WebView removal and clipboard-worker Drop provide explicit resource cleanup.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/clipboard.rs#L77-L85",
+          "version": "repo-lines-v1:sha256:8a49e53da67f4446034e7078a7917854f24154336b6727bd93f75cd77fbaadf2:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjBjOGIwNDE5MTVmNGM2ZDhmZTZkMTIyMmI2NTc0MjI4NDQwY2ViMzJhMjVjMzMyMTVhNzRkYTM3YTE3NDQ4OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTllNzYzNTVjZjExOTk0ODBjM2Y5OTgzNmIxNDg2Yzg0MWQ4OTFmYWFkOTA0YzYwOGUwOTMwMjJkMzc1N2FlZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSJ9"
+        },
+        {
+          "resource": "repo://src/runtime/webview.rs#L140-L146",
+          "version": "repo-lines-v1:sha256:499ac8c6f3ebc354f0f33c708f7bf6705c756ac7d6a2d73e668166d1da916922:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjBlZjQxNzZmNThhOWYzNGI3NzU3ZmJhNjA1M2MxOTBmNWEzNjc1Y2ZkMWJiMjIxZmE4ZGNlYWMxYTlmMGUxOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTk5YmRlZmVlYWNhNjM0MGUwMjkwZGM4NmU4ODljODlkNWUxODlhYTViYTQ0YjU4NWIzYjcwNzM0ZjRhNjJkOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmU1ZDYyMzMzOTA5Yjk2ODllOTMxNzI4NDNmYTY0NzE1MTIzMDgyZmUwY2IzMjdkMDZiNDFhNTBlOTcyNTA2NSJ9"
+        },
+        {
+          "resource": "repo://src/terminal/pty.rs#L259-L301",
+          "version": "repo-lines-v1:sha256:4406402eed1837e1078400a025416dd1285e5d6591ff181d973d5fb5d094a70c:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxYmJiNWYxZWQyMjY2MmM3ZjUwY2MwMDhlZTY2NjBmZTI4MjU1ZmVjNmNiNDQwZGE3MTgxMmIyNWRkOTRlZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0NzVlOTRhOTA0YWM0OWIzMTU0ZDQ2NzJhNjZlODYyOWI4NmRhYzc0ZTNlMjkzN2JlNjkyN2FlM2RhMTFjNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwZTRmZmYzZjNhNzViNjIzZWIxNGE2ZWI2ODg4M2M4Y2JlMjVhZmIzNmVkZTZjY2RjMzlhYTc3NDBjYWQwNzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        },
+        {
+          "resource": "repo://src/terminal/pty.rs#L29-L64",
+          "version": "repo-lines-v1:sha256:6745286c796fb2d093a02ea512c67e2bb9124da83f97348f1f266108ea6cd9c0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkYmI3OTRjZWRjMDllOTg2N2U3MWI0MDA3ODE4MGVkYjQyYzhiNjc4ZDY0ZGJlMjE1OWJjMDkwNjgxNjQ3MTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMwYjRjZThlOWExNmQzMzI5OWVkYjRkMzE4MzFmMzBhODExYzExZTA1OWUyMjViM2RmNDlkY2U0MjU2YmIwYmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4NDM1MTQxYzZlNjE3M2U5M2U2NTUyZTVkNDFlZmRlMGJkMDcwYTYzZDlhOTA4NzhkYzRhZDlmZjgzMDNjY2YifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T20:35:11.754Z"
+  }
+}

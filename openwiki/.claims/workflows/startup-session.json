@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:c5a33d6c5c55db953a2533e8e56f996e959afd05b6d12ec714a6da2524c6d22c",
+  "claims": [
+    {
+      "id": "claim_c80e322cabc04acd82306b6c74f250c1",
+      "statement": "CLI path arguments are classified into Demo, Empty, SingleFile, MultipleFiles, or Workspace startup modes; more than one directory is rejected, and `--new` or `--demo` disables session restoration while an empty invocation restores the session.",
+      "evidence": [
+        {
+          "resource": "repo://src/cli.rs#L120-L201",
+          "version": "repo-lines-v1:sha256:5add4c9015f019862ca2d6d1c2707213d7b85c48571270c677aac894a1cef607:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0YjMwNDY5NmRjMzg5MjRlMzdlZWQ5MjYxOWI1YWYyNzFiOTNmMmY3ZjNkOWJlYjY5MThhNWE4ZGY5M2JmOGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YjE5ODJlOGRkNzQ4MTE4MTQ2YjM5YTJkMDA2MmY0MDgxZTM0Nzc5Yjg2NzVjMjM0YzRmYjEyNGRjMzkzOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUifQ"
+        },
+        {
+          "resource": "repo://src/cli.rs#L205-L299",
+          "version": "repo-lines-v1:sha256:6d147341afe44307374c652992cd55332811da97ea8a7f1a2902087b09d600b9:eyJzZWxlY3RlZExpbmVDb3VudCI6OTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1Y2Y1ZmMyM2YyYTZkMjNjM2VhNTFlNzJmNWU4OTZjNzU1NWZiYWEwNWNkNWIxZWExODJiZjk2MThhOGU4MWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmNDFjNzI0NWYzNDFiNGVjZWVjYjk1ZDFjMmQxYzkwZmU0NTNmNzk1NWM3MjFkZTMxNDZhZjc4NTA5ODE4Y2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_55bf7b31ca8b4d32a8a321690d1a5a7d",
+      "statement": "Trailing `:line` and `:line:column` suffixes are parsed only for non-existent UTF-8 paths, existing paths are preserved verbatim, user coordinates are 1-indexed, and explicit `--line` takes precedence for the first path before conversion to zero-based coordinates.",
+      "evidence": [
+        {
+          "resource": "repo://src/automation.rs#L161-L183",
+          "version": "repo-lines-v1:sha256:e9995cb808d682f365a5faf0390ca66c53d7e1ac08206785368f275aedc2ffb1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5ZGMyNmQ2ODcyMzQ1NWU0NWYyN2JhMjg5N2YwMTUxNDUxNjZmM2QzYzkwZTg3YjNmOTY4ZmM3NThmN2Q3NjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlNjc4NDZjYzBkNWNiY2MyNmRjNzc3NTMxZmZmZWUxZmRkZmNmNTA2MGM2ZjIzOGE4NDBkMTExMGZjZWRiZTQifQ"
+        },
+        {
+          "resource": "repo://src/cli.rs#L188-L194",
+          "version": "repo-lines-v1:sha256:80724b6204449802604ad152c810cc775c847ec9794564cfa8888e2de85bf37e:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmMxNmRkNzUwMTNkODkzNjY2ZjM2NmQ4YjAzOTk4ZjBkYTg0Y2Q5YzdjY2FlMmNhMWE2MGE4ZWE3YjI5NTcxZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjBhMjAwMDAzMmU3YzI1ZDY3MTY1YjQwMmNlYTMxYTE5N2YwMDgzMTU1NDA3ZWU0YTI0NWI5ODI2NDUyYzMxNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjQ1YTdjZWNiZjFlYTJjN2I1MjA1OWYwM2FkOTA2NTZiZDAyZTkzZDE4MWQ1MzA2YWIwNjFkN2YxMWU0NmViZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmQ4NGYxY2IzMDE1MjZiNzgzYTZmZGNhYzU1MDc0MzY0MWI2NGIxYTZkZWIzMGY2OTg1MDI0MzA5ZTRjNDhiYyJ9"
+        },
+        {
+          "resource": "repo://src/cli.rs#L88-L117",
+          "version": "repo-lines-v1:sha256:8c7fbce59c6aaf79af36c8a889b64b620611d6b560667f2412ad3af759df0173:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmN2EwNWU1NzQwYjMyZWYyOWUzNWI2NTcwZjQ0OGJkMTAyZTY3YmQ5NjQ3ZmE2ZTc4NDAwMDIwMjNiMWMzNTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxZWM2NjJiNDZhYTE3MzMyZDRhYTY1YjVmMDA5NmUxMTU1NjQ5OTllOTg2NTllYmE2MDVkNTgyODE1ZTM1N2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dd53cdd259a543539fb3ff9337479ddc",
+      "statement": "Runtime preparation loads configuration and keymap, opens a requested workspace before session handling, restores eligible session metadata, then prepares explicit startup files; demo content is deterministic and bypasses session storage, while initial cursor coordinates are clamped to document bounds.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L144-L233",
+          "version": "repo-lines-v1:sha256:525659ca518a866145112882ba2f44253e2c51cb286e32674fa282f9e213001b:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhN2RjOGZmZjQ2MDBjZDYyZTUzYTUxOTFjYTBiYjFiMTliODNmYTU1YzFiYWEzZGUzNWU4ZjRmYjA4NzMyMGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjMjIyZmM4NjhkN2U2YWVhNTI5ZTQwZDgyMzM2YzMwZjQxM2IyOGJkYjU4ZWNjN2U5OTQ4MmY5YjIxOTgxMDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_44bb5e686c7248e9b38cd5e163c247e1",
+      "statement": "CLI startup and later opens share file preparation logic: startup uses CreateOrOpen, session restoration uses Existing, failed files are skipped with status reporting, a clean untitled starter tab is removed only after a file opens, and the first successful file is focused.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/file_io.rs#L37-L133",
+          "version": "repo-lines-v1:sha256:27b106a63322478424e6bf15fb7e810c179c52cac07641c00a90e6c9eea7e11a:eyJzZWxlY3RlZExpbmVDb3VudCI6OTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NTJhNGZmY2MzYjdlOWNkZTA1YzRmNzEyZjZhYjE1NGJlYzUyN2I4YTVhYTc0MzAxNjYyNDlkNmQ5ODRmZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3NmE1NDRjYzAyM2VkNDA1ZTNiOThiOGEzNTQwOTBmYWQxNmU5ZTE4ZDVlZTlmN2JhNmMzZTcwMDUzMDA5ZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExMzc0YzllYzM5NmUzNTdlYmE1OWUxZDhmYWM2OWI1ZGQwZDMwMDQxYjc2ZmQzODE3YmM4NjNmMzA4MzczNGQifQ"
+        },
+        {
+          "resource": "repo://src/runtime/session.rs#L73-L92",
+          "version": "repo-lines-v1:sha256:f9eb5396027c0f475fc02572beb69fe36c3bdd4e2d0a74fc95492a8d09554165:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0NDRmMTBmY2EyZGZhMzEyZjkxY2Y5M2NkYjZiMWYyYzU1YWEzMzAyNTk1YzM3MzhiNzMzZGJhYTQwNzEwMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5YmRjNDMwZGQyNjQxNGJkNTZiY2ZhMmUwMTc5NGFiMDBhOThiMDZkYmUxNWM5Mzg0ZGMxZDc2MTllYTg0ZWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxNWJlMDRjNWQ4NzBhMDcxYWY5MDA1ZjI2NmRjOWU1ZWMwNzAwYWJhYTdjY2VmYmY4ZjQ4YWI0OWU0ZjQ0NDIifQ"
+        },
+        {
+          "resource": "repo://tests/file_open.rs#L151-L205",
+          "version": "repo-lines-v1:sha256:085ef8eb08f4b84f9741f06090368295548858d265af5279fae53dfd21220311:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkY2ZkYjBhYmIxZTMwZmYyNzJkZTRmMWUxZTRjNGFkNGY1ZDM3YmE1YTEzODJiZjBiOTNhZGU4YzdjMDdkOWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5NmY4Y2IwODNmYTgwMGE0ZGNkMjk2OTcyMmQ3YjkyNjg2YWRkOWViZTM2NTU0OTJmYTY3MmIxYTdjZWQyNDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmOWFkNDYzYmU3MWM1ZjQyMDk0NmFmYmYwN2QwZmU5ZjVmMTFkYTgyZjFlOTQ5MDNjYzMzOTVkOGMxYTBiMzgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8b49d96d5734465c8d1a3493d2594d54",
+      "statement": "The launcher uses the automation endpoint for single-instance file handoff, converts paths to absolute OpenPath values, spools non-terminal stdin for `token -`, and starts a detached `--foreground` child with a bounded ten-second endpoint retry when no instance is available from a terminal.",
+      "evidence": [
+        {
+          "resource": "repo://src/automation.rs#L171-L183",
+          "version": "repo-lines-v1:sha256:922c803caa91b063a8153ddbb63b8a6d87d25e6db17a7f828050ff938c707995:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3NDk5ODUzZDBjOWNhZjY4ZTVhNWZlN2EzM2YzMDFkMGY0ZDljOWI0ZDkyYTcwNGNjMmY1NTVmMGJlZjZkN2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRiZmM2MjA3NzRhZDczMzdmOThiMDllMjc1ZTUzZjVlNjU3NWMzNmFkNGU1NDhhMGJiOTU1YjEwZjJiMDI5NDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlNjc4NDZjYzBkNWNiY2MyNmRjNzc3NTMxZmZmZWUxZmRkZmNmNTA2MGM2ZjIzOGE4NDBkMTExMGZjZWRiZTQifQ"
+        },
+        {
+          "resource": "repo://src/launcher.rs#L1-L9",
+          "version": "repo-lines-v1:sha256:73ef986e606eb2b2a366c0f64c288f3e54a630e91365931d55ee5be6713d46fa:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzdkYjgyYzIzMzg0MzdjZjg5YTkzMTEzM2U2MThmYWQyNzAwMDIzMTYzNDlmZmI3YzRmNDQwYTJiMzZiNTgzYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWNiMzBjODViZDdkOTJmZjhjNWY3ODRlZDVmNDgxNTNjZDhlZjEyOWEzMDJhMDFjZjY3ZTdjNjBjMzU3Y2Y4MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWZlZTExNTYwNDY0OGRiMzFmODlkNWRhZDk0NWM4MDk3YTUxOWMwYjZmODk4NmYxODZkM2JhNDdmMTUyNTUzOSJ9"
+        },
+        {
+          "resource": "repo://src/launcher.rs#L214-L251",
+          "version": "repo-lines-v1:sha256:afd4381bdcaed381742559530f6432fd25deae0fc8251e8aaac31d8ba0e37694:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzN2I5OWQ2NTJhMTZhMzFhMGNhNzVjNDlmOWRlODliOTEzN2Q0YTkwMmVhODkzZTM3Y2Y3MzZhMTQ3ZTZmMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNjNjNGQxYWY4Y2Q4OWJiMGJkZDc2NTdmZmNiZjY4MDZhNjEwZDc5ZDZjOGQ0YzMwN2MyNDFkZjM5MDA1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiN2NiZWE3YTdjNjI5MjNlNDFhNTVmMDYwMTYzNjhlNWRiM2UzNDRhYjM4ZDdkOTE1MzZmMTBmMDVhMTdiMGEifQ"
+        },
+        {
+          "resource": "repo://src/launcher.rs#L271-L301",
+          "version": "repo-lines-v1:sha256:1c48a7d9367c7616b0e823880c2ec29e9d269cdd294a676e03c56a3f4fb8630d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiOWUyMzEwNGI5ZjRlYzMzNzVkNDEzYmRiMDM3ODkwYjdlYzAzNzg4ZTVmNmViYmMzNzdhMDlkYjk5ODYxNDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhZjIzODg4NTdiY2MzODlkN2FmM2NlY2JjNjFlNWMwNGZiNzA4Yzg2MmFmYmQ3NDJjNDIyYWUwNjJhMDYwYWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA0ZTBiYjM4ZWE1YTBkYmY2NTYzMGY5NTllN2VmMGIzNWQ2ODE1N2QyNDBhM2M0M2ZhYWM1Y2IzYjg0Mzg3OTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2c7dd53e76d045a48853159ab124868f",
+      "statement": "Directory launches follow workspace ownership rules: directories do not normally hand off, a matching canonical workspace may be reused unless `--new-window` is supplied, and otherwise a separate editor process is started because each window owns one workspace.",
+      "evidence": [
+        {
+          "resource": "repo://src/launcher.rs#L10-L12",
+          "version": "repo-lines-v1:sha256:9fee115604648db31f89d5dad945c8097a519c0b6f8986f186d3ba47f1525539:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjA2NTczN2UwNzFmOWZiY2RmNTRiOGFkMzhlNjZlNGI2ZjFmOWZhMWMwMWVkNmFmOWQ5NjY0ZDIyMmE5NjQwMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzA4YTA4NDY3NmZiYzJjM2RhYzAwMGQ0ZTVmYjMyMTdmNDYwMzIxYTkwNzVjMDhlOTQ0MzI3NTE1NTQ3NDdiNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjU0ZmY4N2MxNWFkOWM2OWYxYTQ5MWY3Y2FjOTAxNTQ1OTZkNjAwNjNlZjlmYjQ4ZjFkM2U2ZmJjMWVmYTZhYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjhkZmEwZmNiMzBhOTk1YjJjZWQ5NGQwNGNmMzNlNGM5Njk1ZTcwZWFkNzVjNzI4YTc4N2RmOTdlMTRiYjhmMCJ9"
+        },
+        {
+          "resource": "repo://src/launcher.rs#L110-L136",
+          "version": "repo-lines-v1:sha256:dbc25961257460ea5c5c3bf059556c8cf586aee7ce78b9dcf432b58fb31917df:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlMGZhMzllYzRkZmY1YzI2MTk2YjJiNDQ3NTE2MzAxNjg3NmYxM2VmZDY2NDZlYTJiZjc4ZDA0YWE0NDA3YzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU4ZDA1ZDFjZGUwNjM3ZTM5Y2QxMjdiYTc5NjQ5OGQyZDUxMDc5YTE2NGQ2ZjE3NmZhMDMyMmU0MjA5MTZkMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY0NzlkOTBkOGQyNmI1NWI1NzQ1N2E4YTQyODI2MDg0ODkxZjljZDIzZmViNjYxZTUzN2IwYzJmNGY2NDEzNTMifQ"
+        },
+        {
+          "resource": "repo://src/launcher.rs#L138-L196",
+          "version": "repo-lines-v1:sha256:8d7b05fd32a89fee51c5659fc0a84f6b4c5addaf1a82e8659138ebb2dc96020f:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyYjVhMThmMWMwZWYwODRkYWVmYzAyMGI1YTFiYzg3OThjNjM0MjMxZTA5YmNmYzE2MjlkOWFjMTdlYzdhZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1Yzg3ZGQzYWU2ODI1OGVhNTMwY2FhNmRjZGFlOWZkZmJmYmRkYTQyNTAwNzhiZTgzZDliNjk5NzVmMGY3Y2MifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L6390-L6410",
+          "version": "repo-lines-v1:sha256:2cea68b272da6e2e3507f90d106f838a6e1324c6472de51d45db1760d3d3a751:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2MGI2YTYxZTM5N2YyZjM1ZTgyYWNlMzY2YjdmN2E4YjkzZjFhYzJiMGEyYjA0YmQ2OGZlMDE3NTA2ZTg2MGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjNzg5N2IxNzAxMTRlNjEzNWNkZDJhZmFmYmQ2MjYyNmEyNTZlY2Q3NTQ0YzBkNzc1Njg1NmJiZDg1YWMwZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwZjI4MmE4MjFhNmQ2NWRiOTE4YzE5ZWViZjcwZjM2Y2IyNTU5NmJlYWJjYWFmYmVjNzk1OWU0ODlkYTQ3YmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxM2RlNGM1ZDY1MDI2MmU4M2VmYzFkMWQ0ZTc5YWVkN2RkNDI1NTZlODQ3Y2RlYTc4ZWE1OGIyZDc3MzYzZDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2624c6a065764d3c9369b99bc1aa84d9",
+      "statement": "`--wait` keeps the request attached until every opened document is closed or the editor exits; directory process launches wait synchronously, non-wait requests are bounded, and EOF during editor shutdown is successful for a waiting client.",
+      "evidence": [
+        {
+          "resource": "repo://src/automation.rs#L64-L72",
+          "version": "repo-lines-v1:sha256:8dde1c3f0e3d2b93b2f42c6769f742432ffeb753d1f51552d6522527fbbdffd1:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWRiZGRiMzlmMTRhODg1MmVmNzM2Nzg1ZThhZjFlYzE1OTI5NmU0ZTAxNzM3YmU4YTk1ZTBmZjE5MmU4NjA3MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWYwY2RiOTcyYTdiZmI3ZWQyNDZmOWZmNjcyMzg1ZTU1ZjQ5NjhmYzExMDQzZGM1YjY4NGQ1MWRmYTMxZGJjYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTkwM2UxZDcxNjIxOGJlYWI4ZWJhODAyMWExOWE3MmQzMTc1MTI2N2NkODJhNTExMGRiYzY5YmRjMTQ3MTdlNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGU2ZWQ3YWE4YmYxZjIwZmE0MTBjZGFkZjk1YTdhZDM1ODZjYjRlNDVjMWFjYzczNTlhZjA1NjJhZWI3MDc4NyJ9"
+        },
+        {
+          "resource": "repo://src/launcher.rs#L199-L269",
+          "version": "repo-lines-v1:sha256:19fa298d582a9633a83139b972546a3bc712d7851fcf9ba2a8f5aaffa434bb42:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhYjkxYmE1N2JkYmQ0Y2VlNTFkOGE3YTI2MDkyZDA3N2QzZDM5M2YzZmQzNThmZjE3OTAyOGE4NTQ0NjhjNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExYWVkNzI1YzEwNDY2OTAxYWVmZTNlYWJjMjllMjQ3NjRhYjE3N2NhZGM3ZmUwYzJkMGMyNGY3YzhjYWYwNDAifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L327-L335",
+          "version": "repo-lines-v1:sha256:ecc7fa7201748669137d04123cfb96bc69fd79ced53cbd785c00fc72d0bf776a:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGI1NDQyMzliZTQ4MzM4MTNjYzRhMjEyNGM0YzYxM2VkOTljNzhmMTYyZTczYzVhYTE4OWFlMTU2MmQ4Nzk1NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjhhZDUxMjIxZDdmYWI3ODg2NGJkZjk1ODI2MzFmMWZkNjk2Y2QxY2IzYTI4ZTFhOTdlZmY1M2M0YTVlNTc3MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzE2ZTVmYzI2YjgwOGM5NTVmMTMzYzk5ZDQ4NWNiYjRlZmIwYmQ1ZTI3MjA4MDFkNzViZDM1NzZkZjhlNTQwMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODE2NzFmYzQ0ODE0OGIzOTkzMTM4MDExMGFmNTRhYTM1MzVlYjg5YjkzOTdlMTA3MDU4ZjAyMmQxOGIyZTQ3NiJ9"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L6300-L6351",
+          "version": "repo-lines-v1:sha256:f2ee5112ce5313d7a708b2d060424839ef53d3c56278b35a2545664eb6761b9e:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3ZjI1MDIyOTVkYjk5ZDUxNWQyYjkyMmEzZjgzN2I3MGUxYTAyM2YyYWU1OTk3OWQ0OGM4YTVkOTM5NmIzZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwYWI2Y2UxNWQ5MzI1MWFkYjRmMjc4OGQ5M2ViNGY4OGM4YTdmYTJhZDYzMjk5NzhmYWVlZWNjYzU0MzVmYjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyN2QxYTUxOGQ4YjI2MDI2YWFmOTQ0MjQyOWZhOTQ4ZGQ1YmVkY2Y3MzljYjgwYThmMjFhYWFiNzI1MzY2MTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIzMmY0NTg4NzdlMDNhMWM2YzQ1MDZlZjlhMWZjOTE0OTljODIxOTg3MTdmZGEzNDJmMTJjNjNkMDVjNjVkYWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_47f731612bca4a41a925388886757340",
+      "statement": "Session files are stored under the platform token-editor configuration directory in sessions/, use default.json or a stable workspace-path hash, and enforce workspace ownership on both load and save.",
+      "evidence": [
+        {
+          "resource": "repo://src/config_paths.rs#L1-L38",
+          "version": "repo-lines-v1:sha256:27dd8ddd1a7e0a8757aecf6d7169eb56853e7d4ad785f36917abb0a728d51c22:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmMWQ1Y2RkMTZjYzIyZGE0OTJhYzdkZjc2ZWU0ZTRlN2JhMDcxNTUyN2VhOTBmODY4Zjk2MGFlODQ2ZTZkZTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3YTE2NDhiYjBiOWM5YmE1ODIzM2YwZmU2YTZiZWViNGJjNTc2ZmFjMWZmODAwNDNkZjg3YjI2NmFjMzMzZGMifQ"
+        },
+        {
+          "resource": "repo://src/runtime/session.rs#L17-L49",
+          "version": "repo-lines-v1:sha256:ae964bf31ffc020f45d5f1cc941c287a80b70186f718463ffc132b7e9f0a7ba0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0YzhkNjQ3YWVjYTZmOGI0MGFmYWFhNmNiNWZhZmZlZTI5ODVlYjRmZTU4OWY5MDgwMjU2OGI5MDdjMjRkNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI4OGM2MDdhN2VkYTIzZDE5MzAzY2NjMDgxNmYxMzJlNTdiMzAzY2EyOTFjZTYxYzBjYTQzOGQ3NjczNGVkMjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5NjM4NzZlMGQ2Mzg4NzhkYjM2NmIxZGMxMTY3Y2YxOWM3MGYxYzI3NTMxOTZlMzZkZDIyYjZhZjAxZGNmMmQifQ"
+        },
+        {
+          "resource": "repo://src/runtime/session.rs#L51-L70",
+          "version": "repo-lines-v1:sha256:58c0918873926e723f124894aca5caffcaf18da08cf99b5069ca214e14230450:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzMjVjYzYwMWYyYzM2YjY5MDY5YzEyYzhjYzAzZDQwYzgzYmUwYzYxOGRmZDA4ZjBmNTc3NWE1N2U4Y2YxYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlY2MwMzhiNjcyNjMxYjdjNDE1ZDY1YjliNjZjNTA4NzI0MjFhOWQ4YmNiZDBmNmE3N2YyY2VhY2U2ZmFjYmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmNjhjZTkwNTA2MzkyZGM2ZDA2NTYyZWRjNGVhMmUwMGNlODY4YWY4OTE4MTEzMDg3MTdmNGNlMzVkZjRmMWQifQ"
+        },
+        {
+          "resource": "repo://src/runtime/session.rs#L95-L104",
+          "version": "repo-lines-v1:sha256:cd39455344e5ee0e3127b668a5f7ae5e7c66fc236cd52faa90d46e346e5b7665:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4MDc4NDU4MDBmNzM3YzhkOWE4MTUxNTU0MmY5MDIxOGNhYzk4MjQ5NTBhODRlMjJiMjhiZGIyYTM4Y2E1Y2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlNzVjNzBkOTQ2MzYyNWUxMDc5ZmQ4ZmM4ZWU2MmFkMmU5MmM0MmJlYWFiZmQ4NWI3OGQ4ZTBhNDk3OWI5NGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY2OTRkYTk5OWI0NGEzZmE4ZDIyNGQ4MTBhZDBlNzczYmU4MjdhNjkzMzdlOWI3NTg1OGIwODNkNzUwOGE3MjAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_020b01d5112d4911bee8231a49164ba6",
+      "statement": "A session stores versioned layout and navigation metadata rather than document text or undo history; restoration reads current disk files, rebuilds panes and per-tab editors, skips missing files, and restores focus and viewport state.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/session.rs#L140-L224",
+          "version": "repo-lines-v1:sha256:2727843ca67b104837a9f281b0739feba122309bb0dca841248dd74e49b263b5:eyJzZWxlY3RlZExpbmVDb3VudCI6ODUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyOGQ1OTlmZGZkNjNiOGVjM2EyM2E3NjkwNjZiZTEwNjhmZDk0OGJlMTcyNzE1YzQyOTg0YzViZDFiODY1ZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwMGRiMDQwZjI5MDliZjk3OGZmMGE5NTZhNTVlODNjNjUzNDE4ZGU2YmI2OGY4MDQxZGE5NzZmOGQzZDIyNzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMyNmExZTkxMWQ2MzZlMTFlZmU2OWUwODc2MzZkYTY3YmY3ZDI1MWE0MGRlMTUzY2ZmZTAyNWI4MWY3NjFiOGMifQ"
+        },
+        {
+          "resource": "repo://src/session.rs#L1-L22",
+          "version": "repo-lines-v1:sha256:47486cab86dbc84e66992a57c8a1d9fa0f0bd5353878d7eccab447aeee5f890c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiMTExZDE0OTJhZjUxM2Q4OWIzNDcxNmIzODNhOTNjNDc5MWZlOTc3ZjI4ZWU0NzZmNTBjNTY1MTlkNzU3ODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4Nzk3OWU0MjIzYjQ0NzY0ODMyYzE1NDk0ZTY5Y2FkNjkzNTY1ZTNiZjU2NzI2YmU2ZTVkYmEwNzE2MzdiNjMifQ"
+        },
+        {
+          "resource": "repo://src/session.rs#L147-L238",
+          "version": "repo-lines-v1:sha256:830c842802ef320c79842024a55718d59841f58935220c9e9de965e723df6920:eyJzZWxlY3RlZExpbmVDb3VudCI6OTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1NDFhOTI4ZTU4MDFiYTNiMmEzOTgyMTc1NWU2NmQ4MTU2Y2FmYWFlMmY3ZWE4YjA5NmQ2Y2YzMGExNTM5ZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyZDg4MmIwOTVlM2UyNzQxNGM1ZjA1ZDQ4NmNkZjQ4N2EzMmMxMjg5MmVhOTI4ZmZjOGFlY2JkYzRhMzU2ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUifQ"
+        },
+        {
+          "resource": "repo://src/session.rs#L39-L54",
+          "version": "repo-lines-v1:sha256:81eaf5717be4c5a442e6d032eb7ff5f8c1dd1d9f6a7221f885ff9e3bcec96a5e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljZDhjZDQ3M2EwZThhNTI5MjUxNmJlMGE4Y2NmY2JkZWM0ZGNkNWRlZmU0NmI3ZTgzMTBmMjUxMjliNzUyMTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3NmE1NDRjYzAyM2VkNDA1ZTNiOThiOGEzNTQwOTBmYWQxNmU5ZTE4ZDVlZTlmN2JhNmMzZTcwMDUzMDA5ZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU2Y2I4NGMzNzFmODYyNDMwMDMwZGVhYWUxMmIyZTdhZTRiZTg5MjgwMThkNmE0ODdkMzNmOGY1ODUwZmZjNDkifQ"
+        },
+        {
+          "resource": "repo://src/session.rs#L77-L90",
+          "version": "repo-lines-v1:sha256:e7e025d434ed46878af5d5b16195b4416df0998f2a1f9238613f3ec58bf7b53a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwMzUyMWI1YmRmYWViNzk2MzY5ZTExMzEwODIwMjIwZTNhMTI1MGUwY2E5NzIyMGEzYTI1OWFkMjQxNTcwZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyYTg1MTZjMWFjY2E4ODI4OWY0MjA5ZGFkMTUwMzA2NTY4NWIyZTIyMjlkMzgyYmM4NTQ5NWQ2MTBmNWRmYjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5NGRlZTgxMjQxOTQzYmQ0ZDhiNWIyMjk1MDlhYmQ2NzZmYWRmYmJiNGU3YjY4NDUzM2JhNzIwMDQzOTc4NmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fd728431b40b4f7a91de15757d215759",
+      "statement": "Session validation occurs before installation and rejects unsupported or malformed metadata, unsafe paths, oversized data, and workspace mismatches; restore failures are contained and reported, invalid bytes are preserved, and valid saves use a size-limited temporary-file plus sync-and-persist replacement.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/session.rs#L51-L92",
+          "version": "repo-lines-v1:sha256:e27ccad847eb80f20e050c8dc6e2b64e6bbd634be4c76088d7365e07dd6febeb:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzMjVjYzYwMWYyYzM2YjY5MDY5YzEyYzhjYzAzZDQwYzgzYmUwYzYxOGRmZDA4ZjBmNTc3NWE1N2U4Y2YxYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxNWJlMDRjNWQ4NzBhMDcxYWY5MDA1ZjI2NmRjOWU1ZWMwNzAwYWJhYTdjY2VmYmY4ZjQ4YWI0OWU0ZjQ0NDIifQ"
+        },
+        {
+          "resource": "repo://src/runtime/session.rs#L95-L120",
+          "version": "repo-lines-v1:sha256:464713db7caf97976e5f63236d598a6d5b771eae68b06ecbf5b531a7fa4402bd:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4MDc4NDU4MDBmNzM3YzhkOWE4MTUxNTU0MmY5MDIxOGNhYzk4MjQ5NTBhODRlMjJiMjhiZGIyYTM4Y2E1Y2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwNzFjNmU5MjJkNjRlM2MyZDEyZDFiNDAwODRjMzFjYzRlNzgwN2ZiNDJlN2Y3MjI5Y2M4ODYwNWU3ZmM4YjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUifQ"
+        },
+        {
+          "resource": "repo://src/session.rs#L97-L120",
+          "version": "repo-lines-v1:sha256:c4650259c5f57cff2a03b7cbabaa15770c9559270963325a9f8a702b0c80acc5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkMmI5YTU1MTRmYzcxMjE4YzBjMGUyMDllM2ExYTRkNzgzYTM0NDQwNDJlMzA5Y2Y3ZGIwYjQ3YzVmZGRhNmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwNzFjNmU5MjJkNjRlM2MyZDEyZDFiNDAwODRjMzFjYzRlNzgwN2ZiNDJlN2Y3MjI5Y2M4ODYwNWU3ZmM4YjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0ODExNWI2OTM0ZDVhZmE3N2UyMWIyNDRmMmVmNWZkYzM5MGZkNmYxNDc4YjM5MzVhZDU1MWE3ODM1NzI4NmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmYmM5MWZmZDNjODUyMDc4MjBhOTQ2YjFiNGZiOWRjMTU1YWFiOTZmYWQ5ODg1NjcxY2QxOGEwOTZjYWFlMzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9c22bf5f7b7349569d87138b925a073f",
+      "statement": "On event-loop exit the runtime drains relevant file-worker replies, conditionally saves the session according to save_on_exit, answers waiters before removing its automation endpoint, and treats session-save failures as warnings.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L5803-L5830",
+          "version": "repo-lines-v1:sha256:aef13bd452ae84eaa322a672a544037cc0cef9a5b8bbc6c7bf932391b65d65db:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhYzNhOTQxMjg3MDUwNTQ4YTU3MDE5OTljNDY3ZjFiYzZmM2U5YTk0MzAzMmQ0YjQwNmVkYWVkMDZkYjg0MTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4N2VkYTdkODNhMDllMmViNzc1ODk1OWJlMjhjNDk5MWMyNTYyNTdmNTk3ZGE1ZDM2N2Q3Y2Q1ZDQyMzBkNDIifQ"
+        },
+        {
+          "resource": "repo://src/runtime/file_io.rs#L150-L159",
+          "version": "repo-lines-v1:sha256:d08d56d44d14a5677402f911bb0d0b6f29b57424d2013051f01665fecc9464ea:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjMzc1YTIyZWEyZDc3MjI2MGFlNGQwYTVlNDg5Y2Q0MzA2NGM3MWRlYjgyNmI1MjBmNzM3MzhhMmY1YTRkY2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T20:35:11.754Z"
+  }
+}

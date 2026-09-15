@@ -1,0 +1,6 @@
+# Files
+
+- [Editor and Persistence Invariants](editor-invariants.md) - Evidence-backed invariants for editor coordinates, rope edits, selections, multi-cursor transactions, history, folding, file identity, save cleanup, and safe close behavior. Each section points to focused regression tests and implementation boundaries.
+- [Language-Service and Async Regression Coverage](language-services.md) - Test coverage for Tree-sitter syntax services, asynchronous stale-result protection, and the LSP transport and feature pipeline. Use this page to choose focused unit, model, and real-process integration tests when changing parsing, completion, formatting, diagnostics, or workspace symbols.
+- [Testing Strategy and Safe Change Workflow](test-strategy.md) - A behavior-oriented map of Token's unit, integration, UI, geometry, and language-service tests, with deterministic fixtures and the commands used to validate changes safely.
+- [UI, Layout, Input, and Visual Regression Coverage](ui-layout.md) - Focused validation for the editor’s solved geometry, coordinate and focus behavior, scrolling and wrapping, overlays and docks, themes, image previews, and message-driven keyboard and mouse input. Use this guide to choose deterministic model tests before crossing the native-window and renderer boundary.

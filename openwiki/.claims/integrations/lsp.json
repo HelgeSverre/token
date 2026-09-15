@@ -1,0 +1,244 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:b37983eca7949844399c4b3deaacdae10c42d8664a7014eeb37bd28a88f44665",
+  "claims": [
+    {
+      "id": "claim_3122a5c4451943bd80abdf3657d117ad",
+      "statement": "LspConfig and formatter configuration are user-owned catalogs: presets/defaults seed absent or legacy configuration, but saved empty maps and removed entries remain empty/removed, and preset values are copied into editable records rather than inherited at runtime.",
+      "evidence": [
+        {
+          "resource": "repo://src/config/formatters.rs#L32-L35",
+          "version": "repo-lines-v1:sha256:c28f39bedb9b6c293c70b2cb0f0f367d82bb035d1cb4fa1fd819d05ea7fbed77:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTljODg1MWZjMmUyODljNjU3YTRkYTVlYzZmYjc5M2UxNzgyM2VhYTQ2NDRkZjM2OTRkN2Y5YzQ4YjNkOGM0NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTllNzYzNTVjZjExOTk0ODBjM2Y5OTgzNmIxNDg2Yzg0MWQ4OTFmYWFkOTA0YzYwOGUwOTMwMjJkMzc1N2FlZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2JjOThkNmIwZGM0OTJjNTAxNmRmMTA4MDVhM2E1NGViOWMxODRhNWE2MTM3ZTdmNGJlY2ZhMGMyMjA1NTBkMCJ9"
+        },
+        {
+          "resource": "repo://src/config/language_servers.rs#L1-L25",
+          "version": "repo-lines-v1:sha256:7880c34749f88a08050d4a0805b236ea3dc2e40524340ca6908cf5aae85aa2d1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlZTQxMjJlOWI1ODE3Mzc2MzQyYTQ3ZTYwMTA4N2Q0ZjEzNzU2OTIxY2EzZDM2OTg4MTYzODY3YTY5MWRmMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUifQ"
+        },
+        {
+          "resource": "repo://src/config/language_servers.rs#L108-L139",
+          "version": "repo-lines-v1:sha256:57d5ec35961b75590087abfbfc09377d4f1403dfaaf13a07a8ccd0feee910da5:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkMWM4ODQ5NzI5YzhkZjVmODQ4NDUzOTIzN2RiODVjMDA2OTlmMTY5MzIwMGU4NTdjNGRjZDgwNGI0ODBlMTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkOTk4MmRmMTBjNzQxMTYxOWU1NzVhZDc2YTkxNTRlYzkzN2UxYWYzM2E1OGQyMDI2NzA4ODdiMTBmYmJiMjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        },
+        {
+          "resource": "repo://src/tooling/presets.rs#L17-L35",
+          "version": "repo-lines-v1:sha256:92c2173c0a741851ac4ec2647eaab346331bc8cc17280d91d39113f6f742cf7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkM2ZiMWRmMmMyNmYwOTM5NGY3ZWEyZDdlM2Y2MjkwZjdhYjYyY2VhNTBlOTY4ZmVlMGVkODkzYTQyMjQ1ZTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzNjE0ZTQ3NDNlYWQwMWM5ZTFkODgzYzBhMDE1MDcwNzNiMDk1OTU2NGU3OWY1ZDlmMTBmMmUxODhkMzUyN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhhODdjZDcxYjY1YjZlMTY3NWE0NzAzYjk5Y2Y4Njc4ZjRkYzI1YjY0ZDVmOTNiOWZiNzUzNTlhYzI4YmQ1MTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b60d573f0cd04fa0b0c1da2427a116e6",
+      "statement": "Server routing is based on configured language associations and enabled records, with deterministic ID ordering for ties; resolution respects global and per-server enable switches and carries command, arguments, root markers, initialization options, and settings.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/mod.rs#L122-L140",
+          "version": "repo-lines-v1:sha256:f85786e933a8e79567eb7f123998b79bd271db7f4e483a58f792ee201e92ac20:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmZDMzNWRmMGU3YWRhNzMyYmY4ZDE3OTRjMGNiMmU5NGVjZTlkNzc2MDVjOThmMjdhMzMzNjUyNGRjOTQ1ZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OTVjYWRlYjg2MGYxOGMyYjc3MmVlY2ZlZWIxYjA4MGY0ZjJlYzMyNTNhZmEzMGVmYTcxM2IwNTIwMTUwNzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViMTVhOWY4MGYyYzY1NmVjMDZhYjIyNzY2Mzc4ZWJmZTFhNjgyYzU2YmU4ZGExZTY3MTJhNmUxNWIxOGI0Y2QifQ"
+        },
+        {
+          "resource": "repo://src/lsp/mod.rs#L162-L202",
+          "version": "repo-lines-v1:sha256:e8f72cc0b3946471270d419741fd65dc2c5e015fffb1f44bc003c0d2835cef74:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0NjQwM2E5MWFhNzdmY2ZkZTA5MjkwN2M5N2MyNmY4Mzg4OWE1MWMzNGZhM2ZhMjJiNmJiMzE1NjRmYTViYmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0NzVlOTRhOTA0YWM0OWIzMTU0ZDQ2NzJhNjZlODYyOWI4NmRhYzc0ZTNlMjkzN2JlNjkyN2FlM2RhMTFjNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhYjc5ZDAwM2M3Y2M2ZjBjYmNhOGEzYTMwMTBmZTBhYTlhZGM5NWYwZDM0ODZkNDVkZmVlYzUzNDJjZTMxNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        },
+        {
+          "resource": "repo://src/lsp/mod.rs#L83-L120",
+          "version": "repo-lines-v1:sha256:6ddc2b73d6badbb0e1275574af9b990486f214688eefa264a62bd316ec5a4835:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5NDQyNzE5NzU3NWI4MWM0NzhjMTQwMWQzMDYyYjU3YmE3NWE3OTdiZDA3OTQ5ZDZjYzdjYTRiZWQ0NmE4NDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5ZjA3ZTY1MjRhY2M0MTUxNGFkYzc0YmY0OWExNDEzN2MxNjQ3NDYxMzJhYmZmOWY1MGFmYmYyMmY1NzA2NDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ0YmQ0NmIyZWYzNjY3NjZiMjRjMTE5ZDY1NjBkZTcxMDE0NzAwZDUxZDhkMDViODAwMjBmYWRjZTE2OWY4ODIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_72b018084e4547c48cfbf1b407a2ffbb",
+      "statement": "Root discovery prefers a canonicalized workspace root when the file is beneath it, otherwise selects the nearest ancestor containing a configured marker, and falls back to the file parent; the runtime caps detached roots at four per session.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/client.rs#L625-L667",
+          "version": "repo-lines-v1:sha256:b4c948bb8da9f8f874d7909673dcde01f5f97d6d5c904156b576c6fcc03a3b03:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZmJhMGVlYjA1ZjY3YjE0M2NhODI5MWVmYWQyZTU3Y2FjM2M3YTY0ZDgxOGI0MWFjNDkxODNlYjMzMDhjYzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU0NDQzMWY0NGQ5MzBmMTBiMjcxOWNhZmM0MTg2M2M3YzIyNmM1NzA0MDhiYjZhYjE5NDA3Y2ZhOTRlMTc0N2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyNGQ0YTI3Y2ZlNWE2ODhmYzlhYWMyNDAwNjBiYWVjZWM3ZTllNTMxYTU4NzgwNGU5ZTM1ODljYTkwMWViYTkifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L350-L357",
+          "version": "repo-lines-v1:sha256:db25acabb68eac70b46745ee5f0e0c8d84f8e29538694951941d6ac8c942dee8:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGY4N2ZiZDAyN2NlMjg1NmY0ZjE3ZDhkZWRkY2MxZmFkNjU3YTVkOTE5MDJjNDY3ZjdjOWU3NTI0Y2E2ZTA2ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjZlZGQ3MjJiMTg3YWQyZDczMGNkMDQyOWQwYTkyNzcxOTIxZjg2OTgwNTRjYWZmMjJmOTIxMjJkNTVjY2RjMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzFjMTYyYTZlZWQ1YWQwNWU2MWI5NThlNGZiZTVmOTkwNTZhN2JjN2M1ZDlkNDllZDI0MDg1NmUzNjkwNzg0OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmNmYWZjNDVhYjZlZWYxM2IxOGJjMTM1ZjljOTJjYjMzMTAwNTNhOWRjODY5ZTQxMDMzY2U3MDI1MmRkODQ2YSJ9"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L4413-L4423",
+          "version": "repo-lines-v1:sha256:cc272c54e8b786bb854ed569d221ef9747c70694851bf2660f4cca7ab6a1bb64:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyZGJiODdiMjRiYzIzZGYxZjI5MDk1YzAwZjUzZjk2ZjgyZTA5YzY1YTA0NzM4ZDRjMmYyOGQwZWUzMzk1MmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhNjIxYjBlMjc2ZTNiMWQxMzJkYTI3NjlmM2Y2ZmU2NzhiODA2Nzc1ZjMxYjAzZGQxOWVjN2M2ZDMzYTNhMTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjMWY0OTI5NzYxN2QzYzVlNGMxYjdkZWFkMDNmYzRiNTE3NjU1ZmNlYTU4YjUxM2ExNTk4ZTkxM2E3ODhhMzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4ZTM1ODExNDkyMzAwYjk1YWVjYjliY2E1YmVmNzk0MGFkZTE0Y2NjMTc0YjI4MTcxOTQ3M2I0MjYzNDY2ZDIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d3b89046c47547f9897a6f05aa4cb05d",
+      "statement": "Each language-server process uses separate writer, reader, and stderr-drain responsibilities; stderr is continuously drained to prevent a chatty child from blocking on a full pipe, while the runtime owns process handles and the model receives render-only state messages.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/client.rs#L1-L12",
+          "version": "repo-lines-v1:sha256:573ff867b98b8adadf7d193b7c50fdba9843bd999d69c67492d7bfdcf91d2c56:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3YTVkNGFmM2MwNGNhYjBhOGQ0NzVhNDNiOTcxMjg2NjY5ZGFlNWQzZDA1YTUyYzRmOWQ5NGFhYTU0Njk2NGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0YzA4NWU2MDE1MmE4Y2Y0OTFhZDM1ZDI3NTc1MzYzMzE1MzU2MzRmMWFiNjM2OWZmNTdkMGJlOGY0NjBmZTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmYWMzNjQ2YWEzYmQxMDIyMGViMDg4OTcxMTcwMDFhNWNlMDBjY2Q5ZTIzZDkwMTJkMTc3YTg0OWI0NWMyY2UifQ"
+        },
+        {
+          "resource": "repo://src/lsp/client.rs#L878-L983",
+          "version": "repo-lines-v1:sha256:d423900fb0aa642e5bcd92b0a3c170fa7dfd111569eb2f2c13ec7eecd2eada0e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyYjJiMGU5NDE1ODcyMWM5ZWQ3MmYyYzgzMzMzOWI4YTI4ODZjNDFjMjAxMjM4ZGVkZmFlMjBjYzZhMjE1OWQxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIwYjM2YThkYzdiNGIyZDljZDE5NzNiZGYyYzZkNzVkNjYyNzQwMmRmM2U2ZTk4Nzk2ZDAxNzM3NjM0NTc3NDgwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhMzRjNjM5ZTFmMzA2YWM1YTllMWEzZWY4NDc0ODgwN2Q2MWE3ZGY4Y2YxZDc2MWNkZWQ4MWZmZmE0M2M1MTFkIn0"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L422-L464",
+          "version": "repo-lines-v1:sha256:e2dec7b17385023cc17bb6efdfc91cf10bedf2ae49779e54363053caec014ff2:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MmRkMDk0NGFhOTg0OWQ5MWFkYjQ5NmQ2NzRhNGNjNTg0NzI1MWNkY2E5NzJjOWJlM2FjN2E0ZGRiYmEwNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyMDNmOTdiMTZmNzM5NGEzNDk3YmZjYmVhOWRkY2NiODllNTcyY2EwMzMxMjcxYzYxNTVjOGZkZTgwNzk1MGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNhMzE4YmNiOWNhMGMzMWZiMDk1ZGIzMjFiNDM4NjE0YmI2MGVlNWVjZmM2NmUwNmNhMzdhOWNiYTE0MWY4NDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ3MWIxYWQyZGY5ZWFjNjFhMWYxN2VjYjE1ZWMxZGMyY2I1ZmIzNzA1MDQ3MTFiODYzMzlhZTZlOWYxNWIzZTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_28637c15cce942f59a23b0de4036acd5",
+      "statement": "The client implements the real LSP stdio framing protocol by writing and flushing UTF-8-byte-counted Content-Length frames and reading header blocks plus exact bodies, tolerating partial and adjacent frames while rejecting malformed, missing-length, truncated, or invalid-JSON messages.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/transport.rs#L1-L73",
+          "version": "repo-lines-v1:sha256:95b1665efa8c7ef6eae03323dae4c84f57a0299d39742a2fca635489bd25fd4d:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkZGY5M2Y2MWQ1YTczODM4YTQ3OWNmY2NkZGZmOWRkM2UwMWQ2MDA5NzI5ZDY4MjNiZGE3MTFmNmViNTQxNjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYzk4ZDZiMGRjNDkyYzUwMTZkZjEwODA1YTNhNTRlYjljMTg0YTVhNjEzN2U3ZjRiZWNmYTBjMjIwNTUwZDAifQ"
+        },
+        {
+          "resource": "repo://src/lsp/transport.rs#L87-L173",
+          "version": "repo-lines-v1:sha256:1b9f44c1cdf97143e1e9a383f5148c0b141f765cf4a5c5e862ed4712089fb288:eyJzZWxlY3RlZExpbmVDb3VudCI6ODcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyYjVlZGY1OTQ5Y2ZlYTY3ODIyY2Y2OTExMzIzNjNkNjhkNmYxZTE2OWY1ZTBkNGY3YzE0ZTVmYTFlNmQ0ZTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMwNzY3NGExOWU2ZDE1NzkxZDA5MGQ5YmNlNjMwM2FmOGFjNTQ4YmUyYzNhNzYwM2VkNzE2ZTg2NGU2YTM2YmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFkNDNmMDA1ZmE5MTA4YjZhYzg5MTRhNDMwNzJkZmFjZGJlYjVlZmVmYThiNzJjYzliY2Y2MzY5YjhkZGZiN2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_936d303b24c0466eaeae9eb77f900a43",
+      "statement": "Initialization sends initialize with root identity, workspace folder, client capabilities, and optional initialization options; outbound client work is gated until the response, then initialized is sent and queued work is flushed, while server-initiated replies bypass the gate.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/client.rs#L1106-L1141",
+          "version": "repo-lines-v1:sha256:1d8cf7c7d79d07a8c9a10c6eac7ccf90108b0836c8c572ec6e623b00df073e3c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzYTI5YzUzYWY3ZTRmNmQxNTU1MjZjMDJlZWMyMmVmOGYzODk2NTJmYjQ2ZTA2OTk3MWZjNjY0YTRiZTcwNjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkNGZkOThmZDhiODhjMzI5NTAyZjE0Y2M4MzVmNTRjNTA2ZDhlZTM0YWU3MjZjODQwYzI0NmVjY2QxYWM5ZjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0NWE3Y2VjYmYxZWEyYzdiNTIwNTlmMDNhZDkwNjU2YmQwMmU5M2QxODFkNTMwNmFiMDYxZDdmMTFlNDZlYmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmMGFkMzdkYjMxZmI3MTAzZTI0ZDMwYWMzNjcyMmRjNmI3M2Q0OTM5N2NjMjk0ZDNiNDZjOTUxZmY3MjZlYzgifQ"
+        },
+        {
+          "resource": "repo://src/lsp/client.rs#L795-L813",
+          "version": "repo-lines-v1:sha256:4ef2af607b9c4f04d82a0adda15061a6db5ef8864dea455a904bda73b73e3db8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlNDgzMTZmZmFmZDBmOTQwMmM2Y2U1YWY5MjU0MjdlYmJmYThjMjk5ZDA5MzA2ZmY2MjZmYzlkZDYwZDBmNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4ZjFkMmRiYWJjM2UyNzU2YmJmODg3YjdlOTk1MGNmYmI2ZDc1N2VmMTRmYjcyZGUxOGM3ZmUwNmU3ZWYxZTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM0Nzk3YWU0YjU0ODdkOTZhODgzYWIyNzIwNmNjMGY4MGY1M2E1YjZmZWNhNDFkMjUzMmVmNTEzYWJiYjJjMGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmM2ZhZTY1ZDM3YzljZGVjNTU5ZWJlMWZlMjA4MTM4NWYwMTA3MjhjNDFhYjkxMTcwN2I5ODEwZjcyYjExNDcifQ"
+        },
+        {
+          "resource": "repo://src/lsp/client.rs#L995-L1067",
+          "version": "repo-lines-v1:sha256:2849986a5f0bc83af7d6a994d108ca6b6571a9fec4d833677169a49590d69102:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwMWZjZDA4MjM0ZTljY2VlZjQxMDA2NzIwMmRjNWQ0NDUwMzUyZjdlY2IyN2QyNjIxYTE2MzMwNTBkNGQ5YTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c022a3e419c6432b9e433c230cadc0b6",
+      "statement": "Pending JSON-RPC requests are correlated by IDs and resolve exactly once; unknown or duplicate responses are logged and dropped, while abandoned late responses are consumed safely rather than wedging the reader.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/client.rs#L1183-L1189",
+          "version": "repo-lines-v1:sha256:6af188f73a1ce3d29025d55ec2d5f02859823dd7ac40656ae15cbbb756721c90:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTdhODM5NWRlYWJlMjllZDAyN2QxMjg0MDZkMWVkMDZkMzFhM2M4YzIwOTNjOWUxMTBlNDFkM2FhZDQ3Yjg3NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmFjMmJjNzViN2ExYjg3ZDBmMWUyMmMwYzI0NWZiYzkzNmI2ZWRjMDJjMjY2NDg5YzEzOWJhYzE2MmEyMjA3NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWQwYmE1YWVlYzJiOTk3ZTFkNzk3YzY2MDE1MzIxZDZjMjMwZTZjNjFhNjcxZTg4OWUwOTFkYjlhN2MzOWUxMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGJiODk1MDQ3NzhjMTllYTIwZjMyOTg0MTYxNzIxZjViNzZhZWIyN2QxNDZmODIxYzEyZDg2OTJmNDJmNTVmNCJ9"
+        },
+        {
+          "resource": "repo://src/lsp/client.rs#L548-L619",
+          "version": "repo-lines-v1:sha256:7fa64a27a445d717aa545bbac14e556ba77629fff5a493fd9740394eab8b81a6:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzNjFiMDZlN2U3YjJiYzMwZDdjYTgyYTMxNzk1Y2I5NTkxMzYxMjQzZjQ1ZjJlNDg3M2I5ZTg4ZjMzYWQ5ODUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmMmQwZTZmZmFjYjM1ZWI0OWQ0N2JlOWJiMTNkNzBmMDEyNTdlYWJkMDNlYmIxZDdjYjMyZmY2OWFkMmQ0ZTMifQ"
+        },
+        {
+          "resource": "repo://tests/lsp_fake_server_scenarios.rs#L298-L347",
+          "version": "repo-lines-v1:sha256:91ee2cc23a983651fe9cb38757832b67f6fbc1d5cd10f8bd1c6c8b4ca26889c8:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmMDU4OWQyNTg3YTBjMTJlZDhiZGM2NDNjMzFiNDA0MGI0ZTYzYzNjOTUwOWZlZTExZWYwYTVjNjllNzQ3ODQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1YzQ2ODZlMWY1ZmNkYTdjOTExMTFmNTQwM2YwZmIzNGY5NWE5NDExMmUxY2Y3MWJhZTRiNzA0ZjEzZWE4MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExZTUwM2EzMzFjY2M3NmU2NmI5NGYxOGNlZTBmNTljMGViM2MxNzg0OGNhOGZhNWQyYjk2OWNlOTJkMmQ3MDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2fe58ce6e2a14fa586d630ba6e8c8f68",
+      "statement": "Server capabilities gate synchronization and feature requests: absent textDocumentSync sends no synchronization, full and incremental modes are distinguished, and didSave is sent only when save support is advertised, with text only when includeText is true.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/client.rs#L187-L249",
+          "version": "repo-lines-v1:sha256:09e3ae2c11260a566c5350993494e38f28987cb6ca3ed267151e8e520a58c583:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiODExZmQ0NDNiMWVkNWIyMzdkOTIyZGYyNjg3OTYwOWZmMmM3ZmVhMjgxY2RlZWQ3M2MzODU3ZTg0NzQ4NDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwNTE1MjlhYWIzNjMwODA1ODA2NzQ1NGExZDdmOGYwOTE2NTA4MjEzOTA4NjU4YWM5MTc2MzQ1NGJlM2ZiOTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwMDU2NmJiODc3OTVlNDJiZTEyMTlkOTYzM2VmNDBmNzk5N2E1OGYzMzBmY2U4MTdhMDI5MzllZTE2ODZlODMifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L4471-L4484",
+          "version": "repo-lines-v1:sha256:b184b1a5074471f29237e69b6cef6af26b2de491866a2b84fc5a4ad9b2d01830:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmNjUwNTU0MmQxYWQ4MjE4YTYzZmY4NTBkNjAyY2FiMjQ3NDg1NjY2ZDUwMmQ5NmM2ZmVjMjEyZmU1NTM1ZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNmZTc1ZmY5OGQ5YzJjMDA4YTIzYjM1M2UyZDc2YzMyNTUzMTJhYTU2OTUxYTBiYzg3M2NlZDM5ZjA4YjA3MGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI3NzQwMTE1NjZlYmQzYTE2MWE1NzYyOGYzMWMwZTg0Mzg3NjRlZDgzNWJlNDRhMmNiNmFkMDk3MDU5NmEyZTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0e761df5bb8a43bb9f62bef5c69ef4b5",
+      "statement": "Document changes use per-document 30 ms debounce with a 300 ms maximum wait from the first edit, and flush paths can emit the latest revision before requests or close; language IDs are mapped to LSP conventional strings.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/sync.rs#L16-L47",
+          "version": "repo-lines-v1:sha256:6853b19220b7601c4b7537dd32aaf5114c817d9adaa6302740ea7b203b6aa3b4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiY2Y0Y2M1ZDg5Mzg3NDRmZDA2ZmE3ZWEzZWMxZmQ0N2E0MzRlYmVhMmI1YzE1NWI3MTJkNDM4YjkxNjBmNzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNjNzdhZDYyYTMyMTgyMDVlODE2NzAyN2ZlNDA0N2I1ZTExOWUyMjU5NzFkMzBmMTI5YjVkNGFiNGMxMDBiMDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmYjM2MWNmNzVmMDQ3NzMzMGE1OWRhNTMwNTA0NjMwZWZiODQyYWUxY2Q1NDBhYzk0ZGM1NzVmNGUzOGQzYmEifQ"
+        },
+        {
+          "resource": "repo://src/lsp/sync.rs#L167-L234",
+          "version": "repo-lines-v1:sha256:2169faf4fa22a7ef6f285ad7a5f0ee026bc014ac6966dde8dde49ea3fa71a5d9:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyYjVlZGY1OTQ5Y2ZlYTY3ODIyY2Y2OTExMzIzNjNkNjhkNmYxZTE2OWY1ZTBkNGY3YzE0ZTVmYTFlNmQ0ZTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4ZmU5MzRjMDNiZWZkZjQ1NTg2ZTEzZjRkZjYyZWE3ZDNmNDczMzU1ZGQyMDllNTczNTFjNjUzNGViOGFmZmUifQ"
+        },
+        {
+          "resource": "repo://src/lsp/sync.rs#L56-L129",
+          "version": "repo-lines-v1:sha256:42bd0fbffbba9f57ad4f6f78d658b02fc8f8f328948a55a63179b23a0f0d10ab:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5ZTIwMDgyMjQ1MmQwYTdlYTE5NmU2YzJjNzkyOTQzYmQzYmZkNjc3ZTc3ZTkxZWViNThjNDA4NTkxMjIwYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4ZWExNjU1NTU5MzBlNjVjZDhlNWNjNGU4ZWJmYTZmNjg3YTM0NGQ0YjFhMTlkNWUyYjcxZjRlODkxYTAzNGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYzk4ZDZiMGRjNDkyYzUwMTZkZjEwODA1YTNhNTRlYjljMTg0YTVhNjEzN2U3ZjRiZWNmYTBjMjIwNTUwZDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_51f431dbbc644f778b61fd1320cdd8f9",
+      "statement": "Whole-document formatting prefers an enabled configured external formatter, while selection formatting remains an LSP request; external formatting is shell-free stdin/stdout processing with file substitution, concurrent bounded stdout/stderr reads, a five-second timeout, cancellation, and child kill/reap on failure.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/formatting.rs#L28-L35",
+          "version": "repo-lines-v1:sha256:9786753084afb48574459b95abe13cc375bea0ffa735e1fd7207d444a650922a:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2I2ZjI4MzdmMDI1OTBjMGZjMjczZTRlOWI5ZTc4MTBlMzlkZmVhMzM1YTZiYjM4ZGNmNGZkODk1MzE2ZTI2OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMThkZjM4NzY0M2IyZWE5NGU3NjZjMmMyNTBmZjJiZDdhOWIxYmU5ODBjMjdkYTQ2N2YyNzk4YjYwYTdjOTM0MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTY2N2RkOTRiMGIwMmFmMDkyZjBlNzg3MzM4OTM0NGU1MGUzMTQ1NWQ2NDA2YjFiYzc1MTEzMTVjNzMyMDI3MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTA0MjZlNzE4YjY5NWUxNTY2ZjZjYjg4ZGM1M2E3NTIzOWY4MWYwYTYxYzUyYTgwZTdhNGY4MjkyODk1OTA3OCJ9"
+        },
+        {
+          "resource": "repo://src/runtime/formatting.rs#L84-L153",
+          "version": "repo-lines-v1:sha256:40a67ecf2502af68759214a984fab285af5a8584541f0ad053bbf98e3eb0308d:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYTA4OTYzZjM3MTc1NTM0ZTQ2ZWE4NTg2YmViNTNiNjgwYjM2MWQzMzUwZTczODVlN2I2M2U1NDdmZDVhM2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlY2UxMWZmY2E4ZmJlZmViODgwZjI2MmI2MTJlZWM0Yjg5MTc5NGZkMWU4YTY2NjY2MDgxYjQyYWZhYmM2N2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1Zjg1YWFlY2QyOTQ4MjY4YWVmYTM1ZGI4NmNmZDk2ZjBlY2NiYTIzZGNjZTk0NjRkNTA1MWQzNjkyM2M3MDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1NGJhNjc0NjcyZDlkMmI3M2FjOWMwZTE0NGRlNzcwMjcxMWZhYmQyZGYxODg5OGJhMDYzZWUwNWY2NDAwNzQifQ"
+        },
+        {
+          "resource": "repo://src/update/formatting.rs#L144-L183",
+          "version": "repo-lines-v1:sha256:9af7e73a6036ada24ce4311261b6c70ae03714203c876ee0d47ca3a3147d9d08:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2ZTgwMDYyNjg1NGE4NGU3NWMyNWQ2NmI1NWUyZmUyM2VlZTU3YjRjYzZhYTRhMGJiNjBiMzhlY2FmYmI1MjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0NzVlOTRhOTA0YWM0OWIzMTU0ZDQ2NzJhNjZlODYyOWI4NmRhYzc0ZTNlMjkzN2JlNjkyN2FlM2RhMTFjNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0OWM5M2IzYmZjYTBmMDAyYmM4Mzc5ZDdmMTQ3MDIyNmM0ZDk2MDdhNmFiZGM0MzcyYTZmMWExM2NiMDg2NGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fc70087f347145ce9bb13be199bbb33b",
+      "statement": "Server failures remove and reap the old process, use generation numbers to avoid stale EOF races, retry per server/root with exponential backoff up to three attempts before Failed, and resynchronize tracked documents after a successful replacement.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L350-L362",
+          "version": "repo-lines-v1:sha256:3bdbd86caa356adf826c4ecb19cd183b9b3d62aee6c304804ef327344fc9846a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmODdmYmQwMjdjZTI4NTZmNGYxN2Q4ZGVkZGNjMWZhZDY1N2E1ZDkxOTAyYzQ2N2Y3YzllNzUyNGNhNmUwNmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4ODY2OTNjNWI4YjIyOTcxMzg4OGNhYzIzMTczNWZkZTZmNzEzYzRmZDBiNjM3ZmY3ZmQ3Yzk4MTE2NzQwYWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxYzE2MmE2ZWVkNWFkMDVlNjFiOTU4ZTRmYmU1Zjk5MDU2YTdiYzdjNWQ5ZDQ5ZWQyNDA4NTZlMzY5MDc4NDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3Yjg0NDAxNWNlNDBkYzFhOTg4NTljY2UwNGVhNjlmZjY2MTliYWU2MWZjMGJkYzM0OGE4ZGJkZGM2MmVkNzIifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L422-L464",
+          "version": "repo-lines-v1:sha256:e2dec7b17385023cc17bb6efdfc91cf10bedf2ae49779e54363053caec014ff2:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MmRkMDk0NGFhOTg0OWQ5MWFkYjQ5NmQ2NzRhNGNjNTg0NzI1MWNkY2E5NzJjOWJlM2FjN2E0ZGRiYmEwNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyMDNmOTdiMTZmNzM5NGEzNDk3YmZjYmVhOWRkY2NiODllNTcyY2EwMzMxMjcxYzYxNTVjOGZkZTgwNzk1MGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNhMzE4YmNiOWNhMGMzMWZiMDk1ZGIzMjFiNDM4NjE0YmI2MGVlNWVjZmM2NmUwNmNhMzdhOWNiYTE0MWY4NDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ3MWIxYWQyZGY5ZWFjNjFhMWYxN2VjYjE1ZWMxZGMyY2I1ZmIzNzA1MDQ3MTFiODYzMzlhZTZlOWYxNWIzZTIifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L5347-L5415",
+          "version": "repo-lines-v1:sha256:d0ad6eaf10156381c26d9c695f3ac24018be23f7036aeeeedf5cb427a2ee6e57:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4N2ExYmY1ZjM0MTJmOGRjOWI3ODgxZmM5M2VhMzQ0ZTBhYmI2Mzg5YWIzNzg3NWY3ZWI1NjJkYWNmMWEyZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmNjFjYjNmYTU5YzllOThkMWFhODAzYzlmM2Y2ZjFiM2RkMmNjNTIzMTc3M2Q5ZTg5MWM2MDQwMWNlNDU3ODMifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L5417-L5440",
+          "version": "repo-lines-v1:sha256:cfff43b6f6822100f33c36b6591678d42d10c8d0892ff04a73feb9d41d94098e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2YmMzZmQ2ZDQyMzFlNzI1NTk0ZDAxZmUxNzJjYzBkNzk5MzEwMmQ3MDA5NmU4ZTUxNzhiZWU3MzE0MjBmNzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0NzhjMjA0NWY1YWZjMzAyYTIwZTAzYTc3OWE3N2UzMjg1MjY5YzMxMDAwYTliZWRjNzhkZGZhZmIyZjdlNjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_58ca011d79bb4af3b9e4f75b21e205ad",
+      "statement": "Graceful shutdown sends shutdown and waits for its matching acknowledgement before exit, then waits for process termination and kills/reaps on timeout; a shared quit deadline bounds total teardown and suppresses crash restarts during deliberate shutdown.",
+      "evidence": [
+        {
+          "resource": "repo://src/lsp/client.rs#L795-L860",
+          "version": "repo-lines-v1:sha256:cdac86b853af11620d7da1d856dc7a60770764236f9633cc2602104082db1418:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlNDgzMTZmZmFmZDBmOTQwMmM2Y2U1YWY5MjU0MjdlYmJmYThjMjk5ZDA5MzA2ZmY2MjZmYzlkZDYwZDBmNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM0Nzk3YWU0YjU0ODdkOTZhODgzYWIyNzIwNmNjMGY4MGY1M2E1YjZmZWNhNDFkMjUzMmVmNTEzYWJiYjJjMGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM2YTA5ODA4ZmJjNjBlOGE0NGYxNTRkZTZhN2IyNmQwZTlhNDMzZTVlMTFmMTI3MWEyNmU3Y2Y1MTBhYjU4ZDEifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L456-L459",
+          "version": "repo-lines-v1:sha256:805a9321947e30f41d16d383dd279e7824cf6a098d522c5bb2406699074b59dc:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDdhN2VjMzhlNjFlNGJlNzJjZjNlN2UxMzAwYjcyYWQzMmRjZWUxMGNhYmE0MTIwNWE2ZDVhNjdkNzgzMjI1YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODM1OGUwMmY2ZmZlMGUwMDM5ZGE1MDBjMjdjOWQ4NjNiZjkzOWFlOTA3ODcyMzc0ZTgxM2E0MGQxMTA2MTQ5NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2JlZmJiNDUxZjcyZGQ0Y2VlMzM3OGUxMDllNWEzYWFhYTAyYzM5NGRhNWFlMzUyMzZlYjc4NjliZjJlNWRjMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2YzOWRlMmE0MjhlNjU4MjM5MTA3MjZhMWZmMDBmZDRmMDJiODc3NzhlMmI1ZjY1ZjIzNDkwMGZlZTg5OTQ5ZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_58eb575b8cfa486e94d143c4c46e8921",
+      "statement": "The fake-server integration suite exercises real spawn_server pipes and Content-Length JSON-RPC, covering initialization configuration requests, nonresponding servers, exits, malformed frames, unknown/duplicate IDs, stderr floods, initialize errors, and feature exchanges; the real rust-analyzer handshake is ignored by default.",
+      "evidence": [
+        {
+          "resource": "repo://tests/lsp_fake_server_scenarios.rs#L1-L11",
+          "version": "repo-lines-v1:sha256:97798e801d63dc3b78e625ad2352d1c88e20cfcd98bb6c30d9927e9649267706:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhYTdmYWI2NGMxODg3MTZhYzhmOTc1NTg2ZmZmMmUzZmRjMWY4MjE4MmEzN2MyZDg4MTAwYzljYTY2NzJkYWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhYzhkZTA3MDA5N2Q0ZWM3OWEzZTA1NzNmYTRiMjljYWVmYWQ4YWE0NDFmYmY4Njc1MjYxNTBhMjU0Njc2NzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg1OGMxMWMwNzY5MDUwOTE1MTJhZTUxODI3OWM4NjgwYjMwNTVhNzdkNTA2MWI0ZDIyZmQ3YTRhNjUyYWE1YzUifQ"
+        },
+        {
+          "resource": "repo://tests/lsp_fake_server_scenarios.rs#L146-L223",
+          "version": "repo-lines-v1:sha256:190f1a934cb8b988316e5cd0d7cdc7aa009330c815cf8383bd93019357c18ec2:eyJzZWxlY3RlZExpbmVDb3VudCI6NzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5MDE5ZGIwYjRiZWQxZTQxMTdlZThhYWVkOGQ2YzQ5NWMyZGFhOGU5NmZlNWMzMmU3MzcwNDJiYzI0OTAyOGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE1OTM3Njc5MWU2OTQ3NmY3YTA3MTg5NmRjMjViOTEzN2VmODQyM2UzZTk2MzQwY2NmYWMzMzIzZDQyY2E1MWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkYWI2NjFjMjNlYzEwNDVkYTQxZTZhNDVkMzgwMDNiMTE5YzBhNmJlZTg3NjcyMDE2YTQ4NzAyNGE1YTIxNWIifQ"
+        },
+        {
+          "resource": "repo://tests/lsp_fake_server_scenarios.rs#L225-L296",
+          "version": "repo-lines-v1:sha256:c6f57d30048aee34be539984e20f698eb7dfc193d79699637c069ad774300230:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlNTE2M2MxODkxOWQ2NmE3NjczMDQ1NjNjZmQyMTljZmEyN2UzZTZiYTNjNzE5YzU2ZGQ2OWE5ZTVjMTI0MDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1YzQ2ODZlMWY1ZmNkYTdjOTExMTFmNTQwM2YwZmIzNGY5NWE5NDExMmUxY2Y3MWJhZTRiNzA0ZjEzZWE4MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI4MTE4YjM3ZDQ1MWVjMTc3NGI1YmIyZWQ5ZWM2ZGI5ODU1NTNmZDQ5NTNiYzFiM2FkOGI5ZDY1YWJlZGM2MzIifQ"
+        },
+        {
+          "resource": "repo://tests/lsp_fake_server_scenarios.rs#L298-L451",
+          "version": "repo-lines-v1:sha256:761e697ce6aec0c2092ff4320c369d651e48caf67ed0805f7effe994d1ecb6f8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTU0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwZjA1ODlkMjU4N2EwYzEyZWQ4YmRjNjQzYzMxYjQwNDBiNGU2M2MzYzk1MDlmZWUxMWVmMGE1YzY5ZTc0Nzg0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIxNWM0Njg2ZTFmNWZjZGE3YzkxMTExZjU0MDNmMGZiMzRmOTVhOTQxMTJlMWNmNzFiYWU0YjcwNGYxM2VhODEwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0OTA2MjQzOWFkZWQ0YTdjMTk0ZTRkMDllMGU0Mzg5YWU0OGJkYmY0ZGY5ZjU1MDE5YjAyMGM0ZjY3MDU5MTMyIn0"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T20:35:11.754Z"
+  }
+}

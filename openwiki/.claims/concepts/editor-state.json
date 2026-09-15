@@ -1,0 +1,262 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:8a1e3e3611807b46938ba645b8d04a4e981d6bc73ca88a5cd0957ac2e2f64c32",
+  "claims": [
+    {
+      "id": "claim_ed283622cf534a1e8dec87977bed113c",
+      "statement": "AppModel owns application-wide state, while EditorArea is the authoritative owner of open documents, editor views, groups, tabs, and layout; UI and rendering state are separate from the editing model.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/editor_area.rs#L214-L250",
+          "version": "repo-lines-v1:sha256:bc73a7291ff5ffef7daba9004c5499e1dfb982475c165334b821eefd4c463471:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxZmQ1Mzk0NTgzZGQzMGVhYWNlMTA5YWEzNTI4ZTIyYWNiMjA3MGMzMzM5ZTMxNjYxYWU3MDEyM2M0YWI2YWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2MWNmZmUyZDI4NGU0ZWEzY2QzZjY0YzY2MmUzMjZlZWZlNDc5ZWZlNGU3NTA1ZjMyNmNlYzg2MWE5OWNmYmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4ODFlYmRkMDk3ZGRlNGMyMTllNTY2Zjk4NzU1NWZkMzM5YTYzMGU3ZTFjNDBhNDUxZmQxOWQ3NTMxMTQ2YmMifQ"
+        },
+        {
+          "resource": "repo://src/model/mod.rs#L410-L462",
+          "version": "repo-lines-v1:sha256:f0e9af17a3a70a5ec8d1e723e55e42b8af87fcdccb2c61496dbe8e65368c654b:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyYjhjZmFkMDU1OTQwZDUyYjA1OWY3NDc4NDI2MTkwMzQ3ZTA0ZjFhZmI0MGIwNzExM2E1OTlkNjY2YzkwMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM5NzQwMjA5ZjRlNDIzMjQxODYxZDQxMmQ4ZDIyMDBlZDAyNjU4NjBlNzhhNDAzZTkxOTM4ZGNkYzI4ZTA5OTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVjMTM5NmE0OGNiODNjNGE2OGIwYTVhZDczMDhiN2Q4NjY5MGVkZWRiMjhhZjdiMWRlN2RkZDczZjM3OTdmYjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3807bf07b65145a6993ab05e9015e25d",
+      "statement": "Documents and editor views are distinct ID-addressed entities: tabs reference EditorId, editors reference DocumentId, and multiple editor views can share one Document and Rope.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/editor_area.rs#L16-L30",
+          "version": "repo-lines-v1:sha256:75075cc56fe807d6b166b6278aecbbaaf72db5a8b6600f5916827a5908eefb16:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4Zjk5OGQxZGYwZWU3MmE3NDE4NzkwMzdmNWU1Njg0ZDgxMWEyMDI5MGEzMTk4MzJhZDFhM2JmNTkzNWFkYzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwNTUzZmM5OWZkZTRkZDJlM2E1YjNhM2JkZThjYWRhOTlhMjRkNzY4MWNiYWEwNzBkOGJhMzEyYmQ3ZmIyNzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4OTQ4NGU1ODlkZmJmMmY5YWU0ZDc5ZjE3ZGZhYmFmMzRkNDcyNGI5OGFhNzhmNjA2MDljNzQ5ZDZlMjczNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1NDY3MDNjY2U0YTdhZjgzOTE3NmEwOTk0NWRjYTIxOGQ5OGE3NzllNjE5NmFhZGM5MGZiMmM1MDcxNzU4OGIifQ"
+        },
+        {
+          "resource": "repo://src/model/editor_area.rs#L214-L243",
+          "version": "repo-lines-v1:sha256:c92152426371ff8fe40b63d36ae745eb9919f37a45bec35f224c4ad2c335f591:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxZmQ1Mzk0NTgzZGQzMGVhYWNlMTA5YWEzNTI4ZTIyYWNiMjA3MGMzMzM5ZTMxNjYxYWU3MDEyM2M0YWI2YWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiZGM1YzAzNDE2ZDg2OWUyZThkN2JjMmI3OGI4ZDRlOTJlYjk2OWE2MDgwOTVmMmFjMDYzZmQ1YmEwMzM4OGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2MWNmZmUyZDI4NGU0ZWEzY2QzZjY0YzY2MmUzMjZlZWZlNDc5ZWZlNGU3NTA1ZjMyNmNlYzg2MWE5OWNmYmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3M2UyYjc0N2E3ODU1ZGIwM2I0ZmIxNGM0ZjY4NTQ3NDJhZWQ4MWVhNDljOTQyMjhmODdjMzlkZjUyM2I3Y2IifQ"
+        },
+        {
+          "resource": "repo://src/model/editor_area.rs#L64-L105",
+          "version": "repo-lines-v1:sha256:081e039aaccab4a40bb5932ba894c47346a47a05ddcd87435862141a7b384ce3:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzYTBmYWNhOTc4NmIwMTQzNDU5ZTM1ZmM5NDNlODdiYjVlNzllMWY1ODAxNjQ0ZWNiZjJlMWM1ZGZkMThjNTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NzFmZjczNTI2M2EzN2RlOTUyMjQ4OTBlNWZmOWU1YjQ0ZjQwOTIxOGYwNzBlNDEwN2Y2NTI2OTBlOWM0YmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZiNjE3NGEwNTFlMDc2MjRkMjc4MTgyNzg5OTQ4ZjFjMzU1MjAxZTg4MjYyNWY3N2JhM2IzZDA2YzAxYTJhYmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_22e550c994244038ac74593ff27e1ec4",
+      "statement": "A Document's Rope is authoritative text, and line/column positions are converted to and from character offsets with clamping rather than being treated as byte offsets.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L438-L455",
+          "version": "repo-lines-v1:sha256:565d1acc2fb0264ec26c645ffec12ad6df0b5489566b7d083d14c91afb540545:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5NDc1ZjI5NGJhYjk2NWJlYjAyMDBjMjEyZTc3YTcxOThlMmUzZjBmMWI0YThjODI0OTFhYjFhZTIzMjNlYjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5NTg2YWVlNDdlYWE3YjVkZmRkYzkwOTcxZjg1MGYwNDAyMmEyM2UwZTI2Nzk3ZTU1ODdjNzUxZjRhNTg2N2UifQ"
+        },
+        {
+          "resource": "repo://src/model/document.rs#L83-L138",
+          "version": "repo-lines-v1:sha256:8223b46bfcac8fa594fbe9a238ca52e870b2e76c54da41189713694d708e0a54:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhMDgxZGRjYjIyYzNjNGM2MDgzODIwMTE0YzI2NjRmN2M1OTFkOTdhYjc2ZjhlMTk2NzhiMWIwYzgwOTE1OTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1ZmY5NzBiYzM5ZGQyMWE4ZTRkNDgzZDg2MTU2OWM4MGE2NDhiMzFlNzk3OGMzZDZjMmQ2NTdhMDY1NzA1MTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhOTJmYTllMjVmOTdkMGRhZTIzMDg2MDY3OWNmNDBhZWYzYTA2NDU3MzI0YWI3YmJiZjk2NDgyN2M2YmVkZTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fd4c01ee2b894d4dacd5273b602e836b",
+      "statement": "Document syntax, outline, fold, diagnostics, and LSP data are projections or asynchronous derived state; semantic highlights are accepted only when revision and language match, and diagnostics are refreshed from the LSP store.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L123-L149",
+          "version": "repo-lines-v1:sha256:e413fde1b7e4f28fb7f19069bfa3d789a053c1bea05276d127bddafc652b73d6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0ZTI2Y2MyZjFjYTNiOTU5MWViZDE2ODdiY2E0MWFhZjc1ZGMzN2NmOTFhODQxNTAyNTY5ZGUzYTM0ZWRlOTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3YWE2YWM4ZGRkOWRhYjRkMjA5ODE2NWI2Y2YwMTcwNGRiZTdmYWI1MDk4OWMyZjJiZjVkY2E1MDgwZDIyODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNlNWY1YjhhMjliYWM1MTRiZTM4MDVjYjkxYmYwYWU0MjQ4MWQwZGUzMTgzMzA4ZDJkMzc1ZjUwZDYwZDgzZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmY2NiMTM0MDFhMmM0Mjg5N2EwMjZlMDM5MDE0Y2ZiMmYwYzA1ZGE4NGQ3NmRjODQ4MTBkZDZmYmExOTYwZGMifQ"
+        },
+        {
+          "resource": "repo://src/model/document.rs#L490-L510",
+          "version": "repo-lines-v1:sha256:180da9edba067345bb3878d8b8104924ce4b640561326cd18687525988951d35:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExOWNlZWMxMDVkZjk5MWJiZGNlM2ZkNDhhNzhjNzY4ZWE5OTE2ODU5MDdkYTU2ZDFmM2UzMjE5YTc4ODc2MDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1NmUwNDI1YTFlZTJiYTYwNWVkYTVkNGE1OTE4NmZjODY2Y2Q5Y2ExMTIzNzk0NjYyY2UyOGMxMjJjZGZjZTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2YTAzYmZkNmU4NjlkNjY2ZDdkZmNhODM3NzYwN2JkMzkxYmI2NjMwNWRiY2I2YWZiM2E2YzE1ODY5NzE4OTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2OWNlM2RkMDRjODVhZTUzZTJkNjA3ODMyOWM4NTJiNDdkM2Q1M2Y1MTkxYTA1YWI4ZTU4YmIzYjJlMDJmNzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a4f0f2c806bd4bc6bc3413fd5baa6313",
+      "statement": "EditorState owns pane-local cursor, selection, viewport, and interaction state; cursors and selections are parallel arrays, cursors are sorted by document position, and active_cursor_index selects the focused cursor.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/editor.rs#L675-L720",
+          "version": "repo-lines-v1:sha256:5e454b38c099255819666626fd29d5137cc86a8c7453640721cfe361534a0a9b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmNTkzMDk4ZGVmM2MwMzY1YzcxOGY4M2ViOGRkMTBjNTEzYzlhMTNkMWFjY2Q0ZTNlMzQ0OGYxNWIxZDAwZGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4MDkzZmY5NTgzYTRkZjQ1NTk5NGJiYjM3Yjk0YzkyYTNjYmM3MTUwY2RhOTFlYmRiYjJmOTVmZDk2MGE3MWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhODZmOWVkMDFjYzUzY2YwNzgzNmI0Nzk3MjE3NDgwYmY2N2I4YjQwYTU0OTJhMDM4Y2QyYTgwODI2MzdkM2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE5YTFlNWVjMDllMzMwN2FhYTE3MzA2YTI3NzlhNjg4MTU5NGRjYTA2NDg5NjE4MmU5ZTc1NzM5ZjY5ZDg4MjgifQ"
+        },
+        {
+          "resource": "repo://src/model/editor.rs#L723-L747",
+          "version": "repo-lines-v1:sha256:fdcdd40c8b53f9a42cd0a259f890de24625d6b628ec290bba5f9be76053e9b38:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkNmE3M2NjMjE1MmU2YmJiMDYyYTBmMmU5NmM4Y2Q4MzUxYTBiMTA4NTVhN2ExZmRiZDc1MTMzYmE3NmE1ZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0ZjgwM2I4OWIwODVlZWU2N2U0OTg1NzMxYjZjNzkyZmFjNjQ5ZmZjYjQ0OGQwOTMyODExMTk5OThiYWYzOWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUyYzYxZTRkZTVhOTVmMTY3MzJiY2QxZjRjMjU5MjE1ODAyNmVkMGJkNDQyMjcyZDE0Zjg5NGRmM2UwZTQ4ZjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_200f9f04bd424beab5cb36a8381ff398",
+      "statement": "Ordinary document operations clear occurrence state and selection history, while cursor and selection snapshots restore durable pane selection state and clear transient occurrence/history state.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L44-L80",
+          "version": "repo-lines-v1:sha256:a325cf19f8cd78f3336d04899e0306cae143d74b0c0755e6fef8d0b314492818:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhM2M2NWU5NTk2YzAxYjAyODhlNGE4ZjAyY2Q3MGIxYTRkN2ZlMjA5MTI4MTRhNzgzM2U0MzMzNTU1OTE0MjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3NmE1NDRjYzAyM2VkNDA1ZTNiOThiOGEzNTQwOTBmYWQxNmU5ZTE4ZDVlZTlmN2JhNmMzZTcwMDUzMDA5ZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllYzc3Y2Y0YjVlYWQyYTJkYmJhYTg3NzM5Yzg1OTM1NWM4NzFhYmYyM2UyOTZhOTBiNzk0NDk3MTdhN2M1ZDIifQ"
+        },
+        {
+          "resource": "repo://src/update/document.rs#L707-L719",
+          "version": "repo-lines-v1:sha256:e0885d22503449838498faf507f1182d82372b8899d0d6d8a3b64b70c7ec9bc0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyMjQ5ZWJhYzhmYWViMDdiOWY4MWJjZjA3OTBmYTA0OWUyMGEzMGEzZDdlZTI2YjNlZGUxNDIyZmZmNDIwMTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5NmY4Y2IwODNmYTgwMGE0ZGNkMjk2OTcyMmQ3YjkyNjg2YWRkOWViZTM2NTU0OTJmYTY3MmIxYTdjZWQyNDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU5ZjljOThjY2JhNmUwYzYxMTllNzhkMThkNmRjMjgzNDAyMzZlNzAyYjk0MGQ1Zjc1Y2NlZGU5MmNmOGU3ZjgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c2de2dade5624b52b2524906070344c9",
+      "statement": "Document::push_edit records an undo operation, clears redo history, marks the document modified, and increments revision, making revision the freshness key for asynchronous derived data and preventing new branches from reusing redo history.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L479-L488",
+          "version": "repo-lines-v1:sha256:3512e183ec068a8fa8db6c9d53e60052204a3cba56cb412fcd2d18e7d81cb936:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExMzhmMmViNjdmODk3MGI4OTliNjAwZGMwNzI5ZGIxZmVjZTVkZWNmYTRjOGQ4Mzk3YTBlOTcyZmRiMWVjMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFjNjBmZWMxMGE3MWQyZmM1OGQ1ZWNhM2FmMTE1OGRhZjc0MTRkZTUyZmUxNmJkZGVmN2E0ZThjZDYwOWQ1NGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiMjdjZjdjMjBiMGUwZDAzMzIzMmIwZWNhZDg5NjMxMDZlYTRjZTRjNTVmZjRkMDM2YjJlNzk5MjRhN2U1ODIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8976b755d0b94143904066ca994bcbfd",
+      "statement": "Multi-cursor edits are planned in character offsets, applied in a safe order, then map unaffected panes and place/deduplicate carets; selection replacement is represented as a replacement operation for atomic undo.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/document.rs#L707-L789",
+          "version": "repo-lines-v1:sha256:e1978e131060081cf89c372ea7eefb5fa6ae9d5dc887ebc370d09bcc217aacab:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyMjQ5ZWJhYzhmYWViMDdiOWY4MWJjZjA3OTBmYTA0OWUyMGEzMGEzZDdlZTI2YjNlZGUxNDIyZmZmNDIwMTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5NmY4Y2IwODNmYTgwMGE0ZGNkMjk2OTcyMmQ3YjkyNjg2YWRkOWViZTM2NTU0OTJmYTY3MmIxYTdjZWQyNDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmMzc5OWQwNWU4MzE5ZDI5ODUzZmJjNDBhYmM1YWIwYmRhZjliZGQ2YTBlYTgyNWNmNjAzOTc2N2M2OGZlZjQifQ"
+        },
+        {
+          "resource": "repo://src/update/text_edits.rs#L431-L500",
+          "version": "repo-lines-v1:sha256:950a1d281d4367aad4e3347de7aaaf07cba0a5e252f94448f8048ed4a57f7295:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5M2ZjOTc4OTQxNDA2MjMwOTZjYTlkYjcxNTQ0MjJkNDA0NGNkZGJmYzk1YWQ0MGRhYTc4NWY5YjkzNDJjZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzNWM0MWEwY2YwM2FhZGUzOGQwMTBlMjQ5MzI0YjI1NzNkNmM0OTM0NzllMGJjN2UxNGQxZmZlOTllZTdmYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwYTMyYTQ3YjkzZDdiMWVlNDQyZTE3NzczMmNlNWM5NjY4OTk0NzRmZTYzMTA1MTQ0ZGUxNGI3YjU3NGQyOWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b03adfd524084ee08a62211b846745d3",
+      "statement": "Batch edit history stores atomic operations plus before/after snapshots for every existing pane, and undo reverses operations while redo replays them forward; existing panes restore snapshots by EditorId while later panes retain positions mapped through edits.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L10-L80",
+          "version": "repo-lines-v1:sha256:10c6e02c009b58e9ac62b9f4f9e650130bc82f79550a123642e5f6e103f3a82b:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4MDlmM2Q5YmQ2YTJmYzJhYzYwOGI2NDMzN2M3YjI0MTcxOWU2OWQyZDk1OWMyODNiM2E3NTZhZjg1MDZhODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzNGM4Mjg2ZGUyZTJkYTJhNjhiMjViZmZlNjNhNzhmYzY1MGJiMDVkMzJkMjJiYTcyOTI1MTI2NGZiMTMzYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllYzc3Y2Y0YjVlYWQyYTJkYmJhYTg3NzM5Yzg1OTM1NWM4NzFhYmYyM2UyOTZhOTBiNzk0NDk3MTdhN2M1ZDIifQ"
+        },
+        {
+          "resource": "repo://src/update/document.rs#L798-L922",
+          "version": "repo-lines-v1:sha256:5e8c15f6d46dafc2b7c32927368df2db63b0b1751bcfd9c167f45e05f7542066:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI1MjYzMzM4OTAzZTRjZjRlOWNhMjMzNjNkYWEyNzZhZTJhZDA5MDRkYzJmYmQ0ZjhiNDIyNDFmNzdmN2EyYWI5IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI5ZTZmMGNjMDA2NTQwMThmMGQzMDRjYzQ1YWE3ZGYwZTUxNTg3ODk5MjVmMTA5ZjczZTQ2ZDE3MGI0MjczYjEyIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+        },
+        {
+          "resource": "repo://src/update/text_edits.rs#L513-L535",
+          "version": "repo-lines-v1:sha256:e9c825c5f5b4383bae25feacd69bf5bbca979a459bf51cbf21d2e9ed4ed7db67:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0NjVmMDYzY2MxZTliYzlkZmE4NWUyYWE1NmMyNGQxZTA0MzM4YTVjZGE3NzAxNGUzNmVkYTk2OGJkMjNmODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4MzEyMzNkMjhkOTUzNWQ3YjM3NjFkMjFhM2U5YWU0M2Q4MTYwZmQ1MTAzNWExNTM3ZDAxODJlODY4OGY4OWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4MWUyMzVhMWM0MGU5MDY3N2M0OTA4Zjc1NmIwYjUwNTNmOTg5NjdlZjI3MDM1NGE2YzMyMTQyY2IxMmY1ZTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxMjU5NzgwNjgzZWQ4Nzk0ZmRjYzYwN2I5NTFiOWJkMzdjMmY4MGZlZWYyODZkMjFmNDRiY2NjZGUyMjk3NGEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b183be601d014234bd47947928766671",
+      "statement": "Groups display one active tab within a recursive layout tree, while viewport geometry, wrapping, folds, ghost text, and overview data are derived view state that AppModel can resynchronize when layout or gutter-affecting state changes.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/editor_area.rs#L189-L205",
+          "version": "repo-lines-v1:sha256:201dfff156f84b7862bd112a9b1d6c7d599f11b9a3535291678b78589b1a1ca3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2ZGJiN2JiZTU4ZDkwOGUyNzNjMDE5YTNlZjEwYzVjNmZjMjc1ZTQ3YWY0MzkxMTVlOTViODRlZmMxMjQwZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4ZjJmNTZkZWE1NzdiZTlkOTI5ZmM1Y2ZlODY4MTc0ODhmMGY0MTFkZWY4Y2ZmOWQ5YTdlY2NjMTRkM2U4YTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkwOTQ5YmIzNDZjNTFhNWZhNDYzMTk0NmNiYzgzMzUzMGZkY2NjM2U5MmU1ZjkzOTlmOWFiMmZjNTBkMTNmOTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI0YTM2NWE5MGVjMTFlOTA0MzI3NTJjZjkzNzZlYzVlZDM2YjgwYmE1ZThlNjg1NGZjZjk4OTcwZDMwNDQ0NjkifQ"
+        },
+        {
+          "resource": "repo://src/model/editor_area.rs#L81-L105",
+          "version": "repo-lines-v1:sha256:1147547a0335517823aadfc9c332f477359fb3d4b491d9e7bd40ea3a72bea1a1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwMTBjY2Q0MGQxYWQ4MjQyOTdjNDY2YjA2M2IzZjA1OWUyMDAxM2RkNjEyN2RjMmMzZjJmOGNiMTk0NTU0MGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjOGY2YzNjYmZjYTE5MTEzZmQ2MTExNWRhNzJjNjBkYzVjYWY3ODI5YjA4YTYyYmQzNjM3NzM3YjQ1MjQ0OTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZiNjE3NGEwNTFlMDc2MjRkMjc4MTgyNzg5OTQ4ZjFjMzU1MjAxZTg4MjYyNWY3N2JhM2IzZDA2YzAxYTJhYmQifQ"
+        },
+        {
+          "resource": "repo://src/model/mod.rs#L464-L478",
+          "version": "repo-lines-v1:sha256:1f51bafc22cf822701f3bffac15a636c1ed3e4304d950a58c7a4c1343a3fbc41:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyNTlmYTQ5ZjEwYzEwZWFhYTZlYWQxMmRlY2Q1OTAzYmRmMzU2YjJhZjA2OWM0ZGIxNjU3NTI5YmRhOTNhMTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0NDViYjVhYWFhNzUwYmU0MzQ5NzU5MTdmMzg2MDRlODcyNzI5NzVhMjJlZmZmM2NkYTBjNDM1NTM0M2EwZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE2ODNiMmE4ZmU4NWQxOGQwZmQxZmNiMjRmNzEyNjEyM2FiM2QyNjY2NWI3MzdkZDEzZTQ5NGY4OThlZjJjNTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7b12d491c2d6495cab3fb5b95ff27d2b",
+      "statement": "Closing tabs, groups, or the application handles unsaved documents by DocumentId and revision and can queue saves before closing, rather than discarding a shared document solely because one view closes.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/closing.rs#L36-L66",
+          "version": "repo-lines-v1:sha256:3f37ff13a2439b93cfdadfca39a4a6a4d236e7502f372bc9caa51524139f96bf:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyMTJlMDBiMzAxMjJmMGU2MjZmMzE0MTVkZTQ1Yzk1MmM3ZGE3NDBkNjViNzY3OGUzYTlhMGVmYWQ3ZjhjY2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlODY0NzFkODIyNGE2ZjZkYmU1OTc0YTU2MjFkNGY4NjI0ZmI5ZTdhNWI4MTRmZWU2YjdjOTEyNWU0NTZhMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://src/model/closing.rs#L7-L34",
+          "version": "repo-lines-v1:sha256:ce2d806f4da62d6b5e5a43e108425c54aed47b2996740f6aecb847410f178b81:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwN2RlNzNjMjY2MmNjZjJhZTU0NmE3N2Y3ZjIyNDk2ZTcwYmUzYjkzNTI5ZDY0NWYzNzI2YzIzNTE1MmYzNWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg2ZTI5OTMzMjdiOWU1ZjMwYWMyZmM0NjU0NmYwMDU2MjI2M2E1OTI0MzkxYzFlNGMyNDA0ZmVmNWYwMmUxY2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhMWYyM2QyNmNhN2NiYWU0N2Y5MDBmN2Q5N2ViZDUyNTA4ZWJhNTc0NTI0YTExNzVkYzRlMzdiMmIyZmZhZDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4bbeb488b2a54371bad677a16c203b32",
+      "statement": "Focused tests cover position clamping and basic undo/redo in text_editing.rs, and cursor sorting, deduplication, and active-cursor tracking in multi_cursor.rs.",
+      "evidence": [
+        {
+          "resource": "repo://tests/multi_cursor.rs#L113-L168",
+          "version": "repo-lines-v1:sha256:dec8c8568cf24cab79c106fd6d99e3ac6e1db7f6ff3dd6826982040255c6d045:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNhMjgxMGY0OTFjMjdkODNmOTk0N2UzNzc0ZDg5OWJmNDllMDExZGUwMDY4ZmQ0MmVkNDUwOWY5ZGUzMWRiODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU0YjQ2YzAyM2NiYTlmMzQ4NjJiZjZiZjdlYWM4OGZiNGQ4ZjNjMzVjZGU4MTBjYTQ2YThhZjQ5ZTQ3MjgyY2QifQ"
+        },
+        {
+          "resource": "repo://tests/multi_cursor.rs#L84-L107",
+          "version": "repo-lines-v1:sha256:179f6e5ca6024a924639fb7c44c2d92df3a6759da296490b9dffa59ae19969f9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwNjVlOTViNjRkZjFiNmZjNTgyZDg2NjJlZjI5Y2YxZDMyMWU1NTY4MTViMGY0MDg0M2Q5OGM4NjBhZGQxNDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE1OTM3Njc5MWU2OTQ3NmY3YTA3MTg5NmRjMjViOTEzN2VmODQyM2UzZTk2MzQwY2NmYWMzMzIzZDQyY2E1MWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3ODQyODVkYWJhOWI5NzlkNzdjYjk3YzE5MDk3ZmVjYmMzYTRiNzcwZWVjMjZjODI5NzFlNTE3YjNkNGYyM2YifQ"
+        },
+        {
+          "resource": "repo://tests/text_editing.rs#L227-L253",
+          "version": "repo-lines-v1:sha256:a62ad6a1e0d5f7bba14b77d21a100c9188943ab738c407975753a9a8b359cce8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwNjVlOTViNjRkZjFiNmZjNTgyZDg2NjJlZjI5Y2YxZDMyMWU1NTY4MTViMGY0MDg0M2Q5OGM4NjBhZGQxNDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmNTg3ODk5NjcxNzk1ZjNmYmM0ZDhmNjYzMTg1MGZjZTE1ZTBmYTA4YmRmZDZiNGVjYWYxZjA2MWYzMzUyOGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2MTc5Nzg1YTljZmRhM2ZjNWEwY2Y5NjFjZjQ5MGU2MGQyMDg0ODdmMjY0NTYyZGE0MDkwYThhYTkyOTkwMmMifQ"
+        },
+        {
+          "resource": "repo://tests/text_editing.rs#L93-L116",
+          "version": "repo-lines-v1:sha256:fd9b4632189292edf9c0cfeb8830ae0ed374b18c571a366b26a1e1a59002e2d9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdjYjNmMDNiZGM1OTAzZjU1ZWI1Mzk0YTQxZjBmNGUyMTA2OWZiYjljOTFhNDE4MTRhZGJjYzVjNmNhZmI4NjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1ZDNlNzUxZDc1YjJiZmYxYzNmM2I5NmI4MGQ2ODIwZTc1ODY2OTY0YTE2M2Q5NTI3YWVmYzIyM2QxNTI4ZGEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e89c0a8bab0e4dfd9d33bfac8baaab15",
+      "statement": "Line movement is a shared-document transaction: MoveLinesUp and MoveLinesDown collect cursor-covered lines into movable runs, preserve line endings including CRLF and unterminated final lines, build descending-offset replacements, and apply them through the shared planned-edit path; boundary-only no-ops do not create history entries.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/document.rs#L594-L705",
+          "version": "repo-lines-v1:sha256:93f9d4fc09bf3561b40a863012cd7ec140de21fdda8ade8ba1efdf35068cbf11:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJmNjFhMjUyNTc5MjQ4MjNlMjhmM2IzMDI5MzE2NGIzZGE0Y2YwZDM2ZTNiYmFmZDIwMWZmOWEwOGU5M2Y3NDc3IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTJjYTM0NWNjZjc1YmY5YzA4MDZiY2U2OTViZThkZTgwOGI3OTk4NDI1MWE3YTU0ZDIwMmNmNjEwMWRkNDUxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlODU4MzBlNTUyN2M5ZTkyZmFkMzNiNDhiNGM0MjlmZGMwODdlOWJlNjkxYjJmNTM5NDJlZDMwNDAzNDg3ZDI4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI4YjQ5NDlkNzYwMzJlMDIwODUyMjUzOTJjYTliOGQxYzg3ZmFmMDQxMTgwZDNhMzEzZTFjMzJkYTc3OTNlYTIxIn0"
+        },
+        {
+          "resource": "repo://tests/multi_cursor.rs#L325-L360",
+          "version": "repo-lines-v1:sha256:9f16901a5c9b307549b1485df51c456b919ad9c388d9fe88d5bd62d4a18e9e2e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRiOWQwY2ZiZmMxYzYxNWZkNGVkNDEwNTFhYWZhMGIwZmI1MTQzOTRmMzIwMjMyMjdmYmFiNmQ3YmNmZTNjN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg3YTMzODNkYjI0OGNjODk1OGY0NzNkMTk4NWUwZWE2NWZlYzYwY2VkZmFjZmQzYjY5NmU0NWU3Yzk1Y2Q1OWQifQ"
+        },
+        {
+          "resource": "repo://tests/text_editing.rs#L444-L505",
+          "version": "repo-lines-v1:sha256:a78a52219d7343e4257ddb6eb3178d41e422c27f536d68d84845aedd5db24f53:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ2ZThmNWI0NWE2NWQ3MTliMmIyYTI5NTlkOWE3Y2FiODJlY2YwMWExZDUwNzlhZmZiY2Q1MDljYTZiNjVmMDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmZTNkODA3MmJlOGUwMzkwOGMxNmZiN2ViNWMzMmVlZDczZThlMjlkOTRhMTQ0YjFkMDkzODM2OGIzYzNiYWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4b108fdfbb354d1b845fd353e31a61a3",
+      "statement": "The planned-edit transaction captures every pane displaying the target document, maps unaffected panes through the edits, applies Rope changes, places or restores the edited pane's carets, and records one Batch with before and after editor snapshots before scheduling redraw, parsing, and document-change effects.",
+      "evidence": [
+        {
+          "resource": "repo://src/model/document.rs#L10-L80",
+          "version": "repo-lines-v1:sha256:10c6e02c009b58e9ac62b9f4f9e650130bc82f79550a123642e5f6e103f3a82b:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4MDlmM2Q5YmQ2YTJmYzJhYzYwOGI2NDMzN2M3YjI0MTcxOWU2OWQyZDk1OWMyODNiM2E3NTZhZjg1MDZhODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzNGM4Mjg2ZGUyZTJkYTJhNjhiMjViZmZlNjNhNzhmYzY1MGJiMDVkMzJkMjJiYTcyOTI1MTI2NGZiMTMzYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllYzc3Y2Y0YjVlYWQyYTJkYmJhYTg3NzM5Yzg1OTM1NWM4NzFhYmYyM2UyOTZhOTBiNzk0NDk3MTdhN2M1ZDIifQ"
+        },
+        {
+          "resource": "repo://src/update/text_edits.rs#L388-L535",
+          "version": "repo-lines-v1:sha256:9b6dc4c5916a59397a4ff7bd3dd71a2b8cbe3a2967fb6ce987f0b9fe8af081dd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQ4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwNDQ5MDQ3M2VhZDliMjgzOWQ3OTE3NzFkYTI5MjlmMjM0YWM5MzQwZWNhMjkxYzU3ODg4NTMxMWU0YWI4ODU2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI4ODMxMjMzZDI4ZDk1MzVkN2IzNzYxZDIxYTNlOWFlNDNkODE2MGZkNTEwMzVhMTUzN2QwMTgyZTg2ODhmODlhIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2NzZhNTQ0Y2MwMjNlZDQwNWUzYjk4YjhhMzU0MDkwZmFkMTZlOWUxOGQ1ZWU5ZjdiYTZjM2U3MDA1MzAwOWQxIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3MTI1OTc4MDY4M2VkODc5NGZkY2M2MDdiOTUxYjliZDM3YzJmODBmZWVmMjg2ZDIxZjQ0YmNjY2RlMjI5NzRhIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_3c28b5c31f4f43ac9edec5b9d59ba31c",
+      "statement": "Line movement uses explicit caret restoration: the focused pane's complete cursor and selection state is mapped with the line permutation and restored after the buffer edit, while peer panes are mapped through the same planned edits.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/document.rs#L624-L705",
+          "version": "repo-lines-v1:sha256:9f141df3e04571c40bcf966c4d410e791429319e09954f4a839343d8b4616404:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0NDliY2U1Mjg0MTUyYzVjNDUzMjRjMWNlZGUyMjgzNjRlZjBjNmJkMjdlMzA5NjI5YTExNjQ0ZWMwNTY3ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1ZmY3OTVhYmFlYTJjYmIyMTMyYzA0YzM4MjIyNmUyNmI5YzliNGJjNDg4ZWQwOGFiNjYwYTRjYmZiNjRmOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiNDk0OWQ3NjAzMmUwMjA4NTIyNTM5MmNhOWI4ZDFjODdmYWYwNDExODBkM2EzMTNlMWMzMmRhNzc5M2VhMjEifQ"
+        },
+        {
+          "resource": "repo://src/update/text_edits.rs#L417-L500",
+          "version": "repo-lines-v1:sha256:dd29def39847a6735fe8346faf5f9b2576a3cb2478cd60cdd1011861e09a7d36:eyJzZWxlY3RlZExpbmVDb3VudCI6ODQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyZjU3NmUxMmU0MjZmZmQwNWRhNmYyNDc1YjFiNzc5NTA3MWIyZWE2ZjJmOWIxNjI4ZTc2NWM5NDQwMDM2NjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MWUzMTJmNzYyMTI3YTI2OTQ0ZGU3NmFhZDAwOWJiYmI1NDMyM2I3MTI1Yjg1N2U4YmQzMTU3ZjFhNjk2NmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwYTMyYTQ3YjkzZDdiMWVlNDQyZTE3NzczMmNlNWM5NjY4OTk0NzRmZTYzMTA1MTQ0ZGUxNGI3YjU3NGQyOWYifQ"
+        },
+        {
+          "resource": "repo://tests/undo_pane_state.rs#L98-L125",
+          "version": "repo-lines-v1:sha256:ec354dea8b4d5c8e2f772778f4c3e41634ad1000ed519d844984ae37e9902dbf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5Zjk0M2JjMmUxODViZmE2ZGI4MzM3NGU3Mzk5NzM5NTQyMzE0NzYzZjk2OWFhNmExZmEzZDIyYjAyMWNhNjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3MWUwNzIwZDdiNTgzZTk4N2QzNTJjNmUxODA2NWIwYjNjODdjY2E3ZTgxZmE0ZjExMzU5NmI5NzNjZTkyODYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_39808e9cbf3646b5ad05cc5582846081",
+      "statement": "Batch undo and redo restore snapshots by EditorId rather than focus; panes that existed when the batch was recorded regain exact selections and active indices, while later panes retain live positions mapped through history and closed panes are not recreated.",
+      "evidence": [
+        {
+          "resource": "repo://src/update/document.rs#L798-L863",
+          "version": "repo-lines-v1:sha256:0ac5f50a5c3b3ca537c32a3d6b31b318c37f42cb3edc4a449a7d3be948e25116:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyNjMzMzg5MDNlNGNmNGU5Y2EyMzM2M2RhYTI3NmFlMmFkMDkwNGRjMmZiZDRmOGI0MjI0MWY3N2Y3YTJhYjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllNmYwY2MwMDY1NDAxOGYwZDMwNGNjNDVhYTdkZjBlNTE1ODc4OTkyNWYxMDlmNzNlNDZkMTcwYjQyNzNiMTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4MDk3MTNjNGZlNzA1M2MxYzlkMjE2ZjdhODUyODcwNmRiNWE3ZTMyYWVjN2ZiYjhjNTQzOTRjYWJhYjJhZTUifQ"
+        },
+        {
+          "resource": "repo://tests/undo_pane_state.rs#L146-L179",
+          "version": "repo-lines-v1:sha256:1a80ceab640b2393cf0791324482f4e2ed455d54fd5b2eec7fea7a4dfc19b65c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMyMGYwYWI2YTI1YWE5YTk2YTkyN2E1NGI3Njc1ZjhkOWQ5MjIxY2I5Zjk4OGYwNjI1NzQ3ZTk1OGNlMGZiNjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/undo_pane_state.rs#L40-L73",
+          "version": "repo-lines-v1:sha256:60f326cdfef26cd4a6e0cbaf98c1b81d5c2c59bf8877046a917350d6138fc1c6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyY2Q0ZGI0OGEzNTBlOGYwYjQ3OTQ0YzQ2ZTNmZmRiYmExMzJkMjI5MGE5MWQ3MDEyYjU2ZWI0NmM4YWI0ZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkNTdlMzY1MTk4ZWFiOWVkODQxYTE5NDNlYjgwOTNiMGVjODVkZDRmZDk5MjJlZWYxNzA0YjI5MTNjYjZjYjAifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T22:42:43.154Z"
+  }
+}

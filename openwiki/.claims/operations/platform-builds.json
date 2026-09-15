@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:884d943c91d78e26a1752efbfb7dbb02fd6fa7f31afdd24067f9ac4a1e2cabf9",
+  "claims": [
+    {
+      "id": "claim_0b483fc78afa4a9bb467f052edfaa58e",
+      "statement": "Cargo disables automatic binary discovery and explicitly defines the default `token` editor binary plus `screenshot`, `profile_render`, `fake-lsp-server`, and feature-gated `ui-gallery` binaries.",
+      "evidence": [
+        {
+          "resource": "repo://Cargo.toml#L2-L36",
+          "version": "repo-lines-v1:sha256:69faeb2f01af6e12ef8ee3dcc1b3592e8b2320cb2f0d033d52fa60d910038688:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlMmNhNDc2NDFjMzFmNTFkMjJkZDg0ZmIzNmNhODU5ZDBlM2QxMDE5MTdhMjE0NDVkOGY2YmQ5NDdkNDEzY2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ODc2OGUyNmZkYzc4MzUxZTU4NWEwODk2MTVkZjA0NjVlMmFjYTk4ZDY0NzVmNjEwZTE3MWQ2N2U2ZjlhZDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhhM2NkNWE4MWIzZjlhNjIxYWE0OTNkOTBjNDVmNDJhYjU3MWQ0ZTQyYjhhZTVhZmYzNTFjYjBhMDJkMDZkODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlZDViMGEyYjNhODIyNTAyMjQ0Y2ZjOTA0Yjc0MjQ0ZmQyZjIwMDljYTA3ZjJlNTMzZDYyMTQ3ZDQwNjJiZjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2cb4201cfcf74f5fbd851386deebbbc5",
+      "statement": "The repository supports the distribution targets `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, and `x86_64-pc-windows-msvc`, with cargo-dist shell, PowerShell, and Homebrew installers.",
+      "evidence": [
+        {
+          "resource": "repo://dist-workspace.toml#L4-L18",
+          "version": "repo-lines-v1:sha256:04cdc0c1ed05c8c86da7cb874b8b41a96c548a65a77d0c0e0bfa32c7821e3d05:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjYjY1ODJiMDJmOTIxODg4ODVjYTYxYmQ5ZGI5MjRiZGU1NDg5Y2E5N2Y2NjA5MTdlZDczOTgzNDYwYzQ0ZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjZTU4NmRmMTAyZDJlZGFjMWE2MjNjNGM5NmM2ODViN2M1NjMwODc2MDUzMDE0NGMwZTM0M2VhZThiNTIxNGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmMjcxMmRhOWY3MmY0NGUyMzYxMmZkZDVkMzY4MjM0ZjFmODE2Y2MzNTdlMWE0N2FmNzlhZGRiMDBjNTMzNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyY2QwYzc2MjRmMTViNWFjMGNhYzZkNjIwZTYwZTM5NGUwMWIwNDI1NWE3NDQwZmIzYzI5ZDIyNWRlYTA5OWEifQ"
+        },
+        {
+          "resource": "repo://justfile#L279-L297",
+          "version": "repo-lines-v1:sha256:557f7a2c8caeadddd95244db1357c86c995fd5827c8a10e441de914230a7a660:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxOWNlNzY0NjI1YmI1Y2JlMDA3YzYyYmVlMTEzMTk1YWJhOWRlNTkzNzM1MWM0NjU0MGI2NWE2ZTAyZjg0YWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwY2Q0MzM2NjdmNTZiYTJiMGRhNWQ2MDBjNDk1NGEyNmQwNTUwNmFiNDI4MmU2MGQxZTUwNDJlZDUwYWRhZDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdlN2VmZjYzZGQyMTkyZGQ5ZDZjNzZiYzdjYjk0OTVjYTFiOGJlMjA0Yjk0YTAxMTViMGFhYjZjZTliM2U4MjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2NTg1MTE4OWU1MDdiNjEwNjU5NjgwZWFkYWQ4ZGYyOGU1YTAxOGEwMjc4NzU4MjJjYmExNDdhN2FkNGFmYmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_424a6b59724a4bc0ae9566c37e34ee33",
+      "statement": "Cargo features provide opt-in UI gallery, damage visualization, heap profiling, PerfStats tracing, and Chrome trace export; `profile-chrome` depends on `profile-tracing` and `tracing-chrome`.",
+      "evidence": [
+        {
+          "resource": "repo://Cargo.toml#L38-L48",
+          "version": "repo-lines-v1:sha256:fe2a32fdb71c39c54f7ad69fa0a9af60c6095f5b05a422b9f865bad8bae9fb93:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2ZjZjMWM3M2U0Njg1YjZmNTU3OTJhZTUzOTI1NTNmZjc5ZDNjYzA2N2IwYjc0ZTA2ODY5OGY2YjJjNzZiODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhZjJkZmJiNTBjNjM5OTU3Njg0MTk4OWFkYjQzMTNmMjRiYzUyZDVmYjNhNDRkZDA4MzhiNzk4NWI4ZWUyZTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZjZTg1NmZmOWNhNzMyNDE1NjE5Y2Q5ZjI5M2U1ODJhZGQzNmYwMzY2YmIzZjY3MzU5MmQwYTE0ZWZlYTllMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlNWMxYzFhYmZjMjFjYWNlZDM2MDUwYjZhYTE2ZTQ3ODQzM2UwNTc0ZjljOTkzN2JlNTJiODBiNzU5MjQ4YTcifQ"
+        },
+        {
+          "resource": "repo://justfile#L158-L169",
+          "version": "repo-lines-v1:sha256:df7cce156e3f76b03e72762a05ec6340d79347d27bcd5f71eaf49f963ba2bf88:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlMzg2ZjVjNmI0ZGQ5NGMyNWFiZDcyYTJhNDAxZmEyOTYwOWY2MjZlOGJkOWFhODBhNGE1MDMxYTk0NzJhODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxNTM1MWMxYjY3ZjQ0MjJmODE3M2I2NWVjYmU5ZWZmMjY2MDMzMDJjYzdlYjFlODYwMGI2ZmNiMjMxMzg4NTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNhYmFiMmIzNDAyNzA3ZWJjODFkNDE5ZjdlMWMzNmQ4ZDA0NWQ5MTVlYzEzZTcxOWEzZDQxMjBlZjY2YzkwODYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUwZjI0MmQwMWIwNzYxMjRjODg0MWQ4MTE2ZjE4MWRiMDk3MTgxNzQ1NTgzMWYyZDc0YWZjM2JmNTAyMmQ2MTEifQ"
+        },
+        {
+          "resource": "repo://justfile#L52-L67",
+          "version": "repo-lines-v1:sha256:3824f078a5ef02ba48c31ee95b6c900c611f663009ea8a0a6011bf4f76c985ea:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmM2M5MzQ2ZGZjMjBkMmNlZmY4YTliNmFmN2NmYTQ0ZGYzY2RmODMwMjYxZGE0ZDFiZTJhYTMwZjQzMWVjNDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNTAxODk0NTRmOWY0MzBhZDYyNGFjNjI1YzgxNGQwNmZmMzEwNDBlNGZlNjAwYzNkNzkzODM2MjIwMmNjMjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYxYjIyOGI2ZDQ5Y2Q4OTVlNmRiOGFmODkxYmM0ZDYwOTEyMWJkMDY2NmNlMmFiMjViNmIxZTVlMzkzODkyMjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzNDVhNGQ2YWJlMGJiZmZhZjU3MTlmMzZhODJjMzkyOWRiYmIwNDgzZWQzYzRmMWMyZTBhNDdiMmRmNGYzZjgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6aee19d80ba1486a89a5a89e7af91393",
+      "statement": "The build script compiles retained Tree-sitter C grammars and scanners, embeds a Git-derived `TOKEN_VERSION` with a Cargo-version fallback, and generates Windows ICO/version resources from `assets/icon.png` when targeting Windows.",
+      "evidence": [
+        {
+          "resource": "repo://build.rs#L17-L87",
+          "version": "repo-lines-v1:sha256:a721e1b25f5af60e220cc3888265b0f540d723eef49fd24d76020583cc57a649:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzYTg0OGYzNjY0ZWQyMmI1ZDMzYjhhNzVlNjIxODIzNDI4NDBiYThmMmZkMzI1OTQwOWQwODBhODE3NjNlNDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY5MTAxY2IxNjU5NTA5Yjg0MWY2MDI1M2U2OWUyZWZiZjUwMjA3MDMxM2Y1YjBiNDUxNzdlZDUzNzcyMTE0ODUifQ"
+        },
+        {
+          "resource": "repo://build.rs#L2-L14",
+          "version": "repo-lines-v1:sha256:a6fe46966a570179d82cb1a5b40b08a6bda5aeeb7a506e1f80a0bd0339cba257:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0ZTU0MzZhY2Y0MDI4MTQwNWY3ZDg4ZGJjYWUyZTFmZWU4ZWU3YmQ4OTJkZWU1MWQ3N2I4YWVkMjg1MTY4ODkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwYjllZWU5MWJjMGIxYTc3YjVmMjI0ZmQ2OTQ1ZjNkZWMyMzRlNTU5NmI5NDc1YzkwYzVhZWM5ZTZhZTIwYjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzYzg1MmYxYTg5OTllZTVhOTk3YTZjMTFlY2MyODZmNDVkMmM2NGM4OTg1YjQ5MTE0ZmJlZjAwMTUwNTE1OTQifQ"
+        },
+        {
+          "resource": "repo://build.rs#L89-L145",
+          "version": "repo-lines-v1:sha256:65ef72d906a59a628e5ce4d4e24738742009be39307fa76a8179b7863e7f8af5:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkMjA3OTc3NjI0YzI2OWExMWMzNDgwNjMxMjM3OWUxN2U2MGQ4OGJmMzk1ZWJmODkwMzZlNThjNjc2ZDc2N2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6ecb46a74d224dbab4b3b64d8a7e9e3b",
+      "statement": "Linux CI and cargo-dist builds require the development packages `libxkbcommon-dev`, `libwayland-dev`, `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`, and `librsvg2-dev`.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/build.yml#L50-L55",
+          "version": "repo-lines-v1:sha256:49b2a2125ef29275b2b11a7112de5e6df17e4a7baf4dc942ae3476f4ee84436e:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjJlNjA5NjI5YTQ3OGRmNmIxMzA4ZTkxYzc1ZDQ4NDAwOTU5NWIwNjhiYWQ3OTg0MmMwYTM2MTdiMzMwNjQwMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTViNDcxMGNjZjRmOTczMWExNDk2OGJkMmY4ZjkzODliZjQwZmNiMTAzMDA5OGMyOTg1NmE1NjUyN2IxZjhmNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjdkMjZhZTEwM2Q2MjhlNDg2OWJiYzE0ODVlMzgxYzM5YTYzZDIwN2NhMmQxNzAwOGFjMGQ0MDYwMjY0ODY0NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjA3NDFjOGNiZmJiYTVlZjQxYjBlNjEzNTAzNDgwMDlmNmRiZTk0YzFhN2RmMTU4YWQ2NzU4ZGIwM2U2YWY5YyJ9"
+        },
+        {
+          "resource": "repo://dist-workspace.toml#L21-L30",
+          "version": "repo-lines-v1:sha256:6f500598f2d56d76a3ab557d1cc29beb44500c9e03cc0cc9d4ef6cb4aef165cb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhZjJkMTBiZTFjNWU5ZjIyNTQxMWRlYjZiMjE2NWZjOTUzY2M2MWMzMjJkNDk1ODQ4OWRhNWE1NzA2ZWVjY2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwYjBjM2M2NzJlYjZlN2E5OTFmMTc0ODk5Mjc4ZDU2ZWNkYmU4MTUzMTNiMTNlNjVlOTFmNzUwMWQ2ZTZhYzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEyMGM5MmMyNDhiY2NmZTViOTM4OGY2OTlhZWZlN2I2NTMyYTM2MzFjZjk4OWRlNjExOWQ3NDcxNDM3YTQxODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7cfb38b152364b8db8586ce53f6960e7",
+      "statement": "macOS packaging is configured for macOS 11.0 or newer with bundle identifier `no.helgesverre.token`, macOS Objective-C dependencies, and explicit application resources and icon metadata.",
+      "evidence": [
+        {
+          "resource": "repo://Cargo.toml#L245-L270",
+          "version": "repo-lines-v1:sha256:3716816caa4dc5920e7392bf6ec3111d2ae8df398d5e5763029002a9b35b5e10:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5OWM0OGYxOGY1YWFiZjM2MTFlNjI2Nzg1NDg1OTUzZjRmN2YyMWQzNGJhZGRkN2RhYWFjMzFjOTY3NzIwMjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViMGRmNDEzY2M5NWI1M2YwODJjNjJkNjM2ZjllNWRhYTJhYTAyMDMwOWIxNjM0NzdiOWY5ZWRhMmExNzgzODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1MDQwMDBlOWQ1NDQzNTM5YWFkZGI4ZGJkNDQ2YTc3MjQyZGE5ZDAyM2NiNTQyYjA4YmY1ZTI3MWVlY2U4YTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJhNzZjYTcyZTFiY2VlYTVjYzc2MGFhMWVmYjczOTA5ZWMwYWJkZTViMTI1ZjM0MjFhZjM1NzMzYTBjMzE5OTEifQ"
+        },
+        {
+          "resource": "repo://Cargo.toml#L272-L291",
+          "version": "repo-lines-v1:sha256:f20811da72a59dda61e4a185ccebd74e908a7747ca1aeb01ed9ad3f370915aff:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3ZTNlYTFiOWJhNWM2NWEwNjYyZjAyOWYxYTJiYjJlZjcxY2FjOTRmN2Q4MTc5ZjQ4NTBmMTA2NWE4YTZmZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViMGRmNDEzY2M5NWI1M2YwODJjNjJkNjM2ZjllNWRhYTJhYTAyMDMwOWIxNjM0NzdiOWY5ZWRhMmExNzgzODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjliYzJiYzY2NTM4ODU0MTRmNjQwMGMzYjk5MTMzNDY5NzIwMjYzNjU5OGFiZDA2ZjA0NWJjZjFhNzdmNDNlYWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVjYTkwOWIxMjA4YTIzNWE5MWI3ZTFiODI4OTI2MTkyNmJjNWM1YTM2ZGNlNTc0NzZiYzZkMGY4NzA4NTUxY2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3706879ae4254ac0b17e218277b09b75",
+      "statement": "The macOS packaging script accepts only the two Apple Darwin targets, runs Cargo bundle, verifies `Token.app`, and archives it as a versioned `target/distrib` tarball.",
+      "evidence": [
+        {
+          "resource": "repo://scripts/package-macos-app.sh#L2-L23",
+          "version": "repo-lines-v1:sha256:a3f46062a42b26bccaaa4d3a46bb6fbf0819061b639188cece4292629c6dcbef:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjNzNlOGMwZjg3ZTRhZWU1NzVhNjBjY2U3OGIyYTBhNjgwYWYxYmE5ODVmYWFjNmY1ZTllNzBlYTJmYTQ4MmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3YWU1NDAwZWFiNzBmMmIxODg3MTNlZjY5MDU3NGRlY2I0YTI0OGQ0NDJjOTJiYWYyMzA0NGNmYWY1NGM4OTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE4MDc2ZDNkMjhkMjFlMDIwMTJiMjBlYWY3ZGJmNzU0MDlhNjI3NzEzNDQzOTAyNWYyODJlMzY4ZTMzMDVhYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmOTE1ODg2MzAwNDllZTViNGY0NjVjMjZiZjgyODBmMDRiMWExZGViNTAwNzMzMmMyY2I0OTlkMjIxYjdkZDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d67ac76beee84d1e99767569e5f257e9",
+      "statement": "On macOS, `just app` validates the host target, packages the app, and opens `Token.app`; non-macOS hosts are rejected.",
+      "evidence": [
+        {
+          "resource": "repo://justfile#L349-L359",
+          "version": "repo-lines-v1:sha256:62104b875deb16233fa21c3dc79ad246d80db549d89a036a243250113cc3c988:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljYWU0ZGE1MGE2Y2U5MzZjNWFiMzgwZTdkZGRlMjE0MjRmZWE5YmZmODA2OTlhOTFhOGM0MjM1OWY5OGQwMGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmYWJlNjBjMTE4MTVjMDE4Yjg3NmFiMDkwMjg2ZDhkNDA2MjgzOGY0NDJmN2ZjZjljYjgwNmJlMzM5NjZmN2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdhZGE4MTliYjE2OTM0YjlmNzA2MjQ5OTVlN2VlODZhMjg2MTU5MTZkYjJlMGQ0YzMxZDEzYWU4ZWUyZDVhNWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhMzJmYTM1MWZiMzgyZTU0ODMxMGE0NDcwYzBkMGIxMDE5MzMwY2Y0ZTY2NzQ2ZDEzZjhlMjQzMTk0M2VjYWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_49c09eff96d84788b27440b725864cbe",
+      "statement": "Windows MSI packaging is restricted to `x86_64-pc-windows-msvc`, requires Windows, builds with Cargo JSON messages to locate the exact generated ICO output directory, and invokes WiX `candle.exe` and `light.exe`.",
+      "evidence": [
+        {
+          "resource": "repo://scripts/package-windows-msi.ps1#L2-L25",
+          "version": "repo-lines-v1:sha256:02ca48cc48b6b41453624f808e1dac8e28058ccc5d640ed6852abbc91442775e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiMTUyZjE3MGRkNTQ1NjA0MzdlZTAxNzY5MmUwNjRlZWNiMTJiZTEzYWMyMzRkZjlmMTU1ZTdiYzkyNDk3ZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzYTc4NmJkYzVlZTUzMGEyNDZlNmY0NGJiZGVhOTU4Y2ExMDlmYzk2YjIxYWEwMGM4OTQzMTI5OWY3ODBlMWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcxNDAyY2QxMmM1N2Y3ZTJiZDJkZDJhZDgzYzE5NGQ3MTk2NzcyYzdhMzdmN2VhODllYzRkZTZlNmI1ZTA4N2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmNmI4OTQ5NDkzNTc3NjgzNjk4YTZjYWVjZWQ5OTYwOTIzYWY4NThiNDgxZjA5MTI2YmM4YzZiNzdlN2U2Y2MifQ"
+        },
+        {
+          "resource": "repo://scripts/package-windows-msi.ps1#L35-L44",
+          "version": "repo-lines-v1:sha256:89e20c1ca350d9363d742a52988d1bfb434ddcdc7b742a5f979281f6cef4cc1b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhMjEwZDJmNjIyMTFhNTRhNjk2Mzg5NjM1NTFhYTZhZDU0MTgxYjk2MTA3ZThjMmFkYWNkODI3YTQyYjEzYjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiN2NmMjcxYjhlMjAyOWY1NThmYzExM2Q0NWU5OWJmZGJhM2YwMjM2Y2JhM2Y5MzY2MDU5NDc4OGI3OTJiNDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjNzI4N2I0ZTBkN2Y1NTk4ODAyY2ZjZDhjMTY1YjAzYjFiMjRhMDAyYWM3ZWVlYjk5ZDRlZTFhZTZkMDIyNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_00a7088609f744b0b93e2d4ebc2c167e",
+      "statement": "The Windows MSI smoke test installs silently, verifies installed payload hashes and embedded product version resources, uninstalls, and fails if the executable remains; CI uploads installer logs.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/build.yml#L77-L89",
+          "version": "repo-lines-v1:sha256:f74555fcd6c167664f748014fd09f5abcca72f042f8dff87e3122287c365b2a2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3OTc0NTk2MmNlNWUzODM0NDllZWZjNTZiNmZlYjQ3OTY4MWM2YzMyMWM1MWEyZjVjOTI0YzEwN2RjN2YzMjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliZjQ1ZDJiYzIxMDg5NWU2N2JkMWQyMGRhYWFjMWI1OTgyYTc2NjQwODI5ZmQxZjFiYjRhNjk5NTUyOTI5NDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZjZGYxYjEyYWE5NzhmMGJhYzRhMTRhNWQ2MzEyZGVjNjE1NzVmY2FkZmJjNDRhN2Y4MjNmOTdjMjZiYWYzYjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxYTEzZWUxNmEwN2MzNWIyMWY0NzdlYTUxODA5ODk4NThlMTdjMGI5NzZlODlhNTg2ZGVjNTBhZjkyZGZlNTEifQ"
+        },
+        {
+          "resource": "repo://scripts/smoke-windows-msi.ps1#L23-L58",
+          "version": "repo-lines-v1:sha256:d45c0d405d9fd8ce512e20fbbad933f68809719830f58b0f58a9b0f6759771e8:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxYTg2YWMwZDA0N2E5YjlhODhjNDA1ZDVmNzlhNGVmNDFiMGY3YmFmNjI1ZGU3OGRlMTFiYzY1MmQ4ZTg3YWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxMDNiMThmZGU0NzlmODI2MTdkMGNjYWQ1YmU1YmU1NjdmODI4MzdjNjE2MTNiNDlkOGNjZmI5OTBjMDgzNzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://scripts/smoke-windows-msi.ps1#L7-L20",
+          "version": "repo-lines-v1:sha256:064c2eb06212d3afb225663ea896166ac25f4c918c9cdd274c094b67a198d993:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjM2I1ZDY1YTA5NGNjZmMyNjExNTBlOWE5MTM0YmZlMGRmYTdiOTJkZWYwYWZhNTk5NzBiMGFhZmU4YTMyMGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyMjBjZTNlMTczOWNiZjUyNDYyYzhmY2IxYzU4MDc3OGM5MGNlNWVlZDBiMjlhOWY1ZDRhZjA3YWQ4NzA3YzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdjYTNlNzgwYTJiM2Y2YjA2NzJhMTI5M2Q1MzdhYmU4YjQ2MTY5MTQ0ZDNjZmU1YjYxYjA1OTg0M2JhNTBiZDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_be8eac6cd34e4a9abc6df2b95a29af35",
+      "statement": "CI builds a matrix of two macOS architectures, Linux GNU, and Windows MSVC, installs platform prerequisites, bundles platform artifacts, and runs the Windows MSI smoke test.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/build.yml#L14-L31",
+          "version": "repo-lines-v1:sha256:7930f0c762668a9b7092c2993a63ac3a55eff5dc6a838f090faa4521a6a43fbb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5ZDgwMTU0ZWQ0MmZjNWM3NzliMTMzMTU3OGI1OGI4OWM4MDFlYWNlNzRmMjRjZDQ4ZWI0YTIzNTc5NDBhOTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjOGYzYmE1ZmVmMmVlNmZlMDk5NjExYmY2NTljOGNkNzJhZWM5YmE0NDdiYTY5NzJiZTU4OGM3NzRkYzgyYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU3YWYzYmNmZjQ2N2EwNWZiNzg2NWYyZDIyYjVjNzU5YTI4MzNlNDAzZjdjOTIyYTcyNTkwZWUzOGI3ZDk0OTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4ZjBhOGQyMGY0NmNhZTdkNjM3ZDdlMGVkY2I2NzlhN2MyZTlmZWQyZDcyMWU0ZDUxMmIwOTVjODg3MTJkNzcifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/build.yml#L50-L75",
+          "version": "repo-lines-v1:sha256:a9737ac6950b93139788ae7cb0ed1a794ae6496a05b79106e8ec95884b57c16b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyZTYwOTYyOWE0NzhkZjZiMTMwOGU5MWM3NWQ0ODQwMDk1OTViMDY4YmFkNzk4NDJjMGEzNjE3YjMzMDY0MDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkY2Q0NTY2NTQ5MjBkYjllZjBiMWUxOTRhN2I5ZGIwNjM2YzliY2UyMDlmYjJmMTgyODlkNDdjNTAyZTk4YjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3ZDI2YWUxMDNkNjI4ZTQ4NjliYmMxNDg1ZTM4MWMzOWE2M2QyMDdjYTJkMTcwMDhhYzBkNDA2MDI2NDg2NDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiNTA2ZmM3ZWI2OGM3Yjg5NWU4NzlkZmQ0ZDAzMTIwMjNiZTBmYjk4YTRjMDJmZjc3NDI5NzFiMGUyZmZmOWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_aec62e15671e41618ea5dbc3ccb7f5ea",
+      "statement": "Tracing writes console logs filtered by `RUST_LOG` and daily rotating non-ANSI file logs under `~/.config/token-editor/logs/token.log`, with `TOKEN_FILE_LOG` overriding the file filter and a warning fallback when file logging initialization fails.",
+      "evidence": [
+        {
+          "resource": "repo://src/tracing.rs#L100-L109",
+          "version": "repo-lines-v1:sha256:ae35e49cd0cf05813111548c04c1cc936fe78f51562c34514d38efba5ad59d93:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1NWUwOTc5MzY1YWNiNDcwN2Y3Mjg2YmU4YzZlOWIyZjlkNDMyYzQyOTQ4YzUxYWViNmNiMzI0NDlhZmMxNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk5MTUzZmQwMjBiN2E2MTAxODA1YzRjMDAzZWEyZGRjYmE3MjVlN2MxMjJhNjc5ZmY0Y2Y5OWMzZjRiOTA3MDQifQ"
+        },
+        {
+          "resource": "repo://src/tracing.rs#L29-L67",
+          "version": "repo-lines-v1:sha256:69af4eb8d0a9a1a05fd832cbf1318215bc1af5e642ec16d343d833c73a1149e2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViZDlmMDU2ZGQ4MTFiNTkwNDk5NTc1ZWQ0MDgxMDdhZTgwMDQ5MGRlOTkyMTQxMjY0ZGIyNTEyOTkwMWI2ZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkOWUxMjU0NjQyNTU3NmQzZGVhZThjOWI5ZGJmMTI4ZDVkNmRkYWY1ZDdmZTg1NzkzNDkyN2RlZmZhM2I5ZGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcxMzcyNmE1NjRlMDRhYmMxNzE5NTJjNTcyZGE5YWRjODVjNTk0YjFiNmQ1NWRlMThhZWE0NWY4ZmJkYzQyODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllNGVkMmE4N2RmYzVhYTYxMDBmYzE2MDBkNWFhNDY3ZTNlOTIwOTk2MjU1ZWFmNzQ4NDM0YmE3NGU4ZTE4YTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7d88e39fc1324b15a684b9b51fb471a7",
+      "statement": "External web navigation validates URLs, launches the default browser asynchronously with `open::that`, and records browser failures as warnings.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/mod.rs#L37-L46",
+          "version": "repo-lines-v1:sha256:c420ad7fb2a146ff66ab64f061f58d2d4d0e449265bbf7a13e8b00f094ae5901:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxYTZjYWViNGI3NzhlZjgxNDJlZjc3YzliZWNkY2MyZGFhMGYxNTczYzk5Zjk1NWM3OTBjZmYxNjQ3NGI2YWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1MGMyOWM0Zjc2YjYzNmNiMWFlNzhiNDkzMjIxNDRkZGZhNmI3NzAzYTRkMzBhNmUwNjg2ODRiMmZiNjEwNjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2fd8ada275454acb938624e084979acf",
+      "statement": "The standard local quality gate combines formatting, Clippy with all targets and features, tests including doctests, a debug build, and a release build; focused nextest, verbose tests, and native-handler smoke checks are also provided.",
+      "evidence": [
+        {
+          "resource": "repo://justfile#L82-L123",
+          "version": "repo-lines-v1:sha256:7e4564515f218d4db47c0def6b267f73f5bb94223730efd90fb7d74233028e0f:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5NjMwYzZkYzg1YWI3NzkwZmRhOTI0NGZhY2M3YzM0ZDYzNWE4MTE1YjJkZTE1N2UxYmZhMWEyNGNmOGQwNDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzNjFhYjY4ODQ1OTk0NWMyZmUwOTZhNmI3YzAyN2I3YjMwOGI1ZTJmMWQ4YzQ0NjAyYzEzMTNjZWJiYTk4OWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNiZWNjY2Q2MjIwOTMzMjJkNmE3OWM1YmMzYmNhN2Q4OGQ3MjkzYWFjMGM2ZWI2NjUzZGI0OTY1NWFmZmI5ZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIxMjM1MjM3NDhmOGFiYzllNGRhYTZiNDQ1ZmRjZTg1MzY3NTRkODI3OWQ0MDJhYmM2MTAxYjc3ZDFmNGJjNWYifQ"
+        },
+        {
+          "resource": "repo://justfile#L92-L103",
+          "version": "repo-lines-v1:sha256:4e0117d679773c54e27b48ee98f24b3d5547013630e786baace0e65d0e650ab2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlY2YxODQ4MGU3ZGYyNjMxYmJjZDM5NzAwYjAzZmY1OWVhY2QyZGRlZmJjNzQ4NTc5N2ZiZGZhZDk3Y2Q2ZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2MDgzNjdiNzNiZTY3MTYwNzdjMDhkYzQzMWVjNWRkN2Y4YWJiODZlNDgyNDA3OTM4MTdjMDcyYjJjZjViZDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlYmUyNGJiY2FjMGUzMGE1NzRmMmRkMmMxZWM1NzM0YmJkNmFiMjA0MzE1NmQ1Y2MwMDFlMTBkNjEzNDYzNGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzMzU1YWE3MjFkYzRhOTYyZjcyMjA0OGM4NjRkMWEwNWU4MDFkZTY1YTVhOGFkMDBiNGNkM2U4YTdjZDM2NTEifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T20:35:11.754Z"
+  }
+}

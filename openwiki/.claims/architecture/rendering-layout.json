@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:a18b8f72981162e5d96a412fc48a850c609fcc74cb8f3e219610eddf7baa0a66",
+  "claims": [
+    {
+      "id": "claim_8930e2618e01431eb8f25744002f58eb",
+      "statement": "The layout snapshot is the shared geometry authority for imperative painting, hit testing, and update-layer visibility or capacity queries, preventing independent geometry calculations for chrome surfaces.",
+      "evidence": [
+        {
+          "resource": "repo://src/layout/chrome.rs#L5-L9",
+          "version": "repo-lines-v1:sha256:6a5ec1900dd09978b7f291728fa264d68d65d36c2ef1197acc4a9890c8544d85:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmQxN2YyZWJkZmM4NDAwZDY4ZTE2ZGZkYjA1ZDI2ZGU1NDlkYWQ3ZDlhMThhMWJjNWQyZDRhNjJlMjAyMGU0ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGY0YjhlZTEzOTI3N2Y5YmMyYmYyZjljNDMyNjZiODRkNzI0ZGNjMzEyOGYyMzQ0NTJlNTcyMjQzZWFkZmY0OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzhhNjlhZTY2ODEzNGVhYmFlMWYzM2QwZWJhZmVkMGIzMTc2YWQ4OTlkMmMwYTM0NWIwZmEyZmJlNzNhNDBiMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTc2MzE2NGRkNmE1MzY4OGRlMDdjNjhhNGNlZjkyODM2YTBmYjE3ZDc3NjE2OTYxNDQxMWEwNjU1NjFjYmVjOCJ9"
+        },
+        {
+          "resource": "repo://src/layout/mod.rs#L5-L11",
+          "version": "repo-lines-v1:sha256:bf46c47ed2408d83b32a42a3cb907178fe49b702782d85d82a66363e5e764074:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk0ODA0MTBkOTMwYzQzNWU0OWEyOTM4NmZmZmQ5OWJlYjMyMzM5OTJjNGE0M2M2YTcyNjZhMzA2YzM1NjRlZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTQwMzNmZDJiODJiZTQ5ZGYyNTY5ODcyYTM5ZjBlNDNhZWM4MjBiYjIyYmRkZDUxN2FlNGEzZDQ4OGM1YWMxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjc1ZjM2YzdjZWNkYmUyMjBiZWQyZDRjMTE3ZDlhNGViMzVjYzhjYzZlZWQ0ZTk3Mjc5YmRlNDUwMjQxM2UwYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDZjY2M1ZWMxOTY5YzFhYTNmZDFhYTJjNjZkNjY3YTc1ZTQxYTQzMDQwMWI0ZTE3NThmYmNlMzRlNWNhMDEyNiJ9"
+        },
+        {
+          "resource": "repo://src/layout/snapshot.rs#L2-L6",
+          "version": "repo-lines-v1:sha256:736d3797915344565868b6da8124c2f25f18739349a8a89eff9b824ec38d6329:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjA2NTczN2UwNzFmOWZiY2RmNTRiOGFkMzhlNjZlNGI2ZjFmOWZhMWMwMWVkNmFmOWQ5NjY0ZDIyMmE5NjQwMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGU2NjAyY2EzYWMzNGZhMDVmYmJhNmFiYTEyOGM5ZDYzM2YxNDk5MDJkNjQ5OWVhNWFkYmNlNTY5Njk4ZjFhYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjEsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDgzMDc5YjliZmFmZTFlZDRiMTk2YWVmMjlmMTE3MWZmMjY4MTkyMTkzZGIyYjIyZGU5NTBlY2U0NGU0MjZiMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWZiY2M0Yzk5ZTUwNDFhMmY4OThlZTE3YjA0NjcwNWE2ZTRkMDU0ODI5YWMxYWUzOGMwMmQwYjIwMGY5ODhlZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1b75bad4362f4831826957e164d4ab88",
+      "statement": "The chrome layout API provides a full model-derived snapshot plus cheaper shell-only and sidebar-row variants; absent keys represent closed or inactive surfaces and are treated as not visible.",
+      "evidence": [
+        {
+          "resource": "repo://src/layout/chrome.rs#L24-L57",
+          "version": "repo-lines-v1:sha256:a9c1e96f8079118d9beb0c12f2950ed7292271ec37a628e5d8973d88244a527f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhN2E3Y2E2NWZmNzc5YTc4MDA3NzYwMTE2N2MyOWFmZGM4ZWZjNjk3Y2FjODIwM2UxN2JmNGU1NWVlOTE0NGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiYjY0ZWM0OTk3M2RlYTQ5NWVlMDNhN2Q0YWIxM2U3NDlmNzZkOTQ2ZGEyNDNlYTUyYTZhNzk3Mjc3MDJlMWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllZmNkYjAyMTQ2MGQxMjA4ZGJkMzA0MDZhNTFlMzY5OTM3YjA4YWQ5NzIyODU2MTJiMTBlM2VmNTU5ODY2N2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjczM2ZjODliNTE0YjAyOTJhZTZjYWIwODRlOWVmYTFhZjg4YTA5NzY0NjZhMTU1N2I2ODFjOTc2OGI0MmI1MWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2d6f8487f72a432190d0a353fec22589",
+      "statement": "The layout solver performs ordered measurement, sizing, wrapping, positioning, floating-anchor, and draw-order passes, with scroll offsets subtracted during positioning and anchored subtrees emitted in z-sorted order.",
+      "evidence": [
+        {
+          "resource": "repo://src/layout/algorithm.rs#L5-L22",
+          "version": "repo-lines-v1:sha256:39b872cb8cf6c543f817e7992f30ac5cb62aa16689c19342bd57eab23a4945d1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkYTVkYzU3ZDAzMjJjNjEzZGJlMDBjMzliMGZjNWY1MjNkODY2NThhOGUzYTNlZjNiNDBkNDkxYWQwZjZkOWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzNDE4ZDE1YWVmMjlhMDJmNGNjODgwMTMzYjg4ZGNjYzZjMjA2ZDFkODk3M2E5Y2M2NGQwNWRhZjNlYTdjYjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1YTY1YmMzZDdkNTM4NzgzMWRkZDFmZTgwYjYyMWIzZGM2MWQzNDAzMzYwMDI2Yzk5NGY2ZWQ1NjVjMTA1OGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU1ZDgyMWQ5MGViMjIzNGE4ZDVmMmY3NTBmYmZlZjBlNWYxNDlhNmI3NTEwZDQ0YWEzZjEzYjI3ZTU0MGFhNmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_90e2955d19ce4cfca050c111ca129b30",
+      "statement": "Layout snapshots retain border and content rectangles, ancestor clip intersections, parent links, z layers, keyed lookup, and paint order; hit testing scans reverse draw order, honors clips, and resolves unkeyed hits to the nearest keyed ancestor.",
+      "evidence": [
+        {
+          "resource": "repo://src/layout/snapshot.rs#L45-L81",
+          "version": "repo-lines-v1:sha256:ccac0079860c8cf2774bf1c180002d24648af4242a2480598d8d11f41490143f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlNDcwNDhjNzE1ZDI0YWExYWIzZmQ0N2E3YzExZGExOGYyMWVmOGU4M2FkNDI3MDg2ODRlOGJhN2M2NGIzYmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4OTljMTg0ODk4Y2ExODIzZDNiMzQ2NTg1M2U4ZTg3NDEyZTUxZDNkNjQ4ZDAyOTBkYzg5NjhiODVjMmUyNTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiYzhkYTQxOWJlODBlZmVjYWYzMDQxMDM2NGRkMjNlMGJiNzVkN2IzNTI3ZDZjYzg3ZGM0YTI5YmNjNDgyYjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwMjM4OTUzMjQyOGVhMjQ3MDhhMmQ5OGJlY2JhOWU2OTkwY2RjZTFiODMzYWU2MjMyYmE3MDMzOTM2ZTA2MWMifQ"
+        },
+        {
+          "resource": "repo://src/layout/snapshot.rs#L97-L123",
+          "version": "repo-lines-v1:sha256:a2cecf0ff1ea00506dbf97dde72c62b45ed23c0e579933d79eecef7d3c9ba41f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0NGZhOTdmNDk0MjAxNmQ1MGI2Y2UwODQzMzI5YzRjYzdlZWQ1YzczNzg3MTNmMjFlMGYxMTcyZmRlYjY2OTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzY2VhMjkxY2I4N2ZkMjVmOTE0NWI2MTVmNDk4OTgwOGM0NmZkNDZjNjAyN2M3ZTZhNzgxOWMwMzFiM2NhZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhNWI2YTMxNzJmNWViNWNiN2YxOTQ1ZmJmOTg1ZWRkZDkxNmUyNGY1YThiMDNkNGJmNjUyYzg5OGRhMGNlOWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_28807e9aab40433382ea3c20acf19e83",
+      "statement": "Uniform row-list geometry is centralized in RowListView, which derives content height, clamped pixel scrolling, visible capacity, drawn partial-row range, and selection reveal behavior from one viewport and row height.",
+      "evidence": [
+        {
+          "resource": "repo://src/layout/snapshot.rs#L148-L177",
+          "version": "repo-lines-v1:sha256:92a203d67de96809479143eafb6346d3bd49ea03177814b5443cdb7368f3389f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhNDg0YjAyZDIxZTEyZGZkZTg3ZWVkZWNjMjRlMTZhYWY1ZmMxYTJkZmMzODllZWE0YjE5YmRlNTVmMmFjNTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0NmUzMmZhMzE3ZThhNjg1MmQ1MmU2MTBhNTFkMDZhNzU1NzUwNDhkNDI0MzJlZGU0MTk1NzBjYWU5MjgwNjkifQ"
+        },
+        {
+          "resource": "repo://src/layout/snapshot.rs#L181-L218",
+          "version": "repo-lines-v1:sha256:5a1b7992753f79c48e19fb1e6158a85334a8738d38a9f5f88b440c297c281f77:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhZTM1YTFjZGQzYzM3YjUxOGVhOWQ3ZjM1MTFlZWVjNTQ1YTczM2NiNmQ0Y2JmNDAzZWJjM2I2NTY1MDE4ZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwNmRlYzg4NjRhZTYyMGEzOWY2MzFjYTk1NzdmMDVhMmE0ZDQ4OTllYTE2MjFkZGQ5ODBlMTU3NTY5MzExZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc0NmUzMmZhMzE3ZThhNjg1MmQ1MmU2MTBhNTFkMDZhNzU1NzUwNDhkNDI0MzJlZGU0MTk1NzBjYWU5MjgwNjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2OTMxYWNmZWRiNjYwNGM0YjAwMTcyM2EzNDc5NTE1OGM0YmU3NTM3Y2Y0ZThjYzI3ZDA4YTlkNzE4ZTIyM2EifQ"
+        },
+        {
+          "resource": "repo://src/layout/snapshot.rs#L237-L275",
+          "version": "repo-lines-v1:sha256:8995abb67ef0151a3ce5eba2c7b7e3cee9f2bd0481114b2c490517c061201197:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwN2E1ZDVhMWUyYTI4NTJmY2Y0NWYwOTc0MmIwNjNlNmJiZmNmY2YzZTcxNGExY2UxMzQ3NzExMjJhYmVkOWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5ZDQ3YzQ4ZGJiNmMxMWQ3NTgwNDZiOGQ3YzhmMDk3MmFkNmIxM2YzMGEwMWNhNTQ4ODc2OGMzMmRhMWQ4ZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiOWM1NTFmY2Q5NTU0ZTIxMWFlNGNkNTM4NDEyOTlmMmY0NDY5NDFmODRlNDgwNmM3NDAyNWUzOGM5NDg0NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwMWE0NDMwMWJkZjRjMjg3YmY5ODI4OGEzOTM2ZDY0YjZmODY3NTJmZGU3OTgyMWI5NTVjM2ZlNGQzMDMwZTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_86e31f04d2c14fd1ae356633e062c872",
+      "statement": "The render plan solves chrome before painting, computes splitters, and synchronizes all editor viewports using current font metrics and find-bar inset before deriving effective damage and overlay flags.",
+      "evidence": [
+        {
+          "resource": "repo://src/view/mod.rs#L1008-L1075",
+          "version": "repo-lines-v1:sha256:ca43dbfa3b2bd938d6190d876041f7c6af0ac31eb57e050bf4f40027fbfa8adc:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmMWRjYTUxODg4YmUzYTdkY2I5MWM2MmFhZGM4ODE5OTcyNmU4OTg0N2NiZDdjZTNlNjExZWY2NjE2NzBhOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg2NzMyM2NkMGMzNzNkOGJkZmQ1Zjk3YWU5Y2JjYjI0ZDU4NjJhZTM3ODVjZWE2NTk3NjJmNzcyY2I2ZDExNzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5YWVjY2VhMGM2M2FmYzlhYzAyNjg5YjJiODVjZmU2NWFjNTlmZmY2ZjQ1Y2U2NGYzNDA1YWY3OGE5ODljMWUifQ"
+        },
+        {
+          "resource": "repo://src/view/mod.rs#L1971-L1993",
+          "version": "repo-lines-v1:sha256:43eaeaeaab2b7194a5e00e9c276e0966fccdfedd3a30c1fc928e6ec7a31ef416:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxMmYyZmYyNzJmMDEwNDRlNmY3MzZlNDc5ZTI0ODAzMGM4NjI5MDdjODNiZmEwMDUwYTU2YmFkNDlmN2I0NmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YzEzNTkwNjY1NjMyM2QxYzVlYTQxNjU0ZWU2NmFmYjU4NWFjZGNmYWVhY2ExMjFkNWUzMGJmMTkzZWVkZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyOTMwZWZlMDEyMzgzMzk5M2ZjNTUxYWI3ZmU1Y2I1MzliYjFmZWQ3OTQyY2UwOTZiZGY2MmVkODJmMzZmMDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNjMjg3NDA3ZTY2MTRlYzEwZGJhNjZmNzU3NjU3OWZjZmI1ZWY4ZTRjMjc2OTU2MWNjMjc4MDI0MzA1OWNiZTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_12e76b2c2d9540858dc1b1489e48e5f2",
+      "statement": "Normal rendering paints editor groups and their content first, followed by sidebar, right and bottom docks, status bar, and transient overlays; text rendering combines focused find decorations and document diagnostics before painting text and gutter.",
+      "evidence": [
+        {
+          "resource": "repo://src/view/mod.rs#L2037-L2124",
+          "version": "repo-lines-v1:sha256:ae6ad5ee9273b618ab3686f50ae6e80eeacabec6bb6239f9f1bd1a96a3198075:eyJzZWxlY3RlZExpbmVDb3VudCI6ODgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2OTgyNTE3OTI0ZmU4ZDNlMTU2NjcxMTViMWY1YTIwMThlMGQ1NWNlNWEwMDFiMWUyZDVlMzFiOGIyNDEyMmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4YjBhMzAzZjQ5MmUwZDkzY2I2ZjFmYTM4YTMzNDNhYmQwOWEzYzIzNDE2ZjRlZDkxZWE4OWQzM2YwMTM4OGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczNTgxYmIxNGY2MmE1ODI4ODkyOWRkNmU5NGEzOTk0ZjQ0MGIyMjgwMGExOGIwZTJlNjM2ODQ1Yjk5ZWYxOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhjMzBmZGU4NGE0OWNkMGU4NTViMWRiZTIxYWFkMTcwZmFkM2FlODg0NTZmNjllYjhlOTY5YjdlNWMzNjQzZDUifQ"
+        },
+        {
+          "resource": "repo://src/view/mod.rs#L557-L637",
+          "version": "repo-lines-v1:sha256:8afb421e3f08b58d912d0161a15978ca4ba524257eaed50f0ed810a2d13e4292:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2MzAyNzMwYmMwN2JhMjNhNTVkNTUwOTI5YzRjYTQ2NzAwODFlNTQwNmQ0ZWJmZDI1NzIyMGNmZDFjMjcxMTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImViOWEwOGJjMjlmNmViZWJlOWE1ZjAxOTAzZDk4NDVkYmNiNTg0MmE0NTVmMDdkNWY0MDAyZGFjMzJhNWM2MDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg1NzM5OWE1YmQyYTY4MWRmMzBiMzE0ZWQ4N2FhZGQ1ZTU2MGU4NzJlYjFjMWM0NmEzNDg3MDU0NjliMGUwNDUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5a1f9490daed492586d21e6dfa4ed23c",
+      "statement": "Editor pixel-to-document conversion uses the same GroupLayout geometry as painting and accounts for group position, tab bar, gutter, vertical and horizontal scroll; hover additionally rejects non-source cells and areas outside the content rectangle.",
+      "evidence": [
+        {
+          "resource": "repo://src/view/geometry.rs#L78-L121",
+          "version": "repo-lines-v1:sha256:692d09b50bb846e873b19d6fe27afd47c17b332ba6124ac6df60ab49e3dc5797:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyNDQ4MWU3ZDgwMDgwYTYxYmY2MmRhZDI3MjVjNWNjYTk1MTQ1MjNkMDRiNzM3NTI2NDVmODQ2MjA5ZjE0ZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZTA2ZDQ3MDc0NGEwZGVjZWU2MDUxNmRmNTc2YzcxYjViNDhmYjNkNWVmNzg5NjI5YmUzODljMzNiMmFlMTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkMjk3ZTRmNzgxMDQxYzc5MTZlY2NjZWJiYzRhNDgxNmVlNzcyODBlNDU4ODFlMTFhMjZmN2Q5NTlkNDIwYWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZmN2I5ZDIzZDEzODMyNzEzM2YwOTUzMDI3NWU1MmRjNTVkMzZkMjEzN2EyODVlY2RhMzZhNjRhZDE3YzY0NjcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d3d0e9b1a1574d779a32a0ad9768bddf",
+      "statement": "Damage accumulation supports none, full, and region damage for the editor, status bar, and document-relative cursor lines; merging treats none as identity, full as absorbing, and combines cursor-line lists.",
+      "evidence": [
+        {
+          "resource": "repo://src/commands.rs#L757-L830",
+          "version": "repo-lines-v1:sha256:a81bfade17fad240ee4c2a9c57a0432a779c2c9088498c948cb09971b63bb06f:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3NjIwMmM4ZDA2MjgxYjc3ODE4YTFhYjZiNzdlNzNmZTA0ZWM0MTAyY2U1YTUwNWQyZTc2OGIyYjNlNWIwYzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyZWM3NDM2YjY0NThkNDdkMmFiMzRkMjgzZTJkNTcyMGJmOGQzMDg3Y2RhNzAwYzRmNWFkZjQ1NTM0NjQ4OWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIxYTVmMTFiZmEyZjYxYzEwMDk3MDNkMmVmMjYzNGJlNGNmYzZjMjc5NDgzNjI5ZDdhMTNmNmRhYzM0ZjgxOTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY3MDRkZTE1MWFiOGYyMWRhNmExMGE5N2YyNTUxNTM3ZDJjODE2MjFlNjE5NmVmYWY5NWU5YjkxMzE5NWZiOTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3121b1762e9b483e912a1946223d8284",
+      "statement": "Rendering skips Damage::None, forces full redraw for transient cursor or signature-help and drop-hover overlays and debug overlays, and otherwise clears only affected editor or status-bar regions of the persistent back buffer.",
+      "evidence": [
+        {
+          "resource": "repo://src/view/mod.rs#L1077-L1102",
+          "version": "repo-lines-v1:sha256:d04bd17c52677b6048493338abb71f8735a88b91ffad67a83dd37bb90b442266:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjNTljZjBlZWJmMDBmMTY0NjhlZWNiNGVkOGFkYzZjODY3YjBhZjllOGI2ODJjNWNhZDgzZWMzZWNmZmVlMjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkMWEyZjY1NDU0NmI4MWMzNDI4YTk5ZTEzZDcwNDE5ZjE4YjA4Y2UwNjNiZGYxMzQ1MTBhZjY0MGMwMmFmYmUifQ"
+        },
+        {
+          "resource": "repo://src/view/mod.rs#L1943-L1952",
+          "version": "repo-lines-v1:sha256:10e962273ff5e5c215133f5f79f6cbd960e0f2e3d7cb6baf16f971414a8d2bf9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzMzc3ZDQxZmQ4ZjY4NThkY2JhNDdmZmU5ZGQ3NWJkNDMwODYwMDQ1ZjczZmE0NDMxMzUzMWU1MTI1NjViMjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyZDgyOGEwMzdhYzFjODE1MzViMWQ1NTAwODMyMzIzYmZiYjg2NmEzYTNmODdlN2E2OGMxM2EyYmFlNTZmZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2ZDViNjJjMTdjMGFiNzhkYmM3YTc2MGJmMGNmYzdjMzUxMGFkYjRjZTJmOWFhOWZjNWI5ZDg2MTIxMDZmYzIifQ"
+        },
+        {
+          "resource": "repo://src/view/mod.rs#L981-L1005",
+          "version": "repo-lines-v1:sha256:a0d309014cce24da2df150a1f1b03379abc4dab227cf0f6581dac03bc714f647:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2MGMyNzI4YTNlMjUzYmQ0YTkxMTlhMzRkYTg2YTgyZDU5ZGI4OGJjMTk0Y2ZlZjNiYzdmNDM0MmUwOWViYjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1ODhlYTU5MjAwNmJhMzJlMGNjYjBkYjVkNjI2YWIxNjBjNjU4ODZjOGI4NWJjZTk1NTg3M2MyZDU1YzUyYmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZjMzY1N2ViOGQ5NTcwNWE3YjY2OWRlOTg1ODQ0MTQ5NWY1ZGVjZDUwZGQxYTI1N2FkOTM1Y2E3MGRmMDE5OGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_991445a81d2144c8a7aee43ba150cd6e",
+      "statement": "Plain-text cursor-line damage uses a fast path that redraws only dirty lines and the find bar, then redraws focused-group scrollbars because line fills overlap the scrollbar overlay region; other modes use the regular pipeline.",
+      "evidence": [
+        {
+          "resource": "repo://src/view/mod.rs#L1037-L1060",
+          "version": "repo-lines-v1:sha256:32b5cc188dbd831d965c0d6286d4ba8dde36a31cbc7280e52a0adad57ba2018e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmMWJjNzMyZmM0Y2Y0NjkwOTk0OWUwOTc5MzlmMWIyYmRlYWNiNTdiMzhiMjc2ZTQxMjdjNGI1NWQ3MjczMGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmNTZkNDgzMWIyMDRmNmJkNWRlMzA3NzllYWZhNDZiZDBhNGUwMTlkYTYzZGNjMmI2NjJiMGQxMzAxOGU1NjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljZGZhNGNkYTY3NjQyMzUzYjczN2JkNTRjMmE1YTEzYzVhNjk5ZWY0MGQyMmU2MzI3YWIyODY1OWZiMTY0YjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4ZjA3OTNmYzQ5ODUyYTFiYmNmY2I5YTQyOTE3ZjM0ZTIwMzYwNGZjYjk0YmFhZjczM2ZmYzNiMDBlNTQ5ODUifQ"
+        },
+        {
+          "resource": "repo://src/view/mod.rs#L1995-L2031",
+          "version": "repo-lines-v1:sha256:3cd2f6aee2d6b28116a0542f6dab6b5b1297a17298337a8d07d03b63f0dc460f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhNmE3YjBjOThhZTc0NzVlMGZmN2JhNzA2MGM5NDc5OTIyZTlmYzM0YjMzMjk3OTE2ODQ5NTE1M2VmZDhmNGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjNjkzYmNkMGJkNjNiYzkxY2UzODI5NTg5NzZhMTQ5YjMzMGU3NDQ4Njk4NGM3NDNjYmE1YmQ5YTVkNWZkYWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlYzdlN2EyMzhjODY3NTlkOGFiYzQyOTI4MzI1NzRjZGVlNDVkYTkxNDAzODY4MDFiN2I2MDg4NTkyOTMyYTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_777bbd6c106d452ebbd0b82f7e4ffab5",
+      "statement": "All rendering paths copy the persistent back buffer to the surface buffer and present it after painting, so damage limits drawing work while preserving a full-frame presentation contract.",
+      "evidence": [
+        {
+          "resource": "repo://src/view/mod.rs#L1995-L2001",
+          "version": "repo-lines-v1:sha256:9e626d13838e5d7aa02bff45db89d022c01be80288a32608e67ab7f315cc0111:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGE2YTdiMGM5OGFlNzQ3NWUwZmY3YmE3MDYwYzk0Nzk5MjJlOWZjMzRiMzMyOTc5MTY4NDk1MTUzZWZkOGY0ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTZiMDQ0OTE0Njk3MjJlODM2M2E5NGU0MDQ0NTM4ZTAxM2EyYTIxN2UzNmIxZTU2OGJhNjBhY2I3YjRjOGYyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWM2OTNiY2QwYmQ2M2JjOTFjZTM4Mjk1ODk3NmExNDliMzMwZTc0NDg2OTg0Yzc0M2NiYTViZDlhNWQ1ZmRhZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjIyZDA2ZjRhZTIxYzljMjMyYTk1NzcyMTQ3ODA5MGJlYzgyZTQxODdjMmI0YWNkMWJmMTgxNzc0OTBjZTBkYiJ9"
+        },
+        {
+          "resource": "repo://src/view/mod.rs#L2143-L2158",
+          "version": "repo-lines-v1:sha256:a6acb79e111860c78047b7fbf952c6e9baa99935dc8c997511fcdff29d909743:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiMDQwZTdkMWRiYjk1NWZhZDMxMjZmYjAyZGMxMTIzM2UwYzc2ZGU5NTVlNjhlNjgwNjdiNGFkOTMwMGI3ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4ZjRlZGJmY2NhNjAzODhjYTRjMjcyYTQwNjk1NDQ5Njc5MTIyOTQ0ZGE0MzliNDQwZThkZTUwYWRmYzJhYzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3MjQwODM0ZDFkY2ViZjdmOTE3YzNhMTJjMzQ1ZjY0OGQ5YTJlZjA4NWI1NjdjNWJjZmFlZGIwZjhhZjM0ODYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ed211e4a2fe048d0b51b1e0af04d6fed",
+      "statement": "Frame provides bounded pixel drawing and nested intersecting clipping; set_clip establishes a sole absolute clip while push_clip and pop_clip support balanced nesting, and rounded-corner masks are cached by physical radius across frames.",
+      "evidence": [
+        {
+          "resource": "repo://src/view/frame.rs#L146-L180",
+          "version": "repo-lines-v1:sha256:b249f94245e01fd66174f381df6cc4b2edde30e6f63ca4067a38264be9b39273:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0MWVhMGMxOGZlMzEzODFiZjk3YTdkMmNkM2U4ODRlMDUyNWQzZDI4MTQ0NzAyZWExODNlMWZlNzJlYWYyYTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NDBjMjJlOWJhYTE0Yzc5ODNhYmIzMTJlZTkxNTNhNTE5NjFjYWY0NWM0MDk4NDM4NTQ2ZTlkZDI3YmE4OTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYxOTA4ZmYzYjlhMjQwODM0M2JmODYyZTQxZTViNjg4ZDk3NDkyMWUwOTJmMWI3Y2Q2NWI0Yzg5MDI1NzE2MDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMyOWUyZTgzNzdhMTAxMTFmYjJkMWI5ODFmMTI5ZWE0NjIxOGU2M2Y0ZTAxZDZlZWE5MjI0MDJiNDNmYTc3NDYifQ"
+        },
+        {
+          "resource": "repo://src/view/frame.rs#L76-L97",
+          "version": "repo-lines-v1:sha256:af200b33d67594c831d3ba0fdfde003f93bace6246dac2071ddd98421307fbd4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkMTA1Zjg2ODZkYjcwYzQyMmM5MDEzOTU1NTg3MTFhNGY4NzM0MmQxMTgzODM1ZDRhZjc3YTFjN2QxOTNhMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ0OWMwNWQyZTU5YWI5NjQ4YmUxNjI2YjRiYWI3NzYwODc2Y2E4MDIxZmJiYmYwNGNmOGQxOGNmY2JiNzU4MzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRjMDcyYjI3OWJlNmYxZmU3ZjgxZTI4OGMyYjViOWZiYTFiZjAxZDA5OTM1NzM0YTEzZDBmMGM5YWMyODk5ZjMifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T20:35:11.754Z"
+  }
+}

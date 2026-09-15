@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:e5d53fbf4f0791c7da7ffdf890f8490181f55b1685599aa744d98e1f152d77e1",
+  "claims": [
+    {
+      "id": "claim_6e830b75d987498cbce9a8062da1cb73",
+      "statement": "The application separates startup preparation from platform event-loop initialization: `main` starts renderer and application preparation, builds winit, constructs `App`, and runs it; `AppPreparation` joins a loader worker and falls back to synchronous preparation if that worker panics.",
+      "evidence": [
+        {
+          "resource": "repo://src/main.rs#L42-L105",
+          "version": "repo-lines-v1:sha256:ccf74f678539d7418a23c0d6ecb89100c448a93acace97696ebe7146a0f19a9e:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjZDRkNjlkMTEwNDNjNmNkOTNjNGJjNmE5YWQ1YjRlODExZDgyNzdkOTI0NTVlZTZkMWU2NjY0MGU5ZWI1M2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmNDMyNjI2MDM4YmNmZDk5NDhjNGUyZDFjYzc4ODYwN2Q5YzI0NTY5ZTE2NjA4NTcxNzIyMTdlMjFkNjMwNDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkYThhOTE4MDU0MTU2MTcyYWE1YTAyNmUyYzgwMDFjOWM3NDFmMjY2MmFkNTc3OWU1MTA0YzZhY2U3YzNiYjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExZmIzNmYwNDZkNDFlYmExZjMyMzRjOTg0MmFiNGIyZDM0NzUyNmQxNjQ3OTY4YjU4NWU5MGMxMThlYWU1ZGEifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L144-L169",
+          "version": "repo-lines-v1:sha256:2bd1315a95163010a1b1286f9973d5b83f9aa07da2e6db8c86fa520bb2aa71b0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhN2RjOGZmZjQ2MDBjZDYyZTUzYTUxOTFjYTBiYjFiMTliODNmYTU1YzFiYWEzZGUzNWU4ZjRmYjA4NzMyMGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU1ZmIxNDkxOTUwOWQ5ODk1ODc5MzgyNjgyODY5NDk4MGY4M2ViZTRkZWNiMDIyZGVlYzJmMWE0MDNkMDU3NzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5057964ad6cf4b538e55fa245dd42934",
+      "statement": "Startup preparation constructs the model, loads configuration and keybindings, opens workspaces, restores sessions when enabled and not in demo mode, prepares startup files, applies demo content, and clamps the initial cursor position before handing the prepared state to the runtime.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L172-L233",
+          "version": "repo-lines-v1:sha256:d90e8fbd0861cf3a7b8357c18835ebfec7ffa1d72aaf148a3249d823dddcd38c:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5OGQwNWQ2OTBlNjA2NDhhMTJmMTM3MmFkMmI4ZGY4MjNhZmM1OGZmM2UzNWEwNjI2YmI1MTI0MDVlZWJiNDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjMjIyZmM4NjhkN2U2YWVhNTI5ZTQwZDgyMzM2YzMwZjQxM2IyOGJkYjU4ZWNjN2U5OTQ4MmY5YjIxOTgxMDAifQ"
+        },
+        {
+          "resource": "repo://src/runtime/file_io.rs#L37-L133",
+          "version": "repo-lines-v1:sha256:27b106a63322478424e6bf15fb7e810c179c52cac07641c00a90e6c9eea7e11a:eyJzZWxlY3RlZExpbmVDb3VudCI6OTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NTJhNGZmY2MzYjdlOWNkZTA1YzRmNzEyZjZhYjE1NGJlYzUyN2I4YTVhYTc0MzAxNjYyNDlkNmQ5ODRmZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3NmE1NDRjYzAyM2VkNDA1ZTNiOThiOGEzNTQwOTBmYWQxNmU5ZTE4ZDVlZTlmN2JhNmMzZTcwMDUzMDA5ZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExMzc0YzllYzM5NmUzNTdlYmE1OWUxZDhmYWM2OWI1ZGQwZDMwMDQxYjc2ZmQzODE3YmM4NjNmMzA4MzczNGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_55333610d7624edf9e9eccc89674221a",
+      "statement": "The winit event handler translates window events into messages and commands, merges command damage, and requests redraws; keyboard routing gives settings capture and cursor overlays priority before editor actions, keymap commands, and context-dependent fallback handling.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L1439-L1452",
+          "version": "repo-lines-v1:sha256:5ae39044801c81070259d718808b01897f5b5be0150f3b855c644b2951135134:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0NWFmOGNkMDgzODQyNzdjYmQ2NzkwZjBhZGM2YTM4MmJiODc1Y2NjYzFmNzM4YzUxZDJiNDk0MTAwNWQ4Y2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmYjZlYTkzYzI3NGZmYjdiNDI1MjQzZDg2MWU5NjFjOWZkZmUxOWM0ZDE3YjNhNWZjNTgxYTM0NTliNWRhMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY3OWE4OWE5MjhkMzgwZjBmMGZlZDdhZDFlNzU4NjBlNmNmYWJmYWVkM2VkZjIwOTQ4NTU5M2ZmYmZjYzY3OWMifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L1523-L1669",
+          "version": "repo-lines-v1:sha256:66157bce4bd1407643656290a71b441e042a9a82c08843e904f11d43deeaf7fa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQ3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkNzAwZDE2OTkxZjgxZWU0YTg0MjA5Y2EwNDZmOWRlZTIwYjc4YWJmODdkMWY1NjliNTA5ZDBhOGIwMjQwNGE0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJjZTljMDUzZDA5YjI5NDI2NDgxOWEyOGQ1ZTc5YzI0YTFiMGNjMWVkYzk0YzMwNmM1YzM2ZmE1NjdiOGQyY2FmIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJhNTE1ZmE1YjY2ZDBmN2UyMzViZGExYTRhNmQ1NWI3MTdmMTJmZWY3YmFhZTJhODMwNGZjNWY1NjMxN2ZlY2I1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5M2M5YTU5ZWY2YTU3N2IyZWMwN2E0NTliZTcyYWE3MmViNDhmODkxYzZkNWY3NzY4OTA1OTMwMDU1MjcwNDU3In0"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L5770-L5801",
+          "version": "repo-lines-v1:sha256:8a1a3243f43a9416eefec2d8a4920b294311fbe5807cd48268f5b800acc85c1a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmZThjMjg5ZjJjODc4NTk5OWJjMzg2OWJhYjU3YzJhMzZkN2FlOGFkYmIzYTI5NmJlZjZlM2IxOWIxZTI4NGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA1N2Y3ZjMyZjEwYWM5NTg0NDEyYmQzMGFkYWM2N2Y0NGIyMDNhNDE2NTlmZGFkYWM1Nzk5YjliMWE3ZDRhMDMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_865d7089d3fe4d1187939fbf13880ce9",
+      "statement": "Mouse dispatch uses centralized hit testing and explicit target ownership for hover, focus, clicks, and drags; click counts are scoped to a `ClickRegion`, and pixel wheel messages identify the editor pane under the pointer rather than assuming keyboard focus.",
+      "evidence": [
+        {
+          "resource": "repo://src/messages.rs#L44-L50",
+          "version": "repo-lines-v1:sha256:39ddf582d196004bb77806a1548d2a5669bda40719bd3701463db347e0e2d5db:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjliMzIxZjdhNGIzYTljZDEyNGMxZTRjZWY5NDk2MTgwZTYyNjkyNjg1YTgzM2YxZTM1YjNhZmE2NjhhMGE2MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWYwY2RiOTcyYTdiZmI3ZWQyNDZmOWZmNjcyMzg1ZTU1ZjQ5NjhmYzExMDQzZGM1YjY4NGQ1MWRmYTMxZGJjYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2M2MDkxODMyMDlmODlkZTg0MTY1ODM0NzdkOTNjYTNkODFjZTZmNDI2MzE0YjQ5N2Q1MDg3MjE1NmE2MTZmYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGM3ZDFmZmQ1MzFhNjZiNTgzYzFmOTMwMDE1MDZiN2I5NGYwNWEyYjhlNDc3ODk3MDU0MTU1ZWVkMzU2OWNiOCJ9"
+        },
+        {
+          "resource": "repo://src/runtime/mouse.rs#L1-L8",
+          "version": "repo-lines-v1:sha256:25b8b5151ebf3690a000d0987c6fad2313360f7f6c8fb29937acf95185ab146d:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDU3M2JiNjVjODVkY2JjMjU5ZmZkZDQ5NjFlNjZmZmU3Y2YzNTE2ZmFkY2M0MmY4YzZlMWExZGUwZjRlZWUzMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDdiNWUxNTcwYTMzNjE4MDBjYjAzNDhlMzUzOTRkZDE1NDUwOTVjZThhMTA2ZGMyZTdlYThkMDNjNjU0OTJhMyJ9"
+        },
+        {
+          "resource": "repo://src/runtime/mouse.rs#L138-L181",
+          "version": "repo-lines-v1:sha256:184bd06014fbbc03af5d0f050fc1a61c1726bf3e26a8c3562b82d83a40065dff:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4NzM0OTEyYzg5NWQ4ODUzMzZlNDhiMjNlN2FlZWVmN2NjOWE1YmVhY2EwZDY0OTlmNmI1MjJiMTE4NzUxZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjZmIxMzViMmU1MGM3ZGUwY2EwNWQ1ZWRkYjdjYjNlYWUzODA4MWI0OWY5NWQ5ZmVkZTMyZTAwNTkzY2IwNjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiYWNhMDk3OWNlMWQzYTcyZDMyM2E1NGJmMjczYTNlYjA1NWM3N2IyYzIwNDU4MjM4MDU1ZGFiNWUzMzMxNTQifQ"
+        },
+        {
+          "resource": "repo://src/runtime/mouse.rs#L79-L136",
+          "version": "repo-lines-v1:sha256:8f1521e2beaf7e41674d78e35b35aa80d5e43cc68d86451af5f49a158e09dafa:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwOGJiZjI3ZDY5YTljZDEzZGUyYjFkMDRkOTVjY2IxYTdiODBjZmZlZGI4NTM2ZWYyNTRlYWM1MjczNGRiZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2Zjk5N2Y1NDg5NTQ1NDE0MjA3MzY4MzBiY2I1NDM3NzQzMGVhOTkwMWQ1NTIxOTZhNjRlMWE3ZjEyMjVkMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcyMGVlYzU1OWZjODA5MTE2YTI3ODhlZWY2NGUyMWRiMThkYjg2ZDI2MDQ2ODYzZDc2YzU1MTAwMTgwOTY3NDUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2a93ddaa32804dc58e9d87c98682f4dd",
+      "statement": "`update(model, Msg)` is the state-transition boundary and performs cross-cutting reconciliation around specialized message handlers, while `Cmd` is an effect description interpreted by the runtime rather than a mechanism for update handlers to perform blocking I/O.",
+      "evidence": [
+        {
+          "resource": "repo://src/commands.rs#L931-L980",
+          "version": "repo-lines-v1:sha256:cb39e86870c93f88fbed0193c3c5f80030ef9fff70b1d1a6b20baf818a61e00a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhNDg0ZTY5M2Y2ZjRhNTE4YTMxM2E5YTYwZjczOTViNjQyMTkwZWU0NmRlNTZiMzViMTZjZmUwMmFjNzRmOWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4YjQzY2Y2NzMwNDE0MzllODczM2U1ODk4NWE4YWZjODg2ZDc2MTBiOTA1Y2E3MmY1YzE5Mjc3NjZjNDgxNTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjNTllMDAxMGUxZjA2YTZlMzE4OWY4Y2VkYjlmNmQ1M2E0NmJhYTU1YTYzYzc3MmIzM2U1MDkzMzEwYTc5NDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjczMWI5ZmZhZWI3Y2YzMjdlMGM1NTA3N2QxMWZkNmJjODhiM2ZkNTgwNWYxMzBlM2MxZmEwYjg0ZmU0MmZjNTQifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L2442-L2645",
+          "version": "repo-lines-v1:sha256:8f394f09f8ad4e5a160010669e627bde1edd1a973405aa4bc92a737fe8561427:eyJzZWxlY3RlZExpbmVDb3VudCI6MjA0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIzMDAwYzI4ODcyZTU5ODgwOGIxYmUxMTRiYjM1ZjI3MDczOWEyZGY3MWU5MDNlODkxMDc5MzgzYTJiMjA0NWJhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1NTIyYzQyY2QxOWM2ZDAzZDgwOGM0NTI3MjA1NTI4MjViN2VhMWM1YjQ5MWIyMTg1MTFjYWM3NDE1Y2Y5ZDliIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI5OTliZGVmZWVhY2E2MzQwZTAyOTBkYzg2ZTg4OWM4OWQ1ZTE4OWFhNWJhNDRiNTg1YjNiNzA3MzRmNGE2MmQ4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2MjJlM2NmZjc4OTEzM2JiZDIwNGViZmI5YmI1YTYyYzlhZWVkMzU0YjJiOWRiNjhjMTAwNGEyZWUzZTYzNDkxIn0"
+        },
+        {
+          "resource": "repo://src/update/mod.rs#L114-L203",
+          "version": "repo-lines-v1:sha256:486136cd9ce6eb0334ee61f967f8bec3788796535062693adcb0b6f1197c27cb:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0Y2VjYWQ1ZTg5MzhiMjMwYjE1YmQ0ZGVhYWExODhjZWQ1N2Y3OTY4NGE0OTdlMzNmZDM1OWIwNDZlMGEwZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhhODZmNDBiOTI3MTRlZGM3MDYyODkyNzQyZmIwZTE4N2Q2OWJhNWFjMDZmZjZiOWQ2MDliNGRkMzVhM2E2MGMifQ"
+        },
+        {
+          "resource": "repo://src/update/mod.rs#L2-L7",
+          "version": "repo-lines-v1:sha256:da253366c6ea29467d53cbe2f3f374a06bed09a6ba34a3f44b551ef90869ff75:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjA2NTczN2UwNzFmOWZiY2RmNTRiOGFkMzhlNjZlNGI2ZjFmOWZhMWMwMWVkNmFmOWQ5NjY0ZDIyMmE5NjQwMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk4ZWMxMjY1MzdiMGUxODlhNTJmZGVjYWVlNTBlY2ZmMDFjNmQ5OTcxYjg3Y2NiNzJiODVkYjQ5ZTQwYTIyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjEsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGZhZTU3ODNjYTkyMGUzMWVlYjkxYTI1NGEzZjNkMjE1Yzc1MDMxODU3NTBkYzUwMzlhN2FmMGI1OGFkMDEyMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjJmZDljNzY3OGM2NWNiNmMzOWJiOGZkNDhlZjAzZTY2NDc0NjVhZjY1ODg3ZDNhODBjY2ZiMTkzOTVlMWEwMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f066cb8414e240b5bdf3da046be867fb",
+      "statement": "Background workers deliver results through the runtime message channel; `about_to_wait` drains and preprocesses replies, coalesces filesystem changes, and intercepts request-specific replies before dispatching them to `update`.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L3422-L3461",
+          "version": "repo-lines-v1:sha256:3f707daa404d41eee42f2a614a7eeadd54d8d2d5b4073c48754d87839a4e93d4:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3ZTcxNzk3ZjM2MmY0ZmFmNjJmMmJiNDVhZmZhNzlmMjQ2NzlmMDExMGNkZjY3Nzc2YzUyNjA4NzdkMzJhNDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhZGZhZDUwM2I1ZmU5NjllM2JhYmI2MDQxZTJkYTcwODMwN2U5N2M4ZDFjOWJiNjNkZTNkMDY4NmRhMjdiZjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ3YjVhZmU4ZjI1YjUwMjcwYzk5NTIwNjJjMzdkNTdjN2JmOGY1OGQ2M2IyMWQ3MjM2OGQxOTg1MGY3ZGYzNTUifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L3495-L3564",
+          "version": "repo-lines-v1:sha256:9cfae4816ee97fd4399221d0e80872d11b9a7fbd1ac2e111c5aef3ccc3121845:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlMzhmMzBjY2YzNzQ4ODFmM2MxNjc2MTkxOGI4M2VhZjIyMWM3YTEyNmVkYTZhZmVhNzM2YzlkZDcwMTkxMzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNjMDNjYWZhZWI1YzhmNjM1M2QzODE4MmExZmNhYmQwNGIwZDY2YWIwN2RkMGQyMTA0MGQwZWFkYzAyNTc3OWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5ZTRkNjQ2YzNlNmRlZmY3ZmUxYmZmYmM3NmU1MjliMzQyYTQ5N2Q1MGZkZDc3OGQ5Njg2YmE5YmE4MTNhNGEifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L3649-L3697",
+          "version": "repo-lines-v1:sha256:df809f6cfdacfb600d69bd041db3ac91495285fed0b1ee7712f5455727daea74:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4OTQ3ZTU5ODk3MjE2MzhlZDI3YmY1YjIyYmU5MDIzZmYwMjllMTEzOWI3NDgzYTVkN2M0OGExMzgxN2I4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5NDlmMjRkZGQ3NzY1ODYyZDcyMDg5ZDc1OWYyOGM5MWNhNDg1ZTY0OGFkM2MwNjg0OTc1MWRiMzRlNDkxNTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMwZDIwZDIzNDkzNTg4ZTFkODAzZDYyMzg0NTU4OGNmZDdlYWM5MTk2YWU0MWJlYzUxOTY1MGE0NzE5MDY1Y2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiMDZlZjgyZjAyZGQ0MDU0M2RhYmViNzQ0YjVkOGM4YzY0ZDJkZmIwNTc4YmQ1ZTgyMmU4MDNlYWRlZGMzNGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_07dff337c77d43a08954233d7e1158af",
+      "statement": "Asynchronous presentation is guarded by identity and freshness checks: syntax results are applied only when their document highlight revision matches the returned revision, abandoned or unknown request replies are discarded, and diagnostics publishes are version-ordered with newer same-URI results winning.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L3445-L3494",
+          "version": "repo-lines-v1:sha256:fd9b13bacd805ee7dea6e850b245e439b34022b2ddfc6dcfae3c0defe8146357:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3ZjgyZWU0MWI1MWRlNjMxYjY5ZGQxOGRjZDg4M2M1MmU1MTg2OWU2NjQyNzM3NzVkNTZiMjdmMTNhY2YzOTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YzEzNTkwNjY1NjMyM2QxYzVlYTQxNjU0ZWU2NmFmYjU4NWFjZGNmYWVhY2ExMjFkNWUzMGJmMTkzZWVkZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllNDQ3YWMxZTQzMzMzMTRkOTE0OTA3ZmQ1YzBiNzM4OTI2Mjk5NWU3ZWI5Y2ZmMzE0Mjg1NzI3YjhhOGM3NGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViMjhlODUyYTc4ZTM4ZmM0Yzk4ODczNmJkODhjNDhkNGUzYjFjYzk2Y2Q1ODhiMGZiMWJhYmQzMDY2NmZhOTQifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L3504-L3523",
+          "version": "repo-lines-v1:sha256:3be945ad1de5e5aaf7e81f5bb5e0d4f369e16199de5d83e05674bc50f69fbfbb:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmNTBkNDAyODExZGQ2M2IxYTI4ZTEyYmFhYTFhNmI3YTEzNzhkMjI5YmM3ZDkzNDIzMjA2M2FlNmIwYTRkOWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmM2NhNDAwYjcyNTBmMjI5MTdkNjEzMTk4MjVjNjM2YmRkOTY2ZTg1Mjk5NDI3YWMwZTI4YmQ1MTJjZmMyNmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhMzRiOTU2ZmU0YWFiMTQyMDZhZmFiNzIzYjQyNThmYmM4NjUwY2RlMTVmOGE0OGVmYTU5OWRiYzBiZmU5NmEifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L3600-L3607",
+          "version": "repo-lines-v1:sha256:f059f85bfb5b92814e83b0084ace283b70bc5ee0bc9cfb8f0f97d8da3f6220f1:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2RkOTVmZDNlMTg3MDY1MDE4Yzk4NDAxZjliMTRjOTRmZmExY2I4NTU4NjhiOWM1ZjBmNTMwOThjNWVkOWJiZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWRiODc0MzdhOWRlYmZjM2NkMGVlNWM1MTdkNWJlOTA4MzZmYmY5ODM2ZmMwNGRlZDU0ZmNlZTZmOGYwNWExYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODcwNzkzZDg3YTA3MTAxYzdmODA1ZGUwZDYyNjI0MTIwYmU1Yzc1YTI3NDgyODI5YTJjMjY2YTQ1MjUzNzNmNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmRhZWU0ZDVjMGQ0NmEwOThhOGYwNDk0Y2E3NmZhM2Q3ODMyMWZmZDliNmUxMjI1OTVmZGRlYTBhYTIwYjY5ZSJ9"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L3651-L3674",
+          "version": "repo-lines-v1:sha256:bb83c038a92e154c33486191745fdb496b2f3cfc24d61039a980122da42d3ab9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljMTg0N2EyNDMxZWUxZmVhYmNjOTNkZjVmNGVhOWY3YjIyYzg0NTNkODRlNzlhNmYyY2Y2YTEwNDZmN2ViMzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5ODAxOGE3MGUyMDU0ODljYjhlZjY0ZmNmNzczYmQ4OTI4ZDUyNDI2NmIyMGMzMDJlYjc1NWM5ZjA0YzlhZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3MzA0ZDBkZDI4YzgyZjk2YTYwZTlmOWUxYWMyODdjYTBhNDQxMDllMDZjNTY2ZDE3MzYwOTFiNDRkMjEyMmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6deee92689fa41fd9320e001631a6be4",
+      "statement": "Terminal spawn results are installed as `TerminalSession` objects on the main thread only while the session remains pending; obsolete PTYs are killed and spawn failures clear pending state and surface a status message with redraw damage.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L5621-L5705",
+          "version": "repo-lines-v1:sha256:c0a692997877c0c5a3ccd76c5c1f2e8808d3eb63e8e661739560ae62a5fbb117:eyJzZWxlY3RlZExpbmVDb3VudCI6ODUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4YWYyNDZhZWE1MjFlZTU0NTgzOWJmYjAwOTJlNDBjZWIwNWFiMWU1MWY4OTk3Mjc4ZTVlMTYzMWI1ZmQzNmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUwMWZhNzU3MDdhMjc4ZDlhNzNjM2UzYWI1YjM1YjQ2ODdkZWFhOThiYjkwMjBiOTJiZDkzZWIwN2VjZTA1NWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_98ca3d9f6dad45b8b7e7ecb0ac94f18b",
+      "statement": "Redraw damage is accumulated and consumed at paint, while `about_to_wait` services worker messages, debounces, animations, status expiry, and deferred startup; `next_wake` schedules the earliest relevant deadline through `ControlFlow::WaitUntil` to avoid a busy loop.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L2121-L2178",
+          "version": "repo-lines-v1:sha256:538f6cb4f6f7dce274593b7e0ceb5087adab870e19a6be81caee9715a172a989:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlOGUyYWQzMmFkOGRhODA4ZTMzOWQ2NWM5NjI0NGQ3ZmYyMzdjNzY1M2UyNTNmMmE0MDE5YWNjMjVlZGY1MTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwNzFjNmU5MjJkNjRlM2MyZDEyZDFiNDAwODRjMzFjYzRlNzgwN2ZiNDJlN2Y3MjI5Y2M4ODYwNWU3ZmM4YjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkZDRlZTg3MThiOGJmZjFmMGIyN2VlYTVlODVkZDBkMzUwNTFhOWRlM2FlNzU1ODM1MDhhYmJmZjY2NTdiY2EifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L5832-L5966",
+          "version": "repo-lines-v1:sha256:5749ac16bf0352988c479d2f7aef82dce8c9235c17e67c865dc7686967ae333e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwMzAxMTJhNGM3NWIyNGEwYjIxOThkYTE2MGJkNzVjYWVkNThjZTRiNTQyZmY3YjI2NjJlYmNjMzhkNTVjMzIwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODkzZjQwZTM3ODFlYjg5NmM4MmQwNDZhMDgwNjdhMTFlMzVjZGYyZjFkZmFmMjZmZWE5MGI4ZGI2Njc2NDEzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI4NjQ1OTYxOTU4ZDQ2ZmVlY2M1ODRmN2EyOTZhYmI1MjAyNGMzODM3YjM3NzMyZTIwOGJiNDEyYTcwZWE4M2IwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2MDdhODhhZjc2NThhY2I2MGJiYWIxNjk2YjIwMTRjM2JiOWRiMmEyZGZmZjEyN2E1MjkyOThiNTg1Mjc0ZjI3In0"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L5979-L6091",
+          "version": "repo-lines-v1:sha256:08fa0383e9a4c5ccf49dbadc33b03f52d0b6e7d22062dbe80b5af8ba5a5cec5e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIxZTVhNTQyOWE1MjNhNTgwYjk5MTUyMzY2OGFlNDY3N2ExOTAwNzgwODhjM2UzN2M0YWIxMGFkZGQ0NjU3NmY3IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODkzZjQwZTM3ODFlYjg5NmM4MmQwNDZhMDgwNjdhMTFlMzVjZGYyZjFkZmFmMjZmZWE5MGI4ZGI2Njc2NDEzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlYjlhMDhiYzI5ZjZlYmViZTlhNWYwMTkwM2Q5ODQ1ZGJjYjU4NDJhNDU1ZjA3ZDVmNDAwMmRhYzMyYTVjNjA1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2MDdhODhhZjc2NThhY2I2MGJiYWIxNjk2YjIwMTRjM2JiOWRiMmEyZGZmZjEyN2E1MjkyOThiNTg1Mjc0ZjI3In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_55bbd77ea0294f2b8d5cbe107329339b",
+      "statement": "Shutdown preserves effect ordering and external-client behavior: quit initiates teardown, `exiting` drains safe file replies, waits for ordered file-worker writes, saves the session when configured, answers waiters before removing the automation endpoint, and stops workers.",
+      "evidence": [
+        {
+          "resource": "repo://src/runtime/app.rs#L3401-L3410",
+          "version": "repo-lines-v1:sha256:0788feb478f266024889d47a64adf8351513f41a65d27c6fea4f0cb39e437cb1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmMTY3ZWViYTNmNjBlNGRmMTMwMmZmZGE3NDNlMDhlZGNhNWIwOTlkMTY1MDkwNTEzNjBjZmM3ODQzNWQwYWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwNzUwMWYzYmNmYTQ2MTk1OTBkNzcxODBjMTY1MTkyMDhhOTIzMGE4NzdhMTBlMzM2ZThmZmNhZWI1Y2I5MzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEyZGZlNTU4ZTUwNWViMDAyM2Y5ZTlkNjY5ZTdlOWRkNDIxY2NjOTZkZjY0MzJlMzYxNjkxMGQ1Y2Y1MDYwNDQifQ"
+        },
+        {
+          "resource": "repo://src/runtime/app.rs#L5803-L5830",
+          "version": "repo-lines-v1:sha256:aef13bd452ae84eaa322a672a544037cc0cef9a5b8bbc6c7bf932391b65d65db:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhYzNhOTQxMjg3MDUwNTQ4YTU3MDE5OTljNDY3ZjFiYzZmM2U5YTk0MzAzMmQ0YjQwNmVkYWVkMDZkYjg0MTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4N2VkYTdkODNhMDllMmViNzc1ODk1OWJlMjhjNDk5MWMyNTYyNTdmNTk3ZGE1ZDM2N2Q3Y2Q1ZDQyMzBkNDIifQ"
+        },
+        {
+          "resource": "repo://src/runtime/file_io.rs#L150-L160",
+          "version": "repo-lines-v1:sha256:4b219054b7d70a9f7177f1aee2bff460abb62322cd6a68f97374004fcc68e162:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjMzc1YTIyZWEyZDc3MjI2MGFlNGQwYTVlNDg5Y2Q0MzA2NGM3MWRlYjgyNmI1MjBmNzM3MzhhMmY1YTRkY2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzZjA5NDYxMzg3ZmY0MTQwMWI5ZWUwNjhmNDc1YTIzZWFiZGY1MTE1YjAzMTQyOTA1NGRmZWNmNjA3ZmQ4YzkifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T20:35:11.754Z"
+  }
+}
