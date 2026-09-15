@@ -6,6 +6,11 @@ All notable changes to Token are documented in this file.
 
 ## Unreleased
 
+### Command line
+
+- Add `token --completions <shell>` to print shell completion scripts for bash,
+  zsh, fish, powershell and nu.
+
 ### Search
 
 - Remember the command palette query after dismissal or navigation, and select

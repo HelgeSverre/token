@@ -6,12 +6,18 @@
 //! - Wait mode for git integration
 //! - New empty buffer mode
 
-use clap::Parser;
+use clap::{CommandFactory, Parser, ValueEnum};
 use std::path::{Path, PathBuf};
 
 /// A fast text editor
 #[derive(Parser, Debug)]
 #[command(name = "token", version = env!("TOKEN_VERSION"), about = "A fast text editor")]
+#[command(after_help = "Shell completions:
+  token --completions zsh > \"${fpath[1]}/_token\"
+  token --completions bash > /etc/bash_completion.d/token
+  token --completions fish > ~/.config/fish/completions/token.fish
+  token --completions powershell >> $PROFILE
+  token --completions nu | save ~/.config/nushell/completions/token.nu  # then `source` it in config.nu")]
 pub struct CliArgs {
     /// Files or directories to open
     #[arg(value_name = "PATHS")]
@@ -46,6 +52,37 @@ pub struct CliArgs {
     /// detached child; useful for seeing logs in the terminal)
     #[arg(long, hide = true)]
     pub foreground: bool,
+
+    /// Print a shell completion script and exit
+    #[arg(long, value_name = "SHELL", exclusive = true)]
+    pub completions: Option<CompletionShell>,
+}
+
+/// Shells with a completion generator.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
+    #[value(name = "powershell")]
+    PowerShell,
+    #[value(name = "nu", alias = "nushell")]
+    Nu,
+}
+
+impl CompletionShell {
+    /// Write the completion script for this shell to `out`.
+    pub fn write(self, out: &mut impl std::io::Write) {
+        use clap_complete::{generate, Shell};
+        let cmd = &mut CliArgs::command();
+        match self {
+            Self::Bash => generate(Shell::Bash, cmd, "token", out),
+            Self::Zsh => generate(Shell::Zsh, cmd, "token", out),
+            Self::Fish => generate(Shell::Fish, cmd, "token", out),
+            Self::PowerShell => generate(Shell::PowerShell, cmd, "token", out),
+            Self::Nu => generate(clap_complete_nushell::Nushell, cmd, "token", out),
+        }
+    }
 }
 
 /// Split a trailing `:line[:column]` suffix off a CLI path argument.
@@ -180,6 +217,7 @@ mod tests {
             demo: false,
             new_window: false,
             foreground: false,
+            completions: None,
         };
         let config = args.into_config().unwrap();
         assert!(matches!(config.mode, StartupMode::Empty));
@@ -197,6 +235,7 @@ mod tests {
             demo: false,
             new_window: false,
             foreground: false,
+            completions: None,
         };
         let config = args.into_config().unwrap();
         assert!(matches!(config.mode, StartupMode::Empty));
@@ -214,6 +253,7 @@ mod tests {
             demo: false,
             new_window: false,
             foreground: false,
+            completions: None,
         };
         let config = args.into_config().unwrap();
         assert!(matches!(config.mode, StartupMode::SingleFile(_)));
@@ -230,6 +270,7 @@ mod tests {
             demo: false,
             new_window: false,
             foreground: false,
+            completions: None,
         };
         let config = args.into_config().unwrap();
         if let StartupMode::MultipleFiles(files) = config.mode {
@@ -250,6 +291,7 @@ mod tests {
             demo: false,
             new_window: false,
             foreground: false,
+            completions: None,
         };
         let config = args.into_config().unwrap();
         // 1-indexed to 0-indexed: line 42 → 41, column 10 → 9
@@ -267,6 +309,7 @@ mod tests {
             demo: false,
             new_window: false,
             foreground: false,
+            completions: None,
         };
         let config = args.into_config().unwrap();
         // Column defaults to 1, so 0-indexed: line 10 → 9, column 1 → 0
@@ -284,6 +327,7 @@ mod tests {
             demo: false,
             new_window: false,
             foreground: false,
+            completions: None,
         };
         let config = args.into_config().unwrap();
         assert!(config.wait_mode);
@@ -300,6 +344,7 @@ mod tests {
             demo: true,
             new_window: false,
             foreground: false,
+            completions: None,
         };
         let config = args.into_config().unwrap();
         assert!(matches!(config.mode, StartupMode::Demo));
@@ -345,12 +390,25 @@ mod tests {
             demo: false,
             new_window: false,
             foreground: false,
+            completions: None,
         };
         let config = args.into_config().unwrap();
         assert!(
             matches!(config.mode, StartupMode::SingleFile(ref p) if p == Path::new("definitely/missing.rs"))
         );
         assert_eq!(config.initial_position, Some((6, 1)));
+    }
+
+    #[test]
+    fn completions_flag_emits_script_for_every_shell() {
+        for shell in CompletionShell::value_variants() {
+            let mut out = Vec::new();
+            shell.write(&mut out);
+            let script = String::from_utf8(out).unwrap();
+            assert!(script.contains("new-window"), "{shell:?}: {script}");
+        }
+        let args = CliArgs::try_parse_from(["token", "--completions", "nushell"]).unwrap();
+        assert_eq!(args.completions, Some(CompletionShell::Nu));
     }
 
     #[test]

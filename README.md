@@ -74,6 +74,19 @@ is already running; a folder always gets its own window.
 Use it as a blocking editor with `git config --global core.editor "token -w"`
 or `export EDITOR="token -w"`.
 
+### Shell completions
+
+`token --completions <shell>` prints a completion script for bash, zsh, fish,
+powershell or nu:
+
+```bash
+token --completions zsh > "${fpath[1]}/_token"
+token --completions bash > /etc/bash_completion.d/token
+token --completions fish > ~/.config/fish/completions/token.fish
+token --completions powershell >> $PROFILE
+token --completions nu | save ~/.config/nushell/completions/token.nu   # then `source` it in config.nu
+```
+
 ---
 
 ## Keyboard Shortcuts

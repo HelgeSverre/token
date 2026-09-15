@@ -63,6 +63,10 @@ fn main() -> Result<()> {
 
     // Parse command-line arguments
     let args = CliArgs::parse();
+    if let Some(shell) = args.completions {
+        shell.write(&mut std::io::stdout());
+        return Ok(());
+    }
     if let Some(code) = launcher::maybe_hand_off(&args) {
         std::process::exit(code);
     }

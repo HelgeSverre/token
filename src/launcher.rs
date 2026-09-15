@@ -322,6 +322,7 @@ mod tests {
             demo: false,
             new_window: false,
             foreground: false,
+            completions: None,
         }
     }
 
