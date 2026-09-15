@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "runId": "54fbd06f-fe40-4164-a627-7d333cd06f2c",
+  "mode": "update",
+  "phase": "planning",
+  "startedAt": "2026-09-15T23:12:49.746Z",
+  "language": "en",
+  "languageChanged": false,
+  "requiredRewritePages": [],
+  "initialPages": [
+    "/openwiki/architecture/rendering-layout.md",
+    "/openwiki/architecture/runtime.md",
+    "/openwiki/concepts/editor-state.md",
+    "/openwiki/concepts/syntax-and-language-services.md",
+    "/openwiki/integrations/lsp.md",
+    "/openwiki/integrations/terminal-preview-clipboard.md",
+    "/openwiki/operations/configuration.md",
+    "/openwiki/operations/performance.md",
+    "/openwiki/operations/platform-builds.md",
+    "/openwiki/quickstart.md",
+    "/openwiki/testing/editor-invariants.md",
+    "/openwiki/testing/language-services.md",
+    "/openwiki/testing/test-strategy.md",
+    "/openwiki/testing/ui-layout.md",
+    "/openwiki/workflows/edit-save.md",
+    "/openwiki/workflows/startup-session.md",
+    "/openwiki/workflows/workspace-files.md"
+  ],
+  "sourceFingerprint": "sha256:4ff4a0d04dc7dffb7db6a2f02c8110f21dd324cd0f7f2068ff24cd3e49b3c36d",
+  "targetGitHead": "b00e49bfef3a82901994c6b25ae1ae8924746531",
+  "actor": {
+    "producerActor": "openwiki/0.5.2",
+    "metadataModel": "gpt-5.6-luna"
+  },
+  "previousLastUpdate": {
+    "updatedAt": "2026-09-15T22:53:33.666Z",
+    "command": "update",
+    "model": "gpt-5.6-luna",
+    "status": "interrupted",
+    "language": "en"
+  },
+  "wikiGoal": "A code wiki for token editor",
+  "beforeContentSnapshot": "c3a4ec96954a21d43a2b92e591834febec60ac831d274d344c0ffb112ef833ac",
+  "preparedWiki": {
+    "generatedProvenance": [
+      {
+        "page": "/openwiki/architecture/rendering-layout.md",
+        "bodyHash": "fc69d321abc910611f69349c0e5cf5fac4b27e5ead462baf8135a6c6273cebcb",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      },
+      {
+        "page": "/openwiki/architecture/runtime.md",
+        "bodyHash": "f7497f3c369fbde876fc7e26409e19e818ca5fc2d5da9f90b9eec6294914e43f",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      },
+      {
+        "page": "/openwiki/concepts/editor-state.md",
+        "bodyHash": "9cb76066d38a26dce9ff14f1c7abd924ffcead412c33545ce536f8e8fa730bf8",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T22:42:43.154Z"
+        }
+      },
+      {
+        "page": "/openwiki/concepts/syntax-and-language-services.md",
+        "bodyHash": "a30a06e6ebd7f24ca62478f40aee77593ab536ba517caf03b170656b8d15f0f9",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      },
+      {
+        "page": "/openwiki/integrations/lsp.md",
+        "bodyHash": "ae3a26e96156b0cbefc4fa9cb816929fca4925aebcb5a6a3c9f391a541045075",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      },
+      {
+        "page": "/openwiki/integrations/terminal-preview-clipboard.md",
+        "bodyHash": "d91e89acac52df770aa7e74e394bc1abd57468736dbcf19645f6303d16c35d82",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      },
+      {
+        "page": "/openwiki/operations/configuration.md",
+        "bodyHash": "cb1c506f301161a85013c7941ad7743990b90dd950a77baf583bf7e7f0894aab",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T22:42:43.154Z"
+        }
+      },
+      {
+        "page": "/openwiki/operations/performance.md",
+        "bodyHash": "370c8b68cbd73c678b8c220e9e5a45a840a5612312c7aa50839fb764e8385ef7",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      },
+      {
+        "page": "/openwiki/operations/platform-builds.md",
+        "bodyHash": "5f79f465948772215d35d145cc1dd0a1efb22de88b2253d986f6c631b7abfd64",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      },
+      {
+        "page": "/openwiki/quickstart.md",
+        "bodyHash": "e11d5b847856580ecb2078dbd164c93971ef677f4f90c9c80731d82e09d71957",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      },
+      {
+        "page": "/openwiki/testing/editor-invariants.md",
+        "bodyHash": "3eb298d3696ac223743043ce5e76a5a6827427876791f468e64b68a37f4ddd2e",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T22:42:43.154Z"
+        }
+      },
+      {
+        "page": "/openwiki/testing/language-services.md",
+        "bodyHash": "1438ab5db8fce37dce54cf68f3df0be259d4e90647dfb942c2c04330ff4d4f9b",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      },
+      {
+        "page": "/openwiki/testing/test-strategy.md",
+        "bodyHash": "37c2e2dadcd85a503c580daf52228720130556ec4697f62cd264aba3fccddbfb",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      },
+      {
+        "page": "/openwiki/testing/ui-layout.md",
+        "bodyHash": "f9d38094329017d8a00d52b6ad485b6cbe27331feab90d866bd281c9ac87fa6d",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      },
+      {
+        "page": "/openwiki/workflows/edit-save.md",
+        "bodyHash": "6f17777ae7e9ec17b9a77e497bf1e88ce160960531e63c0d12c71b0fd86df7db",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T22:42:43.154Z"
+        }
+      },
+      {
+        "page": "/openwiki/workflows/startup-session.md",
+        "bodyHash": "8b99a8df1bf95a01cf5b616af19973e4fdb0460f42ba9e1c9879ab328c8b24bd",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      },
+      {
+        "page": "/openwiki/workflows/workspace-files.md",
+        "bodyHash": "0f8b143a002cc7a80093047f300e1e95fd560288fc959c5719084049b40c9e49",
+        "generated": {
+          "by": "openwiki/0.5.2",
+          "at": "2026-09-15T20:35:11.754Z"
+        }
+      }
+    ]
+  }
+}
