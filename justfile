@@ -262,6 +262,10 @@ sample-csv:
     @if [ ! -f samples/large_data.csv ]; then echo "id,first_name,last_name,email,company,department,job_title,salary,hire_date,country,city,phone,status,age,performance_score" > samples/large_data.csv; for i in $(seq 1 10000); do echo "$i,James,Smith,james.smith@example.com,Company$i,Engineering,Engineer,75000,2025-01-01,Norway,Oslo,+47-555-$i,active,35,4.5"; done >> samples/large_data.csv; fi
 
 [group('install')]
+reinstall dest="~/.local/bin": (uninstall dest) (install dest)
+    @echo "Removed {{dest}}/files"
+
+[group('install')]
 install dest=install_dir: release
     mkdir -p {{ dest }}
     install -m 0755 target/release/token {{ dest }}/token
