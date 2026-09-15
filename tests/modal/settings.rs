@@ -451,8 +451,15 @@ fn settings_collection_presets_are_drafts_and_cancel_keeps_the_editor() {
     modal(&mut model, ModalMsg::Confirm);
     let id = row(&model, "Server ID");
     modal(&mut model, ModalMsg::ActivateRow(id));
+    // The first preset gets a "-2" suffix only when the default config already has it.
+    let first = token::tooling::presets_for(token::tooling::PresetKind::Lsp, None)[0].id;
+    let expected = if model.config.lsp.servers.contains_key(first) {
+        format!("{first}-2")
+    } else {
+        first.to_owned()
+    };
     assert!(
-        matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.input() == format!("{}-2", token::tooling::presets_for(token::tooling::PresetKind::Lsp, None)[0].id))
+        matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.input() == expected)
     );
     assert_eq!(serde_yaml::to_value(&model.config).unwrap(), original);
     // A different record must not silently replace the unsaved preset draft.
