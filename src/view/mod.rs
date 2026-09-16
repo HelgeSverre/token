@@ -1408,6 +1408,35 @@ impl Renderer {
         scene.render(frame, painter, model, perf);
     }
 
+    /// Partial editor redraw with the same chrome layer order as a full frame.
+    fn render_cursor_lines(
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        model: &AppModel,
+        dirty_lines: &[usize],
+        splitters: &[SplitterBar],
+        perf: &mut crate::perf::PerfStats,
+    ) {
+        perf.measure_stage(crate::perf::PerfStage::CursorFastPath, || {
+            editor_text::render_cursor_lines_only(frame, painter, model, dirty_lines);
+        });
+        perf.measure_stage(crate::perf::PerfStage::FindBar, || {
+            find_bar::render(frame, painter, model);
+        });
+        if model.config.show_scrollbar {
+            perf.measure_stage(crate::perf::PerfStage::Scrollbars, || {
+                Self::redraw_scrollbars_for_focused_group(frame, model, painter.char_width());
+            });
+        }
+        // Splitters straddle pane edges. Both dirty gutter rows and scrollbar
+        // tracks can overwrite their pixels in the persistent back buffer.
+        if !splitters.is_empty() {
+            perf.measure_stage(crate::perf::PerfStage::Splitters, || {
+                Self::render_splitters(frame, splitters, model);
+            });
+        }
+    }
+
     /// Redraw the focused group's scrollbars on top of whatever was just
     /// drawn. Used after the cursor-lines-only fast path, which fills dirty
     /// lines across the full group width and would otherwise erase the
@@ -2053,24 +2082,14 @@ impl Renderer {
                 line_height,
             )
             .with_ui_font(&self.ui_font, &mut self.ui_glyph_cache, FontRole::Code);
-            perf.measure_stage(crate::perf::PerfStage::CursorFastPath, || {
-                editor_text::render_cursor_lines_only(&mut frame, &mut painter, model, dirty_lines);
-            });
-            perf.measure_stage(crate::perf::PerfStage::FindBar, || {
-                find_bar::render(&mut frame, &mut painter, model);
-            });
-            // Cursor-lines-only redraw fills each dirty line's background and
-            // text across the full group width, which overlaps the vertical
-            // scrollbar's overlay region (the scrollbar draws on top of the
-            // rightmost columns rather than reserving its own space). Without
-            // this, the scrollbar's last-drawn pixels in the persistent back
-            // buffer get overwritten by the fresh line fill until the next
-            // full render, making text appear to render over the scrollbar.
-            if model.config.show_scrollbar {
-                perf.measure_stage(crate::perf::PerfStage::Scrollbars, || {
-                    Self::redraw_scrollbars_for_focused_group(&mut frame, model, char_width);
-                });
-            }
+            Self::render_cursor_lines(
+                &mut frame,
+                &mut painter,
+                model,
+                dirty_lines,
+                &plan.splitters,
+                perf,
+            );
             #[cfg(debug_assertions)]
             {
                 let stats = painter.cache_stats();
@@ -2661,6 +2680,107 @@ mod cursor_fast_path_scrollbar_tests {
             metrics.advance_width,
             line_metrics.new_line_size.ceil() as usize,
         )
+    }
+
+    #[test]
+    fn cursor_fast_path_preserves_splitters_for_either_focused_pane() {
+        use crate::messages::{LayoutMsg, Msg};
+        use crate::model::SplitDirection;
+
+        let (font, ..) = load_test_font();
+        for scale in [1.0, 2.0] {
+            for direction in [SplitDirection::Horizontal, SplitDirection::Vertical] {
+                for focus_first in [true, false] {
+                    for scrollbars in [true, false] {
+                        let (width, height) = (800, 600);
+                        let mut model = AppModel::new(width as u32, height as u32, scale);
+                        model.config.show_scrollbar = scrollbars;
+                        model.theme.splitter.background =
+                            crate::theme::Color::rgb(0xAA, 0xBB, 0xCC);
+                        // Exercise both scrollbar tracks, including the one crossing
+                        // the full edge of the pane above a horizontal divider.
+                        model.document_mut().buffer = ropey::Rope::from_str(
+                            &format!("{}\n", "long line ".repeat(20)).repeat(200),
+                        );
+                        let first = model.editor_area.focused_group_id;
+                        crate::update::update(
+                            &mut model,
+                            Msg::Layout(LayoutMsg::SplitFocused(direction)),
+                        );
+                        if focus_first {
+                            model.editor_area.focused_group_id = first;
+                        }
+                        let font_size = 14.0 * scale as f32;
+                        let metrics = font.horizontal_line_metrics(font_size).unwrap();
+                        let line_height = metrics.new_line_size.ceil() as usize;
+                        let char_width = font.metrics('M', font_size).advance_width;
+                        model.line_height = line_height;
+                        model.char_width = char_width;
+                        let splitters = model.editor_area.compute_layout_scaled(
+                            Rect::new(0.0, 0.0, width as f32, height as f32),
+                            model.metrics.splitter_width,
+                        );
+                        model.editor_area.sync_all_viewports(
+                            line_height,
+                            char_width,
+                            &model.metrics,
+                            None,
+                        );
+                        let mut pixels = vec![0; width * height];
+                        let mut frame = Frame::new(&mut pixels, width, height);
+                        let mut cache = GlyphCache::new();
+                        let mut painter = TextPainter::new(
+                            &font,
+                            &mut cache,
+                            font_size,
+                            metrics.ascent,
+                            char_width,
+                            line_height,
+                        );
+                        let mut perf = crate::perf::PerfStats::default();
+                        Renderer::render_editor_area(
+                            &mut frame,
+                            &mut painter,
+                            &model,
+                            &splitters,
+                            &mut perf,
+                        );
+                        let bar = splitters[0].rect;
+                        let points: Vec<_> = (bar.y as usize..(bar.y + bar.height) as usize)
+                            .flat_map(|y| {
+                                (bar.x as usize..(bar.x + bar.width) as usize).map(move |x| (x, y))
+                            })
+                            .collect();
+                        let before: Vec<_> =
+                            points.iter().map(|&(x, y)| frame.get_pixel(x, y)).collect();
+                        assert!(before.iter().all(|pixel| *pixel == 0xFFAABBCC));
+
+                        // Use the production partial pass, including scrollbar
+                        // restoration; text-only rendering would miss the main bug.
+                        for cursor_visible in [false, true, false] {
+                            model.ui.cursor_visible = cursor_visible;
+                            Renderer::render_cursor_lines(
+                                &mut frame,
+                                &mut painter,
+                                &model,
+                                &[0],
+                                &splitters,
+                                &mut perf,
+                            );
+                            for (&(x, y), &expected) in points.iter().zip(&before) {
+                                assert_eq!(
+                                    frame.get_pixel(x, y),
+                                    expected,
+                                    "splitter changed at ({x}, {y}): scale={scale}, \
+                                     direction={direction:?}, first={focus_first}, \
+                                     scrollbars={scrollbars}, cursor={cursor_visible}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]
