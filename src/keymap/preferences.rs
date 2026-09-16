@@ -98,11 +98,10 @@ impl KeymapSnapshot {
         if bindings.len() > 2048 {
             return Err(invalid("Keymap exceeds the 2,048-binding editing limit"));
         }
-        let masks: Vec<_> = bindings.iter().map(context_mask).collect();
         let mut conflict_counts = vec![0; bindings.len()];
         for (index, binding) in bindings.iter().enumerate() {
             for other in index + 1..bindings.len() {
-                if (masks[index] & masks[other]) != 0
+                if contexts_overlap(binding, &bindings[other])
                     && (binding.keystrokes.starts_with(&bindings[other].keystrokes)
                         || bindings[other].keystrokes.starts_with(&binding.keystrokes))
                 {
@@ -250,7 +249,6 @@ pub fn conflicts(
     candidate: &Keybinding,
     skip: Option<usize>,
 ) -> Vec<usize> {
-    let candidate_mask = context_mask(candidate);
     bindings
         .iter()
         .enumerate()
@@ -263,14 +261,14 @@ pub fn conflicts(
             }
             let overlaps = binding.keystrokes.starts_with(&candidate.keystrokes)
                 || candidate.keystrokes.starts_with(&binding.keystrokes);
-            (overlaps && context_mask(binding) & candidate_mask != 0).then_some(index)
+            (overlaps && contexts_overlap(binding, candidate)).then_some(index)
         })
         .collect()
 }
 
-fn context_mask(binding: &Keybinding) -> u128 {
-    (0u8..128).fold(0, |mask, bits| {
-        let flag = |bit: u8| bits & (1u8 << bit) != 0u8;
+fn contexts_overlap(a: &Keybinding, b: &Keybinding) -> bool {
+    (0u16..512).any(|bits| {
+        let flag = |bit: u16| bits & (1u16 << bit) != 0;
         let context = KeyContext {
             has_selection: flag(0),
             has_multiple_cursors: flag(1),
@@ -279,16 +277,15 @@ fn context_mask(binding: &Keybinding) -> u128 {
             sidebar_focused: flag(4),
             overlay_routes_keys: flag(5),
             inline_suggestion_visible: flag(6),
+            completion_menu_visible: flag(7),
+            completion_session_pending: flag(8),
         };
         if (context.editor_focused && context.sidebar_focused)
             || (context.modal_active && (context.editor_focused || context.sidebar_focused))
+            || (context.completion_menu_visible && context.completion_session_pending)
         {
-            return mask;
+            return false;
         }
-        if binding.is_active(Some(&context)) {
-            mask | (1u128 << bits)
-        } else {
-            mask
-        }
+        a.is_active(Some(&context)) && b.is_active(Some(&context))
     })
 }

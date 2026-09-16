@@ -305,6 +305,31 @@ bindings:
   # code-block movement only if Token gains a compelling syntax/LSP-based design.
 
   # Tab handling - context-aware
+  # A visible menu wins over inline acceptance and normal editing.
+  - key: "tab"
+    command: AcceptMenuCompletion
+    when: ["completion_menu_visible"]
+
+  - key: "enter"
+    command: AcceptMenuCompletion
+    when: ["completion_menu_visible"]
+
+  - key: "up"
+    command: PreviousMenuCompletion
+    when: ["completion_menu_visible"]
+
+  - key: "down"
+    command: NextMenuCompletion
+    when: ["completion_menu_visible"]
+
+  - key: "pageup"
+    command: PreviousMenuCompletionPage
+    when: ["completion_menu_visible"]
+
+  - key: "pagedown"
+    command: NextMenuCompletionPage
+    when: ["completion_menu_visible"]
+
   # Partial acceptance takes priority over movement only while ghost text shows.
   - key: "cmd+right"
     command: AcceptInlineWord
@@ -353,6 +378,14 @@ bindings:
   # 2. Else if selection → clear selection  
   # 3. Else → do nothing (EscapeSmartClear handles the no-op case)
   # ===========================================================================
+  - key: "escape"
+    command: DismissMenuCompletion
+    when: ["completion_menu_visible"]
+
+  - key: "escape"
+    command: DismissMenuCompletion
+    when: ["completion_session_pending"]
+
   - key: "escape"
     command: DismissInlineSuggestion
     when: ["inline_suggestion_visible"]

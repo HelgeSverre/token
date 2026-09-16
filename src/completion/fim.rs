@@ -445,11 +445,12 @@ mod tests {
     fn request() -> InlineRequest {
         InlineRequest {
             snapshot: RequestSnapshot {
+                session_id: crate::completion::session::SessionId(1),
                 document_id: DocumentId(1),
                 revision: 1,
                 line: 0,
                 column: 8,
-                request_id: 1,
+                request_id: crate::completion::session::RequestId(1),
             },
             prefix: "let a = ".into(),
             suffix: "\n".into(),

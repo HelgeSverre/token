@@ -1524,22 +1524,8 @@ pub struct UiState {
     /// Cursor-anchored popup (completion/hover/debug demo), if one is open.
     /// Distinct from `active_modal` — see `CursorOverlayState`.
     pub cursor_overlay: Option<CursorOverlayState>,
-    /// Completion session, including invisible sessions waiting for LSP/syntax.
-    /// Only nonempty results own a `Completion` cursor overlay.
-    pub completion_menu: Option<crate::completion::CompletionMenuState>,
-    pub(crate) completion_commit: Option<crate::completion::menu::PendingCommit>,
-    pub(crate) completion_path: Option<std::sync::Arc<crate::completion::path::PathRequest>>,
-    /// Ghost text at the cursor (autocomplete.md Phase 2); paint and
-    /// accept check `applies_to` before trusting it.
-    pub inline_suggestion: Option<crate::completion::inline::InlineSuggestionState>,
-    pub inline_session: Option<crate::completion::provider::InlineSession>,
-    /// A worker request is out for the focused document.
-    pub inline_in_flight: bool,
-    /// Consecutive backend failures; auto-trigger pauses at the cap.
-    pub inline_failures: u32,
-    pub inline_next_request_id: u64,
-    /// Avoid repeating a persistence failure on every suggestion.
-    pub inline_statistics_failed: bool,
+    /// One owner for menu/path/commit and inline completion lifecycles.
+    pub completion: crate::completion::session::CompletionState,
     /// Hover-card content (lsp-integration.md Phase 4), set alongside
     /// `cursor_overlay` being `Some(CursorOverlayKind::Hover)`. `None`
     /// whenever the hover card is closed.
@@ -1581,9 +1567,13 @@ impl UiState {
                 CursorOverlayKind::Hover => true,
                 CursorOverlayKind::Completion => {
                     self.has_visible_completion()
-                        && self.completion_menu.as_ref().is_some_and(|menu| {
-                            menu.selected_documentation(overlay.selected).is_some()
-                        })
+                        && self
+                            .completion
+                            .completion_menu
+                            .as_ref()
+                            .is_some_and(|menu| {
+                                menu.selected_documentation(overlay.selected).is_some()
+                            })
                 }
                 CursorOverlayKind::DebugCompletion
                 | CursorOverlayKind::DebugHover
@@ -1623,12 +1613,10 @@ impl UiState {
     /// Pending completion requests have state but do not own keys or suppress
     /// inline suggestions until there are rows to display.
     pub fn has_visible_completion(&self) -> bool {
-        self.completion_menu
+        self.completion
+            .completion_menu
             .as_ref()
             .is_some_and(|menu| !menu.filtered.is_empty())
-            && self
-                .cursor_overlay
-                .is_some_and(|overlay| overlay.kind == CursorOverlayKind::Completion)
     }
 
     /// Create a new UI state with default settings
@@ -1665,15 +1653,7 @@ impl UiState {
             settings_hover_action: None,
             modal_close_hovered: false,
             cursor_overlay: None,
-            completion_menu: None,
-            completion_commit: None,
-            completion_path: None,
-            inline_suggestion: None,
-            inline_session: None,
-            inline_in_flight: false,
-            inline_failures: 0,
-            inline_next_request_id: 0,
-            inline_statistics_failed: false,
+            completion: crate::completion::session::CompletionState::default(),
             hover_card: None,
             reference_list: None,
             code_action_list: None,

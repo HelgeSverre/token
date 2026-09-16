@@ -7,6 +7,7 @@
 pub mod context;
 pub mod fim;
 pub mod inline;
+pub mod interaction;
 pub mod lsp;
 pub mod menu;
 pub mod path;
@@ -15,6 +16,7 @@ pub mod prompt;
 pub mod provider;
 pub mod recency;
 pub mod retrieval;
+pub mod session;
 pub mod sources;
 pub mod statistics;
 

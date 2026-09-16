@@ -118,6 +118,12 @@ pub enum CommandId {
 
     // Completion (autocomplete.md Phase 1)
     TriggerCompletionMenu,
+    AcceptMenuCompletion,
+    DismissMenuCompletion,
+    NextMenuCompletion,
+    PreviousMenuCompletion,
+    NextMenuCompletionPage,
+    PreviousMenuCompletionPage,
     /// Inline ghost-text suggestion (autocomplete.md Phase 2)
     TriggerInlineSuggestion,
     AcceptInlineSuggestion,
@@ -599,6 +605,42 @@ pub static COMMANDS: &[CommandDef] = &[
         action: Some(KeymapCommand::TriggerCompletionMenu),
         category: CommandCategory::Edit,
         label: "Trigger Completion",
+    },
+    CommandDef {
+        id: CommandId::AcceptMenuCompletion,
+        action: Some(KeymapCommand::AcceptMenuCompletion),
+        category: CommandCategory::Edit,
+        label: "Accept Menu Completion",
+    },
+    CommandDef {
+        id: CommandId::DismissMenuCompletion,
+        action: Some(KeymapCommand::DismissMenuCompletion),
+        category: CommandCategory::Edit,
+        label: "Dismiss Menu Completion",
+    },
+    CommandDef {
+        id: CommandId::NextMenuCompletion,
+        action: Some(KeymapCommand::NextMenuCompletion),
+        category: CommandCategory::Edit,
+        label: "Next Menu Completion",
+    },
+    CommandDef {
+        id: CommandId::PreviousMenuCompletion,
+        action: Some(KeymapCommand::PreviousMenuCompletion),
+        category: CommandCategory::Edit,
+        label: "Previous Menu Completion",
+    },
+    CommandDef {
+        id: CommandId::NextMenuCompletionPage,
+        action: Some(KeymapCommand::NextMenuCompletionPage),
+        category: CommandCategory::Edit,
+        label: "Next Menu Completion Page",
+    },
+    CommandDef {
+        id: CommandId::PreviousMenuCompletionPage,
+        action: Some(KeymapCommand::PreviousMenuCompletionPage),
+        category: CommandCategory::Edit,
+        label: "Previous Menu Completion Page",
     },
     CommandDef {
         id: CommandId::TriggerInlineSuggestion,
@@ -1299,6 +1341,7 @@ pub enum Cmd {
     /// on a server that supports completion.
     LspScheduleCompletion {
         document_id: DocumentId,
+        session: crate::completion::session::SessionId,
         position: lsp_types::Position,
         revision: u64,
         trigger_character: Option<String>,
@@ -1329,16 +1372,15 @@ pub enum Cmd {
     /// items whose auto-import `additionalTextEdits` only exist after
     /// resolve; skipping resolve silently drops imports) and arms the
     /// unblock timeout; `Docs` purpose fetches documentation for the
-    /// selected row and times out silently. `selected` echoes the menu
-    /// selection so a resolution whose selection has since moved is
-    /// dropped.
+    /// selected row and times out silently. Candidate identity is stable
+    /// across filtering and row reordering.
     LspResolveCompletionItem {
         document_id: DocumentId,
         revision: u64,
         server_id: crate::lsp::LspServerId,
         root: PathBuf,
         raw_item: std::sync::Arc<lsp_types::CompletionItem>,
-        selected: usize,
+        candidate: crate::completion::session::CandidateId,
         purpose: ResolvePurpose,
     },
     /// Arm (or reset) the per-document debounce for a `Docs`-purpose
@@ -1351,7 +1393,7 @@ pub enum Cmd {
         server_id: crate::lsp::LspServerId,
         root: PathBuf,
         raw_item: std::sync::Arc<lsp_types::CompletionItem>,
-        selected: usize,
+        candidate: crate::completion::session::CandidateId,
     },
     /// The master `lsp.enabled` switch flipped (`CommandId::ToggleLsp`).
     /// Disabling tears down every running server — a non-quit variant of

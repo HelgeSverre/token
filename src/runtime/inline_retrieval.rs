@@ -255,7 +255,8 @@ mod tests {
             request: token::completion::inline::build_request(
                 &document,
                 (0, 13),
-                1,
+                token::completion::session::SessionId(1),
+                token::completion::session::RequestId(1),
                 Some("rust".into()),
                 true,
             )

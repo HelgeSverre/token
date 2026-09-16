@@ -547,7 +547,7 @@ fn completion_snapshot(model: &AppModel) -> Option<CompletionSnapshot> {
     if !model.ui.has_visible_completion() {
         return None;
     }
-    let menu = model.ui.completion_menu.as_ref()?;
+    let menu = model.ui.completion.completion_menu.as_ref()?;
     let selected = model.ui.cursor_overlay.map(|o| o.selected).unwrap_or(0);
     let items = menu
         .filtered
@@ -1014,7 +1014,7 @@ impl EditorSnapshot {
                 .map(|state| state.remaining().to_owned()),
             inline_choice: token::update::inline::visible(model)
                 .map(|state| state.choice_position()),
-            inline_in_flight: model.ui.inline_in_flight,
+            inline_in_flight: model.ui.completion.inline_in_flight,
             lsp_servers: model
                 .lsp
                 .servers

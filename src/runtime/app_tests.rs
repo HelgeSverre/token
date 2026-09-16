@@ -321,7 +321,7 @@ fn path_completion_runtime_reads_directory_accepts_and_undoes() {
         .ui
         .cursor_overlay
         .is_some()));
-    let menu = app.model.ui.completion_menu.as_ref().unwrap();
+    let menu = app.model.ui.completion.completion_menu.as_ref().unwrap();
     assert_eq!(menu.selected_item(0).unwrap().label, "assets/");
     app.process_automation_msg(Msg::Completion(
         token::messages::CompletionMsg::AcceptMenuItem,
@@ -330,6 +330,7 @@ fn path_completion_runtime_reads_directory_accepts_and_undoes() {
     assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
         app.model
             .ui
+            .completion
             .completion_menu
             .as_ref()
             .is_some_and(|menu| menu.items.iter().any(|item| item.label == "logo.svg"))
@@ -1189,7 +1190,7 @@ fn recency_inline_suggestion_round_trips_through_the_worker_and_accepts() {
     assert!(app.inline_deadline.is_some(), "debounce armed");
     app.check_inline_deadlines();
     assert!(app.inline_deadline.is_none());
-    assert!(app.model.ui.inline_in_flight);
+    assert!(app.model.ui.completion.inline_in_flight);
     {
         let latest = app.inline_worker.latest();
         let request = &latest.as_ref().unwrap().request;
@@ -1418,9 +1419,9 @@ fn inline_dismissal_and_window_focus_loss_clear_runtime_debounces() {
             app.process_automation_msg(Msg::Completion(CompletionMsg::DismissInline));
         }
         assert!(app.inline_deadline.is_none());
-        assert!(app.model.ui.inline_session.is_none());
+        assert!(app.model.ui.completion.inline_session.is_none());
         app.check_inline_deadlines();
-        assert!(!app.model.ui.inline_in_flight);
+        assert!(!app.model.ui.completion.inline_in_flight);
     }
 }
 
@@ -1456,14 +1457,15 @@ fn tabby_empty_result_does_not_count_as_backend_failure() {
         explicit: true,
     }));
     app.check_inline_deadlines();
-    assert!(app.model.ui.inline_in_flight);
+    assert!(app.model.ui.completion.inline_in_flight);
     assert!(pump_until(&mut app, Duration::from_secs(3), |app| !app
         .model
         .ui
+        .completion
         .inline_in_flight));
-    assert_eq!(app.model.ui.inline_failures, 0);
+    assert_eq!(app.model.ui.completion.inline_failures, 0);
     assert!(token::update::inline::visible(&app.model).is_none());
-    assert!(app.model.ui.inline_session.is_none());
+    assert!(app.model.ui.completion.inline_session.is_none());
     assert_eq!(app.model.document().buffer.to_string(), "\n");
 }
 
@@ -1622,7 +1624,7 @@ fn inline_alternatives_cycle_through_automation_without_editing_or_requesting() 
     assert_eq!(initial.inline_suggestion.as_deref(), Some("héllo_one();"));
     let revision = app.model.document().revision;
     let undo_len = app.model.document().undo_stack.len();
-    let request_id = app.model.ui.inline_next_request_id;
+    let request_id = app.model.ui.completion.inline_next_request_id;
     for (action, expected, choice) in [
         ("PrevInlineSuggestion", "different();", (3, 3)),
         ("NextInlineSuggestion", "héllo_one();", (1, 3)),
@@ -1645,7 +1647,7 @@ fn inline_alternatives_cycle_through_automation_without_editing_or_requesting() 
         assert_eq!(app.model.document().buffer.to_string(), "\n");
         assert_eq!(app.model.document().revision, revision);
         assert_eq!(app.model.document().undo_stack.len(), undo_len);
-        assert_eq!(app.model.ui.inline_next_request_id, request_id);
+        assert_eq!(app.model.ui.completion.inline_next_request_id, request_id);
         assert!(!state.inline_in_flight && app.inline_deadline.is_none());
     }
     assert!(
@@ -1708,9 +1710,9 @@ fn inline_suggestion_backend_failure_is_a_transient() {
         explicit: true,
     }));
     app.check_inline_deadlines();
-    assert!(app.model.ui.inline_in_flight);
+    assert!(app.model.ui.completion.inline_in_flight);
     assert!(pump_until(&mut app, Duration::from_secs(5), |app| {
-        !app.model.ui.inline_in_flight
+        !app.model.ui.completion.inline_in_flight
     }));
     assert!(app
         .model
@@ -2807,6 +2809,7 @@ fn a_completion_response_translates_into_completion_resolved() {
         doc_id,
         PendingCompletion {
             document_id: doc_id,
+            session: token::completion::session::SessionId(1),
             revision,
         },
     );
@@ -2828,7 +2831,7 @@ fn a_completion_response_translates_into_completion_resolved() {
 
     assert!(app.lsp.completion.requests.is_empty());
     assert!(
-        app.model.ui.completion_menu.is_none(),
+        app.model.ui.completion.completion_menu.is_none(),
         "the runtime only translates; update() merges into an open menu"
     );
 }
@@ -2845,6 +2848,7 @@ fn an_abandoned_completion_response_is_consumed_and_discarded() {
         doc_id,
         PendingCompletion {
             document_id: doc_id,
+            session: token::completion::session::SessionId(1),
             revision,
         },
     );
@@ -2877,7 +2881,7 @@ fn a_member_response_opens_a_hidden_session_with_structured_method_details() {
         &mut app.model,
         Msg::Completion(token::messages::CompletionMsg::TriggerMenu),
     );
-    assert!(app.model.ui.completion_menu.is_some());
+    assert!(app.model.ui.completion.completion_menu.is_some());
     assert!(app.model.ui.cursor_overlay.is_none());
     assert!(send_automation_request(&mut app, AutomationRequest::State)
         .state
@@ -2904,6 +2908,7 @@ fn a_member_response_opens_a_hidden_session_with_structured_method_details() {
         document_id,
         PendingCompletion {
             document_id,
+            session: token::completion::session::SessionId(1),
             revision,
         },
     );
@@ -2924,7 +2929,7 @@ fn a_member_response_opens_a_hidden_session_with_structured_method_details() {
         .unwrap();
     app.process_async_messages();
     assert!(app.model.ui.has_visible_completion());
-    let menu = app.model.ui.completion_menu.as_ref().unwrap();
+    let menu = app.model.ui.completion.completion_menu.as_ref().unwrap();
     assert_eq!(menu.items.len(), 1);
     let item = menu.selected_item(0).unwrap();
     assert_eq!(item.label, "compile");
@@ -2943,12 +2948,14 @@ fn completion_debounce_rearm_replaces_and_fires_once() {
 
     app.process_cmd(Cmd::LspScheduleCompletion {
         document_id: doc_id,
+        session: token::completion::session::SessionId(1),
         position,
         revision: 1,
         trigger_character: Some(".".to_owned()),
     });
     app.process_cmd(Cmd::LspScheduleCompletion {
         document_id: doc_id,
+        session: token::completion::session::SessionId(2),
         position,
         revision: 2,
         trigger_character: None,
@@ -2962,6 +2969,10 @@ fn completion_debounce_rearm_replaces_and_fires_once() {
     assert_eq!(
         app.lsp.completion_debounces[&doc_id].revision, 2,
         "the newest schedule wins"
+    );
+    assert_eq!(
+        app.lsp.completion_debounces[&doc_id].session,
+        token::completion::session::SessionId(2)
     );
 
     // Force the deadline due, then fire.
@@ -2984,6 +2995,7 @@ fn cancel_completion_drops_the_debounce_and_supersedes_the_request() {
 
     app.process_cmd(Cmd::LspScheduleCompletion {
         document_id: doc_id,
+        session: token::completion::session::SessionId(1),
         position: lsp_types::Position::new(0, 0),
         revision: 1,
         trigger_character: None,
@@ -2993,6 +3005,7 @@ fn cancel_completion_drops_the_debounce_and_supersedes_the_request() {
         doc_id,
         PendingCompletion {
             document_id: doc_id,
+            session: token::completion::session::SessionId(1),
             revision: 1,
         },
     );
@@ -3022,7 +3035,7 @@ fn a_resolve_past_its_deadline_unblocks_the_accept_with_no_extras() {
         PendingResolve {
             document_id: doc_id,
             revision: 1,
-            selected: 0,
+            candidate: token::completion::session::CandidateId::UNASSIGNED,
             purpose: ResolvePurpose::Accept,
         },
     );
@@ -3048,7 +3061,7 @@ fn commit_character_runtime_reply_timeout_and_missing_server_preserve_the_transa
         for ch in "va".chars() {
             app.process_automation_msg(Msg::Document(DocumentMsg::InsertChar(ch)));
         }
-        let menu = app.model.ui.completion_menu.clone().unwrap();
+        let menu = app.model.ui.completion.completion_menu.clone().unwrap();
         let server = LspServerId::from("rust-analyzer");
         let root = PathBuf::from("/tmp/proj-commit");
         let options = lsp_types::CompletionOptions {
@@ -3085,6 +3098,7 @@ fn commit_character_runtime_reply_timeout_and_missing_server_preserve_the_transa
         );
         app.process_automation_msg(Msg::Lsp(LspMsg::CompletionResolved {
             document_id: menu.document_id,
+            session: menu.identity.session,
             revision: menu.revision,
             items,
             is_incomplete: false,
@@ -3155,12 +3169,14 @@ fn a_docs_resolve_past_its_deadline_is_dropped_silently() {
     let revision = app.model.document().revision;
     let server_id = LspServerId::from("rust-analyzer");
     let root = PathBuf::from("/tmp/proj-docs-timeout");
-    app.model.ui.completion_menu = Some(CompletionMenuState {
+    app.model.ui.completion.completion_menu = Some(CompletionMenuState {
+        identity: token::completion::menu::MenuIdentity::default(),
         document_id: doc_id,
         revision,
         query_start: token::model::Cursor::at(0, 0),
         query: String::new(),
         items: vec![MenuItem {
+            id: token::completion::session::CandidateId::UNASSIGNED,
             label: "foo".to_owned(),
             filter_text: "foo".to_owned(),
             insert: MenuInsert::Lsp(Box::new(LspInsert {
@@ -3200,7 +3216,7 @@ fn a_docs_resolve_past_its_deadline_is_dropped_silently() {
         PendingResolve {
             document_id: doc_id,
             revision,
-            selected: 0,
+            candidate: token::completion::session::CandidateId::UNASSIGNED,
             purpose: ResolvePurpose::Docs,
         },
     );
@@ -3212,7 +3228,7 @@ fn a_docs_resolve_past_its_deadline_is_dropped_silently() {
     app.check_lsp_resolve_deadlines();
 
     assert!(app.lsp.resolve.requests.is_empty());
-    let menu = app.model.ui.completion_menu.as_ref().unwrap();
+    let menu = app.model.ui.completion.completion_menu.as_ref().unwrap();
     let MenuInsert::Lsp(data) = &menu.items[0].insert else {
         panic!("expected LSP item");
     };
@@ -3235,7 +3251,7 @@ fn cancel_completion_drops_the_resolve_debounce() {
             label: "foo".into(),
             ..Default::default()
         }),
-        selected: 0,
+        candidate: token::completion::session::CandidateId::UNASSIGNED,
     });
     assert_eq!(app.lsp.resolve_debounces.len(), 1);
 

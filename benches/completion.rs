@@ -91,8 +91,14 @@ fn model_with_open_menu(lsp_items: usize) -> AppModel {
     for ch in "va".chars() {
         update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)));
     }
-    let state = model.ui.completion_menu.as_ref().expect("menu open");
-    let (document_id, revision) = (state.document_id, state.revision);
+    let state = model
+        .ui
+        .completion
+        .completion_menu
+        .as_ref()
+        .expect("menu open");
+    let (document_id, session, revision) =
+        (state.document_id, state.identity.session, state.revision);
     let items = items_to_menu_items(
         server_items(lsp_items),
         &LspServerId::from("rust-analyzer"),
@@ -106,12 +112,13 @@ fn model_with_open_menu(lsp_items: usize) -> AppModel {
         &mut model,
         Msg::Lsp(LspMsg::CompletionResolved {
             document_id,
+            session,
             revision,
             items,
             is_incomplete: false,
         }),
     );
-    assert!(model.ui.completion_menu.is_some());
+    assert!(model.ui.completion.completion_menu.is_some());
     model
 }
 
@@ -263,7 +270,8 @@ impl RecencyFixture {
         let request = token::completion::inline::build_request(
             model.document(),
             (0, 0),
-            1,
+            token::completion::session::SessionId(1),
+            token::completion::session::RequestId(1),
             Some("rust".into()),
             false,
         )
@@ -434,7 +442,14 @@ impl GhostFixture {
             &mut model,
             Msg::Completion(CompletionMsg::TriggerInline { explicit: true }),
         );
-        let snapshot = model.ui.inline_session.as_ref().unwrap().snapshot.clone();
+        let snapshot = model
+            .ui
+            .completion
+            .inline_session
+            .as_ref()
+            .unwrap()
+            .snapshot
+            .clone();
         let texts = vec![
             "let item = build();\n\tuse_item(item);\n".repeat(4),
             "let other = make();\n\tfinish(other);\n".repeat(4),

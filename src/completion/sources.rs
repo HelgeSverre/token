@@ -53,6 +53,7 @@ pub fn collect_words(
                 continue;
             }
             out.push(MenuItem {
+                id: crate::completion::session::CandidateId::UNASSIGNED,
                 label: word.clone(),
                 filter_text: word.clone(),
                 insert: MenuInsert::Text(word),
@@ -179,6 +180,7 @@ pub fn collect_snippets(language: LanguageId) -> Vec<MenuItem> {
     snippet_table(language)
         .iter()
         .map(|&(prefix, body)| MenuItem {
+            id: crate::completion::session::CandidateId::UNASSIGNED,
             label: prefix.to_string(),
             filter_text: prefix.to_string(),
             insert: MenuInsert::Text(body.to_string()),

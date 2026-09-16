@@ -237,11 +237,12 @@ mod tests {
             context: None,
             request: InlineRequest {
                 snapshot: RequestSnapshot {
+                    session_id: token::completion::session::SessionId(1),
                     document_id: DocumentId(1),
                     revision: 1,
                     line: 0,
                     column: 0,
-                    request_id: id,
+                    request_id: token::completion::session::RequestId(id),
                 },
                 prefix: String::new(),
                 suffix: "\n".into(),
@@ -427,7 +428,15 @@ exec '{test_exe}' --exact runtime::inline_worker::tests::managed_server_lifecycl
         );
         let first_pid = std::fs::read_to_string(&pid_file).unwrap();
         owner.cancel();
-        request.request.snapshot.request_id += 1;
+        request.request.snapshot.request_id = token::completion::session::RequestId(
+            request
+                .request
+                .snapshot
+                .request_id
+                .0
+                .checked_add(1)
+                .unwrap(),
+        );
         assert!(owner.submit(Box::new(request.clone())));
         assert!(matches!(
             replies.recv_timeout(Duration::from_secs(5)).unwrap(),
@@ -445,7 +454,15 @@ exec '{test_exe}' --exact runtime::inline_worker::tests::managed_server_lifecycl
         // not restart it; one explicit request may retry after fixing the model.
         std::fs::write(&model, "loading").unwrap();
         owner.configure(Some(&request.provider));
-        request.request.snapshot.request_id += 1;
+        request.request.snapshot.request_id = token::completion::session::RequestId(
+            request
+                .request
+                .snapshot
+                .request_id
+                .0
+                .checked_add(1)
+                .unwrap(),
+        );
         let began_loading = std::time::Instant::now();
         assert!(owner.submit(Box::new(request.clone())));
         wait_until(|| {
@@ -459,7 +476,15 @@ exec '{test_exe}' --exact runtime::inline_worker::tests::managed_server_lifecycl
             began_loading.elapsed() >= Duration::from_secs(1),
             "cancellation must not kill the loading model before its startup deadline"
         );
-        request.request.snapshot.request_id += 1;
+        request.request.snapshot.request_id = token::completion::session::RequestId(
+            request
+                .request
+                .snapshot
+                .request_id
+                .0
+                .checked_add(1)
+                .unwrap(),
+        );
         assert!(owner.submit(Box::new(request.clone())));
         assert!(matches!(
             replies.recv_timeout(Duration::from_secs(5)).unwrap(),
@@ -468,7 +493,15 @@ exec '{test_exe}' --exact runtime::inline_worker::tests::managed_server_lifecycl
         assert_eq!(std::fs::read_to_string(&pid_file).unwrap(), loading_pid);
         std::fs::write(&model, "ready").unwrap();
         request.request.explicit = true;
-        request.request.snapshot.request_id += 1;
+        request.request.snapshot.request_id = token::completion::session::RequestId(
+            request
+                .request
+                .snapshot
+                .request_id
+                .0
+                .checked_add(1)
+                .unwrap(),
+        );
         assert!(owner.submit(Box::new(request.clone())));
         assert!(matches!(
             replies.recv_timeout(Duration::from_secs(5)).unwrap(),
@@ -526,7 +559,7 @@ exec '{test_exe}' --exact runtime::inline_worker::tests::managed_server_lifecycl
         assert!(closed.recv_timeout(Duration::from_secs(3)).unwrap());
         let reply = replies.recv_timeout(Duration::from_secs(3)).unwrap();
         assert!(
-            matches!(reply, Msg::Completion(CompletionMsg::InlineReady { snapshot, texts }) if snapshot.request_id == 2 && texts == vec!["new answer"])
+            matches!(reply, Msg::Completion(CompletionMsg::InlineReady { snapshot, texts }) if snapshot.request_id == token::completion::session::RequestId(2) && texts == vec!["new answer"])
         );
         assert!(
             replies.try_recv().is_err(),
@@ -596,7 +629,7 @@ exec '{test_exe}' --exact runtime::inline_worker::tests::managed_server_lifecycl
         request.request.prefix = "hello_".into();
         request.request.snapshot.column = 6;
         request.request.snapshot.revision = 2;
-        request.request.snapshot.request_id = 2;
+        request.request.snapshot.request_id = token::completion::session::RequestId(2);
         let replay = run(&mut provider, &request, &mut cache, &mut processor).await;
         assert!(
             matches!(replay, CompletionMsg::InlineReady { snapshot, texts } if snapshot == request.request.snapshot && texts == ["world", "again"])
@@ -622,13 +655,13 @@ exec '{test_exe}' --exact runtime::inline_worker::tests::managed_server_lifecycl
             matches!(replies.recv_timeout(Duration::from_secs(3)).unwrap(), Msg::Completion(CompletionMsg::InlineReady { texts, .. }) if texts == ["new answer"])
         );
         let mut next = (*first).clone();
-        next.request.snapshot.request_id = 2;
+        next.request.snapshot.request_id = token::completion::session::RequestId(2);
         next.request.snapshot.revision = 8;
         next.request.prefix = "new ".into();
         next.request.snapshot.column = 4;
         tx.send(Some(Arc::new(next))).unwrap();
         assert!(
-            matches!(replies.recv_timeout(Duration::from_secs(3)).unwrap(), Msg::Completion(CompletionMsg::InlineReady { snapshot, texts }) if snapshot.request_id == 2 && snapshot.revision == 8 && texts == ["answer"])
+            matches!(replies.recv_timeout(Duration::from_secs(3)).unwrap(), Msg::Completion(CompletionMsg::InlineReady { snapshot, texts }) if snapshot.request_id == token::completion::session::RequestId(2) && snapshot.revision == 8 && texts == ["answer"])
         );
         drop(tx);
         done.recv_timeout(Duration::from_secs(3)).unwrap();
@@ -713,7 +746,7 @@ exec '{test_exe}' --exact runtime::inline_worker::tests::managed_server_lifecycl
         )
         .await;
         assert!(
-            matches!(reply, CompletionMsg::InlineReady { snapshot, texts } if snapshot.request_id == 42 && texts == vec!["close_block();", "other_block();"])
+            matches!(reply, CompletionMsg::InlineReady { snapshot, texts } if snapshot.request_id == token::completion::session::RequestId(42) && texts == vec!["close_block();", "other_block();"])
         );
     }
 }

@@ -240,11 +240,12 @@ mod tests {
     fn request() -> InlineRequest {
         InlineRequest {
             snapshot: RequestSnapshot {
+                session_id: crate::completion::session::SessionId(1),
                 document_id: DocumentId(1),
                 revision: 1,
                 line: 1,
                 column: 2,
-                request_id: 1,
+                request_id: crate::completion::session::RequestId(1),
             },
             prefix: "α\r\n  P ".into(),
             suffix: " S\nβ".into(),

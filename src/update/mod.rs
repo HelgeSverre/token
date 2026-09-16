@@ -132,7 +132,7 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
         _ => {}
     }
     let was_loading = model.ui.is_loading;
-    let had_path_completion = model.ui.completion_path.is_some();
+    let had_path_completion = model.ui.completion.completion_path.is_some();
     #[cfg(debug_assertions)]
     let result = update_traced(model, msg);
     #[cfg(not(debug_assertions))]
@@ -184,7 +184,7 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     }
     let result = merge_cmds(result, completion_cleanup);
     let result = merge_cmds(result, path_cleanup);
-    let result = if had_path_completion && model.ui.completion_path.is_none() {
+    let result = if had_path_completion && model.ui.completion.completion_path.is_none() {
         merge_cmds(result, Some(Cmd::CancelPathCompletion))
     } else {
         result
@@ -220,7 +220,10 @@ fn resolve_text_settings(model: &mut AppModel) -> Option<Cmd> {
 
 /// Inner update logic (no tracing)
 fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
-    let inline_progress_before = (model.ui.inline_in_flight, model.ui.cursor_visible);
+    let inline_progress_before = (
+        model.ui.completion.inline_in_flight,
+        model.ui.cursor_visible,
+    );
     model.editor_area.refresh_wrap_caches();
     // Signature help's dismissal anchor: it survives edits and moves
     // along its line, but not the caret leaving that line, a tab switch,
@@ -405,8 +408,9 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
 
     model.editor_area.refresh_wrap_caches();
     sync_status_bar(model);
-    if inline_progress_before.0 != model.ui.inline_in_flight
-        || (model.ui.inline_in_flight && inline_progress_before.1 != model.ui.cursor_visible)
+    if inline_progress_before.0 != model.ui.completion.inline_in_flight
+        || (model.ui.completion.inline_in_flight
+            && inline_progress_before.1 != model.ui.cursor_visible)
     {
         merge_cmds(result, Some(Cmd::redraw_status_bar()))
     } else {
@@ -583,12 +587,12 @@ fn msg_type_name(msg: &Msg) -> String {
         Msg::Completion(crate::messages::CompletionMsg::InlineContextReady { job, .. }) => {
             format!(
                 "Completion::InlineContextReady(request={})",
-                job.request.snapshot.request_id
+                job.request.snapshot.request_id.0
             )
         }
         Msg::Completion(m) => format!("Completion::{:?}", m),
         Msg::Lsp(crate::messages::LspMsg::CompletionResolved {
-            document_id, revision, items, is_incomplete,
+            document_id, revision, items, is_incomplete, ..
         }) => format!("Lsp::CompletionResolved(document={document_id:?}, revision={revision}, items={}, incomplete={is_incomplete})", items.len()),
         Msg::Formatting(crate::messages::FormattingMsg::ExternalResolved { document_id, revision, result, .. }) =>
             format!("Formatting::ExternalResolved(document={document_id:?}, revision={revision}, success={})", result.is_ok()),
@@ -639,6 +643,7 @@ fn async_reply_trace_names_exclude_source_payloads() {
     );
     let name = msg_type_name(&Msg::Lsp(crate::messages::LspMsg::CompletionResolved {
         document_id: DocumentId(1),
+        session: crate::completion::session::SessionId(1),
         revision: 0,
         items,
         is_incomplete: false,

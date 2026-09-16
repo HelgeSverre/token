@@ -135,6 +135,7 @@ fn completion_item_to_menu_item(
     let plain_text = text.unwrap_or_else(|| label.clone());
 
     Some(MenuItem {
+        id: crate::completion::session::CandidateId::UNASSIGNED,
         label: label.clone(),
         filter_text,
         insert: MenuInsert::Lsp(Box::new(LspInsert {

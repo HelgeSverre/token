@@ -692,6 +692,7 @@ impl PendingCodeActions {
 /// cursor (the menu's own query/revision guards do the rest update-side).
 struct PendingCompletion {
     document_id: token::model::editor_area::DocumentId,
+    session: token::completion::session::SessionId,
     revision: u64,
 }
 
@@ -703,12 +704,11 @@ impl PendingRequest for PendingCompletion {
 
 /// What `LspManager` needs to turn a `completionItem/resolve` response
 /// into `LspMsg::CompletionItemResolved` — the deferred accept's context.
-/// `selected` echoes the menu selection the resolve was issued for so a
-/// resolution whose selection has since moved is dropped update-side.
+/// Candidate identity survives row filtering/reordering update-side.
 struct PendingResolve {
     document_id: token::model::editor_area::DocumentId,
     revision: u64,
-    selected: usize,
+    candidate: token::completion::session::CandidateId,
     purpose: ResolvePurpose,
 }
 
@@ -723,6 +723,7 @@ impl PendingRequest for PendingResolve {
 /// deadline (a keystroke burst coalesces into one request); dismissal
 /// drops it (`Cmd::LspCancelCompletion`).
 struct ScheduledCompletion {
+    session: token::completion::session::SessionId,
     position: lsp_types::Position,
     revision: u64,
     trigger_character: Option<String>,
@@ -736,7 +737,7 @@ struct ScheduledResolve {
     server_id: LspServerId,
     root: PathBuf,
     raw_item: std::sync::Arc<lsp_types::CompletionItem>,
-    selected: usize,
+    candidate: token::completion::session::CandidateId,
     deadline: Instant,
 }
 
@@ -1623,15 +1624,9 @@ impl App {
                         logo,
                     );
 
-                    // Cursor-anchored popups aren't modals — they claim exactly
-                    // Up/Down/Enter/Esc/Tab (+PageUp/PageDown,
-                    // lsp-integration.md Phase 5) and must
-                    // claim them *before* the keymap runs, or bindings like
-                    // Up -> MoveCursorUp / Enter -> InsertNewline (both
-                    // `is_simple()`, non-global) would dispatch and consume the
-                    // key first. Every other key (Backspace, Delete, arrows with
-                    // modifiers, Cmd+C/V/X/Z/A, ...) falls through to the normal
-                    // keymap/handle_key path below unaffected.
+                    // Non-completion cursor overlays retain their specialized
+                    // imperative routing. Completion falls through to named,
+                    // conditional keymap actions so user overrides are honored.
                     if self.model.ui.cursor_overlay.is_some() {
                         if let Some(cmd) = handle_cursor_overlay_key(
                             &mut self.model,
@@ -3228,6 +3223,7 @@ impl App {
             }
             Cmd::LspScheduleCompletion {
                 document_id,
+                session,
                 position,
                 revision,
                 trigger_character,
@@ -3237,6 +3233,7 @@ impl App {
                 self.lsp.completion_debounces.insert(
                     document_id,
                     ScheduledCompletion {
+                        session,
                         position,
                         revision,
                         trigger_character,
@@ -3293,8 +3290,8 @@ impl App {
             Cmd::RunInlineRequest(request) => {
                 if !self.inline_worker.submit(request) {
                     tracing::warn!("inline suggestion worker is gone");
-                    self.model.ui.inline_in_flight = false;
-                    self.model.ui.inline_session = None;
+                    self.model.ui.completion.inline_in_flight = false;
+                    self.model.ui.completion.inline_session = None;
                 }
             }
             Cmd::CancelInlineRequest => {
@@ -3320,7 +3317,7 @@ impl App {
                 server_id,
                 root,
                 raw_item,
-                selected,
+                candidate,
                 purpose,
             } => {
                 self.request_lsp_resolve(
@@ -3329,7 +3326,7 @@ impl App {
                     server_id,
                     root,
                     raw_item,
-                    selected,
+                    candidate,
                     purpose,
                 );
             }
@@ -3339,7 +3336,7 @@ impl App {
                 server_id,
                 root,
                 raw_item,
-                selected,
+                candidate,
             } => {
                 self.lsp.resolve_debounces.insert(
                     document_id,
@@ -3348,7 +3345,7 @@ impl App {
                         server_id,
                         root,
                         raw_item,
-                        selected,
+                        candidate,
                         deadline: Instant::now() + RESOLVE_DEBOUNCE,
                     },
                 );
@@ -4016,6 +4013,7 @@ impl App {
                 );
                 Some(Msg::Lsp(LspMsg::CompletionResolved {
                     document_id: pending.document_id,
+                    session: pending.session,
                     revision: pending.revision,
                     items: menu_items,
                     is_incomplete,
@@ -4069,7 +4067,7 @@ impl App {
                 Some(Msg::Lsp(LspMsg::CompletionItemResolved {
                     document_id: pending.document_id,
                     revision: pending.revision,
-                    selected: pending.selected,
+                    candidate: pending.candidate,
                     detail,
                     documentation,
                     additional_text_edits,
@@ -5215,6 +5213,7 @@ impl App {
     fn request_lsp_completion(
         &mut self,
         document_id: token::model::editor_area::DocumentId,
+        session: token::completion::session::SessionId,
         position: lsp_types::Position,
         revision: u64,
         trigger_character: Option<String>,
@@ -5237,6 +5236,7 @@ impl App {
             Some(serde_json::json!({ "context": context })),
             |_| PendingCompletion {
                 document_id,
+                session,
                 revision,
             },
         );
@@ -5258,7 +5258,7 @@ impl App {
         server_id: LspServerId,
         root: PathBuf,
         raw_item: std::sync::Arc<lsp_types::CompletionItem>,
-        selected: usize,
+        candidate: token::completion::session::CandidateId,
         purpose: ResolvePurpose,
     ) {
         self.lsp.resolve_debounces.remove(&document_id);
@@ -5289,7 +5289,7 @@ impl App {
                 self.emit_lsp_msg(Msg::Lsp(LspMsg::CompletionItemResolved {
                     document_id,
                     revision,
-                    selected,
+                    candidate,
                     detail: None,
                     documentation: None,
                     additional_text_edits: Vec::new(),
@@ -5305,7 +5305,7 @@ impl App {
             PendingResolve {
                 document_id,
                 revision,
-                selected,
+                candidate,
                 purpose,
             },
         );
@@ -5549,6 +5549,7 @@ impl App {
             };
             self.request_lsp_completion(
                 document_id,
+                scheduled.session,
                 scheduled.position,
                 scheduled.revision,
                 scheduled.trigger_character,
@@ -5587,7 +5588,7 @@ impl App {
                 scheduled.server_id,
                 scheduled.root,
                 scheduled.raw_item,
-                scheduled.selected,
+                scheduled.candidate,
                 ResolvePurpose::Docs,
             );
         }
@@ -5610,7 +5611,7 @@ impl App {
             self.emit_lsp_msg(Msg::Lsp(LspMsg::CompletionItemResolved {
                 document_id: pending.document_id,
                 revision: pending.revision,
-                selected: pending.selected,
+                candidate: pending.candidate,
                 detail: None,
                 documentation: None,
                 additional_text_edits: Vec::new(),

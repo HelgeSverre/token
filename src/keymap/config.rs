@@ -237,6 +237,12 @@ fn parse_condition(cond: &str) -> Result<Condition, KeymapError> {
         "inline_suggestion_visible" | "inlinesuggestionvisible" | "inline_suggestion" => {
             Ok(Condition::InlineSuggestionVisible)
         }
+        "completion_menu_visible" | "completionmenuvisible" | "completion_menu" => {
+            Ok(Condition::CompletionMenuVisible)
+        }
+        "completion_session_pending" | "completionsessionpending" => {
+            Ok(Condition::CompletionSessionPending)
+        }
         _ => Err(KeymapError::InvalidCondition(cond.to_string())),
     }
 }

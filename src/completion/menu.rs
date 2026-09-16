@@ -110,6 +110,8 @@ pub struct LspInsert {
 
 #[derive(Debug, Clone)]
 pub struct MenuItem {
+    /// Stable within the owning menu session; never inferred from row or label.
+    pub id: super::session::CandidateId,
     pub label: String,
     /// Matched against the typed query. Equal to `label` for words;
     /// `filterText ?? label` for LSP items (rust-analyzer labels embed type
@@ -142,7 +144,35 @@ pub(crate) struct PendingCommit {
     pub cursors: Vec<Cursor>,
     pub active_cursor_index: usize,
     pub undo_len: usize,
-    pub selected: usize,
+    pub candidate: super::session::CandidateId,
+}
+
+#[derive(Debug, Clone)]
+pub struct MenuIdentity {
+    pub session: super::session::SessionId,
+    next_serial: u64,
+    pub selected: Option<super::session::CandidateId>,
+    pub scroll: usize,
+}
+
+impl Default for MenuIdentity {
+    fn default() -> Self {
+        Self {
+            session: super::session::SessionId(0),
+            next_serial: 0,
+            selected: None,
+            scroll: 0,
+        }
+    }
+}
+
+impl MenuIdentity {
+    pub fn new(session: super::session::SessionId) -> Self {
+        Self {
+            session,
+            ..Self::default()
+        }
+    }
 }
 
 /// The completion popup's state, held on `UiState::completion_menu`.
@@ -153,6 +183,7 @@ pub(crate) struct PendingCommit {
 /// the shared home for that state by the time this shipped).
 #[derive(Debug, Clone)]
 pub struct CompletionMenuState {
+    pub identity: MenuIdentity,
     /// Source policy at this query's start, refreshed after a pending parse.
     pub context: super::context::CompletionContext,
     /// User navigation takes precedence over a later server `preselect`.
@@ -186,10 +217,48 @@ pub struct CompletionMenuState {
     /// was issued for. Enter/click accepts are ignored while `Some` (the
     /// deferred accept applies when the resolution lands); any edit or
     /// selection change drops it via the revision/query guards.
-    pub pending_resolve: Option<usize>,
+    pub pending_resolve: Option<super::session::CandidateId>,
 }
 
 impl CompletionMenuState {
+    pub fn assign_candidate_ids(&mut self) -> Option<()> {
+        for item in &mut self.items {
+            if item.id == super::session::CandidateId::UNASSIGNED {
+                self.identity.next_serial = self.identity.next_serial.checked_add(1)?;
+                item.id = super::session::CandidateId {
+                    session: self.identity.session,
+                    serial: self.identity.next_serial,
+                };
+            }
+        }
+        Some(())
+    }
+
+    pub fn candidate_for_row(&self, row: usize) -> Option<super::session::CandidateId> {
+        Some(self.selected_item(row)?.id)
+    }
+
+    pub fn row_for_candidate(&self, candidate: super::session::CandidateId) -> Option<usize> {
+        self.filtered
+            .iter()
+            .position(|(_, index, _)| self.items[*index].id == candidate)
+    }
+
+    pub fn preserve_id_for(&mut self, previous: &MenuItem) {
+        let matches: Vec<_> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.id == super::session::CandidateId::UNASSIGNED)
+            .filter(|(_, item)| same_candidate(item, previous))
+            .map(|(index, _)| index)
+            .take(2)
+            .collect();
+        if let [index] = matches.as_slice() {
+            self.items[*index].id = previous.id;
+        }
+    }
+
     pub fn preferred_index(&self) -> usize {
         self.filtered
             .iter()
@@ -208,6 +277,28 @@ impl CompletionMenuState {
         data.documentation
             .as_ref()
             .filter(|docs| !docs.text.trim().is_empty())
+    }
+}
+
+fn same_candidate(a: &MenuItem, b: &MenuItem) -> bool {
+    if a.source != b.source
+        || a.label != b.label
+        || a.filter_text != b.filter_text
+        || a.kind != b.kind
+    {
+        return false;
+    }
+    match (&a.insert, &b.insert) {
+        (MenuInsert::Text(a), MenuInsert::Text(b)) => a == b,
+        (MenuInsert::Lsp(a), MenuInsert::Lsp(b)) => {
+            a.server_id == b.server_id
+                && a.root == b.root
+                && a.text == b.text
+                && a.text_edit == b.text_edit
+                && a.additional_text_edits == b.additional_text_edits
+                && a.raw.data == b.raw.data
+        }
+        _ => false,
     }
 }
 
@@ -388,6 +479,7 @@ mod tests {
 
     fn item(label: &str, source: MenuSourceId) -> MenuItem {
         MenuItem {
+            id: crate::completion::session::CandidateId::UNASSIGNED,
             label: label.to_string(),
             filter_text: label.to_string(),
             insert: MenuInsert::Text(label.to_string()),

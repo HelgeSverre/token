@@ -6,6 +6,14 @@ All notable changes to Token are documented in this file.
 
 ## Unreleased
 
+### Completion
+
+- Make completion-menu navigation, acceptance and dismissal rebindable through
+  the normal keymap. Completion acceptance now rejects malformed, overlapping or
+  unsupported multi-cursor language-server edits instead of silently dropping
+  required edits; rejected commit-character completions still insert the typed
+  character once.
+
 ### Editing
 
 - Move the current or selected lines up and down with Alt+Shift+Up/Down.

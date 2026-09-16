@@ -531,16 +531,18 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         let document = model.document();
         if let Some(document_id) = document.id {
             let revision = document.revision;
-            model.ui.inline_suggestion = token::completion::inline::InlineSuggestionState::new(
-                token::completion::inline::RequestSnapshot {
-                    document_id,
-                    revision,
-                    line: cursor.line,
-                    column: cursor.column,
-                    request_id: 1,
-                },
-                texts,
-            );
+            model.ui.completion.inline_suggestion =
+                token::completion::inline::InlineSuggestionState::new(
+                    token::completion::inline::RequestSnapshot {
+                        session_id: token::completion::session::SessionId(1),
+                        document_id,
+                        revision,
+                        line: cursor.line,
+                        column: cursor.column,
+                        request_id: token::completion::session::RequestId(1),
+                    },
+                    texts,
+                );
         }
     }
 
@@ -657,7 +659,8 @@ fn apply_lsp_fixture(model: &mut AppModel, fixture: &LspFixture) -> Result<()> {
             completion.selected < filtered.len(),
             "completion selection has no matching item"
         );
-        model.ui.completion_menu = Some(token::completion::CompletionMenuState {
+        model.ui.completion.completion_menu = Some(token::completion::CompletionMenuState {
+            identity: token::completion::menu::MenuIdentity::default(),
             context: token::completion::context::CompletionContext::at(
                 model.document(),
                 query_start,
@@ -1634,7 +1637,12 @@ mod tests {
             );
             match name {
                 "completion" => {
-                    let menu = model.ui.completion_menu.as_ref().expect("completion menu");
+                    let menu = model
+                        .ui
+                        .completion
+                        .completion_menu
+                        .as_ref()
+                        .expect("completion menu");
                     assert_eq!(
                         menu.context,
                         token::completion::context::CompletionContext::Member
@@ -1657,7 +1665,7 @@ mod tests {
                         Some(token::panel::PanelId::PROBLEMS)
                     );
                 }
-                "ghost-text" => assert!(model.ui.inline_suggestion.is_some()),
+                "ghost-text" => assert!(model.ui.completion.inline_suggestion.is_some()),
                 "folding" => {
                     assert_eq!(model.editor().folds.collapsed().len(), 3);
                     assert!(!model.document().outline.as_ref().unwrap().roots.is_empty());
