@@ -1,0 +1,49 @@
+version = 1
+name = "token-editor"
+
+[setup]
+script = ""
+
+[setup.darwin]
+script = '''
+set -eu
+export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+xcode-select -p >/dev/null
+command -v just >/dev/null
+cargo nextest --version
+cargo fetch --locked
+'''
+
+[cleanup]
+script = ""
+
+[[actions]]
+name = "Run"
+icon = "run"
+command = "just run"
+
+[[actions]]
+name = "Develop"
+icon = "debug"
+command = "just dev"
+
+[[actions]]
+name = "Build"
+icon = "tool"
+command = "just build"
+
+[[actions]]
+name = "Test"
+icon = "test"
+command = "just test"
+
+[[actions]]
+name = "Lint"
+icon = "tool"
+command = "just lint"
+
+[[actions]]
+name = "Check formatting"
+icon = "tool"
+command = "just fmt-check"
