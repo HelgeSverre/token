@@ -82,11 +82,16 @@ impl RendererPreparation {
     }
 }
 
-/// Controls how preview panes render their content
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PreviewRenderMode {
+/// Native webview captures used only while a modal covers the editor.
+pub type PreviewSnapshots = HashMap<crate::model::editor_area::PreviewId, image::RgbaImage>;
+
+/// Controls how preview panes render their content.
+#[derive(Debug, Clone, Copy)]
+pub enum PreviewRenderMode<'a> {
     /// Only render pane chrome (header, borders); webview handles content
     WebviewChromeOnly,
+    /// Frozen native captures behind a modal, with native content on failure.
+    Overlay(&'a PreviewSnapshots),
     /// Render native markdown content (for headless/screenshot use)
     NativeMarkdown,
 }
@@ -130,6 +135,7 @@ struct RenderSession<'buffer, 'a> {
     painter: TextPainter<'a>,
     model: &'a AppModel,
     plan: &'a RenderPlan,
+    preview_snapshots: &'a PreviewSnapshots,
     overlay_mask_cache: &'a mut RoundedRectMaskCache,
 }
 
@@ -149,6 +155,7 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
         line_height: usize,
         model: &'a AppModel,
         plan: &'a RenderPlan,
+        preview_snapshots: &'a PreviewSnapshots,
         overlay_mask_cache: &'a mut RoundedRectMaskCache,
     ) -> Self {
         Self {
@@ -164,16 +171,22 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
             .with_ui_font(ui_font, ui_glyph_cache, FontRole::Ui),
             model,
             plan,
+            preview_snapshots,
             overlay_mask_cache,
         }
     }
 
     fn render_editor_area_phase(&mut self, perf: &mut crate::perf::PerfStats) {
-        Renderer::render_editor_area(
+        Renderer::render_editor_area_with_preview_mode(
             &mut self.frame,
             &mut self.painter,
             self.model,
             &self.plan.splitters,
+            if self.plan.show_modal {
+                PreviewRenderMode::Overlay(self.preview_snapshots)
+            } else {
+                PreviewRenderMode::WebviewChromeOnly
+            },
             perf,
         );
     }
@@ -700,6 +713,7 @@ impl<'a> EditorGroupScene<'a> {
 
 enum PreviewContentKind<'a> {
     Hosted,
+    Snapshot(&'a image::RgbaImage),
     NativeHtml {
         document: &'a crate::model::Document,
         preview: &'a crate::markdown::PreviewPane,
@@ -712,6 +726,7 @@ enum PreviewContentKind<'a> {
 
 struct PreviewPaneScene<'a> {
     layout: crate::layout::editor::PreviewPaneLayout,
+    webview_rect: Rect,
     line_height: usize,
     char_width: f32,
     content: PreviewContentKind<'a>,
@@ -722,7 +737,8 @@ impl<'a> PreviewPaneScene<'a> {
         model: &'a AppModel,
         preview_id: crate::model::editor_area::PreviewId,
         rect: Rect,
-        preview_mode: PreviewRenderMode,
+        preview_mode: PreviewRenderMode<'a>,
+        splitters: &[SplitterBar],
         line_height: usize,
         char_width: f32,
     ) -> Option<Self> {
@@ -730,8 +746,15 @@ impl<'a> PreviewPaneScene<'a> {
         let document = model.editor_area.documents.get(&preview.document_id)?;
         let layout =
             crate::layout::editor::PreviewPaneLayout::new(preview_id, rect, &model.metrics);
+        let webview_rect = layout.webview_content_rect(splitters, model.metrics.scale_factor);
 
-        let content = if preview_mode == PreviewRenderMode::WebviewChromeOnly {
+        let snapshot = match preview_mode {
+            PreviewRenderMode::Overlay(images) => images.get(&preview_id),
+            _ => None,
+        };
+        let content = if let Some(snapshot) = snapshot {
+            PreviewContentKind::Snapshot(snapshot)
+        } else if matches!(preview_mode, PreviewRenderMode::WebviewChromeOnly) {
             PreviewContentKind::Hosted
         } else if document.language == crate::syntax::LanguageId::Html {
             PreviewContentKind::NativeHtml { document, preview }
@@ -741,6 +764,7 @@ impl<'a> PreviewPaneScene<'a> {
 
         Some(Self {
             layout,
+            webview_rect,
             line_height,
             char_width,
             content,
@@ -752,6 +776,10 @@ impl<'a> PreviewPaneScene<'a> {
 
         match &self.content {
             PreviewContentKind::Hosted => {}
+            PreviewContentKind::Snapshot(image) => {
+                let (x, y, w, h) = crate::layout::snapshot::snap(self.webview_rect);
+                frame.blit_rgba_scaled(image.as_raw(), image.width(), image.height(), x, y, w, h);
+            }
             PreviewContentKind::NativeHtml { document, preview } => {
                 frame.push_clip(self.layout.hosted_content_rect());
                 Renderer::render_native_html_preview(
@@ -1129,7 +1157,7 @@ impl Renderer {
         painter: &mut TextPainter,
         model: &AppModel,
         splitters: &[SplitterBar],
-        preview_mode: PreviewRenderMode,
+        preview_mode: PreviewRenderMode<'_>,
         perf: &mut crate::perf::PerfStats,
     ) {
         for (&group_id, group) in &model.editor_area.groups {
@@ -1149,6 +1177,7 @@ impl Renderer {
                     preview_id,
                     preview.rect,
                     preview_mode,
+                    splitters,
                 );
             });
         }
@@ -1196,13 +1225,15 @@ impl Renderer {
         model: &AppModel,
         preview_id: crate::model::editor_area::PreviewId,
         rect: Rect,
-        preview_mode: PreviewRenderMode,
+        preview_mode: PreviewRenderMode<'_>,
+        splitters: &[SplitterBar],
     ) {
         let Some(scene) = PreviewPaneScene::resolve(
             model,
             preview_id,
             rect,
             preview_mode,
+            splitters,
             painter.line_height(),
             painter.char_width(),
         ) else {
@@ -1946,6 +1977,17 @@ impl Renderer {
         perf: &mut crate::perf::PerfStats,
         damage: &Damage,
     ) -> Result<()> {
+        self.render_with_preview_snapshots(model, perf, damage, &PreviewSnapshots::new())
+    }
+
+    /// Render native preview captures below the modal backdrop and palette.
+    pub fn render_with_preview_snapshots(
+        &mut self,
+        model: &mut AppModel,
+        perf: &mut crate::perf::PerfStats,
+        damage: &Damage,
+        preview_snapshots: &PreviewSnapshots,
+    ) -> Result<()> {
         // Skip rendering entirely if no damage
         if matches!(damage, Damage::None) {
             return Ok(());
@@ -2049,6 +2091,7 @@ impl Renderer {
                 line_height,
                 model,
                 &plan,
+                preview_snapshots,
                 &mut self.overlay_mask_cache,
             );
 
@@ -2507,6 +2550,91 @@ fn flush_line(text: &mut String, style: HtmlTextStyle, lines: &mut Vec<HtmlTextL
         });
     }
     text.clear();
+}
+
+#[cfg(test)]
+mod preview_backdrop_tests {
+    use super::*;
+
+    #[test]
+    fn captured_preview_is_painted_inside_content_then_dimmed() {
+        let mut model = AppModel::new(400, 240, 1.0);
+        let id = model.editor_area.open_preview_for_focused_group().unwrap();
+        let rect = Rect::new(100.0, 0.0, 200.0, 200.0);
+        let splitters = [SplitterBar {
+            direction: crate::model::editor_area::SplitDirection::Horizontal,
+            rect: Rect::new(97.0, 0.0, 6.0, 200.0),
+            index: 0,
+        }];
+        let layout = crate::layout::editor::PreviewPaneLayout::new(id, rect, &model.metrics);
+        let (x, y, w, h) = crate::layout::snapshot::snap(
+            layout.webview_content_rect(&splitters, model.metrics.scale_factor),
+        );
+        let captures = PreviewSnapshots::from([(
+            id,
+            image::RgbaImage::from_pixel(w as u32, h as u32, image::Rgba([240, 80, 40, 255])),
+        )]);
+        let scene = PreviewPaneScene::resolve(
+            &model,
+            id,
+            rect,
+            PreviewRenderMode::Overlay(&captures),
+            &splitters,
+            18,
+            8.0,
+        )
+        .unwrap();
+        let fonts = fonts::Fonts::load("JetBrains Mono", "Inter").unwrap();
+        let mut glyphs = GlyphCache::new();
+        let mut painter = TextPainter::new(&fonts.editor, &mut glyphs, 14.0, 12.0, 8.0, 18);
+        let mut pixels = vec![0xFF112233; 400 * 240];
+        let mut frame = Frame::new(&mut pixels, 400, 240);
+        scene.render(&mut frame, &mut painter, &model);
+        let sample = (y + h / 2) * 400 + x + w / 2;
+        assert_eq!(frame.buffer_mut()[sample], 0xFFF05028);
+        assert_eq!(
+            frame.buffer_mut()[(y + h / 2) * 400 + x - 1],
+            model.theme.editor.background.to_argb_u32()
+        );
+        assert_eq!(frame.buffer_mut()[(y + h / 2) * 400 + x], 0xFFF05028);
+        assert_ne!(frame.buffer_mut()[(y - 1) * 400 + x + w / 2], 0xFFF05028);
+        frame.dim(102);
+        assert_ne!(frame.buffer_mut()[sample], 0xFFF05028);
+        assert_ne!(frame.buffer_mut()[sample] & 0xFFFFFF, 0);
+    }
+
+    #[test]
+    fn missing_capture_uses_native_content_but_live_mode_does_not() {
+        let mut model = AppModel::new(400, 240, 1.0);
+        let id = model.editor_area.open_preview_for_focused_group().unwrap();
+        let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+        let captures = PreviewSnapshots::new();
+        let scene = PreviewPaneScene::resolve(
+            &model,
+            id,
+            rect,
+            PreviewRenderMode::Overlay(&captures),
+            &[],
+            18,
+            8.0,
+        )
+        .unwrap();
+        assert!(matches!(
+            scene.content,
+            PreviewContentKind::NativeMarkdown { .. }
+        ));
+        let scene = PreviewPaneScene::resolve(
+            &model,
+            id,
+            rect,
+            PreviewRenderMode::WebviewChromeOnly,
+            &[],
+            18,
+            8.0,
+        )
+        .unwrap();
+        assert!(matches!(scene.content, PreviewContentKind::Hosted));
+    }
 }
 
 #[cfg(test)]

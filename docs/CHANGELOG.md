@@ -75,6 +75,13 @@ All notable changes to Token are documented in this file.
 
 ### Preview
 
+- Keep live previews clear of pane dividers and borders, using the same bounds
+  as their overlay snapshots and accounting for native view rounding.
+
+- Keep Markdown and HTML previews visible as frozen snapshots behind command
+  palettes and modals on macOS, Windows, and Linux, with a native text fallback
+  when capture fails or times out.
+
 - Refresh Markdown and HTML previews when switching to unedited documents,
   opening or reactivating files, and moving tabs between groups. Explicit Refresh
   now reloads unchanged content; failed webview updates remain eligible for retry.

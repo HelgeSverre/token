@@ -1156,7 +1156,7 @@ impl App {
             deferred_startup_complete: false,
             pending_damage: Damage::Full, // Start with full render
             should_quit: false,
-            webview_manager: WebviewManager::new(),
+            webview_manager: WebviewManager::with_wake(worker_wake.clone()),
             click_tracker: ClickTracker::default(),
             syntax_deadlines: HashMap::new(),
             auto_save: Default::default(),
@@ -2115,13 +2115,33 @@ impl App {
     }
 
     fn render(&mut self) -> Result<()> {
+        let show_webviews = self.model.ui.active_modal.is_none();
+        if !self
+            .webview_manager
+            .prepare_overlay(!show_webviews, Instant::now())
+        {
+            // Keep the last complete frame while the still-visible native
+            // children are captured. Input/event processing continues normally.
+            return Ok(());
+        }
         self.perf.start_frame();
 
         if let Some(renderer) = &mut self.renderer {
             // Take pending damage and reset to empty for next frame
             let damage = std::mem::take(&mut self.pending_damage);
-            renderer.render(&mut self.model, &mut self.perf, &damage)?;
+            renderer.render_with_preview_snapshots(
+                &mut self.model,
+                &mut self.perf,
+                &damage,
+                self.webview_manager.snapshots(),
+            )?;
         }
+
+        // Present the replacement pixels before hiding the native view, so
+        // there is always content underneath it during the handoff.
+        self.perf.measure_stage(PerfStage::WebviewVisibility, || {
+            self.webview_manager.set_all_visible(show_webviews);
+        });
 
         self.sync_text_input_rect();
 
@@ -2135,12 +2155,6 @@ impl App {
         let mut perf = std::mem::take(&mut self.perf);
         perf.measure_stage(PerfStage::WebviewSync, || self.sync_webviews());
         self.perf = perf;
-
-        // Hide webviews when modals are active (so they don't render on top)
-        let show_webviews = self.model.ui.active_modal.is_none();
-        self.perf.measure_stage(PerfStage::WebviewVisibility, || {
-            self.webview_manager.set_all_visible(show_webviews);
-        });
 
         self.perf.record_frame_time();
         self.perf.record_render_history();
@@ -2238,6 +2252,17 @@ impl App {
         let theme = PreviewTheme::from_editor_theme(&self.model.theme);
         let metrics = &self.model.metrics;
 
+        let splitters = self
+            .model
+            .editor_area
+            .last_layout_rect
+            .map(|rect| {
+                self.model
+                    .editor_area
+                    .compute_splitters(rect, metrics.splitter_width)
+            })
+            .unwrap_or_default();
+
         struct PreviewUpdate {
             preview_id: PreviewId,
             document_id: token::model::DocumentId,
@@ -2258,8 +2283,8 @@ impl App {
                 let needs_create = !self.webview_manager.has_webview(preview_id);
                 let needs_content_update = preview.needs_refresh(document.revision);
 
-                let webview_rect =
-                    PreviewPaneLayout::new(preview_id, preview.rect, metrics).hosted_content_rect();
+                let webview_rect = PreviewPaneLayout::new(preview_id, preview.rect, metrics)
+                    .webview_content_rect(&splitters, scale_factor);
 
                 // Only generate HTML when creating or updating content
                 let content = if needs_create || needs_content_update {
@@ -5836,6 +5861,11 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let mut needs_redraw = false;
 
+        if self.webview_manager.poll_snapshots(Instant::now()) {
+            self.pending_damage.merge(Damage::Full);
+            needs_redraw = true;
+        }
+
         if self.process_automation_requests() {
             needs_redraw = true;
         }
@@ -5988,6 +6018,9 @@ impl App {
     pub(super) fn next_wake(&self, now: Instant) -> Instant {
         let blink_interval = self.cursor_tick_interval();
         let mut next_wake = self.last_tick + blink_interval;
+        if let Some(deadline) = self.webview_manager.snapshot_deadline() {
+            next_wake = next_wake.min(deadline);
+        }
         if self.model.has_scroll_animations() {
             next_wake =
                 next_wake.min(self.last_scroll_frame.unwrap_or(now) + Duration::from_millis(8));
