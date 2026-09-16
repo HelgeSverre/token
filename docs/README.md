@@ -26,6 +26,7 @@ Configuration and usage guides for end users.
 | [config-editor.md](user/config-editor.md)       | Editor settings reference                                    |
 | [language-servers.md](user/language-servers.md) | Language server setup, preferences, and troubleshooting      |
 | [editorconfig.md](user/editorconfig.md)         | Per-file indentation, line endings, and save cleanup         |
+| [previews.md](user/previews.md)                 | Markdown/HTML resources, local links, and directory boundaries |
 | [folding.md](user/folding.md)                   | Gutter controls, commands, language support, and persistence |
 | [config-keymap.md](user/config-keymap.md)       | Keymap configuration reference                               |
 | [config-theme.md](user/config-theme.md)         | Theme configuration reference                                |

@@ -419,6 +419,10 @@ pub enum LayoutMsg {
 
     /// Open a file in a new tab in the focused group
     OpenFileInNewTab(PathBuf),
+    OpenPreviewFile {
+        file: crate::preview_resources::ScopedFile,
+        group_id: GroupId,
+    },
 
     /// Runtime-only completion of file/configuration preparation.
     FilePrepared {

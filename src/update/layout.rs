@@ -47,6 +47,13 @@ pub(super) fn update_layout(model: &mut AppModel, msg: LayoutMsg) -> Option<Cmd>
             open_file_in_group(model, path, model.editor_area.focused_group_id, None)
         }
 
+        LayoutMsg::OpenPreviewFile { file, group_id } => begin_file_open(
+            model,
+            crate::model::FileOpenSource::Scoped(file),
+            group_id,
+            None,
+            crate::model::FileOpenPolicy::ExistingPreview,
+        ),
         LayoutMsg::FilePrepared { request, result } => finish_file_open(model, request, result),
 
         LayoutMsg::OpenWithDefaultApp(path) => Some(Cmd::OpenInExplorer { path }),
@@ -399,11 +406,13 @@ fn begin_file_open(
             selection: editor.selections.get(editor.active_cursor_index).cloned(),
         })
     })();
-    let activates_tab = policy == crate::model::FileOpenPolicy::CreateOrOpen
-        && !matches!(
-            source,
-            crate::model::FileOpenSource::Configuration(crate::commands::ConfigResource::Directory)
-        );
+    let activates_tab = matches!(
+        policy,
+        crate::model::FileOpenPolicy::CreateOrOpen | crate::model::FileOpenPolicy::ExistingPreview
+    ) && !matches!(
+        source,
+        crate::model::FileOpenSource::Configuration(crate::commands::ConfigResource::Directory)
+    );
     let target = PendingFileOpen {
         group_id,
         focus: model.ui.focus,
@@ -504,8 +513,10 @@ fn finish_file_open(
                         .is_some_and(|doc| doc.revision == origin.revision)
             })
     });
-    let activate = target.policy == crate::model::FileOpenPolicy::CreateOrOpen
-        && target.focus == model.ui.focus
+    let activate = matches!(
+        target.policy,
+        crate::model::FileOpenPolicy::CreateOrOpen | crate::model::FileOpenPolicy::ExistingPreview
+    ) && target.focus == model.ui.focus
         && !model.ui.has_modal()
         && model.editor_area.file_opens.latest.get(&target.group_id) == Some(&request.sequence)
         && group.active_tab().map(|tab| tab.id) == target.active_tab

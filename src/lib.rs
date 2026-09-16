@@ -29,6 +29,7 @@ pub mod overlay;
 pub mod panel;
 pub mod panels;
 pub mod perf;
+pub mod preview_resources;
 pub mod product;
 pub mod recent_files;
 pub mod search;
