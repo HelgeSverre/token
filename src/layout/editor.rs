@@ -13,7 +13,9 @@ use crate::layout::sizing::{Dir, Padding, Sizing, SizingAxes};
 use crate::layout::snapshot::LayoutSnapshot;
 use crate::layout::text::{CellMeasure, TextStyle};
 use crate::layout::tree::{Content, ElementDecl, ScrollDecl, TextDecl, UiTree, Wrap};
-use crate::model::editor_area::{EditorGroup, GroupId, PreviewId, Rect, Tab, TabId};
+use crate::model::editor_area::{
+    EditorGroup, GroupId, PreviewId, Rect, SplitDirection, SplitterBar, Tab, TabId,
+};
 use crate::model::{AppModel, ScaledMetrics};
 
 /// The intrinsic width of one editor tab in physical pixels.
@@ -247,9 +249,64 @@ impl PreviewPaneLayout {
         self.required_rect(UiKey::PreviewHeader(self.preview_id))
     }
 
-    /// Full content box used to position the hosted webview.
+    /// Full content box before reserving space for overlapping splitters.
     pub fn hosted_content_rect(&self) -> Rect {
         self.required_rect(UiKey::PreviewContent(self.preview_id))
+    }
+
+    /// Shared bounds for the native child view and its frozen snapshot.
+    /// Splitters straddle pane edges, and native child views sit above our frame,
+    /// so their painted strips must be excluded from the child view itself.
+    pub fn webview_content_rect(&self, splitters: &[SplitterBar], scale_factor: f64) -> Rect {
+        let content = self.hosted_content_rect();
+        let mut left = content.x.ceil();
+        let mut top = content.y.ceil();
+        let mut right = (content.x + content.width).floor();
+        let mut bottom = (content.y + content.height).floor();
+
+        for splitter in splitters {
+            // Match Frame::fill_rect's edge truncation when reserving the strip.
+            let rect = splitter.rect;
+            let strip = Rect::new(
+                rect.x.max(0.0).floor(),
+                rect.y.max(0.0).floor(),
+                (rect.x + rect.width).max(0.0).floor() - rect.x.max(0.0).floor(),
+                (rect.y + rect.height).max(0.0).floor() - rect.y.max(0.0).floor(),
+            );
+            if intersect(content, strip).is_none() {
+                continue;
+            }
+            match splitter.direction {
+                SplitDirection::Horizontal => {
+                    if strip.x + strip.width / 2.0 <= content.x + content.width / 2.0 {
+                        left = left.max(strip.x + strip.width);
+                    } else {
+                        right = right.min(strip.x);
+                    }
+                }
+                SplitDirection::Vertical => {
+                    if strip.y + strip.height / 2.0 <= content.y + content.height / 2.0 {
+                        top = top.max(strip.y + strip.height);
+                    } else {
+                        bottom = bottom.min(strip.y);
+                    }
+                }
+            }
+        }
+
+        // Wry's AppKit and GTK backends round positions and sizes to whole logical
+        // points. WebView2 uses physical pixels. Align both edges inward before
+        // converting to position/size, so backend rounding cannot enlarge the view.
+        let unit = if cfg!(target_os = "windows") {
+            1.0
+        } else {
+            scale_factor as f32
+        };
+        left = (left / unit).ceil() * unit;
+        top = (top / unit).ceil() * unit;
+        right = (right / unit).floor() * unit;
+        bottom = (bottom / unit).floor() * unit;
+        Rect::new(left, top, (right - left).max(0.0), (bottom - top).max(0.0))
     }
 
     /// Padded content box used by the native preview fallback.
@@ -412,5 +469,99 @@ mod tests {
         assert!(!layout.is_in_content(120.0, header_y));
         assert!(!layout.is_in_header(120.0, content_y));
         assert!(layout.is_in_content(120.0, content_y));
+    }
+
+    #[test]
+    fn webview_bounds_leave_nested_splitters_uncovered() {
+        use crate::model::editor_area::{LayoutNode, SplitContainer};
+
+        for scale in [1.0, 1.25, 2.0] {
+            let mut model = AppModel::new(900, 700, scale);
+            let id = model.editor_area.open_preview_for_focused_group().unwrap();
+            let column = LayoutNode::Split(SplitContainer {
+                direction: SplitDirection::Vertical,
+                children: vec![
+                    LayoutNode::Empty,
+                    LayoutNode::Preview(id),
+                    LayoutNode::Empty,
+                ],
+                ratios: vec![0.2, 0.6, 0.2],
+                min_sizes: vec![],
+            });
+            model.editor_area.layout = LayoutNode::Split(SplitContainer {
+                direction: SplitDirection::Horizontal,
+                children: vec![LayoutNode::Empty, column, LayoutNode::Empty],
+                ratios: vec![0.2, 0.6, 0.2],
+                min_sizes: vec![],
+            });
+            let splitters = model.editor_area.compute_layout_scaled(
+                Rect::new(11.5, 9.5, 803.0, 607.0),
+                model.metrics.splitter_width,
+            );
+            let pane = model.editor_area.previews[&id].rect;
+            let layout = PreviewPaneLayout::new(id, pane, &model.metrics);
+            let content = layout.hosted_content_rect();
+            let bounds = layout.webview_content_rect(&splitters, scale);
+            assert!(bounds.width > 0.0 && bounds.height > 0.0);
+            assert!(bounds.x > content.x);
+            assert!(bounds.x + bounds.width < content.x + content.width);
+            assert!(bounds.y + bounds.height < content.y + content.height);
+            // The top splitter only covers the header, so it must not inset content.
+            assert!(bounds.y >= content.y && bounds.y - content.y < scale as f32 + 1.0);
+
+            let mut pixels = vec![0; 900 * 700];
+            let mut frame = crate::view::Frame::new(&mut pixels, 900, 700);
+            for splitter in &splitters {
+                frame.fill_rect(splitter.rect, 1);
+            }
+            let (x, y, w, h) = crate::layout::snapshot::snap(bounds);
+            for row in y..y + h {
+                assert!(frame.buffer_mut()[row * 900 + x..row * 900 + x + w]
+                    .iter()
+                    .all(|pixel| *pixel == 0));
+            }
+        }
+    }
+
+    #[test]
+    fn webview_bounds_preserve_aligned_outer_edges() {
+        for scale in [1.0, 2.0] {
+            let metrics = ScaledMetrics::new(scale);
+            let layout = PreviewPaneLayout::new(
+                PreviewId(7),
+                Rect::new(100.0, 40.0, 320.0, 240.0),
+                &metrics,
+            );
+            let content = layout.hosted_content_rect();
+            let bounds = layout.webview_content_rect(&[], scale);
+            assert_eq!(
+                (bounds.x, bounds.y, bounds.width, bounds.height),
+                (content.x, content.y, content.width, content.height)
+            );
+        }
+    }
+
+    #[test]
+    fn webview_bounds_round_odd_retina_edges_inward() {
+        let metrics = ScaledMetrics::new(2.0);
+        let layout =
+            PreviewPaneLayout::new(PreviewId(7), Rect::new(101.0, 0.0, 551.0, 1163.0), &metrics);
+        let bounds = layout.webview_content_rect(&[], 2.0);
+        let content = layout.hosted_content_rect();
+        assert!(bounds.x >= content.x);
+        assert!(bounds.y >= content.y);
+        assert!(bounds.x + bounds.width <= content.x + content.width);
+        assert!(bounds.y + bounds.height <= content.y + content.height);
+        if !cfg!(target_os = "windows") {
+            // Model Wry's independent rounding of logical position and size.
+            for value in [bounds.x, bounds.y, bounds.width, bounds.height] {
+                assert_eq!((value / 2.0).round() * 2.0, value);
+            }
+        }
+
+        let tiny = PreviewPaneLayout::new(PreviewId(7), Rect::new(101.0, 0.0, 0.5, 1.0), &metrics)
+            .webview_content_rect(&[], 2.0);
+        assert_eq!(tiny.width, 0.0);
+        assert!(tiny.height >= 0.0);
     }
 }

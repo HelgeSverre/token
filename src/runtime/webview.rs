@@ -7,12 +7,24 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::mpsc;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 use winit::window::Window;
 use wry::{Rect, WebView, WebViewBuilder};
 
 use token::model::editor_area::PreviewId;
+use token::view::PreviewSnapshots;
+
+mod backdrop;
+mod snapshot;
+
+struct SnapshotResult {
+    preview_id: PreviewId,
+    generation: u64,
+    image: anyhow::Result<image::RgbaImage>,
+}
 
 /// Content source for a preview - either generated HTML or a file with base directory
 #[derive(Clone)]
@@ -42,16 +54,104 @@ pub struct WebviewManager {
     webviews: HashMap<PreviewId, WebView>,
     /// Shared state for custom protocol handler
     protocol_state: SharedProtocolState,
+    backdrop: backdrop::Backdrop,
+    snapshot_tx: mpsc::Sender<SnapshotResult>,
+    snapshot_rx: mpsc::Receiver<SnapshotResult>,
+    wake: Option<Arc<dyn Fn() + Send + Sync>>,
+    visible: bool,
 }
 
 impl WebviewManager {
     pub fn new() -> Self {
+        let (snapshot_tx, snapshot_rx) = mpsc::channel();
         Self {
             webviews: HashMap::new(),
             protocol_state: Arc::new(RwLock::new(ProtocolState {
                 contents: HashMap::new(),
             })),
+            backdrop: backdrop::Backdrop::default(),
+            snapshot_tx,
+            snapshot_rx,
+            wake: None,
+            visible: true,
         }
+    }
+
+    pub fn with_wake(wake: Option<Arc<dyn Fn() + Send + Sync>>) -> Self {
+        Self {
+            wake,
+            ..Self::new()
+        }
+    }
+
+    /// Capture before hiding native children. The caller keeps the last frame
+    /// on screen until captures finish or the short deadline expires.
+    pub fn prepare_overlay(&mut self, active: bool, now: Instant) -> bool {
+        if !active {
+            self.backdrop.resume();
+            return true;
+        }
+        if !self.backdrop.active {
+            self.backdrop.begin(self.webviews.keys().copied(), now);
+            let generation = self.backdrop.generation;
+            for (&preview_id, webview) in &self.webviews {
+                let tx = self.snapshot_tx.clone();
+                let wake = self.wake.clone();
+                let result = snapshot::capture(webview, move |image| {
+                    if tx
+                        .send(SnapshotResult {
+                            preview_id,
+                            generation,
+                            image,
+                        })
+                        .is_ok()
+                    {
+                        if let Some(wake) = wake {
+                            wake();
+                        }
+                    }
+                });
+                if let Err(error) = result {
+                    tracing::warn!(?preview_id, %error, "Could not capture preview backdrop");
+                    self.backdrop.finish(preview_id, generation, None);
+                }
+            }
+        }
+        self.poll_snapshots(now);
+        self.backdrop.deadline().is_none()
+    }
+
+    pub fn poll_snapshots(&mut self, now: Instant) -> bool {
+        // Expire first so results delivered after the deadline cannot replace
+        // an already displayed fallback with a stale capture.
+        let mut changed = self.backdrop.expire(now);
+        if changed {
+            tracing::debug!("Preview backdrop capture timed out; using native fallback");
+        }
+        while let Ok(result) = self.snapshot_rx.try_recv() {
+            let image = match result.image {
+                Ok(image) => Some(image),
+                Err(error) => {
+                    tracing::warn!(preview = ?result.preview_id, %error, "Preview backdrop capture failed");
+                    None
+                }
+            };
+            let dimensions = image.as_ref().map(image::RgbaImage::dimensions);
+            let accepted = self
+                .backdrop
+                .finish(result.preview_id, result.generation, image);
+            tracing::debug!(preview = ?result.preview_id, ?dimensions, accepted, "Preview backdrop capture completed");
+            changed |= accepted;
+        }
+        changed
+    }
+
+    pub fn snapshot_deadline(&self) -> Option<Instant> {
+        self.backdrop.deadline()
+    }
+
+    pub fn snapshots(&self) -> &PreviewSnapshots {
+        &self.backdrop.images
     }
 
     /// Create a new webview for a preview pane with custom protocol support
@@ -83,6 +183,7 @@ impl WebviewManager {
             .with_url(format!("token://preview-{}/index.html", preview_id.0))
             .with_bounds(to_wry_rect(bounds, scale_factor))
             .with_transparent(false)
+            .with_visible(!self.backdrop.active)
             .with_navigation_handler(|url| {
                 // Open external links in the default browser
                 if token::util::is_web_url(&url) {
@@ -121,6 +222,7 @@ impl WebviewManager {
         // Reload the webview to pick up new content
         let url = format!("token://preview-{}/index.html", preview_id.0);
         webview.load_url(&url)?;
+        self.backdrop.remove(preview_id);
         Ok(())
     }
 
@@ -140,6 +242,7 @@ impl WebviewManager {
     /// Close and remove a webview
     pub fn close_webview(&mut self, preview_id: PreviewId) {
         self.webviews.remove(&preview_id);
+        self.backdrop.remove(preview_id);
         if let Ok(mut state) = self.protocol_state.write() {
             state.contents.remove(&preview_id);
         }
@@ -156,9 +259,19 @@ impl WebviewManager {
     }
 
     /// Set visibility for all webviews (hide when modals are shown)
-    pub fn set_all_visible(&self, visible: bool) {
+    pub fn set_all_visible(&mut self, visible: bool) {
+        if self.visible == visible {
+            return;
+        }
+        let mut succeeded = true;
         for webview in self.webviews.values() {
-            let _ = webview.set_visible(visible);
+            if let Err(error) = webview.set_visible(visible) {
+                tracing::warn!(%error, visible, "Could not change preview visibility");
+                succeeded = false;
+            }
+        }
+        if succeeded {
+            self.visible = visible;
         }
     }
 }
