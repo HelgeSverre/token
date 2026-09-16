@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <!-- Keep one editor-specific subtype so installation adds Open With support
+       without taking ownership of another application's default association. -->
+  <mime-type type="text/x-token-source">
+    <comment>Token source file</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.txt"/>
+    <glob pattern="*.yaml"/><glob pattern="*.yml"/><glob pattern="*.md"/><glob pattern="*.markdown"/>
+    <glob pattern="*.rs"/><glob pattern="*.html"/><glob pattern="*.htm"/><glob pattern="*.css"/>
+    <glob pattern="*.js"/><glob pattern="*.mjs"/><glob pattern="*.cjs"/><glob pattern="*.ts"/><glob pattern="*.mts"/><glob pattern="*.cts"/><glob pattern="*.tsx"/><glob pattern="*.jsx"/>
+    <glob pattern="*.json"/><glob pattern="*.jsonc"/><glob pattern="*.toml"/><glob pattern="*.py"/><glob pattern="*.pyw"/><glob pattern="*.pyi"/><glob pattern="*.go"/>
+    <glob pattern="*.php"/><glob pattern="*.phtml"/><glob pattern="*.php3"/><glob pattern="*.php4"/><glob pattern="*.php5"/><glob pattern="*.phps"/>
+    <glob pattern="*.c"/><glob pattern="*.h"/><glob pattern="*.cpp"/><glob pattern="*.cc"/><glob pattern="*.cxx"/><glob pattern="*.c++"/><glob pattern="*.hpp"/><glob pattern="*.hh"/><glob pattern="*.hxx"/><glob pattern="*.h++"/>
+    <glob pattern="*.java"/><glob pattern="*.sh"/><glob pattern="*.bash"/><glob pattern="*.zsh"/><glob pattern="*.ksh"/><glob pattern="*.scm"/><glob pattern="*.rkt"/><glob pattern="*.ss"/>
+    <glob pattern="*.ini"/><glob pattern="*.cfg"/><glob pattern="*.conf"/><glob pattern="*.xml"/><glob pattern="*.xsd"/><glob pattern="*.xsl"/><glob pattern="*.xslt"/><glob pattern="*.svg"/><glob pattern="*.plist"/>
+    <glob pattern="*.sema"/><glob pattern="*.blade.php"/><glob pattern="*.vue"/><glob pattern="*.svelte"/><glob pattern="*.just"/><glob pattern="*.applescript"/><glob pattern="*.cs"/><glob pattern="*.csx"/>
+    <glob pattern="*.rb"/><glob pattern="*.rake"/><glob pattern="*.gemspec"/><glob pattern="*.lua"/><glob pattern="*.r"/><glob pattern="*.swift"/><glob pattern="*.ex"/><glob pattern="*.exs"/><glob pattern="*.gleam"/><glob pattern="*.sol"/>
+    <glob pattern="*.kt"/><glob pattern="*.kts"/><glob pattern="*.dart"/><glob pattern="*.jl"/><glob pattern="*.hs"/><glob pattern="*.ml"/><glob pattern="*.mli"/><glob pattern="*.d"/><glob pattern="*.di"/><glob pattern="*.m"/><glob pattern="*.mm"/>
+    <glob pattern="*.vhd"/><glob pattern="*.vhdl"/><glob pattern="*.odin"/><glob pattern="*.fish"/><glob pattern="*.asm"/><glob pattern="*.s"/><glob pattern="*.assembly"/><glob pattern="*.scss"/><glob pattern="*.cmake"/><glob pattern="*.mk"/><glob pattern="*.mak"/>
+    <glob pattern="*.lisp"/><glob pattern="*.cl"/><glob pattern="*.zig"/><glob pattern="*.glsl"/><glob pattern="*.vert"/><glob pattern="*.frag"/><glob pattern="*.fsh"/><glob pattern="*.geom"/><glob pattern="*.tesc"/><glob pattern="*.tese"/><glob pattern="*.comp"/>
+    <glob pattern="*.graphql"/><glob pattern="*.gql"/><glob pattern="*.hcl"/><glob pattern="*.tf"/><glob pattern="*.tfvars"/><glob pattern="*.nix"/><glob pattern="*.adb"/><glob pattern="*.ads"/><glob pattern="*.ada"/>
+    <glob pattern="*.erl"/><glob pattern="*.hrl"/><glob pattern="*.escript"/><glob pattern="*.clj"/><glob pattern="*.cljs"/><glob pattern="*.cljc"/><glob pattern="*.edn"/><glob pattern="*.nu"/><glob pattern="*.sed"/><glob pattern="*.tcl"/><glob pattern="*.tk"/><glob pattern="*.tm"/>
+    <glob pattern="*.roc"/><glob pattern="*.janet"/><glob pattern="*.forth"/><glob pattern="*.fth"/><glob pattern="*.4th"/><glob pattern="*.proto"/><glob pattern="*.dhall"/><glob pattern="*.pkl"/><glob pattern="*.hurl"/><glob pattern="*.wit"/>
+    <glob pattern="*.sml"/><glob pattern="*.sig"/><glob pattern="*.fun"/><glob pattern="*.mlb"/><glob pattern="*.nim"/><glob pattern="*.nims"/><glob pattern="*.nimble"/><glob pattern="*.astro"/><glob pattern="*.awk"/><glob pattern="*.kdl"/><glob pattern="*.tera"/><glob pattern="*.typ"/>
+    <glob pattern="*.dockerfile"/><glob pattern="*.containerfile"/><glob pattern="*.wgsl"/><glob pattern="*.sql"/><glob pattern="*.v"/><glob pattern="*.vsh"/><glob pattern="*.cue"/><glob pattern="*.fnl"/><glob pattern="*.pest"/><glob pattern="*.pony"/>
+    <glob pattern=".bashrc"/><glob pattern=".bash_profile"/><glob pattern=".zshrc"/><glob pattern=".profile"/><glob pattern=".editorconfig"/><glob pattern=".gitconfig"/><glob pattern=".npmrc"/><glob pattern=".pylintrc"/>
+    <glob pattern="justfile"/><glob pattern=".justfile"/><glob pattern="Gemfile"/><glob pattern="Rakefile"/><glob pattern="CMakeLists.txt"/><glob pattern="Makefile"/><glob pattern="GNUmakefile"/><glob pattern="Dockerfile"/><glob pattern="Containerfile"/>
+  </mime-type>
+</mime-info>

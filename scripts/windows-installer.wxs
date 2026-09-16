@@ -22,6 +22,35 @@
               <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Token"
                         WorkingDirectory="INSTALLDIR" Advertise="yes" Icon="Token.exe" />
             </File>
+            <!-- Register without changing the user's default application.  The
+                 ProgID, registered-app capability, and OpenWithProgids make
+                 Token discoverable from Explorer's Open with UI. -->
+            <RegistryValue Root="HKLM" Key="Software\Classes\Token.Editor"
+                           Type="string" Value="Token Editor" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Token.Editor\DefaultIcon"
+                           Type="string" Value="[#TokenExe],0" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Token.Editor\shell\open\command"
+                           Type="string" Value="&quot;[#TokenExe]&quot; &quot;%1&quot;" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Applications\token.exe\shell\open\command"
+                           Type="string" Value="&quot;[#TokenExe]&quot; &quot;%1&quot;" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Directory\shell\Token"
+                           Type="string" Value="Open with Token" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Directory\shell\Token\command"
+                           Type="string" Value="&quot;[#TokenExe]&quot; &quot;%1&quot;" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Folder\shell\Token"
+                           Type="string" Value="Open with Token" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Folder\shell\Token\command"
+                           Type="string" Value="&quot;[#TokenExe]&quot; &quot;%1&quot;" />
+            <RegistryValue Root="HKLM" Key="Software\Token\Capabilities"
+                           Name="ApplicationName" Type="string" Value="Token" />
+            <RegistryValue Root="HKLM" Key="Software\Token\Capabilities"
+                           Name="ApplicationDescription" Type="string"
+                           Value="A fast, multi-cursor code editor built in Rust" />
+            <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\token.exe"
+                           Type="string" Value="[#TokenExe]" />
+            <RegistryValue Root="HKLM" Key="Software\RegisteredApplications" Name="Token"
+                           Type="string" Value="Software\Token\Capabilities" />
+            <?include windows-file-associations.wxi ?>
           </Component>
           <Directory Id="Resources" Name="Resources">
             <Component Id="Credits" Guid="*" Win64="yes">

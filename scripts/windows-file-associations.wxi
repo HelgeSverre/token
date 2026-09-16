@@ -1,0 +1,14 @@
+<!-- Shared with the Linux MIME manifest. These are additive Open With
+     registrations only: installing Token never replaces a user's defaults. -->
+<Include>
+  <?define TokenExtensions="txt;yaml;yml;md;markdown;rs;html;htm;css;js;mjs;cjs;ts;mts;cts;tsx;jsx;json;jsonc;toml;py;pyw;pyi;go;php;phtml;php3;php4;php5;phps;c;h;cpp;cc;cxx;c++;hpp;hh;hxx;h++;java;sh;bash;zsh;ksh;scm;rkt;ss;ini;cfg;conf;xml;xsd;xsl;xslt;svg;plist;sema;vue;svelte;just;applescript;cs;csx;rb;rake;gemspec;lua;r;swift;ex;exs;gleam;sol;kt;kts;dart;jl;hs;ml;mli;d;di;m;mm;vhd;vhdl;odin;fish;asm;s;assembly;scss;cmake;mk;mak;lisp;cl;zig;glsl;vert;frag;fsh;geom;tesc;tese;comp;graphql;gql;hcl;tf;tfvars;nix;adb;ads;ada;erl;hrl;escript;clj;cljs;cljc;edn;nu;sed;tcl;tk;tm;roc;janet;forth;fth;4th;proto;dhall;pkl;hurl;wit;sml;sig;fun;mlb;nim;nims;nimble;astro;awk;kdl;tera;typ;dockerfile;containerfile;wgsl;sql;v;vsh;cue;fnl;pest;pony" ?>
+
+  <?foreach Extension in $(var.TokenExtensions) ?>
+    <RegistryValue Root="HKLM" Key="Software\Classes\Applications\token.exe\SupportedTypes"
+                   Name=".$(var.Extension)" Type="string" Value="" />
+    <RegistryValue Root="HKLM" Key="Software\Classes\.$(var.Extension)\OpenWithProgids"
+                   Name="Token.Editor" Type="string" Value="" />
+    <RegistryValue Root="HKLM" Key="Software\Token\Capabilities\FileAssociations"
+                   Name=".$(var.Extension)" Type="string" Value="Token.Editor" />
+  <?endforeach?>
+</Include>
