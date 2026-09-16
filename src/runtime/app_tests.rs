@@ -2810,6 +2810,7 @@ fn a_completion_response_translates_into_completion_resolved() {
         PendingCompletion {
             document_id: doc_id,
             session: token::completion::session::SessionId(1),
+            position: lsp_types::Position::new(0, 0),
             revision,
         },
     );
@@ -2849,6 +2850,7 @@ fn an_abandoned_completion_response_is_consumed_and_discarded() {
         PendingCompletion {
             document_id: doc_id,
             session: token::completion::session::SessionId(1),
+            position: lsp_types::Position::new(0, 0),
             revision,
         },
     );
@@ -2909,6 +2911,7 @@ fn a_member_response_opens_a_hidden_session_with_structured_method_details() {
         PendingCompletion {
             document_id,
             session: token::completion::session::SessionId(1),
+            position: lsp_types::Position::new(0, 16),
             revision,
         },
     );
@@ -3006,6 +3009,7 @@ fn cancel_completion_drops_the_debounce_and_supersedes_the_request() {
         PendingCompletion {
             document_id: doc_id,
             session: token::completion::session::SessionId(1),
+            position: lsp_types::Position::new(0, 0),
             revision: 1,
         },
     );
@@ -3099,6 +3103,7 @@ fn commit_character_runtime_reply_timeout_and_missing_server_preserve_the_transa
         app.process_automation_msg(Msg::Lsp(LspMsg::CompletionResolved {
             document_id: menu.document_id,
             session: menu.identity.session,
+            position: lsp_types::Position::new(0, 2),
             revision: menu.revision,
             items,
             is_incomplete: false,
@@ -3189,6 +3194,8 @@ fn a_docs_resolve_past_its_deadline_is_dropped_silently() {
                 }),
                 can_resolve: true,
                 resolved: false,
+                request_position: None,
+                request_query: None,
                 text_edit: None,
                 additional_text_edits: Vec::new(),
                 commit_characters: std::sync::Arc::from([]),

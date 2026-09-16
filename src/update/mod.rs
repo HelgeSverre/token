@@ -164,6 +164,10 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let result = merge_cmds(result, folding::reconcile(model));
     // This wrapper also covers early returns in special-tab dispatch.
     let completion_cleanup = completion::reconcile_pending_commit(model);
+    let completion_cleanup = merge_cmds(
+        completion_cleanup,
+        completion::reconcile_pending_accept(model),
+    );
     let path_cleanup = completion::reconcile_paths(model);
     let inline_cleanup = inline::reconcile(model);
     let projection_change = inline::sync_projection(model);
@@ -644,6 +648,7 @@ fn async_reply_trace_names_exclude_source_payloads() {
     let name = msg_type_name(&Msg::Lsp(crate::messages::LspMsg::CompletionResolved {
         document_id: DocumentId(1),
         session: crate::completion::session::SessionId(1),
+        position: lsp_types::Position::new(0, 0),
         revision: 0,
         items,
         is_incomplete: false,

@@ -102,6 +102,7 @@ pub(super) fn update_completion(model: &mut AppModel, msg: CompletionMsg) -> Opt
 /// other reasons can decide whether a redraw is needed.
 pub(crate) fn dismiss(model: &mut AppModel) -> bool {
     let mut was_open = model.ui.completion.completion_commit.take().is_some();
+    was_open |= model.ui.completion.completion_accept.take().is_some();
     was_open |= model.ui.completion.completion_path.take().is_some();
     if model.ui.completion.completion_menu.is_some() {
         model.ui.completion.completion_menu = None;
@@ -118,6 +119,40 @@ pub(crate) fn dismiss(model: &mut AppModel) -> bool {
         was_open = true;
     }
     was_open
+}
+
+fn pending_accept_is_valid(model: &AppModel) -> bool {
+    let Some(pending) = &model.ui.completion.completion_accept else {
+        return false;
+    };
+    let Some(menu) = &model.ui.completion.completion_menu else {
+        return false;
+    };
+    let Some(overlay) = model.ui.cursor_overlay else {
+        return false;
+    };
+    model.document().id == Some(pending.document_id)
+        && model.editor_area.focused_editor_id() == Some(pending.editor_id)
+        && model.document().file_path == pending.file_path
+        && model.document().language == pending.language
+        && model.document().revision == pending.revision
+        && model.document().undo_stack.len() == pending.undo_len
+        && model.editor().cursors == pending.cursors
+        && model.editor().selections == pending.selections
+        && model.editor().active_cursor_index == pending.active_cursor_index
+        && menu.document_id == pending.document_id
+        && menu.revision == pending.revision
+        && menu.pending_resolve == Some(pending.candidate)
+        && overlay.kind == CursorOverlayKind::Completion
+        && menu.candidate_for_row(overlay.selected) == Some(pending.candidate)
+}
+
+pub(in crate::update) fn reconcile_pending_accept(model: &mut AppModel) -> Option<Cmd> {
+    if model.ui.completion.completion_accept.is_some() && !pending_accept_is_valid(model) {
+        dismiss_with_cleanup(model)
+    } else {
+        None
+    }
 }
 
 /// The `LspCancelCompletion` for a menu about to close — captured BEFORE
@@ -616,22 +651,30 @@ fn merge_lsp_completion(
     items: Vec<crate::completion::menu::MenuItem>,
     is_incomplete: bool,
 ) -> Option<Cmd> {
-    let session = model
-        .ui
-        .completion
-        .completion_menu
-        .as_ref()?
-        .identity
-        .session;
-    merge_lsp_completion_for_session(model, document_id, session, revision, items, is_incomplete)
+    let state = model.ui.completion.completion_menu.as_ref()?;
+    let session = state.identity.session;
+    let position = crate::lsp::position_to_lsp(
+        model.document(),
+        model.editor().active_cursor().to_position(),
+    );
+    merge_lsp_completion_for_session(
+        model,
+        document_id,
+        session,
+        position,
+        revision,
+        items,
+        is_incomplete,
+    )
 }
 
 pub(crate) fn merge_lsp_completion_for_session(
     model: &mut AppModel,
     document_id: crate::model::editor_area::DocumentId,
     session: crate::completion::session::SessionId,
+    position: lsp_types::Position,
     revision: u64,
-    items: Vec<crate::completion::menu::MenuItem>,
+    mut items: Vec<crate::completion::menu::MenuItem>,
     is_incomplete: bool,
 ) -> Option<Cmd> {
     let path_session = if let Some(request) = &model.ui.completion.completion_path {
@@ -683,11 +726,28 @@ pub(crate) fn merge_lsp_completion_for_session(
             .flatten()
     };
 
+    let request_query = {
+        let state = model.ui.completion.completion_menu.as_ref()?;
+        let doc = model.document();
+        let cursor = model.editor().active_cursor();
+        let start = doc.cursor_to_offset(state.query_start.line, state.query_start.column);
+        let end = doc.cursor_to_offset(cursor.line, cursor.column);
+        if start > end {
+            return None;
+        }
+        doc.buffer.slice(start..end).to_string()
+    };
     let (menu, cursor_overlay) = (
         &mut model.ui.completion.completion_menu,
         &mut model.ui.cursor_overlay,
     );
     let state = menu.as_mut()?;
+    for item in &mut items {
+        if let MenuInsert::Lsp(data) = &mut item.insert {
+            data.request_position = Some(position);
+            data.request_query = Some(request_query.clone());
+        }
+    }
     let drop_words = model.config.completion.menu.words == WordsMode::Fallback && !items.is_empty();
     state.items.retain(|item| {
         item.source != MenuSourceId::Lsp && !(drop_words && item.source == MenuSourceId::Words)
@@ -744,6 +804,7 @@ fn move_selection(model: &mut AppModel, delta: i32) -> Option<Cmd> {
         // enrich the row, but must not accept the previous selection.
         state.pending_resolve = None;
     }
+    model.ui.completion.completion_accept = None;
     let total = model
         .ui
         .completion
@@ -850,6 +911,19 @@ fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
                 .completion_menu
                 .as_mut()?
                 .pending_resolve = Some(candidate);
+            model.ui.completion.completion_accept =
+                Some(crate::completion::menu::PendingAcceptance {
+                    document_id,
+                    editor_id: model.editor_area.focused_editor_id()?,
+                    file_path: model.document().file_path.clone(),
+                    language: model.document().language,
+                    revision,
+                    cursors: model.editor().cursors.clone(),
+                    selections: model.editor().selections.clone(),
+                    active_cursor_index: model.editor().active_cursor_index,
+                    undo_len: model.document().undo_stack.len(),
+                    candidate,
+                });
             return Some(Cmd::Batch(vec![
                 Cmd::LspResolveCompletionItem {
                     document_id,
@@ -983,6 +1057,63 @@ fn apply_completion_plan(model: &mut AppModel, plan: accept::CompletionEditPlan)
     }
 }
 
+/// Translate a range returned for an earlier prefix to the current locally
+/// refined prefix. Positions inside replaced query text are ambiguous; only
+/// positions at/before its start or at/after its old endpoint are safe.
+fn rebase_lsp_range(
+    range: lsp_types::Range,
+    request_position: lsp_types::Position,
+    request_query: &str,
+    current_position: lsp_types::Position,
+    current_query: &str,
+) -> Result<lsp_types::Range, accept::AcceptanceFailure> {
+    let old_len = u32::try_from(request_query.encode_utf16().count())
+        .map_err(|_| accept::AcceptanceFailure::InvalidEdits)?;
+    let current_len = u32::try_from(current_query.encode_utf16().count())
+        .map_err(|_| accept::AcceptanceFailure::InvalidEdits)?;
+    let old_start = request_position
+        .character
+        .checked_sub(old_len)
+        .ok_or(accept::AcceptanceFailure::InvalidEdits)?;
+    let current_start = current_position
+        .character
+        .checked_sub(current_len)
+        .ok_or(accept::AcceptanceFailure::InvalidEdits)?;
+    if request_position.line != current_position.line || old_start != current_start {
+        return Err(accept::AcceptanceFailure::InvalidEdits);
+    }
+
+    let translate = |position: lsp_types::Position| {
+        if position.line != request_position.line {
+            return Ok(position);
+        }
+        let character = if old_start == request_position.character {
+            if position.character < old_start {
+                position.character
+            } else {
+                current_position
+                    .character
+                    .checked_add(position.character - request_position.character)
+                    .ok_or(accept::AcceptanceFailure::InvalidEdits)?
+            }
+        } else if position.character <= old_start {
+            position.character
+        } else if position.character >= request_position.character {
+            current_position
+                .character
+                .checked_add(position.character - request_position.character)
+                .ok_or(accept::AcceptanceFailure::InvalidEdits)?
+        } else {
+            return Err(accept::AcceptanceFailure::InvalidEdits);
+        };
+        Ok(lsp_types::Position::new(position.line, character))
+    };
+    Ok(lsp_types::Range::new(
+        translate(range.start)?,
+        translate(range.end)?,
+    ))
+}
+
 /// LSP ranges and the primary prefix replacement share one pristine-coordinate
 /// plan. Snippet caret placement stays feature-owned; all peer positions and
 /// undo effects go through the same transaction as ordinary completion.
@@ -994,6 +1125,19 @@ fn apply_lsp_accept(
     let active_cursor = *model.editor().active_cursor();
     let doc = model.document();
     let cursor_offset = doc.cursor_to_offset(active_cursor.line, active_cursor.column);
+    let current_position = crate::lsp::position_to_lsp(doc, active_cursor.to_position());
+    let current_query = model
+        .ui
+        .completion
+        .completion_menu
+        .as_ref()
+        .and_then(|menu| {
+            let start = doc.cursor_to_offset(menu.query_start.line, menu.query_start.column);
+            (start <= cursor_offset).then(|| doc.buffer.slice(start..cursor_offset).to_string())
+        })
+        .unwrap_or_default();
+    let request_position = data.request_position.unwrap_or(current_position);
+    let request_query = data.request_query.as_deref().unwrap_or(&current_query);
     let path_context = model
         .ui
         .completion
@@ -1023,6 +1167,20 @@ fn apply_lsp_accept(
     });
     let (primary_start, mut primary_text) = match &data.text_edit {
         Some((range, new_text)) => {
+            if range.start.line != request_position.line
+                || range.end.line != request_position.line
+                || range.start.character > request_position.character
+                || range.end.character < request_position.character
+            {
+                return Err(accept::AcceptanceFailure::InvalidEdits);
+            }
+            let range = rebase_lsp_range(
+                *range,
+                request_position,
+                request_query,
+                current_position,
+                &current_query,
+            )?;
             let start = accept::strict_offset(doc, range.start)?;
             let end = accept::strict_offset(doc, range.end)?;
             if end < start {
@@ -1044,10 +1202,35 @@ fn apply_lsp_accept(
     let primary_end = data
         .text_edit
         .as_ref()
-        .map(|(range, _)| accept::strict_offset(doc, range.end))
+        .map(|(range, _)| {
+            rebase_lsp_range(
+                *range,
+                request_position,
+                request_query,
+                current_position,
+                &current_query,
+            )
+            .and_then(|range| accept::strict_offset(doc, range.end))
+        })
         .transpose()?
         .unwrap_or(primary_end);
-    let mut additional = accept::plan_lsp_edits(doc, &data.additional_text_edits)?;
+    let additional_text_edits: Vec<_> = data
+        .additional_text_edits
+        .iter()
+        .map(|(range, text)| {
+            Ok((
+                rebase_lsp_range(
+                    *range,
+                    request_position,
+                    request_query,
+                    current_position,
+                    &current_query,
+                )?,
+                text.clone(),
+            ))
+        })
+        .collect::<Result<_, accept::AcceptanceFailure>>()?;
+    let mut additional = accept::plan_lsp_edits(doc, &additional_text_edits)?;
     let inserted_len = primary_text.chars().count();
     let mut caret_offset = data
         .caret_offset
@@ -1059,6 +1242,15 @@ fn apply_lsp_accept(
             .map_or(primary_text.len(), |(byte, _)| byte);
         primary_text.insert(byte, character);
         caret_offset += 1;
+    }
+    if model.editor().selections.len() != model.editor().cursors.len()
+        || model
+            .editor()
+            .selections
+            .iter()
+            .any(|selection| !selection.is_empty())
+    {
+        return Err(accept::AcceptanceFailure::SingleCursorRequired);
     }
     let cursors = model.editor().cursors.clone();
     let mut ranges = Vec::with_capacity(cursors.len());
@@ -1149,6 +1341,17 @@ pub(crate) fn finish_deferred_accept(
     documentation: Option<crate::model::StyledText>,
     additional_text_edits: Vec<(lsp_types::Range, String)>,
 ) -> Option<Cmd> {
+    let ordinary_accept = if let Some(pending) = &model.ui.completion.completion_accept {
+        if !pending_accept_is_valid(model) {
+            return dismiss_with_cleanup(model);
+        }
+        if pending.document_id != document_id || pending.candidate != candidate {
+            return None;
+        }
+        true
+    } else {
+        false
+    };
     if let Some(pending) = &model.ui.completion.completion_commit {
         if !commit::pending_is_valid(model) {
             return dismiss_with_cleanup(model);
@@ -1177,6 +1380,10 @@ pub(crate) fn finish_deferred_accept(
         let row = state.row_for_candidate(candidate)?;
         state.selected_item(row)?.insert.clone()
     };
+    if model.ui.completion.completion_commit.is_none() && !ordinary_accept {
+        return Some(Cmd::Redraw);
+    }
+    model.ui.completion.completion_accept = None;
     match &insert {
         MenuInsert::Text(text) => apply_text_accept(model, text),
         MenuInsert::Lsp(data) => match model.ui.completion.completion_commit.take() {
@@ -1609,6 +1816,8 @@ mod tests {
                 }),
                 can_resolve: false,
                 resolved: false,
+                request_position: None,
+                request_query: None,
                 text_edit: None,
                 additional_text_edits: Vec::new(),
                 commit_characters: std::sync::Arc::from([]),
@@ -1794,6 +2003,32 @@ mod tests {
     }
 
     #[test]
+    fn commit_character_preserves_the_literal_when_the_primary_range_is_invalid() {
+        let mut model = commit_fixture(false);
+        let menu = model.ui.completion.completion_menu.as_mut().unwrap();
+        let index = menu.filtered[0].1;
+        let MenuInsert::Lsp(data) = &mut menu.items[index].insert else {
+            unreachable!()
+        };
+        data.text_edit = Some((
+            lsp_types::Range::new(
+                lsp_types::Position::new(0, 0),
+                lsp_types::Position::new(1, 2),
+            ),
+            "vacuum".to_owned(),
+        ));
+        let history = model.document().undo_stack.len();
+
+        update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
+
+        assert_eq!(
+            model.document().buffer.to_string(),
+            "// head\nva(\n// tail\n"
+        );
+        assert_eq!(model.document().undo_stack.len(), history + 1);
+    }
+
+    #[test]
     fn commit_character_preserves_utf16_imports_suffix_edits_and_snippet_caret() {
         use lsp_types::{Position, Range};
         for (resolve, late_edits) in [(false, false), (true, false), (true, true)] {
@@ -1821,6 +2056,8 @@ mod tests {
                 Range::new(Position::new(1, 3), Position::new(1, 5)),
                 "vacuum()".into(),
             ));
+            data.request_position = Some(Position::new(1, 5));
+            data.request_query = Some("va".to_owned());
             data.caret_offset = Some(7);
             data.commit_characters = std::sync::Arc::from(['🦀']);
             if !late_edits {
@@ -2538,6 +2775,7 @@ mod tests {
             &mut model,
             old.document_id,
             old.identity.session,
+            lsp_types::Position::new(1, 2),
             old.revision,
             vec![lsp_item("valid_fn")],
             false,
@@ -2584,6 +2822,7 @@ mod tests {
                 Msg::Lsp(crate::messages::LspMsg::CompletionResolved {
                     document_id,
                     session,
+                    position: lsp_types::Position::new(1, 2),
                     revision,
                     items,
                     is_incomplete: false,
@@ -2692,6 +2931,76 @@ mod tests {
         );
         let line = model.document().get_line_cow(1).unwrap();
         assert_eq!(line.trim_end_matches('\n'), "valid_fn");
+    }
+
+    #[test]
+    fn switching_tabs_cancels_a_deferred_accept_before_its_resolve_lands() {
+        let mut model = model_with_text("value_vector\n\n");
+        open_menu_with_resolvable_item(&mut model, "valid_fn");
+        select_item(&mut model, "valid_fn");
+        update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+        let menu = model.ui.completion.completion_menu.clone().unwrap();
+        let candidate = menu.pending_resolve.unwrap();
+        let original = menu.document_id;
+        let source = model.document().buffer.to_string();
+        let history = model.document().undo_stack.len();
+
+        update(&mut model, Msg::Layout(crate::messages::LayoutMsg::NewTab));
+        assert!(model.ui.completion.completion_menu.is_none());
+        assert_ne!(model.document().id, Some(original));
+        update(
+            &mut model,
+            Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
+                document_id: original,
+                revision: menu.revision,
+                candidate,
+                detail: None,
+                documentation: None,
+                additional_text_edits: vec![],
+            }),
+        );
+
+        let original = model.editor_area.documents.get(&original).unwrap();
+        assert_eq!(original.buffer.to_string(), source);
+        assert_eq!(original.undo_stack.len(), history);
+        assert_eq!(model.document().buffer.len_chars(), 0);
+    }
+
+    #[test]
+    fn switching_to_another_editor_for_the_same_document_cancels_deferred_accept() {
+        let mut model = model_with_text("value_vector\n\n");
+        open_menu_with_resolvable_item(&mut model, "valid_fn");
+        select_item(&mut model, "valid_fn");
+        let original_editor = model.editor_area.focused_editor_id().unwrap();
+        update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+        let menu = model.ui.completion.completion_menu.clone().unwrap();
+        let candidate = menu.pending_resolve.unwrap();
+        let source = model.document().buffer.to_string();
+        let history = model.document().undo_stack.len();
+
+        update(
+            &mut model,
+            Msg::Layout(crate::messages::LayoutMsg::SplitFocused(
+                crate::model::SplitDirection::Horizontal,
+            )),
+        );
+        assert_ne!(model.editor_area.focused_editor_id(), Some(original_editor));
+        assert_eq!(model.document().id, Some(menu.document_id));
+        assert!(model.ui.completion.completion_menu.is_none());
+        update(
+            &mut model,
+            Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
+                document_id: menu.document_id,
+                revision: menu.revision,
+                candidate,
+                detail: None,
+                documentation: None,
+                additional_text_edits: vec![],
+            }),
+        );
+
+        assert_eq!(model.document().buffer.to_string(), source);
+        assert_eq!(model.document().undo_stack.len(), history);
     }
 
     #[test]
@@ -3044,6 +3353,111 @@ mod tests {
         let line = model.document().get_line_cow(1).unwrap();
         assert_eq!(line.trim_end_matches('\n'), "self.bar");
         assert_eq!(model.editor().cursors[0].column, "self.bar".len());
+    }
+
+    #[test]
+    fn carried_lsp_text_edits_follow_prefix_growth_and_shrinkage() {
+        for (edit, expected_query) in [
+            (DocumentMsg::InsertChar('c'), "vac"),
+            (DocumentMsg::DeleteBackward, "v"),
+        ] {
+            let mut model = model_with_text("value_vector\n\n");
+            place_cursor(&mut model, 1, 0);
+            type_str(&mut model, "va");
+            let state = model.ui.completion.completion_menu.clone().unwrap();
+            let mut item = lsp_item("vacuum");
+            if let MenuInsert::Lsp(data) = &mut item.insert {
+                data.text_edit = Some((
+                    lsp_types::Range::new(
+                        lsp_types::Position::new(1, 0),
+                        lsp_types::Position::new(1, 2),
+                    ),
+                    "vacuum".to_owned(),
+                ));
+            }
+            merge_lsp_completion(
+                &mut model,
+                state.document_id,
+                state.revision,
+                vec![item],
+                false,
+            );
+
+            update(&mut model, Msg::Document(edit));
+            assert_eq!(
+                model.ui.completion.completion_menu.as_ref().unwrap().query,
+                expected_query
+            );
+            select_item(&mut model, "vacuum");
+            update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+            assert_eq!(model.document().get_line_cow(1).unwrap().trim(), "vacuum");
+        }
+    }
+
+    #[test]
+    fn lsp_primary_ranges_must_be_single_line_and_contain_the_request_position() {
+        let invalid_ranges = [
+            lsp_types::Range::new(
+                lsp_types::Position::new(0, 0),
+                lsp_types::Position::new(1, 2),
+            ),
+            lsp_types::Range::new(
+                lsp_types::Position::new(1, 0),
+                lsp_types::Position::new(1, 1),
+            ),
+        ];
+        for range in invalid_ranges {
+            let mut model = model_with_text("value_vector\n\n");
+            open_menu_with_lsp_response(&mut model, &["vacuum"]);
+            let state = model.ui.completion.completion_menu.as_mut().unwrap();
+            let item = state
+                .items
+                .iter_mut()
+                .find(|item| item.label == "vacuum")
+                .unwrap();
+            let MenuInsert::Lsp(data) = &mut item.insert else {
+                unreachable!()
+            };
+            data.text_edit = Some((range, "vacuum".to_owned()));
+            select_item(&mut model, "vacuum");
+            let source = model.document().buffer.to_string();
+            let cursors = model.editor().cursors.clone();
+            let selections = model.editor().selections.clone();
+            let history = model.document().undo_stack.len();
+
+            update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+
+            assert_eq!(model.document().buffer.to_string(), source);
+            assert_eq!(model.editor().cursors, cursors);
+            assert_eq!(model.editor().selections, selections);
+            assert_eq!(model.document().undo_stack.len(), history);
+        }
+    }
+
+    #[test]
+    fn multi_cursor_lsp_accept_rejects_a_nonempty_secondary_selection() {
+        let mut model = model_with_text("value_vector\n\nva\n");
+        open_menu_with_lsp_response(&mut model, &["vacuum"]);
+        model.editor_mut().cursors.push(Cursor::at(2, 2));
+        let mut secondary = Selection::new(Cursor::at(2, 2).to_position());
+        secondary.anchor = Cursor::at(2, 1).to_position();
+        model.editor_mut().selections.push(secondary);
+        select_item(&mut model, "vacuum");
+        let source = model.document().buffer.to_string();
+        let history = model.document().undo_stack.len();
+
+        update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+
+        assert_eq!(model.document().buffer.to_string(), source);
+        assert_eq!(model.document().undo_stack.len(), history);
+        assert_eq!(
+            model
+                .ui
+                .transient_message
+                .as_ref()
+                .map(|message| message.text.as_str()),
+            Some("This completion needs a single cursor.")
+        );
     }
 
     #[test]

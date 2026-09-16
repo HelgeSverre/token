@@ -1631,6 +1631,7 @@ mod tests {
                 Msg::Lsp(LspMsg::CompletionResolved {
                     document_id: menu.document_id,
                     session: menu.identity.session,
+                    position: lsp_types::Position::new(0, 2),
                     revision: menu.revision,
                     items,
                     is_incomplete: false,

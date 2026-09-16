@@ -1518,6 +1518,7 @@ pub enum LspMsg {
     CompletionResolved {
         document_id: crate::model::editor_area::DocumentId,
         session: crate::completion::session::SessionId,
+        position: lsp_types::Position,
         revision: u64,
         items: Vec<crate::completion::menu::MenuItem>,
         is_incomplete: bool,

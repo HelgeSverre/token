@@ -12,7 +12,8 @@ All notable changes to Token are documented in this file.
   the normal keymap. Completion acceptance now rejects malformed, overlapping or
   unsupported multi-cursor language-server edits instead of silently dropping
   required edits; rejected commit-character completions still insert the typed
-  character once.
+  character once. Delayed resolutions cannot edit a tab or pane the user has
+  left, and language-server ranges remain aligned while refining a prefix.
 
 ### Editing
 

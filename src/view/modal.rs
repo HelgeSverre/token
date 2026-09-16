@@ -3739,6 +3739,8 @@ mod tests {
                 }),
                 can_resolve: true,
                 resolved: true,
+                request_position: None,
+                request_query: None,
                 text_edit: None,
                 additional_text_edits: Vec::new(),
                 commit_characters: std::sync::Arc::from([]),

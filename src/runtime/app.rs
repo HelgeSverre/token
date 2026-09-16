@@ -693,6 +693,7 @@ impl PendingCodeActions {
 struct PendingCompletion {
     document_id: token::model::editor_area::DocumentId,
     session: token::completion::session::SessionId,
+    position: lsp_types::Position,
     revision: u64,
 }
 
@@ -4014,6 +4015,7 @@ impl App {
                 Some(Msg::Lsp(LspMsg::CompletionResolved {
                     document_id: pending.document_id,
                     session: pending.session,
+                    position: pending.position,
                     revision: pending.revision,
                     items: menu_items,
                     is_incomplete,
@@ -5237,6 +5239,7 @@ impl App {
             |_| PendingCompletion {
                 document_id,
                 session,
+                position,
                 revision,
             },
         );

@@ -892,6 +892,7 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         LspMsg::CompletionResolved {
             document_id,
             session,
+            position,
             revision,
             items,
             is_incomplete,
@@ -899,6 +900,7 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             model,
             document_id,
             session,
+            position,
             revision,
             items,
             is_incomplete,

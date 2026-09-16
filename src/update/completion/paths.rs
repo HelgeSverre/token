@@ -541,6 +541,10 @@ mod tests {
             Msg::Lsp(crate::messages::LspMsg::CompletionResolved {
                 document_id,
                 session,
+                position: crate::lsp::position_to_lsp(
+                    model.document(),
+                    model.editor().active_cursor().to_position(),
+                ),
                 revision,
                 items,
                 is_incomplete: false,
@@ -772,11 +776,16 @@ mod tests {
             .unwrap()
             .identity
             .session;
+        let position = crate::lsp::position_to_lsp(
+            model.document(),
+            model.editor().active_cursor().to_position(),
+        );
         update(
             &mut model,
             Msg::Lsp(crate::messages::LspMsg::CompletionResolved {
                 document_id: request.document_id,
                 session,
+                position,
                 revision: request.revision,
                 items,
                 is_incomplete: false,

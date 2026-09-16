@@ -152,6 +152,9 @@ pub(in crate::update) fn try_commit_character(
             .pending_resolve = Some(candidate);
         Some(resolve)
     };
+    // A commit character supersedes an Enter/click accept that was waiting on
+    // this same resolve. From here the staged literal's stronger guard owns it.
+    model.ui.completion.completion_accept = None;
     let insertion =
         super::super::document::update_document(model, DocumentMsg::InsertChar(character));
     model.ui.completion.completion_commit = Some(PendingCommit {

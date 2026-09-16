@@ -99,6 +99,10 @@ fn model_with_open_menu(lsp_items: usize) -> AppModel {
         .expect("menu open");
     let (document_id, session, revision) =
         (state.document_id, state.identity.session, state.revision);
+    let position = token::lsp::position_to_lsp(
+        model.document(),
+        model.editor().active_cursor().to_position(),
+    );
     let items = items_to_menu_items(
         server_items(lsp_items),
         &LspServerId::from("rust-analyzer"),
@@ -113,6 +117,7 @@ fn model_with_open_menu(lsp_items: usize) -> AppModel {
         Msg::Lsp(LspMsg::CompletionResolved {
             document_id,
             session,
+            position,
             revision,
             items,
             is_incomplete: false,

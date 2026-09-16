@@ -31,6 +31,7 @@ impl CandidateId {
 pub struct CompletionState {
     pub completion_menu: Option<super::menu::CompletionMenuState>,
     pub(crate) completion_commit: Option<super::menu::PendingCommit>,
+    pub(crate) completion_accept: Option<super::menu::PendingAcceptance>,
     pub(crate) completion_path: Option<Arc<super::path::PathRequest>>,
     pub inline_suggestion: Option<super::inline::InlineSuggestionState>,
     pub inline_session: Option<super::provider::InlineSession>,

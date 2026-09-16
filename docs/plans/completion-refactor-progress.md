@@ -94,6 +94,19 @@ regress.
 - Updated direct-state fixtures, automation, screenshot fixtures and completion
   benchmarks for the new identities and ownership path.
 
+### Review follow-up
+
+- Bound ordinary deferred acceptance to the originating document, editor,
+  revision, cursor, selection and history state. Tab or pane changes now dismiss
+  the pending menu, and late resolve replies cannot edit the new focus target.
+- Preserve each LSP response's request position and source-prefix coordinate
+  basis. Carried `textEdit` and additional-edit ranges are translated after
+  supported prefix growth or backspace and rejected when translation is
+  ambiguous.
+- Require a primary LSP edit to be single-line and contain its request position,
+  and require every cursor selection to be empty before replicating an LSP edit.
+  Rejection remains atomic and preserves commit-character literals exactly once.
+
 ## Current source map
 
 | Responsibility | Source of truth |
@@ -125,12 +138,13 @@ streaming and a generic source-plugin registry remain deliberately deferred.
 ## Verification record
 
 - `cargo check --all-targets --all-features`: passed.
-- `just test-one completion`: 226 passed.
+- `just test-one completion`: 231 passed before the final commit-character
+  rejection regression; that focused regression also passed.
 - `just test-one inline`: 98 passed before the final typed-request cleanup; 96
   focused inline tests passed after that cleanup.
 - `just test-one keymap`: 106 passed.
 - `just fmt` and `just fmt-check`: passed.
-- `just test`: 2817 nextest tests passed, 3 skipped; doctests passed (2 passed,
+- `just test`: 2823 nextest tests passed, 3 skipped; doctests passed (2 passed,
   6 ignored). The final run used `CARGO_BUILD_JOBS=1` after this 4 GiB orb
   thrashed while compiling the library and test harness concurrently; test
   scope was unchanged.
@@ -150,4 +164,4 @@ tree-sitter Blade C scanner. They do not originate in this refactor.
 
 ## Current phase
 
-Phases 0–6 complete and ready for review.
+Phases 0–6 and review findings 1–3 are complete.

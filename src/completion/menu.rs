@@ -88,9 +88,14 @@ pub struct LspInsert {
     /// Set once a resolve round trip has folded its results in — never
     /// resolves the same item twice.
     pub resolved: bool,
+    /// Position and query whose document revision the server used for this
+    /// item. Carried items use this basis to translate protocol ranges after
+    /// local prefix refinement while a replacement response is in flight.
+    pub request_position: Option<lsp_types::Position>,
+    pub request_query: Option<String>,
     /// Primary `textEdit`: `(range, new_text)`. Applied in place of the
-    /// query range for the active cursor, re-anchored to the live cursor
-    /// (the type-then-Enter race is one character wide but common).
+    /// query range for the active cursor and translated from the response's
+    /// coordinate basis after supported local prefix refinements.
     pub text_edit: Option<(lsp_types::Range, String)>,
     /// `additionalTextEdits` known up front plus anything a resolve round
     /// trip added (ts-ls auto-imports live here). Absolute ranges, applied
@@ -142,6 +147,23 @@ pub(crate) struct PendingCommit {
     pub language: crate::syntax::LanguageId,
     pub revision: u64,
     pub cursors: Vec<Cursor>,
+    pub active_cursor_index: usize,
+    pub undo_len: usize,
+    pub candidate: super::session::CandidateId,
+}
+
+/// Origin of an Enter/click acceptance waiting for `completionItem/resolve`.
+/// A late response may enrich its row, but may only edit this exact editor
+/// state; changing tabs, panes, selections, or history cancels acceptance.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingAcceptance {
+    pub document_id: DocumentId,
+    pub editor_id: crate::model::EditorId,
+    pub file_path: Option<std::path::PathBuf>,
+    pub language: crate::syntax::LanguageId,
+    pub revision: u64,
+    pub cursors: Vec<Cursor>,
+    pub selections: Vec<crate::model::Selection>,
     pub active_cursor_index: usize,
     pub undo_len: usize,
     pub candidate: super::session::CandidateId,
