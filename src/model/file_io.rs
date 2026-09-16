@@ -29,6 +29,7 @@ pub struct KnownFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileOpenSource {
     Path(PathBuf),
+    Scoped(crate::preview_resources::ScopedFile),
     Configuration(crate::commands::ConfigResource),
 }
 
@@ -37,6 +38,7 @@ impl FileOpenSource {
     pub fn path(&self) -> Option<&Path> {
         match self {
             Self::Path(path) => Some(path),
+            Self::Scoped(file) => Some(file.path()),
             Self::Configuration(_) => None,
         }
     }
@@ -47,6 +49,7 @@ impl std::fmt::Display for FileOpenSource {
         use crate::commands::ConfigResource;
         match self {
             Self::Path(path) => path.display().fmt(f),
+            Self::Scoped(file) => file.path().display().fmt(f),
             Self::Configuration(resource) => f.write_str(match resource {
                 ConfigResource::Directory => "configuration directory",
                 ConfigResource::EditorSettings => "editor configuration",
@@ -64,6 +67,8 @@ pub enum FileOpenPolicy {
     /// Existing files of any supported view mode (session restore).
     Existing,
     ExistingText,
+    /// Interactive preview navigation; never create missing files.
+    ExistingPreview,
 }
 
 impl FileOpenRequest {

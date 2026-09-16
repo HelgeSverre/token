@@ -433,6 +433,7 @@ fn prepare_open(
     let resolved;
     let path = match &request.source {
         FileOpenSource::Path(path) => path,
+        FileOpenSource::Scoped(file) => return prepare_scoped_open(request, file),
         FileOpenSource::Configuration(resource) => {
             resolved = super::configuration::prepare_resource(*resource, config_dir)
                 .context("Could not open configuration resource")?;
@@ -530,19 +531,12 @@ fn prepare_open(
         )
     };
     document.set_file_identity(Some(identity));
-    if matches!(view_mode, ViewMode::Text) && matches!(tab_content, TabContent::Text) {
-        document.file_policy.enabled = request.editorconfig;
-        document.file_policy.path = document.file_identity().map(|id| id.path().to_path_buf());
-        if request.editorconfig {
-            let source = document
-                .file_identity()
-                .map_or(path.as_path(), |id| id.path())
-                .to_path_buf();
-            let policy = super::editorconfig::resolve(&source);
-            document.file_text_preferences = policy.preferences;
-            document.file_policy.install(source, policy);
-        }
-    }
+    install_file_policy(
+        &mut document,
+        &view_mode,
+        &tab_content,
+        request.editorconfig,
+    );
     anyhow::ensure!(
         request.policy != token::model::FileOpenPolicy::ExistingText
             || (matches!(view_mode, ViewMode::Text) && matches!(tab_content, TabContent::Text)),
@@ -554,6 +548,100 @@ fn prepare_open(
         view_mode,
         tab_content,
     })
+}
+
+/// Replies may outlive a closed preview, Save As, or a workspace switch.
+pub(super) fn reject_stale_preview_reply(message: &mut Msg) {
+    if let Msg::Layout(LayoutMsg::FilePrepared { request, result }) = message {
+        if let FileOpenSource::Scoped(file) = &request.source {
+            if !file.is_active() {
+                *result = Err(token::preview_resources::ResourceError::Stale.to_string());
+            }
+        }
+    }
+}
+
+fn prepare_scoped_open(
+    request: &FileOpenRequest,
+    file: &token::preview_resources::ScopedFile,
+) -> anyhow::Result<PreparedFile> {
+    use anyhow::Context;
+    let loaded = file.read()?;
+    let path = file.path().to_path_buf();
+    for known in &request.known_documents {
+        if known.path == path
+            || known
+                .identity
+                .as_ref()
+                .is_some_and(|id| id.path() == loaded.identity.path())
+        {
+            return Ok(PreparedFile::Existing {
+                document_id: known.document_id,
+                path: known.path.clone(),
+            });
+        }
+    }
+    let mut view_mode = ViewMode::Text;
+    let mut tab_content = TabContent::Text;
+    let mut document = if token::util::is_supported_image(&path) {
+        view_mode = ViewMode::Image(Box::new(
+            token::image::load_image_bytes(&loaded.bytes, &path)
+                .context("Could not decode preview image")?,
+        ));
+        let mut document = Document::new();
+        document.file_path = Some(path.clone());
+        document
+    } else if loaded
+        .bytes
+        .iter()
+        .take(token::util::ByteSize::kibibytes(8).as_usize())
+        .any(|&byte| byte == 0)
+    {
+        tab_content = TabContent::BinaryPlaceholder(token::model::editor::BinaryPlaceholderState {
+            path: path.clone(),
+            size_bytes: loaded.bytes.len() as u64,
+        });
+        let mut document = Document::new();
+        document.file_path = Some(path.clone());
+        document
+    } else {
+        Document::from_loaded_text(
+            std::str::from_utf8(&loaded.bytes).context("Preview file is not UTF-8 text")?,
+            loaded.identity.clone(),
+        )
+    };
+    document.set_file_identity(Some(loaded.identity));
+    install_file_policy(
+        &mut document,
+        &view_mode,
+        &tab_content,
+        request.editorconfig,
+    );
+    anyhow::ensure!(file.is_active(), "Preview has changed or closed");
+    Ok(PreparedFile::Loaded {
+        document: Box::new(document),
+        view_mode,
+        tab_content,
+    })
+}
+
+fn install_file_policy(
+    document: &mut Document,
+    view_mode: &ViewMode,
+    tab_content: &TabContent,
+    enabled: bool,
+) {
+    if matches!(view_mode, ViewMode::Text) && matches!(tab_content, TabContent::Text) {
+        document.file_policy.enabled = enabled;
+        document.file_policy.path = document.file_identity().map(|id| id.path().to_path_buf());
+        if enabled {
+            if let Some(source) = document.file_policy.path.clone() {
+                let policy = super::editorconfig::resolve(&source);
+                document.file_text_preferences = policy.preferences;
+                document.file_policy.install(source, policy);
+            }
+        }
+    }
 }
 
 pub(super) fn start_worker(
@@ -618,6 +706,128 @@ mod tests {
             panic!("open request")
         };
         request
+    }
+
+    #[test]
+    fn preview_links_open_once_in_attached_group_and_preserve_unsaved_buffers() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("linked.md"), "disk").unwrap();
+        let scope = token::preview_resources::ResourceScope::new(root.path().into());
+        let mut model = AppModel::new(800, 600, 1.0);
+        let attached = model.editor_area.focused_group_id;
+        update(
+            &mut model,
+            Msg::Layout(LayoutMsg::SplitFocused(
+                token::model::SplitDirection::Horizontal,
+            )),
+        );
+        let other = model.editor_area.focused_group_id;
+        assert_ne!(attached, other);
+        let original_count = model.editor_area.groups[&attached].tabs.len();
+        for attempt in 0..2 {
+            let file = scope.file("linked.md".into()).unwrap();
+            let Cmd::PrepareFileOpen(request) = update(
+                &mut model,
+                Msg::Layout(LayoutMsg::OpenPreviewFile {
+                    file,
+                    group_id: attached,
+                }),
+            )
+            .unwrap() else {
+                panic!("scoped open must go through worker");
+            };
+            assert_eq!(
+                request.policy,
+                token::model::FileOpenPolicy::ExistingPreview
+            );
+            let reply = FileJob::Open(request).run(None);
+            update(&mut model, reply);
+            let id = model
+                .editor_area
+                .find_document_by_path(&root.path().join("linked.md"))
+                .unwrap();
+            assert_eq!(
+                model.editor_area.groups[&attached].tabs.len(),
+                original_count + 1
+            );
+            assert_eq!(model.editor_area.groups[&other].tabs.len(), 1);
+            if attempt == 0 {
+                let document = model.editor_area.documents.get_mut(&id).unwrap();
+                document.buffer = ropey::Rope::from_str("unsaved");
+                document.is_modified = true;
+            } else {
+                assert_eq!(
+                    model.editor_area.documents[&id].buffer.to_string(),
+                    "unsaved"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn missing_and_revoked_preview_links_create_no_tabs() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("exists.md"), "disk").unwrap();
+        let scope = token::preview_resources::ResourceScope::new(root.path().into());
+        let mut model = AppModel::new(800, 600, 1.0);
+        let group_id = model.editor_area.focused_group_id;
+        for name in ["missing.md", "exists.md"] {
+            let file = scope.file(name.into()).unwrap();
+            let Cmd::PrepareFileOpen(request) = update(
+                &mut model,
+                Msg::Layout(LayoutMsg::OpenPreviewFile { file, group_id }),
+            )
+            .unwrap() else {
+                panic!("scoped request");
+            };
+            let mut reply = FileJob::Open(request).run(None);
+            if name == "exists.md" {
+                scope.revoke();
+            }
+            reject_stale_preview_reply(&mut reply);
+            assert!(matches!(
+                &reply,
+                Msg::Layout(LayoutMsg::FilePrepared { result: Err(_), .. })
+            ));
+            update(&mut model, reply);
+            assert_eq!(model.editor_area.documents.len(), 1);
+            assert_eq!(model.editor_area.groups[&group_id].tabs.len(), 1);
+            assert!(!model.ui.is_loading);
+        }
+        assert!(!root.path().join("missing.md").exists());
+    }
+
+    #[test]
+    fn scoped_preview_opens_select_text_image_and_binary_views() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("text.csv"), "a,b\n1,2\n").unwrap();
+        std::fs::write(root.path().join("binary.dat"), b"binary\0bytes").unwrap();
+        image::RgbaImage::from_pixel(1, 1, image::Rgba([10, 20, 30, 255]))
+            .save(root.path().join("image.PNG"))
+            .unwrap();
+        let scope = token::preview_resources::ResourceScope::new(root.path().into());
+        for name in ["text.csv", "binary.dat", "image.PNG"] {
+            let mut request = open_request(root.path().join(name));
+            request.source = FileOpenSource::Scoped(scope.file(name.into()).unwrap());
+            request.policy = token::model::FileOpenPolicy::ExistingPreview;
+            let PreparedFile::Loaded {
+                document,
+                view_mode,
+                tab_content,
+            } = prepare_open(&request, None).unwrap()
+            else {
+                panic!("loaded");
+            };
+            assert!(document.file_identity().is_some());
+            assert!(!document.is_modified);
+            if name == "image.PNG" {
+                assert!(matches!(view_mode, ViewMode::Image(_)));
+            } else if name == "binary.dat" {
+                assert!(matches!(tab_content, TabContent::BinaryPlaceholder(_)));
+            } else {
+                assert_eq!(document.buffer.to_string(), "a,b\n1,2\n");
+            }
+        }
     }
 
     #[test]

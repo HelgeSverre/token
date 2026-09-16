@@ -78,6 +78,13 @@ All notable changes to Token are documented in this file.
 
 ### Preview
 
+- Resolve Markdown and HTML preview images, stylesheets, fonts, and local links
+  from the source document's directory. Parent references stay within the
+  workspace (or a standalone document's folder); root-relative URLs use that
+  boundary. Support escaped and Unicode filenames, and open existing local
+  links in the attached editor group. Resource reads run on a bounded worker,
+  reject special files and escaping symlinks, and enforce the 50 MiB limit.
+
 - Keep live previews clear of pane dividers and borders, using the same bounds
   as their overlay snapshots and accounting for native view rounding.
 

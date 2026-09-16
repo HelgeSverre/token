@@ -2216,11 +2216,10 @@ impl App {
     /// Synchronize webview instances with preview panes in the model.
     /// Creates, updates, or destroys webviews as needed.
     fn sync_webviews(&mut self) {
-        use super::webview::PreviewContent;
+        use super::webview::{PreviewContent, PreviewLocation};
         use token::layout::editor::PreviewPaneLayout;
         use token::markdown::{content_to_preview_html, PreviewTheme};
         use token::model::editor_area::PreviewId;
-        use token::syntax::LanguageId;
 
         let Some(window) = &self.window else {
             return;
@@ -2281,7 +2280,10 @@ impl App {
             .filter_map(|(&preview_id, preview)| {
                 let document = self.model.editor_area.documents.get(&preview.document_id)?;
                 let needs_create = !self.webview_manager.has_webview(preview_id);
-                let needs_content_update = preview.needs_refresh(document.revision);
+                let location =
+                    PreviewLocation::from_document(document, self.model.workspace.as_ref());
+                let needs_content_update = preview.needs_refresh(document.revision)
+                    || !self.webview_manager.location_matches(preview_id, &location);
 
                 let webview_rect = PreviewPaneLayout::new(preview_id, preview.rect, metrics)
                     .webview_content_rect(&splitters, scale_factor);
@@ -2291,22 +2293,9 @@ impl App {
                     let buffer_content = document.buffer.to_string();
                     let html = content_to_preview_html(&buffer_content, document.language, &theme)?;
 
-                    // For HTML files with a file path, enable local resource loading
-                    Some(if document.language == LanguageId::Html {
-                        if let Some(file_path) = &document.file_path {
-                            if let Some(base_dir) = file_path.parent() {
-                                PreviewContent::HtmlFile {
-                                    html,
-                                    base_dir: base_dir.to_path_buf(),
-                                }
-                            } else {
-                                PreviewContent::Html(html)
-                            }
-                        } else {
-                            PreviewContent::Html(html)
-                        }
-                    } else {
-                        PreviewContent::Html(html)
+                    Some(PreviewContent {
+                        html: html.into(),
+                        location,
                     })
                 } else {
                     None
@@ -3515,7 +3504,9 @@ impl App {
                 _ => true,
             }
         });
-        for msg in messages {
+        for mut msg in messages {
+            self.webview_manager.reconcile(&self.model);
+            super::file_io::reject_stale_preview_reply(&mut msg);
             let saved_document = match &msg {
                 Msg::App(AppMsg::SaveCompleted {
                     target,
@@ -5833,7 +5824,9 @@ impl ApplicationHandler for App {
         // Finish queued writes before capturing paths (notably a just-completed
         // Save As). Apply their replies without scheduling new work at shutdown.
         self.file_io_tx.take();
-        while let Ok(message) = self.msg_rx.try_recv() {
+        while let Ok(mut message) = self.msg_rx.try_recv() {
+            self.webview_manager.reconcile(&self.model);
+            super::file_io::reject_stale_preview_reply(&mut message);
             if matches!(
                 message,
                 Msg::App(AppMsg::SaveCompleted { .. } | AppMsg::FileLoaded { .. })
@@ -5870,9 +5863,33 @@ impl ApplicationHandler for App {
             needs_redraw = true;
         }
 
+        self.webview_manager.reconcile(&self.model);
+        for event in self.webview_manager.navigation_events() {
+            let Some(preview) = self.model.editor_area.previews.get(&event.preview_id) else {
+                continue;
+            };
+            match event.action {
+                super::webview::Navigation::Local(file) => {
+                    let group_id = preview.group_id;
+                    if let Some(cmd) = update(
+                        &mut self.model,
+                        Msg::Layout(LayoutMsg::OpenPreviewFile { file, group_id }),
+                    ) {
+                        needs_redraw |= cmd.needs_redraw();
+                        self.process_cmd(cmd);
+                    }
+                }
+                super::webview::Navigation::External(url) => super::open_web_url(url),
+                super::webview::Navigation::Document => self
+                    .webview_manager
+                    .navigate_document(event.preview_id, &event.url),
+            }
+        }
+
         if self.process_async_messages() {
             needs_redraw = true;
         }
+        self.webview_manager.reconcile(&self.model);
         self.sync_document_watches();
         if self
             .file_change_due

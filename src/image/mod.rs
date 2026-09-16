@@ -116,6 +116,33 @@ pub fn load_image(
 ) -> Option<ImageState> {
     let file_size = std::fs::metadata(path).ok()?.len();
 
+    image_state(
+        image::open(path).ok()?,
+        path,
+        file_size,
+        viewport_width,
+        viewport_height,
+    )
+}
+
+/// Decode bytes already read through an authorized file handle.
+pub fn load_image_bytes(bytes: &[u8], path: &std::path::Path) -> Option<ImageState> {
+    image_state(
+        image::load_from_memory(bytes).ok()?,
+        path,
+        bytes.len() as u64,
+        0,
+        0,
+    )
+}
+
+fn image_state(
+    img: image::DynamicImage,
+    path: &std::path::Path,
+    file_size: u64,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> Option<ImageState> {
     let format = path
         .extension()
         .and_then(|e| e.to_str())
@@ -130,7 +157,6 @@ pub fn load_image(
         })
         .unwrap_or_else(|| "Unknown".to_string());
 
-    let img = image::open(path).ok()?;
     let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
     let pixels = rgba.into_raw();
