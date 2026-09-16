@@ -6,6 +6,11 @@ All notable changes to Token are documented in this file.
 
 ## Unreleased
 
+### Platform integration
+
+- Register Token as an available editor for supported text and source files in
+  Windows Explorer and Linux file managers, without changing existing defaults.
+
 ### Editing
 
 - Move the current or selected lines up and down with Alt+Shift+Up/Down.

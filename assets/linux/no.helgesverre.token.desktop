@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Token
+GenericName=Text Editor
+Comment=A fast, multi-cursor code editor built in Rust
+Exec=token %F
+Icon=token
+Terminal=false
+Categories=Development;TextEditor;
+MimeType=text/plain;text/x-token-source;inode/directory;
+StartupNotify=true

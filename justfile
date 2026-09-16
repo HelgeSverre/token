@@ -360,7 +360,7 @@ app:
 
 [group('package')]
 bundle-linux: dist icons
-    cargo bundle --release --bin token --format deb
+    sh scripts/package-linux-deb.sh
 
 # Build a Windows MSI with Windows/MSVC, PowerShell 7 and WiX Toolset 3.14.
 [group('package')]

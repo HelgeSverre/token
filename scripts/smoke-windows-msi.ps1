@@ -48,6 +48,26 @@ try {
         throw "Missing or incorrect Windows executable version resources"
     }
     Write-Host "Verified embedded Token $expectedVersion resources"
+
+    $progId = "Registry::HKEY_LOCAL_MACHINE\Software\Classes\Token.Editor"
+    $command = "Registry::HKEY_LOCAL_MACHINE\Software\Classes\Token.Editor\shell\open\command"
+    $openWith = "Registry::HKEY_LOCAL_MACHINE\Software\Classes\.rs\OpenWithProgids"
+    $capabilities = "Registry::HKEY_LOCAL_MACHINE\Software\Token\Capabilities\FileAssociations"
+    foreach ($key in @($progId, $command, $openWith, $capabilities)) {
+        if (-not (Test-Path $key)) {
+            throw "Missing file-association registry key: $key"
+        }
+    }
+    if ((Get-ItemPropertyValue -Path $command -Name '(default)') -notmatch 'token.exe') {
+        throw "Token file-association command does not launch token.exe"
+    }
+    if (-not ((Get-ItemProperty -Path $openWith).PSObject.Properties.Name -contains 'Token.Editor')) {
+        throw "Rust files do not list Token in Open With"
+    }
+    if ((Get-ItemPropertyValue -Path $capabilities -Name '.rs') -ne 'Token.Editor') {
+        throw "Token is not registered as a Windows default-app candidate for Rust files"
+    }
+    Write-Host "Verified Windows Explorer Open With registration"
 } finally {
     Invoke-Installer "/x" "uninstall.log"
 }
