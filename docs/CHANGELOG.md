@@ -22,6 +22,9 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Keep pane dividers at a consistent width when focus changes or the cursor
+  blinks, restoring them after partial text and scrollbar redraws.
+
 - Move the current or selected lines up and down with Alt+Shift+Up/Down.
 
 ### Command line
