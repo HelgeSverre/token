@@ -7,7 +7,7 @@ Cargo feature. All build artifacts stay under `target/`.
 
 ## Current slice
 
-The catalog currently contains 46 labelled visual specimens:
+The catalog currently contains 56 labelled visual specimens:
 
 - Buttons: normal, hovered, pressed, focused, selected, disabled, long label.
 - Icon button: a glyph-label close action, using the standard button painter.
@@ -16,14 +16,25 @@ The catalog currently contains 46 labelled visual specimens:
 - Checkboxes: off/on. Select anchors: closed/open and an open option list.
 - Settings choices: selected choice group and collapsed/expanded disclosures.
 - Form fields: a validation message paired with its input geometry.
+- A production Settings composition with typed checkbox, select and disclosure
+  presentation; visible labels no longer determine the control kind.
 - Menus and rows: selected/hovered menu rows with shortcut keycaps and a
   separator; a selected completion row with a kind badge.
+- Contextual overlays: completion with documentation, hover documentation and
+  signature help with an accented active parameter.
+- Search Everywhere: grouped Commands and Files, workspace-symbol loading, and a
+  non-selectable empty state rendered by the production modal.
 - Surface swatches: panel, secondary, recessed.
 - Document tabs: active/inactive, save-error marker, clipped/scrolling title and
   drag ghost. Dock tabs, terminal active/hovered/exited/overflow states, and
   overlay tabs with count/pending/unavailable indicators remain distinct families.
-- Bottom Problems and right Outline panels: real headers, borders and empty states.
-- Scrollbars: vertical/horizontal, normal/hovered, end position and content fitting.
+- Bottom Problems and right Outline panels: real headers and borders; Outline is
+  populated with nested, selected and truncated production tree rows. Problems
+  includes grouped files, mixed severities, selection and a collapsed group.
+- Settings records: selected language-server records and the production empty
+  collection state, including the narrow two-pane Settings layout.
+- Scrollbars: vertical/horizontal, normal/hovered, end position and content fitting,
+  shown in small dummy-content viewports so the thumb position has context.
   Splitters: horizontal and vertical boundaries.
 
 These are explicitly **static visual states**, not pretend interactive controls.
@@ -62,11 +73,15 @@ Specimen dimensions are independent of row spacing: single-line fields stay
 are square. Narrow mode changes width, not scale. Each row is painted into a
 reused local surface and clipped into the scrolling viewport, so popup anchoring
 does not flip or shift when a row reaches the window edge. Metadata and previews
-use consistent columns rather than opposite edges of a wide window.
+use consistent columns rather than opposite edges of a wide window. Every
+specimen sits inside a padded, darker canvas with a dotted boundary; that boundary
+also makes the specimen's hard clipping area visible. List-like fixtures show at
+least five entries. Metadata for full-width Settings and completion/documentation
+compositions is stacked above the canvas instead of competing for horizontal room.
 
 This remains an increment of the [component inventory](ui-component-inventory.md),
-not coverage of every editor component. Documentation cards, complex pickers,
-interactive specimen sandboxes, live theme editing, and editor compositions
+not coverage of every editor component. Complex pickers, interactive specimen
+sandboxes, live theme editing, Problems/Usages collections and editor compositions
 remain subsequent slices.
 
 Chrome specimens build an isolated `AppModel` and use the real editor/dock/terminal
@@ -89,6 +104,7 @@ just ui-gallery --screenshot target/verification/ui-gallery/buttons.png --filter
 just ui-gallery --screenshot target/verification/ui-gallery/fields.png --filter field --scale 2
 just ui-gallery --screenshot target/verification/ui-gallery/light.png --theme github-light
 just ui-gallery --screenshot target/verification/ui-gallery/theme-menu.png --theme-menu
+just ui-gallery --screenshot target/verification/ui-gallery/narrow.png --narrow
 ```
 
 `--width` and `--height` are logical dimensions. `--scale` controls PNG density;
@@ -136,3 +152,28 @@ When adding a specimen, call its production painter rather than reproducing its
 appearance. Add a typed preview variant, a stable ID, source helper and palette
 roles, and label whether it is static or interactive. Extract a helper only when
 both production and the gallery will actually use it.
+
+## Planned performance-study coverage
+
+The [prototype component decision record](../ui/PROTOTYPE-COMPONENTS.md) defines
+new proposed families. They are **not** part of the current 56 specimens and
+should only enter the gallery with production layout/painters:
+
+- `pane-header.*`: title-only, optional icon/actions, truncation and overflow.
+- `pane-footer.*`: absent, hint with/without an icon, and status plus trailing
+  metadata. Footer presence must not be inferred from its label.
+- `breadcrumbs.*`: file/path/symbol, optional icons, narrow overflow and
+  independent editor-group context.
+- `dockable-panel.*`: docked and floating hosts with the same content, title
+  shown once, constrained geometry, and action states.
+- `performance.*`: empty/partial/full completed-frame data, narrow layout,
+  zero cache lookups, and stage-accounting mismatch.
+- `activity-rail.*`: left/right/both-edge cases, deferred along with the rail
+  implementation.
+
+Use the [editor polish plan](../feature/editor-visual-polish.md) for controlled
+font/spacing comparisons and the [performance feature plan](../feature/performance-panel.md)
+for metrics and scope. The initial Performance panel excludes the prototype's
+live/pause/reload row and decorative header icon. Gallery fixtures do not prove
+keyboard navigation, capture cancellation, docking lifecycle, or frame-snapshot
+coherence; those require the real owners' layout/reducer/runtime checks.

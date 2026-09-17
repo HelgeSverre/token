@@ -1,5 +1,11 @@
 # Scroll area
 
+<!-- token-ui-mockup:begin SCROLL-AREA -->
+[![Visual target under review: Scroll area](mockups/renders/SCROLL-AREA-emphasised.png)](mockups/SCROLL-AREA.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/SCROLL-AREA.png) · [Open normal mockup](mockups/SCROLL-AREA.html?view=normal) · [Open emphasised mockup](mockups/SCROLL-AREA.html?view=emphasised).*
+<!-- token-ui-mockup:end SCROLL-AREA -->
+
 This chapter documents Token's current scrolling machinery. It does **not**
 claim Token has one retained generic `ScrollArea`: owners choose their own
 content unit and semantic policy. The reusable layer is a pure one-axis

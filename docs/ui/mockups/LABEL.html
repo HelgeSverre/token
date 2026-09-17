@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Label · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="ide.css">
+  <style>
+    .control-with-unit { display:flex; align-items:center; gap:7px; }
+    .control-with-unit .field { inline-size:74px; }
+    .unit { color:var(--faint); font-size:11px; }
+    .validation { color:var(--severity-error-text, var(--red)); font-size:11px; line-height:17px; }
+    .metadata-row { display:flex; align-items:center; gap:7px; min-block-size:27px; padding-inline:8px; border-block-start:1px solid var(--soft-line); color:var(--muted); font-size:12px; }
+    .metadata-row .meta-detail { color:var(--faint); font-size:11px; margin-inline-start:auto; }
+    .label-sample { min-block-size:28px; display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text); }
+    .label-sample.validation { color:var(--severity-error-text, var(--red)); }
+    .label-sample .quiet { color:var(--faint); font-size:11px; }
+    .metadata-mini { border-block-start:1px solid var(--line); padding-block-start:10px; }
+    .metadata-mini h3 { color:var(--text); font-size:12px; line-height:19px; margin-block-end:6px; }
+  </style>
+</head>
+<body>
+  <script src="../../../prototypes/debug-performance-themes.js"></script><script src="shared.js"></script><script src="ide.js"></script>
+  <script>
+  Mockup.mount({
+    id: 'LABEL', title: 'Label',
+    description: 'A presentation role whose Settings, list and validation owner supplies association, hierarchy and available space.',
+    status: 'Established surface · visual study',
+    content: `
+      <div class="ide-study">
+        <div class="ide-scene">
+          ${Ide.preferences({ section: 'Editor', title: 'Editor', content: `
+            <section class="ide-group" aria-label="Typography settings">
+              <div class="ide-group-title">Typography</div>
+              <div class="ide-form-row"><span>Code font size</span><div><div class="control-with-unit"><div class="field mono" role="textbox" aria-label="Code font size" aria-readonly="true">140</div><span class="unit">px</span></div><div class="validation">Choose a value from 6 to 48 px.</div></div></div>
+              <div class="ide-form-row"><span></span><span class="ide-hint">Applies to editor and terminal source text.</span></div>
+              <div class="ide-form-row"><span>Line height</span><div class="control-with-unit"><div class="field mono" role="textbox" aria-label="Line height" aria-readonly="true">1.32</div><span class="unit">× font size</span></div></div>
+            </section>` })}
+          <aside class="ide-notes" aria-label="Label annotations">
+            <div class="ide-note"><h3>Control labels</h3><p>Reserve the control width before text is measured and truncated.</p></div>
+            <div class="metadata-mini"><h3>Open documents</h3><div class="metadata-row">${Mockup.icon('file',14)}<span>editor_text.rs</span><span class="meta-detail">src/view</span></div><div class="metadata-row">${Mockup.icon('file',14)}<span>layout.rs</span><span class="meta-detail">src</span></div></div>
+            <div class="ide-note"><h3>Metadata</h3><p>Row detail is secondary text, not a second primary caption.</p></div>
+          </aside>
+        </div>
+        <section class="ide-states" style="--state-count:4" aria-label="Label roles">
+          <div class="ide-state"><span class="state-label">Control caption</span><div class="label-sample">Code font size <span class="quiet">14 px</span></div></div>
+          <div class="ide-state"><span class="state-label">Description</span><div class="label-sample quiet">Applies to new editor tabs.</div></div>
+          <div class="ide-state"><span class="state-label">Validation</span><div class="label-sample validation">Choose a value from 6 to 48 px.</div></div>
+          <div class="ide-state"><span class="state-label">Metadata</span><div class="label-sample">editor_text.rs <span class="quiet">src/view</span></div></div>
+        </section>
+      </div>`
+  });
+  </script>
+</body>
+</html>

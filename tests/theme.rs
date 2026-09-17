@@ -1,6 +1,6 @@
 use token::theme::{
     list_available_themes, load_theme, Color, Theme, ThemeSource, BUILTIN_THEMES,
-    DEFAULT_DARK_YAML, FLEET_DARK_YAML, GITHUB_DARK_YAML, GITHUB_LIGHT_YAML,
+    DEFAULT_DARK_YAML, FLEET_DARK_YAML, GITHUB_DARK_YAML, GITHUB_LIGHT_YAML, STUDY_YAML,
 };
 
 #[test]
@@ -104,6 +104,20 @@ fn test_default_dark_yaml_parses() {
 }
 
 #[test]
+fn test_study_yaml_preserves_its_editor_and_overlay_anchors() {
+    let theme = Theme::from_yaml(STUDY_YAML).unwrap();
+    assert_eq!(theme.name, "Study");
+    assert_eq!(theme.editor.background.to_argb_u32(), 0xFF181B1E);
+    assert_eq!(theme.editor.foreground.to_argb_u32(), 0xFFBCC8CF);
+    assert_eq!(
+        theme.editor.current_line_background.to_argb_u32(),
+        0xFF232E32
+    );
+    assert_eq!(theme.overlay.highlight.to_argb_u32(), 0xFF79D8BD);
+    assert_eq!(theme.overlay.panel_background.to_argb_u32(), 0xFF1C2023);
+}
+
+#[test]
 fn test_parse_fleet_dark() {
     let theme = Theme::from_yaml(FLEET_DARK_YAML).unwrap();
     assert_eq!(theme.name, "Fleet Dark");
@@ -190,6 +204,9 @@ fn test_load_theme_builtin() {
 
     let theme = load_theme("fleet-dark").unwrap();
     assert_eq!(theme.name, "Fleet Dark");
+
+    let theme = load_theme("study").unwrap();
+    assert_eq!(theme.name, "Study");
 }
 
 #[test]
@@ -211,6 +228,7 @@ fn test_list_available_themes_includes_builtins() {
     assert!(ids.contains(&"fleet-dark"));
     assert!(ids.contains(&"github-dark"));
     assert!(ids.contains(&"github-light"));
+    assert!(ids.contains(&"study"));
 }
 
 #[test]

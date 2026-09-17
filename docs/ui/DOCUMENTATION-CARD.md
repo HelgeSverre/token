@@ -1,5 +1,11 @@
 # Documentation card — Token implementation reference
 
+<!-- token-ui-mockup:begin DOCUMENTATION-CARD -->
+[![Visual target under review: Documentation card](mockups/renders/DOCUMENTATION-CARD-emphasised.png)](mockups/DOCUMENTATION-CARD.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/DOCUMENTATION-CARD.png) · [Open normal mockup](mockups/DOCUMENTATION-CARD.html?view=normal) · [Open emphasised mockup](mockups/DOCUMENTATION-CARD.html?view=emphasised).*
+<!-- token-ui-mockup:end DOCUMENTATION-CARD -->
+
 ## Boundary and representation
 
 Token displays readable documentation in two feature projections: a completion side card and an LSP hover Zones panel. They share documentation viewport mechanics, but content identity, async lifecycle, and anchor belong to Completion or Hover. There is no standalone card model that fetches, parses, pins, or owns focus.

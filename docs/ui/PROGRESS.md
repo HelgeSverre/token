@@ -1,5 +1,11 @@
 # Progress: feature-owned operation projections
 
+<!-- token-ui-mockup:begin PROGRESS -->
+[![Visual target under review: Progress: feature-owned operation projections](mockups/renders/PROGRESS-emphasised.png)](mockups/PROGRESS.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/PROGRESS.png) · [Open normal mockup](mockups/PROGRESS.html?view=normal) · [Open emphasised mockup](mockups/PROGRESS.html?view=emphasised).*
+<!-- token-ui-mockup:end PROGRESS -->
+
 Token has no reusable ProgressState, spinner, determinate bar, cancellation
 widget, task queue, or progress gallery. It has feature-specific in-flight
 state. Progress wording/status is a projection of those features, not authority

@@ -1,5 +1,11 @@
 # Badge
 
+<!-- token-ui-mockup:begin BADGE -->
+[![Visual target under review: Badge](mockups/renders/BADGE-emphasised.png)](mockups/BADGE.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/BADGE.png) · [Open normal mockup](mockups/BADGE.html?view=normal) · [Open emphasised mockup](mockups/BADGE.html?view=emphasised).*
+<!-- token-ui-mockup:end BADGE -->
+
 ## Current component boundary and ownership
 
 Token's only badge primitive is a completion-kind mark embedded in an overlay

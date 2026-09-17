@@ -1,8 +1,20 @@
 # Tabs implementation manual
 
+<!-- token-ui-mockup:begin TABS -->
+[![Visual target under review: Tabs implementation manual](mockups/renders/TABS-emphasised.png)](mockups/TABS.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/TABS.png) · [Open normal mockup](mockups/TABS.html?view=normal) · [Open emphasised mockup](mockups/TABS.html?view=emphasised).*
+<!-- token-ui-mockup:end TABS -->
+
 Token has four visually similar but mechanically different tab families. They
 must not converge into a generic `Tabs` state machine: they select different
 resources, use different geometry authorities, and have different effects.
+
+The [editor visual-polish plan](../feature/editor-visual-polish.md) proposes
+taller document chrome and a measured UI-font trial. Those changes must preserve
+the four families below; a [BreadcrumbBar](BREADCRUMBS.md) is a separate optional
+editor-group region, not a replacement tab family. Current font and geometry
+facts in this chapter remain the implementation baseline.
 
 | Family   | Selects              | Durable owner                | Geometry / hit authority | Font |
 | -------- | -------------------- | ---------------------------- | ------------------------ | ---- |

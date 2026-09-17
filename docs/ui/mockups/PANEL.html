@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docked panels · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css">
+  <script src="../../../prototypes/debug-performance-themes.js"></script><script src="shared.js"></script>
+  <style>
+    .panel-study { display:grid; grid-template-columns:minmax(0,1fr) 288px; gap:18px; height:100%; min-height:0; }
+    .host { display:grid; grid-template-columns:minmax(0,1fr) 4px 220px; min-height:0; border:1px solid var(--window-border,#3c3c3c); background:var(--editor,#1e1e1e); }
+    .editor-host { display:grid; grid-template-rows:35px minmax(0,1fr) 25px; min-width:0; }
+    .editor-tabs-mini { display:flex; align-items:end; gap:2px; padding:0 9px; background:var(--tabs-bg,#252526); border-bottom:1px solid var(--line,#3c3c3c); }
+    .editor-tabs-mini span { height:34px; display:flex; align-items:center; padding:0 10px; color:var(--bright,#fff); font-size:11px; border:1px solid var(--line,#3c3c3c); border-bottom:0; background:var(--editor,#1e1e1e); }
+    .editor-lines { padding:13px 0 0 45px; color:var(--code-fg,#d4d4d4); font:12px/21px "JetBrains Mono",monospace; } .editor-lines div { white-space:pre; } .editor-lines em { font-style:normal;color:var(--syntax-comment,#6a9955); }.editor-lines b{font-weight:400;color:var(--syntax-keyword,#c586c0)}
+    .editor-status { display:flex; align-items:center; justify-content:space-between; padding:0 9px; background:var(--status-bg,#007acc); color:var(--status-fg,#fff); font-size:10px; }
+    .splitter { z-index:2; background:var(--soft-line,#313438); }
+    .dock { display:grid; grid-template-rows:37px minmax(0,1fr); min-width:0; background:var(--panel,#252526); border-left:1px solid var(--line,#3c3c3c); }
+    .dock-tabs { display:flex; align-items:end; overflow:hidden; padding:0 6px; gap:2px; border-bottom:1px solid var(--line,#3c3c3c); }
+    .dock-tab { height:35px; display:flex; align-items:center; padding:0 8px; color:var(--tab-inactive-fg,#808080); font-size:10px; white-space:nowrap; }
+    .dock-tab.active { color:var(--bright,#fff); border-bottom:2px solid var(--control-selected-border,#007acc); }
+    .panel-body { min-height:0; padding:10px; } .panel-heading { color:var(--bright,#fff); font-size:12px; } .panel-sub { margin:4px 0 10px; color:var(--faint,#8d9198); font-size:10px; }
+    .issue { display:grid; grid-template-columns:12px minmax(0,1fr); gap:7px; padding:7px 0; border-top:1px solid var(--soft-line,#313438); color:var(--muted,#c9cbcf); font-size:10px; line-height:14px; } .issue .severity { width:6px; height:6px; margin:4px 0 0 2px; border-radius:50%; background:var(--red,#ff8080); } .issue.warning .severity { background:var(--amber,#ffff80); }
+    .dock-side { display:grid; grid-template-rows:auto 1fr; gap:12px; min-height:0; }
+    .note-card { padding:11px; border-left:2px solid var(--control-selected-border,#007acc); background:rgba(255,255,255,.025); color:var(--muted,#c9cbcf); font-size:11px; line-height:16px; }.note-card strong { color:var(--bright,#fff); font-weight:400; }
+    .surface-anatomy { padding:11px; border:1px solid var(--line,#3c3c3c); background:var(--panel,#252526); }.surface-anatomy h2 { margin:0 0 8px; color:var(--bright,#fff); font-size:12px; font-weight:400; }.surface-row { display:flex; justify-content:space-between; padding:6px 0; border-top:1px solid var(--soft-line,#313438); color:var(--muted,#c9cbcf); font-size:10px; }.surface-row code { color:var(--faint,#8d9198); font:10px "JetBrains Mono",monospace; }
+  </style>
+</head>
+<body>
+  <script>
+    (() => {
+      const content = `<div class="panel-study"><section class="host" aria-label="Right dock panel in editor shell"><div class="editor-host"><div class="editor-tabs-mini"><span>main.rs</span></div><div class="editor-lines"><div><b>fn</b> render_frame(frame: &amp;Frame) {</div><div>    <em>// document content owns this projection</em></div><div>    draw_editor(frame);</div><div>    draw_dock(frame);</div><div>}</div><br><div><b>pub</b> struct RenderPlan {</div><div>    layout: LayoutSnapshot,</div><div>}</div></div><div class="editor-status"><span>Rust</span><span>Ln 118, Col 9</span></div></div><i class="splitter" aria-hidden="true"></i><section class="dock"><nav class="dock-tabs" aria-label="Bottom panel tabs"><span class="dock-tab active">Problems</span><span class="dock-tab">Outline</span><span class="dock-tab">Terminal</span></nav><div class="panel-body"><div class="panel-heading">3 diagnostics</div><div class="panel-sub">main.rs · current workspace</div><div class="issue"><i class="severity"></i><span>unused variable: <code>frame</code><br><span class="dim">src/view/frame.rs:118</span></span></div><div class="issue warning"><i class="severity"></i><span>unreachable pattern<br><span class="dim">src/update/dock.rs:84</span></span></div><div class="issue"><i class="severity"></i><span>expected panel identity<br><span class="dim">src/layout/chrome.rs:209</span></span></div></div></section></section><aside class="dock-side"><div class="note-card"><strong>Dock is a host.</strong><br>A panel is the selected domain surface inside its left, right, or bottom container. The host owns placement, tabs, clipping, resize, and focus routing.</div><div class="surface-anatomy"><h2>Surface versus host chrome</h2><div class="surface-row"><span>Panel body</span><code>domain content</code></div><div class="surface-row"><span>Dock tab strip</span><code>host chrome</code></div><div class="surface-row"><span>Splitter</span><code>shared geometry</code></div><div class="surface-row"><span>Status bar</span><code>window chrome</code></div></div></aside></div>`;
+      Mockup.mount({ id:'PANEL', title:'Docked panels', description:'Existing persistent dock hosts shown with a concrete Problems panel and its editor context.', status:'Established surface · visual study', content });
+    })();
+  </script>
+</body>
+</html>

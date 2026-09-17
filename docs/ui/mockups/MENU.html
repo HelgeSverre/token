@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Menu visual reference</title>
+    <link rel="stylesheet" href="shared.css">
+    <style>
+      .menu-stage { height: 410px; display: grid; grid-template-columns: minmax(0, 1fr) 278px; gap: 18px; }
+      .menu-editor { min-height: 0; position: relative; overflow: hidden; }
+      .menu-anchor { position: absolute; top: 106px; left: 298px; width: 252px; z-index: 3; }
+      .menu-anchor::before { content: ""; position: absolute; left: -10px; top: -9px; width: 8px; height: 8px; border-left: 1px solid var(--focus); border-top: 1px solid var(--focus); opacity: .8; }
+      .menu-anchor .menu { box-shadow: 0 12px 28px #0000004d; }
+      .menu .menu-row { width: 100%; min-height: 28px; border: 0; background: transparent; color: inherit; text-align: left; }
+      .menu .menu-row.selected { background: var(--control-selected); }
+      .menu-row .keycap { margin-left: auto; transform: scale(.88); transform-origin: right center; }
+      .menu-row[aria-disabled="true"] { color: var(--faint); }
+      .menu-row.selected { color: var(--control-selected-fg); background: var(--control-selected); }
+      .menu-side { padding: 14px 14px 10px; }
+      .menu-side .section-title { margin-bottom: 9px; }
+      .menu-key { display: grid; grid-template-columns: 9px 1fr; gap: 9px; align-items: center; margin: 9px 0; font-size: 12px; color: var(--muted); }
+      .menu-key i { width: 7px; height: 7px; border: 1px solid var(--line); border-radius: 50%; }
+      .menu-key i.selected-dot { background: var(--control-selected); border-color: var(--focus); }
+      .menu-key i.disabled-dot { background: var(--control-bg); border-color: var(--soft-line); }
+      .menu-trace { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--soft-line); display: grid; gap: 7px; font-size: 11px; color: var(--faint); }
+      .menu-trace b { color: var(--muted); font-weight: 400; }
+      .menu-states { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .menu-states .state-card { padding: 10px; }
+      .compact-menu .menu-row { min-height: 26px; font-size: 12px; }
+      .submenu-cue { color: var(--faint); margin-left: auto; display: inline-flex; }
+    </style>
+  </head>
+  <body>
+    <script src="../../../prototypes/debug-performance-themes.js"></script>
+    <script src="shared.js"></script>
+    <script>
+      const code = [
+        'fn render_menu(target: &Target) {',
+        '    let selected = target.selection();',
+        '    if selected.is_empty() {',
+        '        // Context actions remain available',
+        '    }',
+        '    draw_commands(target);',
+        '}',
+        '',
+        '// Right-clicked in the editor selection'
+      ];
+      const menu = `
+        <nav class="menu" aria-label="Editor context menu">
+          <button class="menu-row" type="button" aria-label="Cut"><span>Cut</span><span class="keycap">⌘X</span></button>
+          <button class="menu-row selected" type="button" aria-current="true" aria-label="Copy"><span>Copy</span><span class="keycap">⌘C</span></button>
+          <button class="menu-row" type="button" aria-label="Paste"><span>Paste</span><span class="keycap">⌘V</span></button>
+          <div class="separator" role="separator"></div>
+          <button class="menu-row" type="button" aria-label="Go to definition"><span>Go to Definition</span><span class="keycap">F12</span></button>
+          <button class="menu-row" type="button" aria-label="Find references"><span>Find References</span><span class="keycap">⇧F12</span></button>
+          <div class="separator" role="separator"></div>
+          <button class="menu-row" type="button" aria-disabled="true" disabled><span>Rename Symbol</span><span class="keycap">F2</span></button>
+          <button class="menu-row" type="button" aria-label="Reveal in file tree"><span>Reveal in File Tree</span></button>
+        </nav>`;
+      const content = `
+        <div class="menu-stage">
+          <section class="menu-editor" aria-label="Editor with an open context menu">
+            ${Mockup.editor({ title: 'menu.rs', tabs: ['layout.rs', 'menu.rs', 'theme.rs'], breadcrumb: true, sidebar: false, status: false, lines: code })}
+            <div class="menu-anchor">${menu}</div>
+          </section>
+          <aside class="surface menu-side" aria-label="Menu addressing notes">
+            <div class="section-title">One display order</div>
+            <p class="help">Rows, pointer hits, and keyboard selection address the same non-separator order.</p>
+            <div class="menu-key"><i class="selected-dot"></i><span><b>Copy</b> is selected by keyboard</span></div>
+            <div class="menu-key"><i></i><span>Separators divide groups only</span></div>
+            <div class="menu-key"><i class="disabled-dot"></i><span>Rename is unavailable here</span></div>
+            <div class="menu-trace">
+              <span><b>Anchor</b> editor selection</span>
+              <span><b>Dismiss</b> Escape · click away</span>
+              <span><b>Route</b> captured editor group</span>
+            </div>
+          </aside>
+        </div>
+        <div class="menu-states" aria-label="Additional menu states">
+          <div class="state-card">
+            <div class="state-label">File tree target</div>
+            <nav class="menu compact-menu" aria-label="File tree menu">
+              <button class="menu-row" type="button"><span>Open</span><span class="keycap">↵</span></button>
+              <button class="menu-row" type="button"><span>Open in Split</span><span class="submenu-cue">›</span></button>
+            </nav>
+          </div>
+          <div class="state-card">
+            <div class="state-label">Submenu affordance</div>
+            <nav class="menu compact-menu" aria-label="Tab menu">
+              <button class="menu-row" type="button"><span>Close</span><span class="keycap">⌘W</span></button>
+              <button class="menu-row" type="button"><span>Move to Group</span><span class="submenu-cue">›</span></button>
+            </nav>
+          </div>
+        </div>`;
+      Mockup.mount({
+        id: 'MENU',
+        title: 'Menu',
+        description: 'A context command set, placed at the clicked editor selection.',
+        status: 'Established surface · visual study',
+        content
+      });
+    </script>
+  </body>
+</html>

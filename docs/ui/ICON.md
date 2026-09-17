@@ -1,5 +1,11 @@
 # Icon
 
+<!-- token-ui-mockup:begin ICON -->
+[![Visual target under review: Icon](mockups/renders/ICON-emphasised.png)](mockups/ICON.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/ICON.png) · [Open normal mockup](mockups/ICON.html?view=normal) · [Open emphasised mockup](mockups/ICON.html?view=emphasised).*
+<!-- token-ui-mockup:end ICON -->
+
 ## Current representations and ownership
 
 Token has icon paint utilities and several semantic producers, but no `Icon`

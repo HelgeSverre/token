@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Splitter · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .split-study { height:100%; display:grid; grid-template-columns:minmax(0,1fr) 290px; gap:16px; }
+    .split-window { min-height:0; display:grid; grid-template-rows:37px 1fr; }
+    .split-tabs { display:flex; align-items:end; gap:0; border-bottom:1px solid var(--line); background:var(--tabs-bg); }
+    .split-tab { height:36px; padding:0 12px; display:flex; align-items:center; gap:7px; color:var(--tab-inactive-fg); font-size:12px; border-right:1px solid var(--line); }
+    .split-tab.active { color:var(--tab-active-fg); background:var(--tab-active-bg); border-top:1px solid var(--focus); }
+    .split-panes { min-height:0; display:grid; grid-template-columns:1fr 8px .69fr; background:var(--editor); }
+    .mini-code { overflow:hidden; padding:10px 0; font:11px/21px var(--font-mono); }
+    .mini-line { display:grid; grid-template-columns:42px minmax(0,1fr); min-height:21px; white-space:pre; }
+    .mini-line b { color:var(--gutter-fg); font-weight:400; text-align:right; padding-right:11px; border-right:1px solid var(--line); }
+    .mini-line span { color:var(--code-fg); padding-left:10px; }
+    .mini-line.active span { background:var(--current-line); }
+    .split-bar { position:relative; background:var(--splitter, var(--line)); cursor:col-resize; }
+    .split-bar::before { content:''; position:absolute; inset:0 2px; background:color-mix(in srgb, var(--bright) 10%, transparent); opacity:.42; }
+    .split-side { min-height:0; display:grid; grid-template-rows:1fr 161px; gap:12px; }
+    .split-details { padding:10px 12px; display:grid; gap:8px; align-content:start; font-size:11px; line-height:1.35; }
+    .metric { display:flex; justify-content:space-between; gap:12px; color:var(--muted); }
+    .metric span:last-child { color:var(--code-fg); font-family:var(--font-mono); }
+    .hit-demo { margin:0 12px 12px; height:38px; display:grid; grid-template-columns:1fr 8px 1fr; border:1px solid var(--line); border-radius:4px; overflow:hidden; }
+    .hit-demo i { background:var(--panel); }
+    .hit-demo b { background:var(--focus); font:10px/38px var(--font-mono); text-align:center; color:white; font-weight:400; }
+  </style>
+</head>
+<body>
+  <script src="../../../prototypes/debug-performance-themes.js"></script>
+  <script src="shared.js"></script>
+  <script>
+    (() => {
+      const left=['<span class="syntax-keyword">pub struct</span> <span class="syntax-type">GroupLayout</span> {','    <span class="syntax-keyword">pub</span> content_rect: <span class="syntax-type">Rect</span>,','    <span class="syntax-keyword">pub</span> gutter: <span class="syntax-type">GutterLayout</span>,','}','', '<span class="syntax-keyword">impl</span> <span class="syntax-type">GroupLayout</span> {','    <span class="syntax-keyword">pub fn</span> <span class="syntax-function">from_snapshot</span>(snapshot: <span class="syntax-type">&amp;Snapshot</span>) {','        <span class="syntax-function">Self::new</span>(snapshot.content_rect())','    }','}'];
+      const right=['<span class="syntax-comment">// Preview: current layout</span>','<span class="syntax-type">GroupLayout</span>','  content rect','  gutter lane','  text origin','','<span class="syntax-comment">Selected group</span>','editor_text.rs','geometry.rs','SCROLL-AREA.md'];
+      const lines = (items, start, active) => items.map((x,i)=>`<div class="mini-line ${i===active?'active':''}"><b>${start+i}</b><span>${x||' '}</span></div>`).join('');
+      Mockup.mount({
+        id:'SPLITTER', title:'Splitter', status:'Established surface · visual study',
+        description:'A movable boundary belongs between populated sibling layout nodes. Its bar overlays the solved boundary; it is not a standalone divider.',
+        content:`<div class="split-study">
+          <section class="window split-window" aria-label="Two editor groups separated by a pointer-draggable splitter"><div class="split-tabs"><span class="split-tab active">${Mockup.icon('file')} editor_area.rs</span><span class="split-tab">${Mockup.icon('file')} layout.rs</span></div><div class="split-panes"><div class="mini-code">${lines(left,114,6)}</div><div class="split-bar" role="separator" aria-orientation="vertical" aria-label="Editor group divider"></div><div class="mini-code">${lines(right,1,7)}</div></div></section>
+          <aside class="split-side">
+            <section class="surface"><div class="surface-header"><span class="section-title">Horizontal split</span><span class="badge">pointer drag</span></div><div class="split-details"><div class="metric"><span>Boundary</span><span>616 px</span></div><div class="metric"><span>Target width</span><span>8 px</span></div><div class="metric"><span>Press threshold</span><span>4 px</span></div><div class="separator"></div><div class="muted">The full bar is hit geometry. Children keep their complete solved extent below it.</div></div></section>
+            <section class="surface"><div class="state-label">Hit target · illustrative</div><div class="hit-demo" aria-hidden="true"><i></i><b>↔</b><i></i></div><p class="split-details muted" style="padding-top:0">Pointer drag is current. Keyboard resizing and normalized min-size solving remain proposed work.</p></section>
+          </aside>
+        </div>`
+      });
+    })();
+  </script>
+</body>
+</html>

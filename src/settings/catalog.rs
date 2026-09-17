@@ -18,6 +18,11 @@ pub(crate) enum SettingEffect {
 
 #[derive(Debug)]
 pub(crate) enum Control {
+    Toggle {
+        labels: &'static [&'static str],
+        active: fn(&EditorConfig) -> Option<usize>,
+        apply: fn(&mut EditorConfig, usize),
+    },
     Choice {
         labels: &'static [&'static str],
         active: fn(&EditorConfig) -> Option<usize>,
@@ -69,13 +74,15 @@ impl Descriptor {
 
     pub fn labels(&self) -> &'static [&'static str] {
         match self.control {
-            Control::Choice { labels, .. } | Control::Picker { labels, .. } => labels,
+            Control::Toggle { labels, .. }
+            | Control::Choice { labels, .. }
+            | Control::Picker { labels, .. } => labels,
         }
     }
 
     pub fn active(&self, config: &EditorConfig) -> Option<usize> {
         match self.control {
-            Control::Choice { active, .. } => active(config),
+            Control::Toggle { active, .. } | Control::Choice { active, .. } => active(config),
             Control::Picker { .. } => None,
         }
     }
@@ -86,7 +93,7 @@ impl Descriptor {
             return false;
         }
         match self.control {
-            Control::Choice { apply, .. } => {
+            Control::Toggle { apply, .. } | Control::Choice { apply, .. } => {
                 apply(config, choice);
                 true
             }
@@ -112,7 +119,17 @@ macro_rules! choice {
 }
 
 macro_rules! toggle {
-    ($($field:ident).+) => { choice!($($field).+; "Off" => false, "On" => true) };
+    ($($field:ident).+) => {
+        Control::Toggle {
+            labels: &["Off", "On"],
+            active: |config| [false, true].iter().position(|value| *value == config.$($field).+),
+            apply: |config, choice| {
+                if let Some(value) = [false, true].get(choice) {
+                    config.$($field).+ = *value;
+                }
+            },
+        }
+    };
 }
 
 macro_rules! catalog {
@@ -224,7 +241,10 @@ mod tests {
     fn settings_bindings_only_change_their_declared_yaml_key() {
         for &setting in Setting::ALL {
             let descriptor = setting.descriptor();
-            if !matches!(descriptor.control, Control::Choice { .. }) {
+            if !matches!(
+                descriptor.control,
+                Control::Toggle { .. } | Control::Choice { .. }
+            ) {
                 continue;
             }
             let mut config = EditorConfig::default();

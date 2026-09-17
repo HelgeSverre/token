@@ -22,7 +22,21 @@ pub enum ChromePreview {
     TerminalOverflow,
     TerminalExited,
     BottomPanel,
+    ProblemsPopulated,
     RightPanel,
+}
+
+#[derive(Clone, Copy)]
+pub enum SearchCollectionPreview {
+    Grouped,
+    Loading,
+    Empty,
+}
+
+#[derive(Clone, Copy)]
+pub enum SettingsRecordsPreview {
+    Selected,
+    Empty,
 }
 
 #[derive(Clone, Copy)]
@@ -41,6 +55,12 @@ pub enum Preview {
     FieldMultiline,
     SearchField,
     FormValidation,
+    SettingsForm,
+    SettingsRecords(SettingsRecordsPreview),
+    SearchCollection(SearchCollectionPreview),
+    CompletionDocumentation,
+    HoverDocumentation,
+    SignatureHelp,
     Checkbox(bool),
     Select {
         open: bool,
@@ -80,6 +100,69 @@ pub struct Specimen {
 }
 
 pub const SPECIMENS: &[Specimen] = &[
+    Specimen {
+        id: "settings-form.semantic-controls",
+        preview: Preview::SettingsForm,
+        category: 4,
+        source: "view/overlay_surface.rs + settings typed control presentation",
+        tokens: "settings form / checkbox / select / disclosure / validation",
+    },
+    Specimen {
+        id: "settings-records.selected",
+        preview: Preview::SettingsRecords(SettingsRecordsPreview::Selected),
+        category: 4,
+        source: "view/modal.rs · with_settings_spec + settings_page records",
+        tokens: "settings collection / selected record / enabled state / narrow layout",
+    },
+    Specimen {
+        id: "settings-records.empty",
+        preview: Preview::SettingsRecords(SettingsRecordsPreview::Empty),
+        category: 4,
+        source: "view/modal.rs · with_settings_spec + settings_page empty state",
+        tokens: "settings collection / no saved entries / add record",
+    },
+    Specimen {
+        id: "search-everywhere.grouped-results",
+        preview: Preview::SearchCollection(SearchCollectionPreview::Grouped),
+        category: 5,
+        source: "view/modal.rs · Search Everywhere production modal",
+        tokens: "commands + files sections / selection / shared row geometry",
+    },
+    Specimen {
+        id: "search-everywhere.loading",
+        preview: Preview::SearchCollection(SearchCollectionPreview::Loading),
+        category: 5,
+        source: "view/modal.rs · workspace symbol status",
+        tokens: "symbols tab / asynchronous loading / footer status",
+    },
+    Specimen {
+        id: "search-everywhere.empty",
+        preview: Preview::SearchCollection(SearchCollectionPreview::Empty),
+        category: 5,
+        source: "view/modal.rs · Search Everywhere empty decoration",
+        tokens: "empty grouped collection / non-selectable status",
+    },
+    Specimen {
+        id: "completion.with-documentation",
+        preview: Preview::CompletionDocumentation,
+        category: 5,
+        source: "view/overlay_surface.rs · list + Documentation",
+        tokens: "completion selection / code and UI typography / docs scrollbar",
+    },
+    Specimen {
+        id: "hover.documentation",
+        preview: Preview::HoverDocumentation,
+        category: 5,
+        source: "view/overlay_surface.rs · cursor Zones",
+        tokens: "hover signature / prose / diagnostic banner",
+    },
+    Specimen {
+        id: "signature-help.active-parameter",
+        preview: Preview::SignatureHelp,
+        category: 5,
+        source: "view/overlay_surface.rs · cursor Zones",
+        tokens: "code font / active parameter accent / documentation",
+    },
     Specimen {
         id: "terminal-tabs.exited",
         preview: Preview::Chrome(ChromePreview::TerminalExited),
@@ -144,11 +227,18 @@ pub const SPECIMENS: &[Specimen] = &[
         tokens: "sidebar / header / border / empty Problems",
     },
     Specimen {
-        id: "panel.right-empty",
+        id: "panel.problems-populated",
+        preview: Preview::Chrome(ChromePreview::ProblemsPopulated),
+        category: 7,
+        source: "view/panels.rs · render_problems_panel",
+        tokens: "grouped diagnostics / severity / selection / collapsed file",
+    },
+    Specimen {
+        id: "panel.outline-populated",
         preview: Preview::Chrome(ChromePreview::RightPanel),
         category: 7,
         source: "view/panels.rs · render_dock",
-        tokens: "sidebar / header / border / empty Outline",
+        tokens: "sidebar / header / border / expanded tree / selected row",
     },
     Specimen {
         id: "scrollbar.vertical",

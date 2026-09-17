@@ -260,6 +260,41 @@ impl<'a> Frame<'a> {
         }
     }
 
+    /// Draw a dotted rectangular outline using physical pixel dimensions.
+    ///
+    /// Dashes are drawn inward, so the complete stroke remains inside the
+    /// supplied bounds. `step` is the distance between dash starts and must be
+    /// greater than or equal to `dash` for a visible gap.
+    pub fn stroke_dotted_rect(
+        &mut self,
+        rect: Rect,
+        stroke: usize,
+        dash: usize,
+        step: usize,
+        color: u32,
+    ) {
+        let x = rect.x.max(0.0).round() as usize;
+        let y = rect.y.max(0.0).round() as usize;
+        let w = rect.width.max(0.0).round() as usize;
+        let h = rect.height.max(0.0).round() as usize;
+        if w == 0 || h == 0 {
+            return;
+        }
+        let stroke = stroke.max(1).min(w).min(h);
+        let dash = dash.max(1);
+        let step = step.max(dash);
+        for dx in (0..w).step_by(step) {
+            let span = dash.min(w - dx);
+            self.fill_rect_px(x + dx, y, span, stroke, color);
+            self.fill_rect_px(x + dx, y + h - stroke, span, stroke, color);
+        }
+        for dy in (0..h).step_by(step) {
+            let span = dash.min(h - dy);
+            self.fill_rect_px(x, y + dy, stroke, span, color);
+            self.fill_rect_px(x + w - stroke, y + dy, stroke, span, color);
+        }
+    }
+
     /// Fill a rectangle with alpha blending (pixel coordinates, ARGB format)
     pub fn blend_rect_px(&mut self, x: usize, y: usize, w: usize, h: usize, color: u32) {
         let alpha = ((color >> 24) & 0xFF) as f32 / 255.0;
@@ -1865,6 +1900,19 @@ mod tests {
                 "col {i} row 1"
             );
         }
+    }
+
+    #[test]
+    fn dotted_rect_keeps_stroke_inside_bounds_and_leaves_gaps() {
+        let mut buffer = vec![0u32; 12 * 12];
+        let mut frame = Frame::new(&mut buffer, 12, 12);
+        frame.stroke_dotted_rect(Rect::new(2.0, 2.0, 8.0, 8.0), 2, 2, 4, 0xFFFF_FFFF);
+
+        assert_eq!(frame.get_pixel(2, 2), 0xFFFF_FFFF);
+        assert_eq!(frame.get_pixel(3, 3), 0xFFFF_FFFF);
+        assert_eq!(frame.get_pixel(4, 2), 0, "dash gap remains transparent");
+        assert_eq!(frame.get_pixel(7, 9), 0xFFFF_FFFF);
+        assert_eq!(frame.get_pixel(10, 10), 0, "stroke stays inside bounds");
     }
 
     #[test]

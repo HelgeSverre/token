@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Foundations · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .foundations { height:100%; display:grid; grid-template-columns:1.12fr .9fr .98fr; grid-template-rows:1fr 1fr; gap:14px; }
+    .foundation-card { min-height:0; padding:0; overflow:hidden; }
+    .foundation-head { height:35px; padding:0 11px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); }
+    .foundation-head .section-title { font-size:12px; }
+    .type-board { padding:11px 13px; display:grid; gap:5px; }
+    .type-row { display:flex; align-items:baseline; justify-content:space-between; gap:10px; min-width:0; }
+    .type-sample { color:var(--text); min-width:0; }
+    .type-meta { color:var(--faint); white-space:nowrap; font:10px/1 var(--font-mono); }
+    .ui-sample { font:13px/19px var(--font-ui); }.support-sample { font:11px/16px var(--font-ui); color:var(--muted); }.code-sample { font:12.5px/22px var(--font-mono); color:var(--code-fg); }
+    .token-list { padding:9px 11px; display:grid; grid-template-columns:1fr 1fr; gap:7px 12px; }
+    .token { display:grid; grid-template-columns:15px minmax(0,1fr); gap:7px; align-items:center; font-size:11px; color:var(--muted); }
+    .swatch { width:14px; height:14px; border-radius:3px; border:1px solid color-mix(in srgb,var(--bright) 17%,transparent); }
+    .space-board { padding:11px 13px; display:grid; gap:9px; }
+    .space-row { display:grid; grid-template-columns:42px 1fr 29px; gap:8px; align-items:center; font-size:11px; }
+    .space-rule { height:8px; background:var(--focus); border-radius:3px; opacity:.85; min-width:2px; }
+    .space-row code { color:var(--faint); font:10px/1 var(--font-mono); }
+    .flow { grid-column:span 2; }
+    .flow-board { height:calc(100% - 36px); display:flex; align-items:center; padding:0 14px; gap:8px; overflow:hidden; }
+    .flow-node { min-width:0; flex:1; min-height:42px; padding:8px; border:1px solid var(--line); background:var(--input-background); border-radius:4px; color:var(--text); font-size:11px; display:grid; align-content:center; gap:3px; }
+    .flow-node small { color:var(--faint); font-size:10px; }.flow-arrow { color:var(--faint); font-size:16px; }.flow-node.active { border-color:var(--focus); background:color-mix(in srgb,var(--focus) 13%,var(--input-background)); }
+    .foundation-states { grid-column:3; grid-row:2; }
+    .state-board { padding:10px 12px; display:grid; gap:8px; }
+    .state-sample { min-height:29px; display:flex; align-items:center; gap:8px; padding:5px 8px; border:1px solid var(--line); border-radius:4px; color:var(--text); font-size:11px; }
+    .state-sample .state-name { margin-left:auto; color:var(--faint); font:10px/1 var(--font-mono); }
+    .state-sample.selection { background:var(--control-selected); color:var(--control-selected-fg); border-color:transparent; }
+    .state-sample.focus-ring { outline:1px solid var(--focus); outline-offset:1px; }
+  </style>
+</head>
+<body>
+  <script src="../../../prototypes/debug-performance-themes.js"></script>
+  <script src="shared.js"></script>
+  <script>
+    (() => {
+      const swatches=[['Editor ground','var(--editor)'],['Panel surface','var(--panel)'],['Quiet border','var(--line)'],['Selection','var(--control-selected)'],['Focus','var(--focus)'],['Status','var(--status-bg)'],['Syntax type','var(--syntax-type)'],['Syntax comment','var(--syntax-comment)']];
+      const spaces=[4,8,12,16,24];
+      Mockup.mount({
+        id:'FOUNDATIONS', title:'Token UI foundations', status:'Established surface · visual study',
+        description:'Default Dark color roles, typography, spacing, and the model–presentation–layout boundary.',
+        content:`<div class="foundations">
+          <section class="surface foundation-card"><header class="foundation-head"><span class="section-title">Typography roles</span><span class="badge">Inter + JBM</span></header><div class="type-board"><div class="type-row"><span class="type-sample ui-sample">Pane header and control label</span><span class="type-meta">UI 13 / 19</span></div><div class="type-row"><span class="type-sample support-sample">Secondary metadata and annotations</span><span class="type-meta">UI 11 / 16</span></div><div class="type-row"><span class="type-sample code-sample">let text_origin = 92;</span><span class="type-meta">CODE 12.5 / 22</span></div><div class="separator"></div><div class="support-sample">Current native surfaces select roles independently; this board documents the prototype-informed visual study.</div></div></section>
+          <section class="surface foundation-card"><header class="foundation-head"><span class="section-title">Semantic roles</span><span class="muted mono">dark.yaml</span></header><div class="token-list">${swatches.map(([name,color])=>`<div class="token"><i class="swatch" style="background:${color}"></i><span>${name}</span></div>`).join('')}</div></section>
+          <section class="surface foundation-card"><header class="foundation-head"><span class="section-title">Spacing scale</span><span class="muted">actual logical lengths</span></header><div class="space-board">${spaces.map(n=>`<div class="space-row"><code>${n}</code><i class="space-rule" style="width:${n}px"></i><code>${n}px</code></div>`).join('')}<div class="support-sample">These rules are actual CSS lengths. One conversion at the display-scale boundary preserves adjacency.</div></div></section>
+          <section class="surface foundation-card flow"><header class="foundation-head"><span class="section-title">Four representations</span><span class="muted">solve once, consume in three places</span></header><div class="flow-board"><div class="flow-node"><span>Domain model</span><small>IDs, values, revisions</small></div><span class="flow-arrow">→</span><div class="flow-node"><span>Presentation</span><small>borrowed labels and roles</small></div><span class="flow-arrow">→</span><div class="flow-node active"><span>Layout</span><small>rects, clips, visible indices</small></div><span class="flow-arrow">→</span><div class="flow-node"><span>Paint + hit</span><small>same solved geometry</small></div></div></section>
+          <section class="surface foundation-card foundation-states"><header class="foundation-head"><span class="section-title">State expression</span><span class="muted">not a widget kit</span></header><div class="state-board"><div class="state-sample focus-ring">${Mockup.icon('code',14)} Editor group <span class="state-name">focused</span></div><div class="state-sample selection">${Mockup.icon('file',14)} layout/snapshot.rs <span class="state-name">selected</span></div><div class="state-sample">${Mockup.icon('warning',14)} 2 diagnostics <span class="state-name">semantic status</span></div></div></section>
+        </div>`
+      });
+    })();
+  </script>
+</body>
+</html>

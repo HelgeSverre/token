@@ -1,5 +1,11 @@
 # Link — terminal reality and future generic contract
 
+<!-- token-ui-mockup:begin LINK -->
+[![Visual target under review: Link](mockups/renders/LINK-emphasised.png)](mockups/LINK.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/LINK.png) · [Open normal mockup](mockups/LINK.html?view=normal) · [Open emphasised mockup](mockups/LINK.html?view=emphasised).*
+<!-- token-ui-mockup:end LINK -->
+
 ## Boundary
 
 Token has no generic Link model, painter, focus target, or route type. A link navigates; it is not a compact Button, list-row activation, or terminal string that merely looks URL-shaped. The only implemented link-like behavior is the terminal's grid-aware web link. Its grid coordinates and modifier policy make it non-reusable as generic UI chrome.

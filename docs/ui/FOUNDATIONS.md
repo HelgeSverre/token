@@ -1,5 +1,11 @@
 # Token UI foundations
 
+<!-- token-ui-mockup:begin FOUNDATIONS -->
+[![Visual target under review: Token UI foundations](mockups/renders/FOUNDATIONS-emphasised.png)](mockups/FOUNDATIONS.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/FOUNDATIONS.png) · [Open normal mockup](mockups/FOUNDATIONS.html?view=normal) · [Open emphasised mockup](mockups/FOUNDATIONS.html?view=emphasised).*
+<!-- token-ui-mockup:end FOUNDATIONS -->
+
 The implementation chapters below are a technical contract, not a proposed
 retained widget framework. Existing code excerpts are marked as such. Algorithms
 marked proposed describe seams a component implementation can adopt; they are

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pane chrome · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css">
+  <script src="../../../prototypes/debug-performance-themes.js"></script><script src="shared.js"></script>
+  <style>
+    .pane-study { display:grid; grid-template-columns:minmax(0,1fr) 288px; gap:18px; min-height:0; height:100%; }
+    .pane-window { display:grid; grid-template-rows:42px minmax(0,1fr) 30px; min-height:0; border:1px solid var(--window-border,#3c3c3c); background:var(--panel,#252526); }
+    .pane-header { display:flex; align-items:center; gap:10px; padding:0 12px; border-bottom:1px solid var(--line,#3c3c3c); background:var(--panel,#252526); }
+    .pane-title { color:var(--bright,#fff); font-size:13px; letter-spacing:.01em; }
+    .pane-actions { display:flex; align-items:center; gap:3px; margin-left:auto; }
+    .chrome-action { display:grid; place-items:center; width:25px; height:25px; padding:0; border:1px solid transparent; border-radius:4px; background:transparent; color:var(--muted,#c9cbcf); }
+    .chrome-action.focused { outline:1px solid var(--focus,#4daaff); outline-offset:-2px; background:rgba(77,170,255,.12); }
+    .pane-body { min-height:0; padding:12px; }
+    .performance-topline { display:flex; justify-content:space-between; color:var(--muted,#c9cbcf); font-size:11px; }
+    .metric-row { display:grid; grid-template-columns:1.35fr .65fr .65fr; gap:8px; margin-top:11px; }
+    .metric { padding:9px; border:1px solid var(--soft-line,#313438); background:var(--editor,#1e1e1e); }
+    .metric .label { color:var(--faint,#8d9198); font-size:10px; } .metric .value { margin-top:3px; color:var(--stat-fg,#ececee); font:16px/20px "JetBrains Mono",monospace; }
+    .chart { height:75px; display:flex; align-items:end; gap:5px; margin-top:11px; padding:8px; border:1px solid var(--soft-line,#313438); background:var(--editor,#1e1e1e); }
+    .bar { width:12px; background:var(--teal,#80ff80); opacity:.82; } .bar.warn { background:var(--amber,#ffff80); }
+    .stage-list { margin-top:11px; border-top:1px solid var(--soft-line,#313438); }
+    .stage { display:flex; justify-content:space-between; padding:5px 1px; color:var(--stage-fg,#ccc); font-size:11px; } .stage span:last-child { font-family:"JetBrains Mono",monospace; color:var(--muted,#c9cbcf); }
+    .pane-footer { display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-top:1px solid var(--line,#3c3c3c); color:var(--faint,#8d9198); font-size:11px; }
+    .run-state { display:flex; align-items:center; gap:6px; } .run-dot { width:6px; height:6px; border-radius:50%; background:var(--teal,#80ff80); }
+    .variants { display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; gap:10px; min-height:0; }
+    .variant { padding:11px; border:1px solid var(--line,#3c3c3c); background:var(--panel,#252526); }
+    .variant-label { margin-bottom:8px; color:var(--faint,#8d9198); font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
+    .mini-header { display:flex; align-items:center; min-height:34px; padding:0 8px; border:1px solid var(--soft-line,#313438); background:var(--editor,#1e1e1e); color:var(--bright,#fff); font-size:12px; }
+    .mini-header .mini-actions { display:flex; margin-left:auto; gap:2px; color:var(--muted,#c9cbcf); }
+    .footer-spec { margin-top:11px; padding:8px; border:1px solid var(--soft-line,#313438); background:var(--editor,#1e1e1e); }
+    .footer-spec .pane-footer { height:26px; padding:0 5px; border:0; background:var(--panel,#252526); }
+    .rule-note { color:var(--muted,#c9cbcf); font-size:11px; line-height:16px; }
+  </style>
+</head>
+<body>
+  <script>
+    (() => {
+      const i = (n) => Mockup.icon(n, 15);
+      const content = `<div class="pane-study">
+        <section class="pane-window" aria-label="Performance pane with header, body and footer">
+          <header class="pane-header"><span class="pane-title">Performance</span><div class="pane-actions"><button class="chrome-action" aria-label="Float panel">${i('float')}</button><button class="chrome-action focused" aria-label="Close panel">${i('close')}</button></div></header>
+          <div class="pane-body"><div class="performance-topline"><span>Frame timing</span><span class="mono">120 samples</span></div><div class="metric-row"><div class="metric"><div class="label">Frame time</div><div class="value">8.42 ms</div></div><div class="metric"><div class="label">p95</div><div class="value">11.6</div></div><div class="metric"><div class="label">FPS</div><div class="value">119</div></div></div><div class="chart" aria-label="Static frame time history"><span class="bar" style="height:33%"></span><span class="bar" style="height:52%"></span><span class="bar" style="height:42%"></span><span class="bar warn" style="height:75%"></span><span class="bar" style="height:47%"></span><span class="bar" style="height:62%"></span><span class="bar" style="height:38%"></span><span class="bar" style="height:48%"></span><span class="bar" style="height:55%"></span><span class="bar" style="height:41%"></span><span class="bar" style="height:60%"></span><span class="bar" style="height:44%"></span></div><div class="stage-list"><div class="stage"><span>Layout</span><span>1.24 ms</span></div><div class="stage"><span>Text</span><span>2.08 ms</span></div><div class="stage"><span>Raster</span><span>3.51 ms</span></div></div></div>
+          <footer class="pane-footer"><span class="run-state"><i class="run-dot"></i>Renderer · default-dark</span><span class="mono">seed 418</span></footer>
+        </section>
+        <aside class="variants" aria-label="Pane chrome states"><div class="variant"><div class="variant-label">Title only</div><div class="mini-header">Outline</div></div><div class="variant"><div class="variant-label">Optional actions</div><div class="mini-header">Terminal <div class="mini-actions">${i('split')}${i('more')}</div></div></div><div class="variant"><div class="variant-label">Local footer</div><div class="footer-spec"><div class="pane-footer"><span class="run-state"><i class="run-dot"></i>Connected</span><span>main</span></div></div></div><div class="rule-note">A title appears once. Actions belong to this pane; compact footer context remains local and never substitutes for the global status bar.</div></aside>
+      </div>`;
+      Mockup.mount({ id:'PANE-CHROME', title:'Pane chrome', description:'Proposed header and optional footer slots for docked and floating pane content.', status:'Proposed component', content });
+    })();
+  </script>
+</body>
+</html>

@@ -1,5 +1,11 @@
 # Button — implementation reference
 
+<!-- token-ui-mockup:begin BUTTON -->
+[![Visual target under review: Button](mockups/renders/BUTTON-emphasised.png)](mockups/BUTTON.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/BUTTON.png) · [Open normal mockup](mockups/BUTTON.html?view=normal) · [Open emphasised mockup](mockups/BUTTON.html?view=emphasised).*
+<!-- token-ui-mockup:end BUTTON -->
+
 ## Scope and reading path
 
 A Token button is presently a **stateless paint primitive**, not a widget. It

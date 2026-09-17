@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Token · Agent identity treatments</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --desk: #111214;
+        --panel: #18191b;
+        --raised: #202226;
+        --line: #303338;
+        --soft-line: #272a2e;
+        --text: #e1e3e5;
+        --muted: #9aa1aa;
+        --faint: #6e757e;
+        --accent: #d5aa64;
+        --codex: #f4f4ef;
+        --claude-study: #d97757;
+        --amp-study: #8fac74;
+        --ui: "Space Grotesk", system-ui, -apple-system, sans-serif;
+        --mono: "Space Mono", ui-monospace, "JetBrains Mono", monospace;
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        min-width: 320px;
+        color: var(--text);
+        background: var(--desk);
+        font: 14px/1.55 var(--ui);
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: #c6d8ee; }
+      code, .mono { font-family: var(--mono); }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+      .shell { width: min(1120px, calc(100% - 40px)); margin: 52px auto 80px; }
+      header { padding-bottom: 26px; border-bottom: 1px solid var(--line); }
+      .eyebrow {
+        margin: 0 0 9px;
+        color: var(--accent);
+        font: 11px/1.2 var(--mono);
+        text-transform: uppercase;
+      }
+      h1 { margin: 0; color: #fffef8; font-size: clamp(26px, 4vw, 42px); }
+      .lede { max-width: 730px; margin: 14px 0 0; color: var(--muted); }
+      .note {
+        margin: 20px 0 0;
+        max-width: 830px;
+        padding: 12px 14px;
+        border-left: 2px solid var(--accent);
+        background: #1a1a1a;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .note strong { color: var(--text); }
+
+      .chooser { display: flex; flex-wrap: wrap; gap: 8px; margin: 30px 0 18px; padding: 0; border: 0; }
+      .chooser legend { width: 100%; margin-bottom: 7px; color: var(--muted); font-size: 12px; }
+      .chooser input { position: absolute; opacity: 0; pointer-events: none; }
+      .chooser label {
+        display: inline-flex;
+        align-items: center;
+        min-height: 31px;
+        padding: 5px 10px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .chooser input:checked + label { border-color: #80683c; background: #292419; color: #fff1cf; }
+      .chooser input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+      .treatments { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+      .treatment { min-width: 0; transition: opacity 160ms ease; }
+      .treatment .card { opacity: 1; }
+      body[data-treatment="neutral"] .treatment.neutral .card,
+      body[data-treatment="accent"] .treatment.accent .card,
+      body[data-treatment="badge"] .treatment.badge .card {
+        border-color: #80683c;
+        box-shadow: 0 0 0 1px #80683c33;
+        opacity: 1;
+      }
+      .card {
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+      }
+      .card > header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--soft-line);
+      }
+      .card h2 { margin: 0; color: #f5f3ed; font-size: 14px; }
+      .card header p { max-width: 19ch; margin: 3px 0 0; color: var(--faint); font-size: 12px; }
+      .recommendation { flex: none; padding: 2px 6px; border: 1px solid #4b4538; border-radius: 999px; color: #d8c49c; font: 10px/1.3 var(--mono); }
+      .sample { padding: 5px 0; }
+      .session-row, .message-heading {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        gap: 9px;
+        padding: 11px 16px;
+      }
+      .session-row + .session-row, .message-heading { border-top: 1px solid var(--soft-line); }
+      .session-copy { min-width: 0; flex: 1; }
+      .session-copy strong { display: block; overflow: hidden; color: var(--text); font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+      .session-copy small { display: block; overflow: hidden; margin-top: 1px; color: var(--faint); font: 11px/1.4 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+      .timestamp { flex: none; color: var(--faint); font: 11px/1.3 var(--mono); }
+      .message-heading { margin-top: 11px; background: #161719; }
+      .message-heading span:last-child { min-width: 0; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+      .identity { display: inline-flex; flex: none; align-items: center; gap: 7px; min-width: 0; }
+      .agent-icon {
+        display: inline-block;
+        flex: none;
+        width: 16px;
+        height: 16px;
+        background: var(--icon-color, var(--text));
+        -webkit-mask: var(--icon) center / contain no-repeat;
+        mask: var(--icon) center / contain no-repeat;
+      }
+      .agent-spacer { display: inline-block; flex: none; width: 16px; height: 16px; }
+      .agent-icon.codex { --icon: url("https://cdn.agentclientprotocol.com/registry/v1/latest/codex-acp.svg"); }
+      .agent-icon.claude { --icon: url("https://cdn.agentclientprotocol.com/registry/v1/latest/claude-acp.svg"); }
+      .agent-icon.amp { --icon: url("https://cdn.agentclientprotocol.com/registry/v1/latest/amp-acp.svg"); }
+      .agent-name { overflow: hidden; color: var(--text); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+
+      /* Treatment 1: provider name and supplied registry mark share one neutral color. */
+      .neutral .agent-icon { --icon-color: var(--text); }
+      .neutral .agent-name { color: var(--text); }
+
+      /* Treatment 2: an explicitly provisional interface accent, never a recolored logo. */
+      .accent .identity { position: relative; padding-left: 7px; }
+      .accent .identity::before { position: absolute; left: 0; width: 2px; height: 15px; border-radius: 4px; background: var(--provider-cue, #ced1d4); content: ""; }
+      .accent .agent-icon { --icon-color: var(--text); }
+      .accent .codex { --provider-cue: var(--codex); }
+      .accent .claude { --provider-cue: var(--claude-study); }
+      .accent .amp { --provider-cue: var(--amp-study); }
+      .accent .identity:has(.agent-spacer)::before { display: none; }
+
+      /* Treatment 3: compact, quiet enough for dense transcript headings. */
+      .badge .identity { gap: 6px; padding: 3px 6px; border: 1px solid var(--soft-line); border-radius: 4px; background: #1b1c1f; }
+      .badge .agent-icon { width: 13px; height: 13px; --icon-color: var(--muted); }
+      .badge .agent-spacer { width: 13px; height: 13px; }
+      .badge .agent-name { color: var(--muted); font: 10px/1.2 var(--mono); }
+
+      .details { margin-top: 38px; border-top: 1px solid var(--line); padding-top: 25px; }
+      .identity:has(.agent-spacer)::before { display: none; }
+      .identity:has(.agent-spacer) .agent-name { color: #f4f4ef; }
+      .details h2 { margin: 0; color: #f5f3ed; font-size: 17px; }
+      .details > p { max-width: 820px; color: var(--muted); }
+      .source-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      .source-table th, .source-table td { padding: 10px 8px; border-bottom: 1px solid var(--soft-line); text-align: left; vertical-align: top; }
+      .source-table th { color: var(--muted); font-weight: 500; }
+      .source-table td { color: var(--faint); }
+      .source-table code { color: #c8ccd0; font-size: 11px; }
+      .source-table a { overflow-wrap: anywhere; }
+      .fine-print { margin: 16px 0 0; color: var(--faint); font-size: 12px; }
+      .fine-print strong { color: var(--muted); }
+
+      @media (max-width: 880px) { .treatments { grid-template-columns: 1fr; } .card header p { max-width: none; } }
+      @media (max-width: 540px) {
+        .shell { width: min(100% - 24px, 1120px); margin-top: 28px; }
+        .session-row, .message-heading, .card > header { padding-left: 12px; padding-right: 12px; }
+        .timestamp { display: none; }
+        .source-table { display: block; overflow-x: auto; white-space: nowrap; }
+      }
+    </style>
+  </head>
+  <body data-treatment="neutral">
+    <main class="shell">
+      <header>
+        <p class="eyebrow">Token / agent viewer / visual study</p>
+        <h1>Agent identity treatments</h1>
+        <p class="lede">Three ways to identify a coding agent in the session list and transcript. Each keeps the agent’s mark small enough that the work remains the primary visual signal.</p>
+        <p class="note"><strong>This is a design comparison, not a production asset bundle.</strong> The marks are live from the ACP Registry, are not copied into this repository, and should only appear once the archive’s provider is confidently mapped. “Unknown” deliberately has a plain white fallback.</p>
+      </header>
+
+      <fieldset class="chooser">
+        <legend>Compare treatment</legend>
+        <input id="neutral" type="radio" name="treatment" value="neutral" checked />
+        <label for="neutral">1. Neutral mark + name</label>
+        <input id="accent" type="radio" name="treatment" value="accent" />
+        <label for="accent">2. Restrained source cue</label>
+        <input id="badge" type="radio" name="treatment" value="badge" />
+        <label for="badge">3. Compact heading badge</label>
+      </fieldset>
+
+      <section class="treatments" aria-live="polite">
+        <div class="treatment neutral">
+          <article class="card">
+            <header>
+              <div><h2>Neutral mark + name</h2><p>Safest default. The registry icon and name share Token’s foreground color.</p></div>
+              <span class="recommendation">recommended</span>
+            </header>
+            <div class="sample">
+              <div class="session-row"><span class="identity"><i class="agent-icon codex" aria-hidden="true"></i><span class="agent-name">Codex</span></span><span class="session-copy"><strong>Keep wrapped selection visible</strong><small>feature/viewport-follow-selection</small></span><time class="timestamp">4d ago</time></div>
+              <div class="session-row"><span class="identity"><i class="agent-icon claude" aria-hidden="true"></i><span class="agent-name">Claude</span></span><span class="session-copy"><strong>Audit settings keyboard access</strong><small>feature/settings-audit</small></span><time class="timestamp">8d ago</time></div>
+              <div class="session-row"><span class="identity"><i class="agent-icon amp" aria-hidden="true"></i><span class="agent-name">Amp</span></span><span class="session-copy"><strong>Recover the release-note history</strong><small>main</small></span><time class="timestamp">12d ago</time></div>
+              <div class="session-row"><span class="identity"><span class="agent-spacer" aria-hidden="true"></span><span class="agent-name">Unknown agent</span></span><span class="session-copy"><strong>Historical imported session</strong><small>provider not mapped</small></span><time class="timestamp">2025-12-03</time></div>
+              <div class="message-heading"><span class="identity"><i class="agent-icon codex" aria-hidden="true"></i><span class="agent-name">Codex</span></span><span>Verified the failing selection test and updated the viewport path.</span></div>
+            </div>
+          </article>
+        </div>
+
+        <div class="treatment accent">
+          <article class="card">
+            <header>
+              <div><h2>Restrained source cue</h2><p>A two-pixel cue adds scanability while preserving each supplied mark untouched.</p></div>
+              <span class="recommendation">study</span>
+            </header>
+            <div class="sample">
+              <div class="session-row"><span class="identity"><i class="agent-icon codex" aria-hidden="true"></i><span class="agent-name">Codex</span></span><span class="session-copy"><strong>Keep wrapped selection visible</strong><small>feature/viewport-follow-selection</small></span><time class="timestamp">4d ago</time></div>
+              <div class="session-row"><span class="identity"><i class="agent-icon claude" aria-hidden="true"></i><span class="agent-name">Claude</span></span><span class="session-copy"><strong>Audit settings keyboard access</strong><small>feature/settings-audit</small></span><time class="timestamp">8d ago</time></div>
+              <div class="session-row"><span class="identity"><i class="agent-icon amp" aria-hidden="true"></i><span class="agent-name">Amp</span></span><span class="session-copy"><strong>Recover the release-note history</strong><small>main</small></span><time class="timestamp">12d ago</time></div>
+              <div class="session-row"><span class="identity"><span class="agent-spacer" aria-hidden="true"></span><span class="agent-name">Unknown agent</span></span><span class="session-copy"><strong>Historical imported session</strong><small>provider not mapped</small></span><time class="timestamp">2025-12-03</time></div>
+              <div class="message-heading"><span class="identity"><i class="agent-icon claude" aria-hidden="true"></i><span class="agent-name">Claude</span></span><span>Mapped the keyboard handling and found the navigation regression.</span></div>
+            </div>
+          </article>
+        </div>
+
+        <div class="treatment badge">
+          <article class="card">
+            <header>
+              <div><h2>Compact heading badge</h2><p>Best reserved for repeated sender headings in a long transcript, not the session browser.</p></div>
+              <span class="recommendation">transcript only</span>
+            </header>
+            <div class="sample">
+              <div class="session-row"><span class="identity"><i class="agent-icon codex" aria-hidden="true"></i><span class="agent-name">Codex</span></span><span class="session-copy"><strong>Keep wrapped selection visible</strong><small>feature/viewport-follow-selection</small></span><time class="timestamp">4d ago</time></div>
+              <div class="session-row"><span class="identity"><i class="agent-icon claude" aria-hidden="true"></i><span class="agent-name">Claude</span></span><span class="session-copy"><strong>Audit settings keyboard access</strong><small>feature/settings-audit</small></span><time class="timestamp">8d ago</time></div>
+              <div class="session-row"><span class="identity"><i class="agent-icon amp" aria-hidden="true"></i><span class="agent-name">Amp</span></span><span class="session-copy"><strong>Recover the release-note history</strong><small>main</small></span><time class="timestamp">12d ago</time></div>
+              <div class="session-row"><span class="identity"><span class="agent-spacer" aria-hidden="true"></span><span class="agent-name">Unknown agent</span></span><span class="session-copy"><strong>Historical imported session</strong><small>provider not mapped</small></span><time class="timestamp">2025-12-03</time></div>
+              <div class="message-heading"><span class="identity"><i class="agent-icon amp" aria-hidden="true"></i><span class="agent-name">Amp</span></span><span>Checked the existing changelog conventions before drafting the update.</span></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="details" aria-labelledby="provenance">
+        <h2 id="provenance">Source and use constraints</h2>
+        <p>The ACP Registry lists an icon URL for all three mapped agents and recommends a 16 × 16 <code>icon.svg</code>. This prototype renders those URLs as CSS masks so the exact registry geometry is used; it does not download, alter, or commit the assets. The listed package licenses do not by themselves grant trademark rights to the associated company logos.</p>
+        <table class="source-table">
+          <thead><tr><th>Provider</th><th>ACP registry record</th><th>Asset / package record</th><th>Color decision in this study</th></tr></thead>
+          <tbody>
+            <tr><th>Codex</th><td><code>codex-acp</code></td><td><a href="https://cdn.agentclientprotocol.com/registry/v1/latest/codex-acp.svg">registry icon</a> · adapter: Apache-2.0</td><td>Neutral only. OpenAI’s guide says not to add colors to the Blossom and requires use under its marks terms.</td></tr>
+            <tr><th>Claude</th><td><code>claude-acp</code></td><td><a href="https://cdn.agentclientprotocol.com/registry/v1/latest/claude-acp.svg">registry icon</a> · adapter: proprietary</td><td>The orange line is an unapproved interface study, not an asserted Anthropic brand color. Use neutral until an official color specification is supplied.</td></tr>
+            <tr><th>Amp</th><td><code>amp-acp</code></td><td><a href="https://cdn.agentclientprotocol.com/registry/v1/latest/amp-acp.svg">registry icon</a> · adapter: Apache-2.0</td><td>The green line is an unapproved interface study. Amp publishes light/dark logos and an app icon, but its press kit does not state a single interface brand color.</td></tr>
+            <tr><th>Unknown</th><td>none</td><td>No asset lookup</td><td>Plain white “Unknown agent” label; no inferred company, icon, or brand color.</td></tr>
+          </tbody>
+        </table>
+        <p class="fine-print"><strong>Recommended implementation direction:</strong> treatment 1 in the browser and treatment 3 for repeated transcript headings. Treatment 2 is here solely to assess the density benefit of a provider cue; it needs approved color tokens before use. Registry source: <a href="https://agentclientprotocol.com/get-started/registry#available-agents">ACP Registry</a>. Official references: <a href="https://openai.com/brand/">OpenAI design guidelines</a> and <a href="https://ampcode.com/press-kit">Amp press kit</a>.</p>
+      </section>
+    </main>
+    <script>
+      document.querySelectorAll('input[name="treatment"]').forEach((input) => {
+        input.addEventListener('change', () => { document.body.dataset.treatment = input.value; });
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,54 @@
+/* Additive desktop contexts. Colors and fonts continue to come from shared.css. */
+.ide-study { block-size: 100%; display: grid; grid-template-rows: minmax(0, 1fr) 100px; gap: 20px; }
+.ide-scene { min-block-size: 0; display: grid; grid-template-columns: minmax(0, 1fr) 216px; gap: 24px; }
+.ide-window { min-inline-size: 0; min-block-size: 0; display: flex; flex-direction: column; border: 1px solid var(--window-border); border-radius: 4px; background: var(--panel); }
+.ide-titlebar { min-block-size: 34px; display: flex; align-items: center; gap: 8px; padding-inline: 12px; color: var(--title-fg); border-block-end: 1px solid var(--line); font-size: 13px; }
+.ide-titlebar .ide-path { color: var(--faint); font-size: 11px; }
+.ide-preferences { flex: 1; min-block-size: 0; display: grid; grid-template-columns: 176px minmax(0, 1fr); }
+.ide-categories { min-inline-size: 0; padding-block: 12px; border-inline-end: 1px solid var(--line); background: var(--sidebar-bg); }
+.ide-filter { margin: 0 10px 12px; block-size: 28px; display: flex; align-items: center; gap: 7px; padding-inline: 7px; border: 1px solid var(--line); border-radius: 3px; color: var(--faint); font-size: 11px; background: var(--input-background); }
+.ide-category { display: flex; align-items: center; min-block-size: 28px; margin-inline: 6px; padding-inline: 10px; border-radius: 3px; font-size: 12px; }
+.ide-category[aria-current="page"] { color: var(--control-selected-fg); background: var(--control-selected); }
+.ide-settings-content { min-inline-size: 0; padding: 18px 22px; }
+.ide-settings-heading { color: var(--title-fg); font-size: 14px; line-height: 20px; margin-block-end: 18px; }
+.ide-group + .ide-group { margin-block-start: 20px; }
+.ide-group-title { display: flex; align-items: center; gap: 9px; color: var(--title-fg); font-size: 12px; line-height: 18px; margin-block-end: 8px; }
+.ide-group-title::after { content: ""; block-size: 1px; flex: 1; background: var(--soft-line); }
+.ide-form-row { display: grid; grid-template-columns: 138px minmax(0, 1fr); align-items: center; gap: 12px; min-block-size: 34px; font-size: 12px; }
+.ide-form-row > :first-child { min-inline-size: 0; }
+.ide-control-width { inline-size: 220px; max-inline-size: 100%; }
+.ide-hint { color: var(--faint); font-size: 11px; line-height: 17px; margin-block: 4px 8px; }
+.ide-dependent { margin-inline-start: 24px; }
+.ide-check-row { display: flex; align-items: center; gap: 8px; min-block-size: 27px; font-size: 12px; }
+.ide-context input[type="checkbox"], .ide-context input[type="radio"] { appearance: none; margin: 0; inline-size: 16px; block-size: 16px; flex: none; background: var(--input-background); border: 1px solid var(--keycap-border); border-radius: 3px; display: grid; place-content: center; }
+.ide-context input[type="checkbox"]:checked, .ide-context input[type="radio"]:checked { background: var(--control-selected-border); border-color: var(--control-selected-border); }
+.ide-context input[type="checkbox"]:checked::before { content: ""; inline-size: 8px; block-size: 4px; border-inline-start: 1.5px solid var(--bright); border-block-end: 1.5px solid var(--bright); transform: translateY(-1px) rotate(-45deg); }
+.ide-context input[type="radio"] { border-radius: 50%; }
+.ide-context input[type="radio"]:checked::before { content: ""; inline-size: 6px; block-size: 6px; background: var(--bright); border-radius: 50%; }
+.ide-context input:disabled { opacity: .4; }
+.ide-context .btn { min-block-size: 28px; padding: 2px 11px; border-radius: 3px; line-height: 22px; }
+.ide-context .btn.icon-btn { inline-size: 26px; min-block-size: 26px; padding: 4px; }
+.ide-context .field { min-block-size: 28px; padding: 2px 8px; border-radius: 3px; line-height: 22px; }
+.ide-context .keycap { block-size: 20px; min-inline-size: 20px; border-radius: 3px; }
+.ide-footer { min-block-size: 42px; padding-inline: 12px; display: flex; align-items: center; gap: 8px; border-block-start: 1px solid var(--line); font-size: 11px; color: var(--faint); }
+.ide-notes { display: flex; flex-direction: column; gap: 22px; padding-block-start: 2px; color: var(--faint); font-size: 12px; line-height: 19px; }
+.ide-note { border-block-start: 1px solid var(--line); padding-block-start: 12px; }
+.ide-note h3 { color: var(--text); font-size: 12px; line-height: 19px; margin-block-end: 6px; }
+.ide-note p + p { margin-block-start: 8px; }
+.ide-states { display: grid; grid-template-columns: repeat(var(--state-count, 4), minmax(0, 1fr)); min-block-size: 0; border-block-start: 1px solid var(--line); padding-block-start: 12px; }
+.ide-state { min-inline-size: 0; padding-inline: 18px; border-inline-start: 1px solid var(--soft-line); }
+.ide-state:first-child { padding-inline-start: 0; border-inline-start: 0; }
+.ide-state:last-child { padding-inline-end: 0; }
+.ide-state .state-label { margin-block-end: 9px; }
+.ide-state-caption { margin-block-start: 6px; color: var(--faint); font-size: 11px; line-height: 16px; }
+.ide-toolstrip { min-block-size: 32px; display: flex; align-items: center; gap: 3px; padding-inline: 7px; background: var(--panel); }
+.ide-tool-separator { block-size: 16px; inline-size: 1px; margin-inline: 5px; background: var(--line); flex: none; }
+.ide-toolstrip .btn { min-block-size: 26px; padding-inline: 7px; }
+.ide-context .btn[aria-pressed="true"] { background: var(--control-selected); color: var(--control-selected-fg); }
+.ide-list-row { min-block-size: 26px; display: flex; align-items: center; gap: 7px; padding-inline: 10px; font-size: 12px; }
+.ide-list-row .path, .ide-list-row .detail { color: var(--faint); font-size: 11px; }
+.ide-context .editor-context { border-radius: 3px; box-shadow: none; }
+.ide-context .editor-tabs { min-block-size: 34px; border-radius: 2px 2px 0 0; }
+.ide-context .editor-tab { padding-block: 7px; }
+.ide-context .editor-sidebar { inline-size: 176px; }
+.ide-context .tree-row { block-size: 25px; }

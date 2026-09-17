@@ -1,5 +1,11 @@
 # Checkbox
 
+<!-- token-ui-mockup:begin CHECKBOX -->
+[![Visual target under review: Checkbox](mockups/renders/CHECKBOX-emphasised.png)](mockups/CHECKBOX.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/CHECKBOX.png) · [Open normal mockup](mockups/CHECKBOX.html?view=normal) · [Open emphasised mockup](mockups/CHECKBOX.html?view=emphasised).*
+<!-- token-ui-mockup:end CHECKBOX -->
+
 ## What exists
 
 Token has a checkbox **mark painter**, not a semantic Checkbox widget.

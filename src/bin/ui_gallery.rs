@@ -36,6 +36,9 @@ struct Args {
     /// Include the open theme dropdown in headless screenshots.
     #[arg(long)]
     theme_menu: bool,
+    /// Render specimens using the gallery's narrow preview width.
+    #[arg(long)]
+    narrow: bool,
 }
 
 struct App {
@@ -408,6 +411,7 @@ fn main() -> Result<()> {
         None => Theme::default_dark(),
     };
     let mut state = GalleryState {
+        compact: args.narrow,
         theme_names: themes.iter().map(|info| info.name.clone()).collect(),
         selected_theme: themes
             .iter()

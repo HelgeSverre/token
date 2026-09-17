@@ -1,5 +1,11 @@
 # Toggle switch
 
+<!-- token-ui-mockup:begin TOGGLE-SWITCH -->
+[![Visual target under review: Toggle switch](mockups/renders/TOGGLE-SWITCH-emphasised.png)](mockups/TOGGLE-SWITCH.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/TOGGLE-SWITCH.png) · [Open normal mockup](mockups/TOGGLE-SWITCH.html?view=normal) · [Open emphasised mockup](mockups/TOGGLE-SWITCH.html?view=emphasised).*
+<!-- token-ui-mockup:end TOGGLE-SWITCH -->
+
 ## Current status and boundary
 
 Token has no toggle-switch painter or semantic switch. A Settings collection

@@ -17,8 +17,8 @@ use crate::theme::ThemeInfo;
 use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
 use super::overlay_surface::{
-    self, Accessory, Anchor, Body, Field, FlatIndex, Footer, Header, OverlayLayout, OverlaySpec,
-    Row, RowIcon, Section, TabBar, WidthRule, Zones,
+    self, Accessory, Anchor, Body, ChoicePresentation, Field, FlatIndex, Footer, Header,
+    OverlayLayout, OverlaySpec, Row, RowIcon, Section, TabBar, WidthRule, Zones,
 };
 use super::text_field::{TextFieldContent, TextFieldRenderer};
 
@@ -960,6 +960,7 @@ pub(crate) fn with_settings_spec<R>(
                             Accessory::Choices {
                                 labels: &preset_labels,
                                 active: Some(form.preset.map_or(0, |index| index + 1)),
+                                presentation: ChoicePresentation::Buttons,
                             }
                         } else if let (RowKind::FormAdvanced, Some(form)) =
                             (entry.kind.clone(), &state.form)
@@ -967,6 +968,7 @@ pub(crate) fn with_settings_spec<R>(
                             Accessory::Choices {
                                 labels: if form.advanced { &["Hide"] } else { &["Show"] },
                                 active: None,
+                                presentation: ChoicePresentation::Disclosure,
                             }
                         } else if let (RowKind::FormEnabled, Some(form)) =
                             (entry.kind.clone(), &state.form)
@@ -974,6 +976,7 @@ pub(crate) fn with_settings_spec<R>(
                             Accessory::Choices {
                                 labels: entry.choices(),
                                 active: Some(usize::from(form.enabled)),
+                                presentation: ChoicePresentation::Checkbox,
                             }
                         } else if let (RowKind::FormChoice(index), Some(form)) =
                             (entry.kind.clone(), &state.form)
@@ -981,6 +984,7 @@ pub(crate) fn with_settings_spec<R>(
                             Accessory::Choices {
                                 labels: form.choices[index].labels,
                                 active: Some(form.choices[index].active),
+                                presentation: ChoicePresentation::Select,
                             }
                         } else if let (RowKind::FormActions, Some(form)) =
                             (entry.kind.clone(), &state.form)
@@ -988,6 +992,7 @@ pub(crate) fn with_settings_spec<R>(
                             Accessory::Choices {
                                 labels: form.actions(),
                                 active: None,
+                                presentation: ChoicePresentation::Buttons,
                             }
                         } else if let Some(picker) = entry.picker(&model.config) {
                             Accessory::SettingValue {
@@ -1015,6 +1020,7 @@ pub(crate) fn with_settings_spec<R>(
                                 } else {
                                     entry.active(&model.config)
                                 },
+                                presentation: entry.choice_presentation(),
                             }
                         },
                     }

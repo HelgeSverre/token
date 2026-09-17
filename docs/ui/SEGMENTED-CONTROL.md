@@ -1,5 +1,11 @@
 # Segmented control
 
+<!-- token-ui-mockup:begin SEGMENTED-CONTROL -->
+[![Visual target under review: Segmented control](mockups/renders/SEGMENTED-CONTROL-emphasised.png)](mockups/SEGMENTED-CONTROL.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/SEGMENTED-CONTROL.png) · [Open normal mockup](mockups/SEGMENTED-CONTROL.html?view=normal) · [Open emphasised mockup](mockups/SEGMENTED-CONTROL.html?view=emphasised).*
+<!-- token-ui-mockup:end SEGMENTED-CONTROL -->
+
 ## Current boundary
 
 Token has one paint-only segmented control, used by the component gallery’s

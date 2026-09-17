@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tooltip visual reference</title>
+    <link rel="stylesheet" href="shared.css">
+    <style>
+      .tooltip-stage { height: 420px; display: grid; grid-template-columns: 202px minmax(0, 1fr); gap: 18px; }
+      .tooltip-toolbar { position: relative; padding: 14px; }
+      .tooltip-toolbar .section-title { margin-bottom: 10px; }
+      .tool-row { position: relative; display: flex; align-items: center; gap: 6px; padding: 6px; border: 1px solid var(--soft-line); border-radius: 5px; background: var(--editor); }
+      .tool-row .btn.icon-btn { position: relative; }
+      .tooltip-bubble { position: absolute; z-index: 3; width: 190px; padding: 7px 9px; border: 1px solid var(--tooltip-border); border-radius: 4px; background: var(--tooltip-bg); color: var(--tooltip-fg); box-shadow: 0 8px 20px #00000050; font-size: 11px; line-height: 16px; }
+      .tooltip-bubble::before { content: ""; position: absolute; top: -5px; left: 16px; width: 8px; height: 8px; transform: rotate(45deg); background: var(--tooltip-bg); border-top: 1px solid var(--tooltip-border); border-left: 1px solid var(--tooltip-border); }
+      .tooltip-bubble b { color: var(--bright); font-weight: 400; }
+      .tooltip-bubble .keycap { float: right; margin-left: 8px; transform: scale(.82); transform-origin: right center; }
+      .tooltip-toolbar > .tooltip-bubble { left: 14px; top: 63px; width: 170px; }
+      .tooltip-copy { margin: 14px 0 0; color: var(--faint); font-size: 11px; line-height: 16px; }
+      .tooltip-editor { position: relative; min-height: 0; overflow: hidden; }
+      .tooltip-editor .cursor-tooltip { position: absolute; z-index: 3; top: 135px; left: 302px; width: 228px; }
+      .tooltip-editor .cursor-tooltip::before { left: 25px; }
+      .tooltip-states { margin-top: 12px; display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 12px; }
+      .tooltip-states .state-card { min-height: 76px; padding: 10px; }
+      .delay-track { display: flex; align-items: center; gap: 7px; margin-top: 10px; color: var(--faint); font-size: 11px; }
+      .delay-line { height: 7px; flex: 1; border-top: 1px solid var(--soft-line); position: relative; }
+      .delay-line::before { content: ""; position: absolute; left: 42%; top: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--focus); transform: translateY(-50%); }
+      .state-message { margin-top: 8px; font-size: 12px; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <script src="../../../prototypes/debug-performance-themes.js"></script>
+    <script src="shared.js"></script>
+    <script>
+      const source = [
+        'impl Frame {',
+        '    pub fn redraw(&mut self) {',
+        '        self.renderer.invalidate();',
+        '    }',
+        '}',
+        '',
+        '// The toolbar action has a delayed hint.'
+      ];
+      const content = `
+        <div class="tooltip-stage">
+          <aside class="surface tooltip-toolbar" aria-label="Editor toolbar with tooltip trigger">
+            <div class="section-title">Editor actions</div>
+            <div class="tool-row" aria-label="Toolbar">
+              <button class="btn icon-btn" type="button" aria-label="Open file">${Mockup.icon('folder')}</button>
+              <button class="btn icon-btn" type="button" aria-label="Save file">${Mockup.icon('check')}</button>
+              <button class="btn icon-btn focused" type="button" aria-label="Format document">${Mockup.icon('settings')}</button>
+              <button class="btn icon-btn" type="button" aria-label="Split editor">${Mockup.icon('split')}</button>
+            </div>
+            <div class="tooltip-bubble" role="tooltip"><b>Format Document</b><span class="keycap">⇧⌥F</span><br><span class="muted">Formats the current file</span></div>
+            <p class="tooltip-copy">The visible hint belongs to one enabled control. It adds no focus owner and does not accept input.</p>
+          </aside>
+          <section class="tooltip-editor" aria-label="Editor context for a tooltip">
+            ${Mockup.editor({ title: 'frame.rs', tabs: ['frame.rs', 'renderer.rs'], breadcrumb: true, sidebar: false, status: false, lines: source })}
+            <div class="tooltip-bubble cursor-tooltip" role="tooltip"><b>Render invalidation</b><br>Queued for the next frame after a document change.</div>
+          </section>
+        </div>
+        <div class="tooltip-states" aria-label="Tooltip states">
+          <div class="state-card"><div class="state-label">Delayed appearance</div><div class="delay-track"><span>pointer enters</span><div class="delay-line"></div><span>700 ms</span></div></div>
+          <div class="state-card"><div class="state-label">Disabled control</div><div class="state-message dim">No tooltip is scheduled</div></div>
+          <div class="state-card"><div class="state-label">Dismissed</div><div class="state-message">Escape · pointer leave · resize</div></div>
+        </div>`;
+      Mockup.mount({
+        id: 'TOOLTIP',
+        title: 'Tooltip',
+        description: 'A delayed, read-only hint anchored to one enabled editor control.',
+        status: 'Proposed component',
+        content
+      });
+    </script>
+  </body>
+</html>

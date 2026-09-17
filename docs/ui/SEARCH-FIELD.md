@@ -1,5 +1,11 @@
 # Search field — implementation reference
 
+<!-- token-ui-mockup:begin SEARCH-FIELD -->
+[![Visual target under review: Search field](mockups/renders/SEARCH-FIELD-emphasised.png)](mockups/SEARCH-FIELD.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/SEARCH-FIELD.png) · [Open normal mockup](mockups/SEARCH-FIELD.html?view=normal) · [Open emphasised mockup](mockups/SEARCH-FIELD.html?view=emphasised).*
+<!-- token-ui-mockup:end SEARCH-FIELD -->
+
 A search field is not just a text field with a magnifier: its query changes
 derived results, status, navigation and possibly asynchronous work. Token has
 two search-like compositions—docked document Find/Replace and overlay headers

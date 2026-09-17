@@ -118,14 +118,6 @@ fn choice_width(label: &str, sf: f64) -> usize {
     crate::view::controls::choice_width(label, sf)
 }
 
-fn is_checkbox(labels: &[&str]) -> bool {
-    labels == ["Off", "On"]
-}
-
-fn is_disclosure(labels: &[&str]) -> bool {
-    labels == ["Show"] || labels == ["Hide"]
-}
-
 fn checkbox_rect(row: &WidgetRect, sf: f64) -> WidgetRect {
     let size = scaled(14.0, sf);
     WidgetRect {
@@ -677,14 +669,19 @@ pub(super) fn hit_test(
                         choice: 0,
                     };
                 }
-                if let Accessory::Choices { labels, active } = &row.accessory {
-                    if collection(spec).is_some() && is_disclosure(labels) {
+                if let Accessory::Choices {
+                    labels,
+                    active,
+                    presentation,
+                } = &row.accessory
+                {
+                    if *presentation == ChoicePresentation::Disclosure {
                         return OverlayHit::Choice {
                             row: *index,
                             choice: 0,
                         };
                     }
-                    if is_checkbox(labels) {
+                    if *presentation == ChoicePresentation::Checkbox {
                         if contains(&checkbox_rect(rect, layout.scale_factor), x, y) {
                             return OverlayHit::Choice {
                                 row: *index,
@@ -693,7 +690,7 @@ pub(super) fn hit_test(
                         }
                         return OverlayHit::Row(*index);
                     }
-                    if collection(spec).is_some() && labels.len() > 1 {
+                    if *presentation == ChoicePresentation::Select {
                         if contains(&select_rect(rect, layout.scale_factor), x, y) {
                             return OverlayHit::SettingsAction(
                                 crate::messages::SettingsCollectionAction::ToggleSelect(index.0),
@@ -1104,8 +1101,13 @@ pub(super) fn render(
                     );
                 }
                 Some(DisplayRow::Row(row, index)) => {
-                    let disclosure = collection(spec).is_some()
-                        && matches!(&row.accessory, Accessory::Choices {labels, ..} if is_disclosure(labels));
+                    let disclosure = matches!(
+                        &row.accessory,
+                        Accessory::Choices {
+                            presentation: ChoicePresentation::Disclosure,
+                            ..
+                        }
+                    );
                     let button_state = |choice, active| {
                         use crate::view::button::ButtonState;
                         if active {
@@ -1159,7 +1161,13 @@ pub(super) fn render(
                         y: rect.y + scaled(8.0, sf),
                         w: if horizontal_field
                             || (collection(spec).is_some()
-                                && matches!(&row.accessory, Accessory::Choices {labels, ..} if labels.len() > 1 && !is_checkbox(labels)))
+                                && matches!(
+                                    &row.accessory,
+                                    Accessory::Choices {
+                                        presentation: ChoicePresentation::Select,
+                                        ..
+                                    }
+                                ))
                         {
                             scaled(114.0, sf)
                         } else {
@@ -1283,10 +1291,14 @@ pub(super) fn render(
                                 );
                             }
                         }
-                        Accessory::Choices { labels, active } => {
+                        Accessory::Choices {
+                            labels,
+                            active,
+                            presentation,
+                        } => {
                             if disclosure {
                                 // The entire disclosure row is interactive.
-                            } else if is_checkbox(labels) {
+                            } else if *presentation == ChoicePresentation::Checkbox {
                                 let r = checkbox_rect(rect, sf);
                                 crate::view::controls::render_checkbox(
                                     frame,
@@ -1296,7 +1308,7 @@ pub(super) fn render(
                                     *active == Some(1),
                                     sf,
                                 );
-                            } else if collection(spec).is_some() && labels.len() > 1 {
+                            } else if *presentation == ChoicePresentation::Select {
                                 let r = select_rect(rect, sf);
                                 crate::view::controls::render_select(
                                     frame,
@@ -1592,6 +1604,7 @@ mod tests {
             accessory: Accessory::Choices {
                 labels,
                 active: Some(0),
+                presentation: ChoicePresentation::Buttons,
             },
         };
         for sf in [1.0, 2.0] {

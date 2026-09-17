@@ -45,8 +45,12 @@ shared foundations without omitting component-specific mechanics.
 - Rust blocks should have coherent field/type definitions and ownership. Name
   omitted dependencies; do not present pseudocode as a compiling integration.
 - No production Rust changes are authorized by this documentation rewrite.
-- Preserve Code font for inputs/editor/explorer/document/dock/terminal tabs;
-  explicit UI font scopes apply to other UI, including overlay tabs.
+- Describe current font roles accurately: inputs/editor/explorer/document/dock/
+  terminal tabs use Code; other UI, including overlay tabs, uses explicit UI
+  scopes. The 2026-09-16 [visual-polish plan](../feature/editor-visual-polish.md)
+  proposes a later measured UI-font trial for non-editable chrome. Mark that
+  policy change as proposed; preserve source/input geometry and do not imply
+  that writing a component chapter has already changed a native font role.
 - Source links support factual claims but are not a substitute for explaining
   the implementation in the document itself.
 

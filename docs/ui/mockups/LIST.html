@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>List · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .list-study { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 16px; }
+    .list-window { min-height: 0; display: grid; grid-template-rows: 42px 1fr 28px; }
+    .list-title { display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid var(--line); font-size:12px; }
+    .list-count { color:var(--faint); font-size:11px; }
+    .row-viewport { min-height:0; position:relative; overflow:hidden; padding:5px 17px 5px 6px; }
+    .list-row { height:34px; display:grid; grid-template-columns:23px minmax(0,1fr) auto; align-items:center; gap:7px; padding:0 8px; border-radius:4px; color:var(--text); font-size:12px; }
+    .list-row .row-icon { color:var(--file-icon); display:grid; place-items:center; }
+    .list-row .row-detail { color:var(--faint); font:11px/1 var(--font-mono); }
+    .list-row.selected { background:var(--control-selected); color:var(--control-selected-fg); }
+    .list-row.selected .row-detail, .list-row.selected .row-icon { color:var(--control-selected-fg); }
+    .list-row.focused { outline:1px solid var(--focus); outline-offset:-1px; }
+    .list-row.disabled { color:var(--faint); opacity:.62; }
+    .list-row .secondary { display:block; color:var(--faint); font-size:11px; margin-top:1px; }
+    .list-row.selected .secondary { color:rgba(255,255,255,.74); }
+    .scroll-rail { position:absolute; top:7px; right:6px; bottom:7px; width:6px; background:var(--scrollbar-track); border-radius:5px; }
+    .scroll-rail span { display:block; width:6px; height:68px; border-radius:5px; background:var(--scrollbar); margin-top:46px; }
+    .list-footer { padding:0 10px; border-top:1px solid var(--line); display:flex; align-items:center; gap:7px; color:var(--faint); font-size:11px; }
+    .list-footer .footer-key { margin-left:auto; }
+    .list-states { display:grid; grid-template-rows:minmax(0,1fr) minmax(0,1fr); gap:16px; min-height:0; }
+    .compact-list { padding:5px; min-height:0; }
+    .compact-list .list-row { height:32px; grid-template-columns:18px minmax(0,1fr); padding:0 6px; }
+    .empty-row { height:100%; display:grid; place-items:center; text-align:center; color:var(--faint); font-size:12px; padding:18px; }
+    .empty-row strong { color:var(--text); display:block; font-weight:400; margin-bottom:5px; }
+    .list-states .state-card { min-height:0; overflow:hidden; }
+    .empty-row { min-height:0; }
+  </style>
+</head>
+<body>
+  <script src="../../../prototypes/debug-performance-themes.js"></script>
+  <script src="shared.js"></script>
+  <script>
+    (() => {
+      const icon = (name) => Mockup.icon(name, 16);
+      const rows = [
+        ['file', 'src/view/editor_text.rs', '1,842 matches'],
+        ['file', 'src/view/panels.rs', '468 matches'],
+        ['file', 'src/layout/snapshot.rs', '237 matches'],
+        ['file', 'src/update/outline.rs', '86 matches'],
+        ['file', 'docs/ui/LIST.md', 'Open document'],
+        ['file', 'tests/layout.rs', '149 matches'],
+        ['file', 'src/model/editor_area.rs', '312 matches'],
+        ['file', 'README.md', 'Top-level document'],
+      ];
+      const row = ([glyph, label, detail], index) => `
+        <div class="list-row ${index === 2 ? 'selected focused' : ''}" role="option" aria-selected="${index === 2}">
+          <span class="row-icon">${icon(glyph)}</span><span>${label}</span><span class="row-detail">${detail}</span>
+        </div>`;
+      Mockup.mount({
+        id: 'LIST', title: 'List', status: 'Proposed component',
+        description: 'A uniform-row projection. The feature owns its values, selection, and activation; the viewport owns geometry and clipping.',
+        content: `
+          <div class="list-study">
+            <section class="window list-window" aria-label="Search results list">
+              <header class="list-title"><span class="row">${icon('search')} <span>Find in workspace</span></span><span class="list-count">8 results</span></header>
+              <div class="row-viewport" role="listbox" aria-label="Files matching editor">
+                ${rows.map(row).join('')}
+                <div class="scroll-rail" aria-hidden="true"><span></span></div>
+              </div>
+              <footer class="list-footer"><span>2 of 8 selected</span><span class="footer-key"><span class="keycap">↵</span> open</span></footer>
+            </section>
+            <aside class="list-states" aria-label="List state studies">
+              <div class="state-card surface">
+                <div class="state-label">Focused selection</div>
+                <div class="compact-list" role="listbox" aria-label="Focused list sample">
+                  <div class="list-row" role="option"><span class="row-icon">${icon('file')}</span><span>editor.rs</span></div>
+                  <div class="list-row selected focused" role="option" aria-selected="true"><span class="row-icon">${icon('file')}</span><span>layout.rs</span></div>
+                  <div class="list-row disabled" role="option" aria-disabled="true"><span class="row-icon">${icon('file')}</span><span>generated.lock</span></div>
+                </div>
+              </div>
+              <div class="state-card surface">
+                <div class="state-label">Empty projection</div>
+                <div class="empty-row"><div><strong>No matches in this folder</strong>Change the query or search the workspace.</div></div>
+              </div>
+            </aside>
+          </div>`
+      });
+    })();
+  </script>
+</body>
+</html>

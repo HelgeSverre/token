@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Editor surface · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .editor-study { height:100%; display:grid; grid-template-columns:minmax(0,1fr) 266px; gap:16px; }
+    .editor-main { min-height:0; display:grid; grid-template-rows:1fr; overflow:hidden; }
+    .editor-main .editor-context { height:100%; }
+    .editor-side { min-height:0; display:grid; grid-template-rows:1fr 154px; gap:12px; }
+    .layer-list { padding:10px 12px; display:grid; gap:0; align-content:start; }
+    .layer-row { display:grid; grid-template-columns:22px minmax(0,1fr); gap:8px; align-items:center; min-height:29px; color:var(--muted); font-size:11px; border-bottom:1px solid color-mix(in srgb, var(--line) 65%, transparent); }
+    .layer-row:last-child { border:0; }
+    .layer-number { color:var(--faint); font:11px/1 var(--font-mono); text-align:right; }
+    .coordinate { padding:9px 12px; display:grid; gap:5px; align-content:start; font-size:11px; }
+    .coordinate .formula { color:var(--code-fg); background:var(--input-background); border:1px solid var(--line); border-radius:4px; padding:5px 7px; font:10px/1.32 var(--font-mono); }
+    .selection-note { color:var(--faint); font-size:10px; line-height:1.32; }
+  </style>
+</head>
+<body>
+  <script src="../../../prototypes/debug-performance-themes.js"></script>
+  <script src="shared.js"></script>
+  <script>
+    (() => {
+      const lines = [
+        'pub fn render_editor_group(',
+        '    renderer: &mut Renderer, group: &EditorGroup,',
+        '    snapshot: &LayoutSnapshot,',
+        ') {',
+        '    let layout = GroupLayout::from_snapshot(snapshot, group);',
+        '    // One derived geometry feeds paint and hit testing.',
+        '    let viewport = group.editor.viewport_map();',
+        '    renderer.fill_rect(layout.content_rect, theme.editor.background);',
+        '    if group.editor.is_plain_text_mode() {',
+        '        paint_text_rows(renderer, &layout, &viewport);',
+        '    }',
+        '    paint_scrollbars(renderer, &layout, &viewport);',
+        '}'
+      ];
+      lines[8] = { text: lines[8], active: true };
+      const editor = Mockup.editor({
+        title:'editor_text.rs',
+        tabs:['editor_text.rs', 'geometry.rs', 'SCROLL-AREA.md'],
+        breadcrumb:true, sidebar:true, status:true, lines
+      });
+      Mockup.mount({
+        id:'EDITOR-SURFACE', title:'Editor surface', status:'Established surface · visual study',
+        description:'An active document group: tab strip, optional path context, gutter, projected text, current line, and overlays solve together.',
+        content:`<div class="editor-study">
+          <section class="window editor-main" aria-label="Active Rust editor group">${editor}</section>
+          <aside class="editor-side" aria-label="Editor surface reference notes">
+            <section class="surface"><div class="surface-header"><span class="section-title">Paint order</span><span class="badge">current</span></div><div class="layer-list">
+              <div class="layer-row"><span class="layer-number">1</span><span>Tabs and optional find inset</span></div>
+              <div class="layer-row"><span class="layer-number">2</span><span>Gutter lanes and editor ground</span></div>
+              <div class="layer-row"><span class="layer-number">3</span><span>Syntax, diagnostics, current row</span></div>
+              <div class="layer-row"><span class="layer-number">4</span><span>Caret and gutter affordances</span></div>
+              <div class="layer-row"><span class="layer-number">5</span><span>Scrollbar and overview overlays</span></div>
+            </div></section>
+            <section class="surface coordinate"><span class="section-title">Projection boundary</span><div class="formula">window → content clip<br>→ viewport map<br>→ source position</div><span class="selection-note">The bright row illustrates the current projected line. This is not a generic multiline input.</span></section>
+          </aside>
+        </div>`
+      });
+    })();
+  </script>
+</body>
+</html>

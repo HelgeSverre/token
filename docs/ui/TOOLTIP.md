@@ -1,5 +1,11 @@
 # Tooltip — proposed implementation contract
 
+<!-- token-ui-mockup:begin TOOLTIP -->
+[![Visual target under review: Tooltip](mockups/renders/TOOLTIP-emphasised.png)](mockups/TOOLTIP.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/TOOLTIP.png) · [Open normal mockup](mockups/TOOLTIP.html?view=normal) · [Open emphasised mockup](mockups/TOOLTIP.html?view=emphasised).*
+<!-- token-ui-mockup:end TOOLTIP -->
+
 ## Current boundary
 
 A tooltip is short, non-essential explanatory text for an already-visible control. It is not Token's LSP hover card, which is asynchronous editor documentation, nor a cursor popup, which is navigable/actionable.

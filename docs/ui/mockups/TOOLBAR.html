@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Toolbar · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="ide.css">
+  <style>
+    .toolbar-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 276px; min-block-size: 0; flex: 1; }
+    .toolbar-source { min-inline-size: 0; min-block-size: 0; }
+    .toolbar-source .window { border: 0; }
+    .toolbar-source .editor-tabs { border-radius: 3px 0 0 0; }
+    .toolbar-source .code-line { grid-template-columns: 42px max-content; }
+    .toolbar-outline { min-inline-size: 0; display: flex; flex-direction: column; border-inline-start: 1px solid var(--line); }
+    .toolbar-outline .ide-titlebar { min-block-size: 34px; padding-inline: 10px 5px; }
+    .toolbar-file { display: flex; align-items: center; gap: 7px; min-block-size: 32px; padding-inline: 12px; color: var(--faint); font-size: 11px; border-block-end: 1px solid var(--soft-line); }
+    .toolbar-symbols { padding-block: 5px; }
+    .toolbar-symbol { display: grid; grid-template-columns: 12px 16px minmax(0, 1fr) 25px; align-items: center; gap: 5px; min-block-size: 28px; padding-inline: 9px; font-size: 12px; }
+    .toolbar-symbol .symbol-kind { color: var(--syntax-function); font-family: var(--font-mono); font-size: 11px; }
+    .toolbar-symbol .symbol-line { color: var(--faint); text-align: end; font-family: var(--font-mono); font-size: 10px; }
+    .toolbar-symbol.selected { background: var(--control-selected); }
+    .toolbar-symbol.selected .symbol-kind, .toolbar-symbol.selected .symbol-line { color: var(--control-selected-fg); }
+    .toolbar-outline-footer { margin-block-start: auto; border-block-start: 1px solid var(--soft-line); padding: 6px 12px; color: var(--faint); font-size: 11px; }
+    .toolbar-narrow { margin-block: 12px 3px; border: 1px solid var(--line); border-radius: 3px; padding-inline: 4px; }
+    .toolbar-overflow { margin-inline-start: 35px; padding: 4px; border-radius: 4px; box-shadow: 0 6px 16px #00000028; }
+    .toolbar-overflow .menu-row { min-block-size: 27px; padding: 3px 7px; font-size: 11px; }
+    .toolbar-overflow .menu-row .icon { color: var(--muted); }
+    .toolbar-state-row { display: flex; align-items: center; gap: 12px; }
+    .terminal-chrome { display: flex; align-items: stretch; block-size: 32px; border: 1px solid var(--line); background: var(--panel); }
+    .terminal-chrome .btn { min-block-size: 30px; padding-inline: 6px; }
+    .terminal-session { display: flex; align-items: center; gap: 7px; padding-inline: 12px; font-size: 11px; border-inline-start: 1px solid var(--line); }
+    .terminal-session.active { color: var(--tab-active-fg); background: var(--tab-active-bg); box-shadow: inset 0 -2px var(--control-selected-border); }
+    .toolbar-states { grid-template-columns: 1fr 1.5fr; }
+  </style>
+</head>
+<body>
+  <script src="../../../prototypes/debug-performance-themes.js"></script><script src="shared.js"></script><script src="ide.js"></script>
+  <script>
+    const icon = name => Mockup.icon(name, 15);
+    const action = (name, label, attributes = '') => `<button type="button" class="btn icon-btn quiet" aria-label="${label}" ${attributes}>${icon(name)}</button>`;
+    const symbols = [['chrome',33],['shell',42],['sidebar_rows',49],['solve_chrome',53],['visible_dock_size',170],['declare_dock',177]];
+    const source = [
+      {number:177,text:'fn declare_dock('},
+      {number:178,text:'    t: &mut UiTree,'},
+      {number:179,text:'    model: &AppModel,'},
+      {number:180,text:'    position: DockPosition,'},
+      {number:181,text:'    sizing: SizingAxes,'},
+      {number:182,text:'    include_contents: bool,'},
+      {number:183,text:') {',active:true},
+      {number:184,text:'    let dock = model.dock_layout.dock(position);'},
+      {number:185,text:'    let scale = model.metrics.scale_factor;'},
+      {number:186,text:''},
+      {number:187,text:'    t.node('},
+      {number:188,text:'        ElementDecl {'},
+      {number:189,text:'            key: Some(UiKey::Dock(position)),'},
+      {number:190,text:'            dir: Dir::Column,'},
+      {number:191,text:'            sizing,'},
+      {number:192,text:'            ..Default::default()'},
+      {number:193,text:'        },'},
+      {number:194,text:'        |t| {'}
+    ];
+    Mockup.mount({
+      id:'TOOLBAR', title:'Toolbar', status:'Proposed component',
+      description:'Compact action groups in a Token tool window, with a selected toggle, ordered overflow, and terminal action cells.',
+      content:`<div class="ide-study ide-context">
+        <div class="ide-scene">
+          <section class="ide-window" aria-label="Token editor with Outline actions">
+            <div class="toolbar-workspace">
+              <div class="toolbar-source">${Mockup.editor({title:'chrome.rs',tabs:['chrome.rs','snapshot.rs'],lines:source})}</div>
+              <aside class="toolbar-outline" aria-label="Outline tool window">
+                <header class="ide-titlebar"><span>Outline</span><span class="grow"></span>${action('more','Outline view options')}${action('minus','Hide Outline')}</header>
+                <nav class="ide-toolstrip" aria-label="Outline toolbar">
+                  <button type="button" class="btn quiet" aria-pressed="true">${icon('eye')} Follow</button>
+                  ${action('chevron-down','Expand all')}${action('chevron-right','Collapse all')}
+                  <span class="ide-tool-separator" aria-hidden="true"></span>
+                  ${action('arrow-down','Sort by source position')}
+                  <span class="grow"></span>${action('refresh','Refresh outline')}
+                </nav>
+                <div class="toolbar-file">${icon('file')}<span>src / layout / chrome.rs</span></div>
+                <div class="toolbar-symbols" aria-label="Functions in chrome.rs">${symbols.map(([name,line])=>`<div class="toolbar-symbol${name==='declare_dock'?' selected':''}"><span>${Mockup.icon('chevron-right',10)}</span><span class="symbol-kind">ƒ</span><span>${name}</span><span class="symbol-line">${line}</span></div>`).join('')}</div>
+                <footer class="toolbar-outline-footer">6 symbols · Source order</footer>
+              </aside>
+            </div>
+            <footer class="status-bar"><span class="row">${icon('git-branch')} main</span><span class="grow"></span><span>Ln 183, Col 5</span><span>Spaces: 4</span><span>UTF-8</span><span>Rust</span></footer>
+          </section>
+          <aside class="ide-notes">
+            <section class="ide-note"><h3>Narrow tool window</h3><p>Trailing commands move into one menu, keeping their original order.</p>
+              <nav class="ide-toolstrip toolbar-narrow" aria-label="Narrow Outline actions"><button class="btn quiet" type="button" aria-pressed="true">${icon('eye')} Follow</button>${action('chevron-down','Expand all')}<span class="grow"></span><button class="btn icon-btn quiet focused" type="button" aria-label="More Outline actions" aria-expanded="true">${icon('more')}</button></nav>
+              <div class="menu toolbar-overflow" role="menu" aria-label="Overflow actions"><div class="menu-row" role="menuitem">${icon('chevron-right')} Collapse all</div><div class="separator"></div><div class="menu-row" role="menuitem">${icon('arrow-down')} Source order</div><div class="menu-row" role="menuitem">${icon('refresh')} Refresh outline</div></div>
+            </section>
+            <section class="ide-note"><h3>One scope, quiet tools</h3><p>Outline actions operate on the current document. The selected Follow toggle stays separate from keyboard focus.</p></section>
+          </aside>
+        </div>
+        <div class="ide-states toolbar-states">
+          <section class="ide-state"><div class="state-label">Selected toggle · keyboard focus · unavailable action</div><div class="toolbar-state-row"><button class="btn quiet selected" type="button" aria-pressed="true">${icon('eye')} Follow</button><button class="btn icon-btn quiet focused" type="button" aria-label="Focused refresh action">${icon('refresh')}</button>${action('refresh','Refresh unavailable while outline is loading','disabled')}</div></section>
+          <section class="ide-state"><div class="state-label">Existing terminal chrome · navigation and session actions</div><div class="terminal-chrome">${action('arrow-left','Previous terminal')}${action('arrow-right','Next terminal')}<div class="terminal-session active">${icon('terminal')} zsh</div><div class="terminal-session">${icon('terminal')} cargo check</div><span class="grow"></span>${action('plus','New terminal')}${action('close','Close terminal')}</div><p class="ide-state-caption">Previous / Next and New / Close remain outside the session viewport.</p></section>
+        </div>
+      </div>`
+    });
+  </script>
+</body>
+</html>

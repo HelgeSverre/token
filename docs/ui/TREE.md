@@ -1,10 +1,45 @@
 # Tree implementation manual
 
+<!-- token-ui-mockup:begin TREE -->
+[![Visual target under review: Tree implementation manual](mockups/renders/TREE-emphasised.png)](mockups/TREE.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/TREE.png) · [Open normal mockup](mockups/TREE.html?view=normal) · [Open emphasised mockup](mockups/TREE.html?view=emphasised).*
+<!-- token-ui-mockup:end TREE -->
+
 A Token tree is a feature-owned hierarchy plus an expansion-dependent preorder
 **visible projection**. The shared renderer owns neither nodes, selection,
 expansion, open behavior, nor filesystem effects. It walks the exact display
 projection used by the solved row viewport. Uniform row math is in
 [LIST.md](LIST.md); this chapter adds hierarchy and identity repair.
+
+## Visual examples: one primitive, different owners
+
+The three-column mockup illustrates a Markdown outline, a class hierarchy, and
+a JSON/YAML data tree. These are static example projections for the proposed
+shared component; they do not imply that Token ships each of these viewers.
+The Markdown headings and JSON document are illustrative fixtures. The class
+example shows the DOM `Node` inheritance hierarchy.
+
+All three use the same row renderer: 26px rows, a 16px indentation step, a 14px
+disclosure slot, and separate selection and keyboard-focus treatment. An
+optional leading symbol and optional trailing content vary with the owner:
+
+| Example | Leading content | Trailing content | Domain relationship |
+| --- | --- | --- | --- |
+| Markdown outline | None; removing the icon slot closes that gap | Source line | Heading ancestry; activating a row would jump to its heading |
+| Class hierarchy | Class symbol | None | Inheritance; an expandable type has visible subtypes |
+| Structured data | None | Scalar value or derived collection size | Object keys and array indexes; JSON and YAML can produce the same hierarchy |
+
+Folder icons are a filesystem presentation choice, not part of the tree
+contract. A leaf retains the empty disclosure slot so siblings align, while
+an expandable node has a chevron independently of its optional icon. Labels,
+glyphs, values, and activation policy remain feature-owned. Collapsed branches
+keep their descendants in the model but omit them from the visible projection.
+
+In the emphasised image the three tree viewports stay at normal opacity;
+document headers, example titles, and explanatory captions are context at 25%
+by default. The viewer's opacity and optional offset guides are presentation
+settings, independent of the tree's own selection and focus styling.
 
 ## 1. Current data, ownership, and invariants
 

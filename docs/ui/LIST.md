@@ -1,5 +1,11 @@
 # List implementation manual
 
+<!-- token-ui-mockup:begin LIST -->
+[![Visual target under review: List implementation manual](mockups/renders/LIST-emphasised.png)](mockups/LIST.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/LIST.png) · [Open normal mockup](mockups/LIST.html?view=normal) · [Open emphasised mockup](mockups/LIST.html?view=emphasised).*
+<!-- token-ui-mockup:end LIST -->
+
 Token's shared list foundation is a **uniform-row viewport**, not a universal
 widget. It centralizes geometry, scrolling and virtualization; its consumers
 own clipping; each

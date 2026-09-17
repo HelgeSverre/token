@@ -1,5 +1,11 @@
 # Keycap
 
+<!-- token-ui-mockup:begin KEYCAP -->
+[![Visual target under review: Keycap](mockups/renders/KEYCAP-emphasised.png)](mockups/KEYCAP.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/KEYCAP.png) · [Open normal mockup](mockups/KEYCAP.html?view=normal) · [Open emphasised mockup](mockups/KEYCAP.html?view=emphasised).*
+<!-- token-ui-mockup:end KEYCAP -->
+
 ## Current representation and ownership
 
 A keycap is passive physical-pixel chrome for one displayed key. A binding is an

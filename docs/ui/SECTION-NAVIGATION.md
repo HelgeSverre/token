@@ -1,5 +1,11 @@
 # Section navigation implementation manual
 
+<!-- token-ui-mockup:begin SECTION-NAVIGATION -->
+[![Visual target under review: Section navigation implementation manual](mockups/renders/SECTION-NAVIGATION-emphasised.png)](mockups/SECTION-NAVIGATION.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/SECTION-NAVIGATION.png) · [Open normal mockup](mockups/SECTION-NAVIGATION.html?view=normal) · [Open emphasised mockup](mockups/SECTION-NAVIGATION.html?view=emphasised).*
+<!-- token-ui-mockup:end SECTION-NAVIGATION -->
+
 Section navigation is Token's small, passive category navigator for Preferences
 and the UI Gallery. It is not document/dock/terminal/overlay tabs
 ([TABS.md](TABS.md)). It receives resolved rectangles, labels, and a selected
@@ -40,6 +46,10 @@ page and form state (`src/view/settings_page.rs:376-399`, `:626-632`,
 There is no current `SectionId`, disabled state, keyboard state machine, focus
 ring, or accessibility role. A clickable consumer is not evidence that this
 passive primitive owns an interaction contract.
+
+The main mockup therefore shows selection only. Its separate **Proposed keyboard
+focus** sample explores an owner-supplied focus row with one inset 1px outline;
+it does not describe current renderer behavior.
 
 ## 2. Shared geometry and hit-test algorithm
 

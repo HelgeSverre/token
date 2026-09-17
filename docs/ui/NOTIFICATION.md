@@ -1,5 +1,11 @@
 # Notifications: current boundary and implementable contract
 
+<!-- token-ui-mockup:begin NOTIFICATION -->
+[![Visual target under review: Notifications: current boundary and implementable contract](mockups/renders/NOTIFICATION-emphasised.png)](mockups/NOTIFICATION.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/NOTIFICATION.png) · [Open normal mockup](mockups/NOTIFICATION.html?view=normal) · [Open emphasised mockup](mockups/NOTIFICATION.html?view=emphasised).*
+<!-- token-ui-mockup:end NOTIFICATION -->
+
 Token currently has **no notification component**: no toast, banner, queue,
 history, severity, action button, or notification center state. The only nearby
 implemented mechanism is the one-slot transient status flash in STATUS-BAR.md.

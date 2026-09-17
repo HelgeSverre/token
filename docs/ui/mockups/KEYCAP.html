@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keycap · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="ide.css">
+  <style>
+    .key-window { position:relative; }
+    .key-window .editor-context { flex:1; border:0; border-radius:0; box-shadow:none; }
+    .key-popup { position:absolute; inset-block-start:76px; inset-inline-start:50%; transform:translateX(-50%); inline-size:500px; padding:5px; background:var(--tooltip-bg); border:1px solid var(--tooltip-border); box-shadow:0 16px 34px #00000066; border-radius:4px; z-index:2; }
+    .key-search { min-block-size:32px; display:flex; align-items:center; gap:7px; padding-inline:9px; border-block-end:1px solid var(--line); color:var(--faint); font-size:12px; margin-block-end:4px; }
+    .key-command { min-block-size:29px; display:grid; grid-template-columns:16px minmax(0,1fr) auto; align-items:center; gap:8px; padding-inline:8px; border-radius:2px; color:var(--tooltip-fg); font-size:12px; }
+    .key-command.selected { background:var(--control-selected); color:var(--control-selected-fg); }
+    .key-command .keys { display:flex; align-items:center; gap:4px; margin-inline-start:12px; }
+    .key-chord { display:inline-flex; align-items:center; gap:4px; }
+    .key-sequence { display:flex; align-items:center; gap:6px; }
+    .key-popup-footer { border-block-start:1px solid var(--soft-line); margin-block-start:4px; padding:5px 8px 2px; display:flex; gap:12px; color:var(--faint); font-size:10px; }
+  </style>
+</head>
+<body>
+<script src="../../../prototypes/debug-performance-themes.js"></script><script src="shared.js"></script><script src="ide.js"></script>
+<script>
+  const cap = text => `<kbd class="keycap">${Mockup.escape(text)}</kbd>`;
+  const chord = keys => `<span class="key-chord">${keys.map(cap).join('')}</span>`;
+  // macOS defaults from keymap.yaml; the custom sequence below is a separate fixture.
+  const commands = [
+    ['search','Go to file',['⇧','⌘','O']],
+    ['file','Open file',['⌘','O']],
+    ['settings','Open settings',['⌘',',']],
+    ['split','Split vertically',['⇧','⌥','⌘','V']],
+    ['arrow-right','Focus next editor group',['⌃','Tab']]
+  ];
+  const lines = [
+    'pub fn chrome(model: &AppModel) -> LayoutSnapshot {',
+    '    solve_chrome(model, true, true)',
+    '}',
+    '',
+    {number:118,active:true,text:'fn declare_dock(tree: &mut UiTree, position: DockPosition) {'},
+    '    let header = DockHeader::new(position);',
+    '    tree.node(header.declaration(), |tree| {',
+    '        declare_panel_tabs(tree, position);',
+    '    });',
+    '}'
+  ];
+  Mockup.mount({id:'KEYCAP',title:'Keycap',status:'Established surface · visual study',
+    description:'Measured shortcuts align at the trailing edge of command rows, using Token’s macOS default bindings.',
+    content:`<div class="ide-study ide-context"><div class="ide-scene">
+      <section class="ide-window key-window" aria-label="Command popup over Token source">
+        <header class="ide-titlebar"><span>Token</span><span class="ide-path">src/layout/chrome.rs</span><span class="grow"></span>${Mockup.icon('more')}</header>
+        ${Mockup.editor({title:'chrome.rs',tabs:['chrome.rs','perf.rs'],breadcrumb:true,lines})}
+        <section class="key-popup" aria-label="Static command palette">
+          <div class="key-search">${Mockup.icon('search',14)}<span>Choose a command…</span></div>
+          ${commands.map(([icon,label,keys],index)=>`<div class="key-command${index===0?' selected':''}">${Mockup.icon(icon,14)}<span>${label}</span><span class="keys">${keys.map(cap).join('')}</span></div>`).join('')}
+          <footer class="key-popup-footer"><span>↑ ↓ Navigate</span><span>↵ Run command</span><span class="grow"></span><span>Esc Close</span></footer>
+        </section>
+        <footer class="status-bar">${Mockup.icon('git-branch',12)} main<span class="grow"></span><span>Ln 118, Col 5</span><span>Rust</span></footer>
+      </section>
+      <aside class="ide-notes">
+        <section class="ide-note"><h3>Trailing accessory</h3><p>Each command reserves its shortcut column before the label is truncated. The command row owns the action.</p></section>
+        <section class="ide-note"><h3>Token bindings</h3><p>The commands shown use macOS defaults from <span class="mono">keymap.yaml</span>.</p><p>The separate sequence example illustrates a custom binding.</p></section>
+        <section class="ide-note"><h3>Measured spacing</h3><p>20px chips, a 4px gap within a chord, and 6px between steps.</p></section>
+      </aside>
+    </div>
+    <div class="ide-states" style="--state-count:3">
+      <section class="ide-state"><div class="state-label">Single chord · Open file</div>${chord(['⌘','O'])}<p class="ide-state-caption">Each key has its own measured cap.</p></section>
+      <section class="ide-state"><div class="state-label">Custom sequence · illustrative binding</div><div class="key-sequence">${chord(['⌘','K'])}<span class="dim">then</span>${chord(['⌘','C'])}</div><p class="ide-state-caption">Steps have a wider intervening gap.</p></section>
+      <section class="ide-state"><div class="state-label">More than four chips · text fallback</div><span class="mono dim">⇧⌘K, ⌘C</span><p class="ide-state-caption">Long bindings become dim text.</p></section>
+    </div></div>`});
+</script>
+</body>
+</html>

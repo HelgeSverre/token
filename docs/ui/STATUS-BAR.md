@@ -1,5 +1,11 @@
 # Status bar: implementation reference
 
+<!-- token-ui-mockup:begin STATUS-BAR -->
+[![Visual target under review: Status bar: implementation reference](mockups/renders/STATUS-BAR-emphasised.png)](mockups/STATUS-BAR.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/STATUS-BAR.png) · [Open normal mockup](mockups/STATUS-BAR.html?view=normal) · [Open emphasised mockup](mockups/STATUS-BAR.html?view=emphasised).*
+<!-- token-ui-mockup:end STATUS-BAR -->
+
 The status bar is a passive, always-present projection of the focused document
 and selected application state. It is neither a notification queue nor an
 interactive toolbar. The model uses character counts for its test layout and

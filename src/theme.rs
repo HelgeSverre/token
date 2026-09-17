@@ -13,6 +13,7 @@ use serde::Deserialize;
 
 // Embed theme YAML files at compile time
 pub const DEFAULT_DARK_YAML: &str = include_str!("../themes/dark.yaml");
+pub const STUDY_YAML: &str = include_str!("../themes/study.yaml");
 pub const FLEET_DARK_YAML: &str = include_str!("../themes/fleet-dark.yaml");
 pub const GITHUB_DARK_YAML: &str = include_str!("../themes/github-dark.yaml");
 pub const GITHUB_LIGHT_YAML: &str = include_str!("../themes/github-light.yaml");
@@ -40,6 +41,10 @@ pub const BUILTIN_THEMES: &[BuiltinTheme] = &[
     BuiltinTheme {
         id: "default-dark",
         yaml: DEFAULT_DARK_YAML,
+    },
+    BuiltinTheme {
+        id: "study",
+        yaml: STUDY_YAML,
     },
     BuiltinTheme {
         id: "fleet-dark",

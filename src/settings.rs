@@ -79,7 +79,7 @@ impl SettingRow {
                     label: labels[0],
                     value: value(config),
                 }),
-                catalog::Control::Choice { .. } => None,
+                catalog::Control::Toggle { .. } | catalog::Control::Choice { .. } => None,
             },
             _ => None,
         }
@@ -126,6 +126,23 @@ impl SettingRow {
             RowKind::LspMaster | RowKind::ServerEnabled(_) => BOOL_LABELS,
             RowKind::ServerCommand(_) => &["Configure…"],
             RowKind::ServerStatus(_) => &[],
+        }
+    }
+
+    pub(crate) fn choice_presentation(&self) -> crate::view::overlay_surface::ChoicePresentation {
+        use crate::view::overlay_surface::ChoicePresentation;
+        match self.kind {
+            RowKind::FormEnabled | RowKind::LspMaster | RowKind::ServerEnabled(_) => {
+                ChoicePresentation::Checkbox
+            }
+            RowKind::FormAdvanced => ChoicePresentation::Disclosure,
+            RowKind::FormChoice(_) => ChoicePresentation::Select,
+            RowKind::Preset(setting) => match setting.descriptor().control {
+                catalog::Control::Toggle { .. } => ChoicePresentation::Checkbox,
+                catalog::Control::Choice { .. } => ChoicePresentation::Buttons,
+                catalog::Control::Picker { .. } => ChoicePresentation::Buttons,
+            },
+            _ => ChoicePresentation::Buttons,
         }
     }
 
@@ -555,11 +572,12 @@ mod tests {
 
     #[test]
     fn settings_presets_roundtrip_and_reject_invalid_choices() {
-        for d in Setting::ALL
-            .iter()
-            .map(|id| id.descriptor())
-            .filter(|d| matches!(d.control, catalog::Control::Choice { .. }))
-        {
+        for d in Setting::ALL.iter().map(|id| id.descriptor()).filter(|d| {
+            matches!(
+                d.control,
+                catalog::Control::Toggle { .. } | catalog::Control::Choice { .. }
+            )
+        }) {
             for choice in 0..d.labels().len() {
                 let mut config = EditorConfig::default();
                 d.apply(&mut config, choice);
@@ -583,6 +601,31 @@ mod tests {
         {
             assert_eq!(d.active(&config), None);
         }
+    }
+
+    #[test]
+    fn control_presentation_is_semantic_not_derived_from_labels() {
+        use crate::view::overlay_surface::ChoicePresentation;
+
+        let toggle = SettingRow {
+            kind: RowKind::Preset(Setting::CompletionEnabled),
+            section: "Completion",
+            name: "Enabled".into(),
+            description: "".into(),
+        };
+        let choice_with_off_label = SettingRow {
+            kind: RowKind::Preset(Setting::Blink),
+            section: "Editor",
+            name: "Cursor blink".into(),
+            description: "".into(),
+        };
+
+        assert_eq!(toggle.choice_presentation(), ChoicePresentation::Checkbox);
+        assert_eq!(
+            choice_with_off_label.choice_presentation(),
+            ChoicePresentation::Buttons
+        );
+        assert_eq!(choice_with_off_label.choices().first(), Some(&"Off"));
     }
 
     #[test]

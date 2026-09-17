@@ -6,6 +6,119 @@ use crate::model::{gallery::ChromePreview, AppModel, Document, EditorState, Rect
 use crate::panel::{DockPosition, PanelId};
 use crate::theme::Theme;
 
+fn outline_node(
+    kind: crate::outline::OutlineKind,
+    name: &str,
+    line: usize,
+    children: Vec<crate::outline::OutlineNode>,
+) -> crate::outline::OutlineNode {
+    crate::outline::OutlineNode {
+        kind,
+        name: name.to_owned(),
+        range: crate::outline::OutlineRange {
+            start_line: line,
+            start_col: 0,
+            end_line: line + 1,
+            end_col: 0,
+        },
+        children,
+    }
+}
+
+fn populate_outline(model: &mut AppModel) {
+    use crate::outline::OutlineKind;
+    let revision = model.document().revision;
+    model.document_mut().outline = Some(crate::outline::OutlineData {
+        revision,
+        roots: vec![
+            outline_node(
+                OutlineKind::Struct,
+                "GalleryRenderer",
+                8,
+                vec![
+                    outline_node(OutlineKind::Field, "theme", 9, Vec::new()),
+                    outline_node(
+                        OutlineKind::Method,
+                        "render_selected_specimen_with_a_long_name",
+                        18,
+                        Vec::new(),
+                    ),
+                ],
+            ),
+            outline_node(OutlineKind::Function, "layout_gallery", 42, Vec::new()),
+            outline_node(OutlineKind::Function, "paint_gallery", 77, Vec::new()),
+        ],
+    });
+    model.outline_panel.selected_index = Some(2);
+}
+
+fn diagnostic(
+    line: u32,
+    severity: lsp_types::DiagnosticSeverity,
+    message: &str,
+) -> lsp_types::Diagnostic {
+    let mut diagnostic = lsp_types::Diagnostic::new_simple(
+        lsp_types::Range::new(
+            lsp_types::Position::new(line, 4),
+            lsp_types::Position::new(line, 12),
+        ),
+        message.to_owned(),
+    );
+    diagnostic.severity = Some(severity);
+    diagnostic.source = Some("rust-analyzer".into());
+    diagnostic
+}
+
+fn populate_problems(model: &mut AppModel) {
+    use lsp_types::DiagnosticSeverity;
+    use std::path::PathBuf;
+
+    let focused = PathBuf::from("/workspace/token/src/view/gallery.rs");
+    let collapsed = PathBuf::from("/workspace/token/src/runtime/very_long_runtime_module.rs");
+    model.document_mut().file_path = Some(focused.clone());
+    model.lsp.diagnostics.insert(
+        focused,
+        vec![
+            diagnostic(
+                118,
+                DiagnosticSeverity::ERROR,
+                "borrowed value does not live long enough",
+            ),
+            diagnostic(
+                164,
+                DiagnosticSeverity::WARNING,
+                "this match arm can be simplified",
+            ),
+        ],
+    );
+    model.lsp.diagnostics.insert(
+        PathBuf::from("/workspace/token/src/view/panels.rs"),
+        vec![
+            diagnostic(
+                42,
+                DiagnosticSeverity::ERROR,
+                "mismatched types in panel layout",
+            ),
+            diagnostic(
+                87,
+                DiagnosticSeverity::INFORMATION,
+                "consider extracting this expression",
+            ),
+        ],
+    );
+    model.lsp.diagnostics.insert(
+        collapsed.clone(),
+        vec![diagnostic(
+            12,
+            DiagnosticSeverity::WARNING,
+            "unused result must be handled",
+        )],
+    );
+    model.problems_panel.current_file_only = false;
+    model.problems_panel.selected_index = Some(2);
+    model.problems_panel.collapsed.insert(collapsed);
+}
+
 pub(super) fn render(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -107,6 +220,7 @@ pub(super) fn render(
             }
             ChromePreview::DockTabs
             | ChromePreview::BottomPanel
+            | ChromePreview::ProblemsPopulated
             | ChromePreview::RightPanel
             | ChromePreview::TerminalTabs
             | ChromePreview::TerminalOverflow
@@ -132,6 +246,13 @@ pub(super) fn render(
                     },
                     scale,
                 );
+                if right {
+                    populate_outline(&mut model);
+                }
+                if matches!(kind, ChromePreview::ProblemsPopulated) {
+                    populate_problems(&mut model);
+                    model.dock_layout.bottom.activate(PanelId::Problems);
+                }
                 if matches!(
                     kind,
                     ChromePreview::TerminalTabs

@@ -1,9 +1,21 @@
 # Docked panels: implementation reference
 
+<!-- token-ui-mockup:begin PANEL -->
+[![Visual target under review: Docked panels: implementation reference](mockups/renders/PANEL-emphasised.png)](mockups/PANEL.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/PANEL.png) · [Open normal mockup](mockups/PANEL.html?view=normal) · [Open emphasised mockup](mockups/PANEL.html?view=emphasised).*
+<!-- token-ui-mockup:end PANEL -->
+
 This chapter documents Token's persistent docked work surfaces. A **dock** is
 the left, right, or bottom container; a **panel** is the selected `PanelId`
 inside it. This is not the editor-tab or terminal-session-tab model: those have
 different owners and lifetimes.
+
+The proposed [DockablePanel](DOCKABLE-PANEL.md) extends this system with
+in-window floating placement and [pane header/footer chrome](PANE-CHROME.md).
+This chapter continues to describe the current dock-only implementation; the
+[performance feature plan](../feature/performance-panel.md) is its first planned
+consumer.
 
 ## Current representation and invariants
 
