@@ -184,7 +184,7 @@ fn movement_dispatch_preserves_wrapped_desired_column_through_short_rows() {
 fn accept_word(model: &mut token::model::AppModel) {
     use token::messages::CompletionMsg;
     update(model, Msg::Completion(CompletionMsg::TriggerMenu));
-    assert!(model.ui.completion_menu.is_some());
+    assert!(model.ui.completion.completion_menu.is_some());
     update(model, Msg::Completion(CompletionMsg::AcceptMenuItem));
 }
 

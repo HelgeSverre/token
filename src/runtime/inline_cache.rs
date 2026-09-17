@@ -203,11 +203,12 @@ mod tests {
         InlineJob {
             request: InlineRequest {
                 snapshot: RequestSnapshot {
+                    session_id: token::completion::session::SessionId(1),
                     document_id: DocumentId(1),
                     revision: 1,
                     line: 0,
                     column: prefix.chars().count(),
-                    request_id: 1,
+                    request_id: token::completion::session::RequestId(1),
                 },
                 prefix: prefix.into(),
                 suffix: "\n".into(),
@@ -252,7 +253,7 @@ mod tests {
         insert(&mut cache, &original, &["answer();".into()]);
         let mut request = original.clone();
         request.request.snapshot.revision = 10;
-        request.request.snapshot.request_id = 20;
+        request.request.snapshot.request_id = token::completion::session::RequestId(20);
         assert_eq!(cache.get(&request), Some(vec!["answer();".into()]));
         let mut changed = Vec::new();
         let mut other = request.clone();

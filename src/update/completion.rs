@@ -20,6 +20,7 @@
 //! locally on every keystroke, replaced wholesale when a fresh response
 //! lands.
 
+mod accept;
 mod commit;
 mod paths;
 
@@ -42,9 +43,7 @@ use crate::util::text::{char_type, CharType};
 use crate::view::overlay_surface::{SelectableListViewport, MAX_VISIBLE_COMPLETION};
 
 use super::document::word_start_before;
-use super::text_edits::{
-    apply_planned_edits, plan_text_edits, EditCarets, EditOffsetMap, PlannedEdit,
-};
+use super::text_edits::{apply_planned_edits, EditCarets, EditOffsetMap, PlannedEdit};
 
 /// Word chars a user must have typed before the menu auto-opens. A single
 /// char opening the popup read as noise (every prose word flashed it);
@@ -56,8 +55,8 @@ pub(super) fn update_completion(model: &mut AppModel, msg: CompletionMsg) -> Opt
         CompletionMsg::PathsReady { request, result } => paths::ready(model, request, result),
         CompletionMsg::InlineStatisticsSaved(result) => {
             let failed = result.is_err();
-            let notify = failed && !model.ui.inline_statistics_failed;
-            model.ui.inline_statistics_failed = failed;
+            let notify = failed && !model.ui.completion.inline_statistics_failed;
+            model.ui.completion.inline_statistics_failed = failed;
             if notify {
                 model.ui.transient_message = Some(crate::model::TransientMessage::new(
                     "Inline statistics could not be saved; check permissions or file format",
@@ -102,10 +101,11 @@ pub(super) fn update_completion(model: &mut AppModel, msg: CompletionMsg) -> Opt
 /// anything was actually open, so callers that don't already redraw for
 /// other reasons can decide whether a redraw is needed.
 pub(crate) fn dismiss(model: &mut AppModel) -> bool {
-    let mut was_open = model.ui.completion_commit.take().is_some();
-    was_open |= model.ui.completion_path.take().is_some();
-    if model.ui.completion_menu.is_some() {
-        model.ui.completion_menu = None;
+    let mut was_open = model.ui.completion.completion_commit.take().is_some();
+    was_open |= model.ui.completion.completion_accept.take().is_some();
+    was_open |= model.ui.completion.completion_path.take().is_some();
+    if model.ui.completion.completion_menu.is_some() {
+        model.ui.completion.completion_menu = None;
         was_open = true;
     }
     if matches!(
@@ -121,11 +121,45 @@ pub(crate) fn dismiss(model: &mut AppModel) -> bool {
     was_open
 }
 
+fn pending_accept_is_valid(model: &AppModel) -> bool {
+    let Some(pending) = &model.ui.completion.completion_accept else {
+        return false;
+    };
+    let Some(menu) = &model.ui.completion.completion_menu else {
+        return false;
+    };
+    let Some(overlay) = model.ui.cursor_overlay else {
+        return false;
+    };
+    model.document().id == Some(pending.document_id)
+        && model.editor_area.focused_editor_id() == Some(pending.editor_id)
+        && model.document().file_path == pending.file_path
+        && model.document().language == pending.language
+        && model.document().revision == pending.revision
+        && model.document().undo_stack.len() == pending.undo_len
+        && model.editor().cursors == pending.cursors
+        && model.editor().selections == pending.selections
+        && model.editor().active_cursor_index == pending.active_cursor_index
+        && menu.document_id == pending.document_id
+        && menu.revision == pending.revision
+        && menu.pending_resolve == Some(pending.candidate)
+        && overlay.kind == CursorOverlayKind::Completion
+        && menu.candidate_for_row(overlay.selected) == Some(pending.candidate)
+}
+
+pub(in crate::update) fn reconcile_pending_accept(model: &mut AppModel) -> Option<Cmd> {
+    if model.ui.completion.completion_accept.is_some() && !pending_accept_is_valid(model) {
+        dismiss_with_cleanup(model)
+    } else {
+        None
+    }
+}
+
 /// The `LspCancelCompletion` for a menu about to close — captured BEFORE
 /// `dismiss` clears the state. `None` when the document could never have
 /// armed runtime completion work (unsynced buffer, LSP disabled).
 fn pending_cancel_cmd(model: &AppModel) -> Option<Cmd> {
-    let document_id = model.ui.completion_menu.as_ref()?.document_id;
+    let document_id = model.ui.completion.completion_menu.as_ref()?.document_id;
     lsp_capable(model).then_some(Cmd::LspCancelCompletion { document_id })
 }
 
@@ -252,6 +286,12 @@ fn trigger_explicit(model: &mut AppModel) -> Option<Cmd> {
             .set_status("Completion unavailable for this file type");
         return Some(Cmd::redraw_status_bar());
     }
+    if !crate::completion::interaction::may_trigger(
+        model,
+        crate::completion::interaction::TriggerIntent::ExplicitMenu,
+    ) {
+        return None;
+    }
     if let Some(command) = paths::open(model, true) {
         return Some(command);
     }
@@ -328,25 +368,26 @@ fn sync_completion_after_edit(
     opens_on_word_char: bool,
     typed_char: Option<char>,
 ) -> Option<Cmd> {
-    if super::inline::visible(model).is_some() {
+    if crate::completion::interaction::interaction(model).inline_visible {
         return dismiss_with_cleanup(model);
     }
     // Once explicitly opened, a session still refines normally while typing.
     // This setting only prevents automatic opening of a new dropdown; the
     // master switch above remains authoritative for all completion requests.
-    if !model.config.completion.menu.enabled && model.ui.completion_menu.is_none() {
+    if !model.config.completion.menu.enabled && model.ui.completion.completion_menu.is_none() {
         return None;
     }
-    if opens_on_word_char || typed_char.is_some() || model.ui.completion_path.is_some() {
+    if opens_on_word_char || typed_char.is_some() || model.ui.completion.completion_path.is_some() {
         let explicit = model
             .ui
+            .completion
             .completion_path
             .as_ref()
             .is_some_and(|request| request.explicit);
         if let Some(command) = paths::open(model, explicit) {
             return Some(command);
         }
-        if model.ui.completion_path.is_some() {
+        if model.ui.completion.completion_path.is_some() {
             return dismiss_with_cleanup(model);
         }
     }
@@ -374,11 +415,17 @@ fn sync_completion_after_edit(
         return dismiss_with_cleanup(model);
     };
 
-    let menu_open = model.ui.completion_menu.is_some();
+    let menu_open = model.ui.completion.completion_menu.is_some();
     let query_len = cursor_offset - query_start_offset;
     // Refreshing an open menu runs at any query length; only *opening*
     // requires the minimum prefix.
-    let should_open = menu_open || (opens_on_word_char && query_len >= MIN_AUTO_TRIGGER_PREFIX);
+    let should_open = menu_open
+        || (opens_on_word_char
+            && query_len >= MIN_AUTO_TRIGGER_PREFIX
+            && crate::completion::interaction::may_trigger(
+                model,
+                crate::completion::interaction::TriggerIntent::AutomaticMenu,
+            ));
     if !should_open {
         return None;
     }
@@ -416,8 +463,8 @@ fn open_or_refresh(
         .ui
         .cursor_overlay
         .map_or(0, |overlay| overlay.selected);
-    let previous = model.ui.completion_menu.take();
-    let (carried_items, carried_incomplete, selected_label) = previous
+    let previous = model.ui.completion.completion_menu.take();
+    let (carried_items, carried_incomplete, selected_candidate, identity) = previous
         .filter(|prev| {
             prev.document_id == document_id
                 && prev.query_start == query_start
@@ -425,12 +472,17 @@ fn open_or_refresh(
                 && (query.starts_with(&prev.query) || prev.query.starts_with(&query))
         })
         .map(|prev| {
-            let selected_label = (prev.selection_changed && prev.query == query)
-                .then(|| prev.selected_item(selected).map(|item| item.label.clone()))
+            let selected_candidate = (prev.selection_changed && prev.query == query)
+                .then(|| prev.selected_item(selected).cloned())
                 .flatten();
             let mut items = prev.items;
             items.retain(|item| item.source == MenuSourceId::Lsp);
-            (items, prev.is_incomplete, selected_label)
+            (
+                items,
+                prev.is_incomplete,
+                selected_candidate,
+                Some(prev.identity),
+            )
         })
         .unwrap_or_default();
     let doc = model.document();
@@ -459,7 +511,19 @@ fn open_or_refresh(
         return None;
     }
     let revision = doc.revision;
+    let identity = match identity {
+        Some(identity) => identity,
+        None => {
+            let Some(session) = model.ui.completion.allocate_session() else {
+                model.ui.set_status("Completion session limit reached");
+                dismiss(model);
+                return Some(Cmd::redraw_status_bar());
+            };
+            crate::completion::menu::MenuIdentity::new(session)
+        }
+    };
     let mut state = CompletionMenuState {
+        identity,
         document_id,
         revision,
         query_start,
@@ -469,21 +533,26 @@ fn open_or_refresh(
         is_incomplete: carried_incomplete,
         pending_resolve: None,
         context,
-        selection_changed: selected_label.is_some(),
+        selection_changed: selected_candidate.is_some(),
     };
-    let selected = selected_label
-        .and_then(|label| {
-            state
-                .filtered
-                .iter()
-                .position(|(_, index, _)| state.items[*index].label == label)
-        })
+    if let Some(previous) = selected_candidate.as_ref() {
+        state.preserve_id_for(previous);
+    }
+    if state.assign_candidate_ids().is_none() {
+        model.ui.set_status("Completion candidate limit reached");
+        dismiss(model);
+        return Some(Cmd::redraw_status_bar());
+    }
+    let selected = selected_candidate
+        .and_then(|item| state.row_for_candidate(item.id))
         .unwrap_or_else(|| {
             state.selection_changed = false;
             state.preferred_index()
         });
+    state.identity.selected = state.candidate_for_row(selected);
+    let session = state.identity.session;
     let visible = !state.filtered.is_empty();
-    model.ui.completion_menu = Some(state);
+    model.ui.completion.completion_menu = Some(state);
     model.ui.cursor_overlay = visible.then(|| {
         let mut overlay = CursorOverlayState::new(CursorOverlayKind::Completion);
         overlay.selected = selected;
@@ -496,6 +565,7 @@ fn open_or_refresh(
     if request_lsp {
         cmds.push(Cmd::LspScheduleCompletion {
             document_id,
+            session,
             position,
             revision,
             trigger_character: trigger_character.map(String::from),
@@ -513,10 +583,10 @@ pub(crate) fn refresh_after_syntax(
     model: &mut AppModel,
     document_id: crate::model::DocumentId,
 ) -> Option<Cmd> {
-    if model.ui.completion_path.is_some() {
+    if model.ui.completion.completion_path.is_some() {
         return paths::refresh_after_syntax(model, document_id);
     }
-    let state = model.ui.completion_menu.as_ref()?;
+    let state = model.ui.completion.completion_menu.as_ref()?;
     if state.document_id != document_id
         || state.context != CompletionContext::Unknown
         || state.pending_resolve.is_some()
@@ -545,12 +615,13 @@ pub(crate) fn refresh_after_syntax(
 /// arrives on resolve). `None` while an accept's resolve is in flight —
 /// a docs request must never supersede it.
 fn schedule_docs_resolve(model: &AppModel) -> Option<Cmd> {
-    let state = model.ui.completion_menu.as_ref()?;
+    let state = model.ui.completion.completion_menu.as_ref()?;
     if state.pending_resolve.is_some() {
         return None;
     }
     let selected = model.ui.cursor_overlay?.selected;
-    let MenuInsert::Lsp(data) = &state.selected_item(selected)?.insert else {
+    let item = state.selected_item(selected)?;
+    let MenuInsert::Lsp(data) = &item.insert else {
         return None;
     };
     if !data.can_resolve || data.resolved {
@@ -562,7 +633,7 @@ fn schedule_docs_resolve(model: &AppModel) -> Option<Cmd> {
         server_id: data.server_id.clone(),
         root: data.root.clone(),
         raw_item: std::sync::Arc::clone(&data.raw),
-        selected,
+        candidate: item.id,
     })
 }
 
@@ -572,14 +643,41 @@ fn schedule_docs_resolve(model: &AppModel) -> Option<Cmd> {
 /// same revision (a keystroke between request and response bumps the
 /// revision — a newer request is already in flight, so this reply is
 /// dropped rather than merged).
-pub(crate) fn merge_lsp_completion(
+#[cfg(test)]
+fn merge_lsp_completion(
     model: &mut AppModel,
     document_id: crate::model::editor_area::DocumentId,
     revision: u64,
     items: Vec<crate::completion::menu::MenuItem>,
     is_incomplete: bool,
 ) -> Option<Cmd> {
-    let path_session = if let Some(request) = &model.ui.completion_path {
+    let state = model.ui.completion.completion_menu.as_ref()?;
+    let session = state.identity.session;
+    let position = crate::lsp::position_to_lsp(
+        model.document(),
+        model.editor().active_cursor().to_position(),
+    );
+    merge_lsp_completion_for_session(
+        model,
+        document_id,
+        session,
+        position,
+        revision,
+        items,
+        is_incomplete,
+    )
+}
+
+pub(crate) fn merge_lsp_completion_for_session(
+    model: &mut AppModel,
+    document_id: crate::model::editor_area::DocumentId,
+    session: crate::completion::session::SessionId,
+    position: lsp_types::Position,
+    revision: u64,
+    mut items: Vec<crate::completion::menu::MenuItem>,
+    is_incomplete: bool,
+) -> Option<Cmd> {
+    let path_session = if let Some(request) = &model.ui.completion.completion_path {
         if !paths::valid(model, request) {
             return None;
         }
@@ -587,9 +685,10 @@ pub(crate) fn merge_lsp_completion(
     } else {
         false
     };
-    let selected_label = {
-        let state = model.ui.completion_menu.as_ref()?;
+    let selected_candidate = {
+        let state = model.ui.completion.completion_menu.as_ref()?;
         if state.document_id != document_id
+            || state.identity.session != session
             || state.revision != revision
             || model.document().id != Some(document_id)
             || model.document().revision != revision
@@ -622,21 +721,46 @@ pub(crate) fn merge_lsp_completion(
                     .cursor_overlay
                     .as_ref()
                     .and_then(|overlay| state.selected_item(overlay.selected))
-                    .map(|item| item.label.clone())
+                    .cloned()
             })
             .flatten()
     };
 
-    let state = model.ui.completion_menu.as_mut()?;
+    let request_query = {
+        let state = model.ui.completion.completion_menu.as_ref()?;
+        let doc = model.document();
+        let cursor = model.editor().active_cursor();
+        let start = doc.cursor_to_offset(state.query_start.line, state.query_start.column);
+        let end = doc.cursor_to_offset(cursor.line, cursor.column);
+        if start > end {
+            return None;
+        }
+        doc.buffer.slice(start..end).to_string()
+    };
+    let (menu, cursor_overlay) = (
+        &mut model.ui.completion.completion_menu,
+        &mut model.ui.cursor_overlay,
+    );
+    let state = menu.as_mut()?;
+    for item in &mut items {
+        if let MenuInsert::Lsp(data) = &mut item.insert {
+            data.request_position = Some(position);
+            data.request_query = Some(request_query.clone());
+        }
+    }
     let drop_words = model.config.completion.menu.words == WordsMode::Fallback && !items.is_empty();
     state.items.retain(|item| {
         item.source != MenuSourceId::Lsp && !(drop_words && item.source == MenuSourceId::Words)
     });
     state.items.extend(items);
+    if let Some(previous) = selected_candidate.as_ref() {
+        state.preserve_id_for(previous);
+    }
+    state.assign_candidate_ids()?;
     state.is_incomplete = is_incomplete;
     state.filtered = filter_and_sort(&state.items, &state.query);
     if state.filtered.is_empty() {
-        model.ui.cursor_overlay = None;
+        *cursor_overlay = None;
         return Some(Cmd::Redraw);
     }
 
@@ -644,19 +768,12 @@ pub(crate) fn merge_lsp_completion(
     // item. A pending session can acquire its first visible rows here.
     let total = state.filtered.len();
     let preferred = state.preferred_index();
-    let overlay = model
-        .ui
-        .cursor_overlay
+    let overlay = cursor_overlay
         .get_or_insert_with(|| CursorOverlayState::new(CursorOverlayKind::Completion));
     {
         overlay.reset_documentation();
         overlay.selected = preferred;
-        let preserved = selected_label.and_then(|label| {
-            state
-                .filtered
-                .iter()
-                .position(|(_, idx, _)| state.items[*idx].label == label)
-        });
+        let preserved = selected_candidate.and_then(|item| state.row_for_candidate(item.id));
         state.selection_changed = preserved.is_some();
         if let Some(pos) = preserved {
             overlay.selected = pos;
@@ -669,6 +786,8 @@ pub(crate) fn merge_lsp_completion(
             overlay.scroll,
         )
         .scroll_offset;
+        state.identity.selected = state.candidate_for_row(overlay.selected);
+        state.identity.scroll = overlay.scroll;
     }
     let mut cmds = vec![Cmd::Redraw];
     cmds.extend(schedule_docs_resolve(model));
@@ -676,17 +795,19 @@ pub(crate) fn merge_lsp_completion(
 }
 
 fn move_selection(model: &mut AppModel, delta: i32) -> Option<Cmd> {
-    if model.ui.completion_commit.is_some() {
+    if model.ui.completion.completion_commit.is_some() {
         return dismiss_with_cleanup(model);
     }
-    if let Some(state) = model.ui.completion_menu.as_mut() {
+    if let Some(state) = model.ui.completion.completion_menu.as_mut() {
         state.selection_changed = true;
         // Navigation withdraws an earlier Enter accept. Its late resolve may
         // enrich the row, but must not accept the previous selection.
         state.pending_resolve = None;
     }
+    model.ui.completion.completion_accept = None;
     let total = model
         .ui
+        .completion
         .completion_menu
         .as_ref()
         .map(|s| s.filtered.len())
@@ -716,6 +837,12 @@ fn move_selection(model: &mut AppModel, delta: i32) -> Option<Cmd> {
         state.scroll,
     )
     .scroll_offset;
+    let selected = state.selected;
+    let scroll = state.scroll;
+    if let Some(menu) = model.ui.completion.completion_menu.as_mut() {
+        menu.identity.selected = menu.candidate_for_row(selected);
+        menu.identity.scroll = scroll;
+    }
     let mut cmds = vec![Cmd::Redraw];
     cmds.extend(schedule_docs_resolve(model));
     Some(batch_redraw(cmds))
@@ -733,10 +860,10 @@ fn move_selection(model: &mut AppModel, delta: i32) -> Option<Cmd> {
 /// minimal items whose auto-import `additionalTextEdits` only exist after
 /// resolve — skipping resolve silently drops imports).
 fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
-    if model.ui.completion_commit.is_some() {
+    if model.ui.completion.completion_commit.is_some() {
         return reconcile_pending_commit(model).or(Some(Cmd::Redraw));
     }
-    let state = model.ui.completion_menu.as_ref()?;
+    let state = model.ui.completion.completion_menu.as_ref()?;
     let selected = model.ui.cursor_overlay?.selected;
     let doc_id_matches = model.document().id == Some(state.document_id);
     let revision_matches = model.document().revision == state.revision;
@@ -746,6 +873,7 @@ fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
     let Some(item) = state.selected_item(selected) else {
         return Some(dismiss_with_cleanup(model).unwrap_or(Cmd::Redraw));
     };
+    let candidate = item.id;
     let source = item.source;
     let insert = item.insert.clone();
     if source == MenuSourceId::Paths {
@@ -758,6 +886,7 @@ fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
         if data.can_resolve && !data.resolved {
             let resolving = model
                 .ui
+                .completion
                 .completion_menu
                 .as_ref()
                 .and_then(|s| s.pending_resolve)
@@ -773,10 +902,28 @@ fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
                 std::sync::Arc::clone(&data.raw),
             );
             let (document_id, revision) = {
-                let state = model.ui.completion_menu.as_ref()?;
+                let state = model.ui.completion.completion_menu.as_ref()?;
                 (state.document_id, state.revision)
             };
-            model.ui.completion_menu.as_mut()?.pending_resolve = Some(selected);
+            model
+                .ui
+                .completion
+                .completion_menu
+                .as_mut()?
+                .pending_resolve = Some(candidate);
+            model.ui.completion.completion_accept =
+                Some(crate::completion::menu::PendingAcceptance {
+                    document_id,
+                    editor_id: model.editor_area.focused_editor_id()?,
+                    file_path: model.document().file_path.clone(),
+                    language: model.document().language,
+                    revision,
+                    cursors: model.editor().cursors.clone(),
+                    selections: model.editor().selections.clone(),
+                    active_cursor_index: model.editor().active_cursor_index,
+                    undo_len: model.document().undo_stack.len(),
+                    candidate,
+                });
             return Some(Cmd::Batch(vec![
                 Cmd::LspResolveCompletionItem {
                     document_id,
@@ -784,7 +931,7 @@ fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
                     server_id,
                     root,
                     raw_item,
-                    selected,
+                    candidate,
                     purpose: ResolvePurpose::Accept,
                 },
                 Cmd::Redraw,
@@ -794,15 +941,25 @@ fn accept_selected(model: &mut AppModel) -> Option<Cmd> {
 
     match &insert {
         MenuInsert::Text(text) => apply_text_accept(model, text),
-        MenuInsert::Lsp(data) => apply_lsp_accept(model, data, None),
+        MenuInsert::Lsp(data) => apply_lsp_accept(model, data, None)
+            .unwrap_or_else(|failure| reject_acceptance(model, failure)),
     }
+}
+
+fn reject_acceptance(model: &mut AppModel, failure: accept::AcceptanceFailure) -> Option<Cmd> {
+    model.ui.set_status(failure.message());
+    let dismiss = dismiss_with_cleanup(model);
+    Some(match dismiss {
+        Some(dismiss) => Cmd::Batch(vec![dismiss, Cmd::redraw_status_bar()]),
+        None => Cmd::redraw_status_bar(),
+    })
 }
 
 /// Replace each cursor's word prefix, planning against the untouched document.
 /// Overlapping prefixes in the same word complete once, with both carets placed
 /// at that completion's end. Adjacent, independent words remain separate edits.
 fn apply_text_accept(model: &mut AppModel, insert_text: &str) -> Option<Cmd> {
-    if model.ui.completion_path.is_some() {
+    if model.ui.completion.completion_path.is_some() {
         return paths::apply(model, insert_text);
     }
     let doc = model.document();
@@ -865,19 +1022,31 @@ fn apply_text_accept(model: &mut AppModel, insert_text: &str) -> Option<Cmd> {
 fn finish_accept(model: &mut AppModel, planned: &[PlannedEdit], offsets: &[usize]) -> Option<Cmd> {
     let document_id = model.editor_area.focused_document_id()?;
     let editor_id = model.editor_area.focused_editor_id()?;
+    let plan = accept::CompletionEditPlan {
+        guard: accept::AcceptanceGuard {
+            document_id,
+            editor_id,
+            revision: model.document().revision,
+            cursors: model.editor().cursors.clone(),
+        },
+        edits: planned.to_vec(),
+        offsets: offsets.to_vec(),
+    };
+    apply_completion_plan(model, plan)
+}
+
+fn apply_completion_plan(model: &mut AppModel, plan: accept::CompletionEditPlan) -> Option<Cmd> {
+    if model.editor_area.focused_document_id() != Some(plan.guard.document_id)
+        || model.editor_area.focused_editor_id() != Some(plan.guard.editor_id)
+        || model.document().revision != plan.guard.revision
+        || model.editor().cursors != plan.guard.cursors
+    {
+        return dismiss_with_cleanup(model);
+    }
     let cancel = pending_cancel_cmd(model);
     dismiss(model);
     model.reset_cursor_blink();
-    let effects = apply_planned_edits(
-        model,
-        document_id,
-        planned,
-        EditCarets::Place {
-            editor_id,
-            offsets,
-            before: None,
-        },
-    );
+    let effects = apply_planned_edits(model, plan.guard.document_id, &plan.edits, plan.carets());
     let mut cmds: Vec<_> = effects.into_iter().chain(cancel).collect();
     if cmds.is_empty() {
         Some(Cmd::Redraw)
@@ -888,6 +1057,63 @@ fn finish_accept(model: &mut AppModel, planned: &[PlannedEdit], offsets: &[usize
     }
 }
 
+/// Translate a range returned for an earlier prefix to the current locally
+/// refined prefix. Positions inside replaced query text are ambiguous; only
+/// positions at/before its start or at/after its old endpoint are safe.
+fn rebase_lsp_range(
+    range: lsp_types::Range,
+    request_position: lsp_types::Position,
+    request_query: &str,
+    current_position: lsp_types::Position,
+    current_query: &str,
+) -> Result<lsp_types::Range, accept::AcceptanceFailure> {
+    let old_len = u32::try_from(request_query.encode_utf16().count())
+        .map_err(|_| accept::AcceptanceFailure::InvalidEdits)?;
+    let current_len = u32::try_from(current_query.encode_utf16().count())
+        .map_err(|_| accept::AcceptanceFailure::InvalidEdits)?;
+    let old_start = request_position
+        .character
+        .checked_sub(old_len)
+        .ok_or(accept::AcceptanceFailure::InvalidEdits)?;
+    let current_start = current_position
+        .character
+        .checked_sub(current_len)
+        .ok_or(accept::AcceptanceFailure::InvalidEdits)?;
+    if request_position.line != current_position.line || old_start != current_start {
+        return Err(accept::AcceptanceFailure::InvalidEdits);
+    }
+
+    let translate = |position: lsp_types::Position| {
+        if position.line != request_position.line {
+            return Ok(position);
+        }
+        let character = if old_start == request_position.character {
+            if position.character < old_start {
+                position.character
+            } else {
+                current_position
+                    .character
+                    .checked_add(position.character - request_position.character)
+                    .ok_or(accept::AcceptanceFailure::InvalidEdits)?
+            }
+        } else if position.character <= old_start {
+            position.character
+        } else if position.character >= request_position.character {
+            current_position
+                .character
+                .checked_add(position.character - request_position.character)
+                .ok_or(accept::AcceptanceFailure::InvalidEdits)?
+        } else {
+            return Err(accept::AcceptanceFailure::InvalidEdits);
+        };
+        Ok(lsp_types::Position::new(position.line, character))
+    };
+    Ok(lsp_types::Range::new(
+        translate(range.start)?,
+        translate(range.end)?,
+    ))
+}
+
 /// LSP ranges and the primary prefix replacement share one pristine-coordinate
 /// plan. Snippet caret placement stays feature-owned; all peer positions and
 /// undo effects go through the same transaction as ordinary completion.
@@ -895,37 +1121,72 @@ fn apply_lsp_accept(
     model: &mut AppModel,
     data: &LspInsert,
     character: Option<char>,
-) -> Option<Cmd> {
-    if model.editor().cursors.len() > 1 {
-        if let Some(character) = character {
-            let mut text = data.text.clone();
-            text.push(character);
-            return apply_text_accept(model, &text);
-        }
-        return apply_text_accept(model, &data.text);
-    }
+) -> Result<Option<Cmd>, accept::AcceptanceFailure> {
     let active_cursor = *model.editor().active_cursor();
     let doc = model.document();
     let cursor_offset = doc.cursor_to_offset(active_cursor.line, active_cursor.column);
+    let current_position = crate::lsp::position_to_lsp(doc, active_cursor.to_position());
+    let current_query = model
+        .ui
+        .completion
+        .completion_menu
+        .as_ref()
+        .and_then(|menu| {
+            let start = doc.cursor_to_offset(menu.query_start.line, menu.query_start.column);
+            (start <= cursor_offset).then(|| doc.buffer.slice(start..cursor_offset).to_string())
+        })
+        .unwrap_or_default();
+    let request_position = data.request_position.unwrap_or(current_position);
+    let request_query = data.request_query.as_deref().unwrap_or(&current_query);
     let path_context = model
         .ui
+        .completion
         .completion_path
         .as_ref()
         .map(|request| &request.context);
-    let primary_end = path_context.map_or(cursor_offset, |context| {
-        if let Some((range, _)) = &data.text_edit {
-            let position = crate::lsp::lsp_to_position(doc, range.end);
-            doc.cursor_to_offset(position.line, position.column)
-                .max(cursor_offset)
+    let query_range = |cursor: Cursor| {
+        if let Some(request) = model.ui.completion.completion_path.as_ref() {
+            let context = crate::completion::path::PathContext::at(
+                doc,
+                cursor,
+                request.workspace_root.as_deref(),
+                request.explicit,
+            )?;
+            Some((
+                doc.cursor_to_offset(context.start.line, context.start.column),
+                doc.cursor_to_offset(context.end.line, context.end.column),
+            ))
         } else {
-            doc.cursor_to_offset(context.end.line, context.end.column)
+            let end = doc.cursor_to_offset(cursor.line, cursor.column);
+            Some(word_query_offsets(model, cursor).unwrap_or((end, end)))
         }
+    };
+    let active_query = query_range(active_cursor).ok_or(accept::AcceptanceFailure::InvalidEdits)?;
+    let primary_end = path_context.map_or(cursor_offset, |context| {
+        doc.cursor_to_offset(context.end.line, context.end.column)
     });
     let (primary_start, mut primary_text) = match &data.text_edit {
         Some((range, new_text)) => {
-            let start_pos = crate::lsp::lsp_to_position(doc, range.start);
-            let start = doc.cursor_to_offset(start_pos.line, start_pos.column);
-            (start.min(cursor_offset), new_text.clone())
+            if range.start.line != request_position.line
+                || range.end.line != request_position.line
+                || range.start.character > request_position.character
+                || range.end.character < request_position.character
+            {
+                return Err(accept::AcceptanceFailure::InvalidEdits);
+            }
+            let range = rebase_lsp_range(
+                *range,
+                request_position,
+                request_query,
+                current_position,
+                &current_query,
+            )?;
+            let start = accept::strict_offset(doc, range.start)?;
+            let end = accept::strict_offset(doc, range.end)?;
+            if end < start {
+                return Err(accept::AcceptanceFailure::InvalidEdits);
+            }
+            (start, new_text.clone())
         }
         None => (
             path_context.map_or_else(
@@ -938,12 +1199,38 @@ fn apply_lsp_accept(
             data.text.clone(),
         ),
     };
-    // Reject overlaps, including an insertion strictly inside the replacement.
-    // Boundary inserts remain separate edits and must never be swallowed by it.
-    let mut planned: Vec<_> = plan_text_edits(doc, &data.additional_text_edits)
-        .into_iter()
-        .filter(|edit| !(edit.start < primary_end && edit.end() > primary_start))
-        .collect();
+    let primary_end = data
+        .text_edit
+        .as_ref()
+        .map(|(range, _)| {
+            rebase_lsp_range(
+                *range,
+                request_position,
+                request_query,
+                current_position,
+                &current_query,
+            )
+            .and_then(|range| accept::strict_offset(doc, range.end))
+        })
+        .transpose()?
+        .unwrap_or(primary_end);
+    let additional_text_edits: Vec<_> = data
+        .additional_text_edits
+        .iter()
+        .map(|(range, text)| {
+            Ok((
+                rebase_lsp_range(
+                    *range,
+                    request_position,
+                    request_query,
+                    current_position,
+                    &current_query,
+                )?,
+                text.clone(),
+            ))
+        })
+        .collect::<Result<_, accept::AcceptanceFailure>>()?;
+    let mut additional = accept::plan_lsp_edits(doc, &additional_text_edits)?;
     let inserted_len = primary_text.chars().count();
     let mut caret_offset = data
         .caret_offset
@@ -956,19 +1243,88 @@ fn apply_lsp_accept(
         primary_text.insert(byte, character);
         caret_offset += 1;
     }
-    let caret = EditOffsetMap::new(&planned).map(primary_start) + caret_offset;
-    // Equal-point additional inserts precede the primary completion in the final
-    // text: apply the primary first, then the additions in their existing order.
-    planned.insert(
-        0,
-        PlannedEdit {
-            start: primary_start,
-            deleted: doc.buffer.slice(primary_start..primary_end).to_string(),
-            inserted: primary_text,
-        },
-    );
+    if model.editor().selections.len() != model.editor().cursors.len()
+        || model
+            .editor()
+            .selections
+            .iter()
+            .any(|selection| !selection.is_empty())
+    {
+        return Err(accept::AcceptanceFailure::SingleCursorRequired);
+    }
+    let cursors = model.editor().cursors.clone();
+    let mut ranges = Vec::with_capacity(cursors.len());
+    for cursor in cursors {
+        let range = query_range(cursor).ok_or(accept::AcceptanceFailure::SingleCursorRequired)?;
+        if doc.buffer.slice(range.0..range.1) != doc.buffer.slice(active_query.0..active_query.1) {
+            return Err(accept::AcceptanceFailure::SingleCursorRequired);
+        }
+        ranges.push(range);
+    }
+    if ranges.len() == 1 {
+        ranges[0] = (primary_start, primary_end);
+    } else if (primary_start, primary_end) != active_query {
+        return Err(accept::AcceptanceFailure::SingleCursorRequired);
+    }
+    let mut ordered: Vec<_> = ranges.iter().copied().enumerate().collect();
+    ordered.sort_unstable_by_key(|(_, range)| *range);
+    let mut span_indices = vec![0; ranges.len()];
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    for (cursor_index, (start, end)) in ordered {
+        if let Some(previous) = spans.last_mut() {
+            if (start, end) == *previous {
+                span_indices[cursor_index] = spans.len() - 1;
+                continue;
+            }
+            if start < previous.1 {
+                return Err(accept::AcceptanceFailure::SingleCursorRequired);
+            }
+        }
+        span_indices[cursor_index] = spans.len();
+        spans.push((start, end));
+    }
+    let mut planned: Vec<_> = spans
+        .iter()
+        .rev()
+        .map(|&(start, end)| PlannedEdit {
+            start,
+            deleted: doc.buffer.slice(start..end).to_string(),
+            inserted: primary_text.clone(),
+        })
+        .collect();
+    if additional.iter().any(|extra| {
+        planned
+            .iter()
+            .any(|primary| accept::overlaps(extra, primary))
+    }) {
+        return Err(accept::AcceptanceFailure::InvalidEdits);
+    }
+    planned.append(&mut additional);
     planned.sort_by(|a, b| b.start.cmp(&a.start).then(b.end().cmp(&a.end())));
-    finish_accept(model, &planned, &[caret])
+    if planned
+        .windows(2)
+        .any(|pair| accept::overlaps(&pair[0], &pair[1]))
+    {
+        return Err(accept::AcceptanceFailure::InvalidEdits);
+    }
+    let map = EditOffsetMap::new(&planned);
+    let span_offsets: Vec<_> = spans
+        .iter()
+        .map(|&(start, end)| {
+            let index = planned
+                .iter()
+                .position(|edit| {
+                    edit.start == start && edit.end() == end && edit.inserted == primary_text
+                })
+                .ok_or(accept::AcceptanceFailure::InvalidEdits)?;
+            Ok(map.inserted_offset(index, caret_offset))
+        })
+        .collect::<Result<_, accept::AcceptanceFailure>>()?;
+    let offsets: Vec<_> = span_indices
+        .into_iter()
+        .map(|span| span_offsets[span])
+        .collect();
+    Ok(finish_accept(model, &planned, &offsets))
 }
 
 /// Runtime -> update: a `completionItem/resolve` round trip finished (or,
@@ -980,16 +1336,27 @@ pub(crate) fn finish_deferred_accept(
     model: &mut AppModel,
     document_id: crate::model::editor_area::DocumentId,
     revision: u64,
-    selected: usize,
+    candidate: crate::completion::session::CandidateId,
     detail: Option<String>,
     documentation: Option<crate::model::StyledText>,
     additional_text_edits: Vec<(lsp_types::Range, String)>,
 ) -> Option<Cmd> {
-    if let Some(pending) = &model.ui.completion_commit {
+    let ordinary_accept = if let Some(pending) = &model.ui.completion.completion_accept {
+        if !pending_accept_is_valid(model) {
+            return dismiss_with_cleanup(model);
+        }
+        if pending.document_id != document_id || pending.candidate != candidate {
+            return None;
+        }
+        true
+    } else {
+        false
+    };
+    if let Some(pending) = &model.ui.completion.completion_commit {
         if !commit::pending_is_valid(model) {
             return dismiss_with_cleanup(model);
         }
-        if pending.document_id != document_id || pending.selected != selected {
+        if pending.document_id != document_id || pending.candidate != candidate {
             return None;
         }
     }
@@ -997,7 +1364,7 @@ pub(crate) fn finish_deferred_accept(
         model,
         document_id,
         revision,
-        selected,
+        candidate,
         detail,
         documentation,
         additional_text_edits,
@@ -1005,18 +1372,24 @@ pub(crate) fn finish_deferred_accept(
         return None;
     }
     let insert = {
-        let state = model.ui.completion_menu.as_mut()?;
-        if state.pending_resolve != Some(selected) {
+        let state = model.ui.completion.completion_menu.as_mut()?;
+        if state.pending_resolve != Some(candidate) {
             return Some(Cmd::Redraw);
         }
         state.pending_resolve = None;
-        state.selected_item(selected)?.insert.clone()
+        let row = state.row_for_candidate(candidate)?;
+        state.selected_item(row)?.insert.clone()
     };
+    if model.ui.completion.completion_commit.is_none() && !ordinary_accept {
+        return Some(Cmd::Redraw);
+    }
+    model.ui.completion.completion_accept = None;
     match &insert {
         MenuInsert::Text(text) => apply_text_accept(model, text),
-        MenuInsert::Lsp(data) => match model.ui.completion_commit.take() {
+        MenuInsert::Lsp(data) => match model.ui.completion.completion_commit.take() {
             Some(pending) => commit::finish_pending(model, data, pending),
-            None => apply_lsp_accept(model, data, None),
+            None => apply_lsp_accept(model, data, None)
+                .unwrap_or_else(|failure| reject_acceptance(model, failure)),
         },
     }
 }
@@ -1028,21 +1401,21 @@ fn merge_resolved_item(
     model: &mut AppModel,
     document_id: crate::model::editor_area::DocumentId,
     revision: u64,
-    selected: usize,
+    candidate: crate::completion::session::CandidateId,
     detail: Option<String>,
     documentation: Option<crate::model::StyledText>,
     additional_text_edits: Vec<(lsp_types::Range, String)>,
 ) -> bool {
-    let Some(state) = model.ui.completion_menu.as_mut() else {
+    let Some(state) = model.ui.completion.completion_menu.as_mut() else {
         return false;
     };
     if state.document_id != document_id || state.revision != revision {
         return false;
     }
-    let Some((_, idx, _)) = state.filtered.get(selected) else {
+    let Some(idx) = state.items.iter().position(|item| item.id == candidate) else {
         return false;
     };
-    let item = &mut state.items[*idx];
+    let item = &mut state.items[idx];
     if let Some(detail) = detail {
         item.detail = Some(detail);
     }
@@ -1094,7 +1467,12 @@ mod tests {
         let mut model = model_with_text("value_one\nvalue_two\n");
         place_cursor(&mut model, 2, 0);
         type_str(&mut model, "val");
-        let state = model.ui.completion_menu.as_ref().expect("menu open");
+        let state = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .expect("menu open");
         assert!(!state.filtered.is_empty());
         assert_eq!(
             model.ui.cursor_overlay.map(|o| o.kind),
@@ -1109,9 +1487,15 @@ mod tests {
         let mut model = model_with_text("value_one\n\n");
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "v");
-        assert!(model.ui.completion_menu.is_none(), "one char must not open");
+        assert!(
+            model.ui.completion.completion_menu.is_none(),
+            "one char must not open"
+        );
         type_str(&mut model, "a");
-        assert!(model.ui.completion_menu.is_some(), "two chars must open");
+        assert!(
+            model.ui.completion.completion_menu.is_some(),
+            "two chars must open"
+        );
     }
 
     #[test]
@@ -1119,9 +1503,9 @@ mod tests {
         let mut model = model_with_text("value_one\n\n");
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "val");
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
         type_str(&mut model, " ");
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
         assert!(model.ui.cursor_overlay.is_none());
     }
 
@@ -1130,11 +1514,11 @@ mod tests {
         let mut model = model_with_text("value_one\n\n");
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "val");
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
 
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
 
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
         let line = model.document().get_line_cow(1).unwrap();
         assert_eq!(line.trim_end_matches('\n'), "value_one");
         assert_eq!(model.editor().cursors[0].column, "value_one".len());
@@ -1149,7 +1533,7 @@ mod tests {
             Selection::new(model.editor().cursors[1].to_position()),
         ];
         type_str(&mut model, "val");
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
 
         select_item(&mut model, "valueA");
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
@@ -1201,7 +1585,7 @@ mod tests {
         let mut model = model_with_text("value_one\n\n");
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "val");
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
 
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
 
@@ -1248,7 +1632,7 @@ mod tests {
         let mut model = model_with_text("value_one\n🎉 \n");
         place_cursor(&mut model, 1, 2); // after "🎉 "
         type_str(&mut model, "val");
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
 
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
 
@@ -1265,15 +1649,20 @@ mod tests {
         let mut model = model_with_text("value_one\n\n");
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "val");
-        let mut state = model.ui.completion_menu.clone().expect("menu open");
+        let mut state = model
+            .ui
+            .completion
+            .completion_menu
+            .clone()
+            .expect("menu open");
         state.revision = state.revision.wrapping_sub(1); // simulate a stale collection
-        model.ui.completion_menu = Some(state);
+        model.ui.completion.completion_menu = Some(state);
 
         let before = model.document().buffer.to_string();
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
 
         assert_eq!(model.document().buffer.to_string(), before);
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
     }
 
     #[test]
@@ -1281,7 +1670,14 @@ mod tests {
         let mut model = model_with_text("value_one\nvalue_two\nvalue_three\n\n");
         place_cursor(&mut model, 3, 0);
         type_str(&mut model, "val");
-        let total = model.ui.completion_menu.as_ref().unwrap().filtered.len();
+        let total = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .unwrap()
+            .filtered
+            .len();
         assert!(total >= 2);
 
         for _ in 0..total {
@@ -1295,7 +1691,14 @@ mod tests {
         let mut model = model_with_text("value_one\nvalue_two\nvalue_three\n\n");
         place_cursor(&mut model, 3, 0);
         type_str(&mut model, "val");
-        let total = model.ui.completion_menu.as_ref().unwrap().filtered.len();
+        let total = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .unwrap()
+            .filtered
+            .len();
         assert!(total >= 2);
 
         update(&mut model, Msg::Completion(CompletionMsg::MenuPageDown));
@@ -1314,7 +1717,7 @@ mod tests {
         let mut model = model_with_text("value_one\n\n");
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "val");
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
         assert!(model.ui.cursor_overlay.is_some());
 
         update(
@@ -1324,7 +1727,7 @@ mod tests {
 
         assert!(model.ui.has_modal());
         assert!(
-            model.ui.completion_menu.is_none(),
+            model.ui.completion.completion_menu.is_none(),
             "an open modal must claim keys instead of the stale completion popup"
         );
         assert!(model.ui.cursor_overlay.is_none());
@@ -1343,7 +1746,7 @@ mod tests {
         let mut model = model_with_text("value_one\n\n");
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "val");
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
         assert!(model.ui.cursor_overlay.is_some());
 
         update(
@@ -1353,7 +1756,7 @@ mod tests {
 
         assert_ne!(model.ui.focus, crate::model::FocusTarget::Editor);
         assert!(
-            model.ui.completion_menu.is_none(),
+            model.ui.completion.completion_menu.is_none(),
             "dock focus must claim keys instead of the stale completion popup"
         );
         assert!(model.ui.cursor_overlay.is_none());
@@ -1364,7 +1767,7 @@ mod tests {
         let mut model = model_with_text("value_one\n\n");
         place_cursor(&mut model, 1, 0);
         update(&mut model, Msg::Completion(CompletionMsg::TriggerMenu));
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
         assert!(model.ui.cursor_overlay.is_none());
     }
 
@@ -1379,15 +1782,15 @@ mod tests {
         model.document_mut().file_path = Some("/tmp/proj/lib.rs".into());
         place_cursor(&mut model, 1, 0);
         update(&mut model, Msg::Completion(CompletionMsg::TriggerMenu));
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
         assert!(model.ui.cursor_overlay.is_none());
-        let state = model.ui.completion_menu.as_ref().unwrap();
+        let state = model.ui.completion.completion_menu.as_ref().unwrap();
         let (id, revision) = (state.document_id, state.revision);
         merge_lsp_completion(&mut model, id, revision, vec![lsp_item("value_one")], false);
 
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
 
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
         let line = model.document().get_line_cow(1).unwrap();
         assert_eq!(line.trim_end_matches('\n'), "value_one");
         assert_eq!(model.editor().cursors[0].column, "value_one".len());
@@ -1400,6 +1803,7 @@ mod tests {
 
     fn lsp_item(label: &str) -> MenuItem {
         MenuItem {
+            id: crate::completion::session::CandidateId::UNASSIGNED,
             label: label.to_owned(),
             filter_text: label.to_owned(),
             insert: MenuInsert::Lsp(Box::new(LspInsert {
@@ -1412,6 +1816,8 @@ mod tests {
                 }),
                 can_resolve: false,
                 resolved: false,
+                request_position: None,
+                request_query: None,
                 text_edit: None,
                 additional_text_edits: Vec::new(),
                 commit_characters: std::sync::Arc::from([]),
@@ -1431,7 +1837,12 @@ mod tests {
     fn open_menu_with_lsp_response(model: &mut AppModel, labels: &[&str]) {
         place_cursor(model, 1, 0);
         type_str(model, "va");
-        let state = model.ui.completion_menu.clone().expect("menu open");
+        let state = model
+            .ui
+            .completion
+            .completion_menu
+            .clone()
+            .expect("menu open");
         merge_lsp_completion(
             model,
             state.document_id,
@@ -1447,7 +1858,7 @@ mod tests {
         model.document_mut().language = crate::syntax::LanguageId::Rust;
         model.document_mut().file_path = Some("/tmp/proj/src/lib.rs".into());
         open_menu_with_lsp_response(&mut model, &["vacuum"]);
-        let state = model.ui.completion_menu.as_mut().unwrap();
+        let state = model.ui.completion.completion_menu.as_mut().unwrap();
         let index = state.filtered[0].1;
         let MenuInsert::Lsp(data) = &mut state.items[index].insert else {
             panic!("LSP fixture");
@@ -1458,12 +1869,19 @@ mod tests {
     }
 
     fn resolve_commit(model: &mut AppModel, id: crate::model::DocumentId, revision: u64) {
+        let candidate = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .and_then(|menu| menu.pending_resolve)
+            .expect("completion candidate is resolving");
         update(
             model,
             Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                 document_id: id,
                 revision,
-                selected: 0,
+                candidate,
                 detail: None,
                 documentation: None,
                 additional_text_edits: Vec::new(),
@@ -1506,7 +1924,7 @@ mod tests {
     #[test]
     fn commit_character_is_immediate_while_resolving_and_forms_one_undo() {
         let mut model = commit_fixture(true);
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         let history = model.document().undo_stack.len();
         update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
         assert_eq!(
@@ -1545,9 +1963,27 @@ mod tests {
     #[test]
     fn commit_character_late_reply_preserves_subsequent_typing() {
         let mut model = commit_fixture(true);
-        let state = model.ui.completion_menu.clone().unwrap();
-        type_str(&mut model, "(x");
-        resolve_commit(&mut model, state.document_id, state.revision);
+        let state = model.ui.completion.completion_menu.clone().unwrap();
+        update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
+        let candidate = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .and_then(|menu| menu.pending_resolve)
+            .unwrap();
+        update(&mut model, Msg::Document(DocumentMsg::InsertChar('x')));
+        update(
+            &mut model,
+            Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
+                document_id: state.document_id,
+                revision: state.revision,
+                candidate,
+                detail: None,
+                documentation: None,
+                additional_text_edits: Vec::new(),
+            }),
+        );
         assert_eq!(
             model.document().buffer.to_string(),
             "// head\nva(x\n// tail\n"
@@ -1564,6 +2000,32 @@ mod tests {
             update(&mut model, Msg::Document(message));
             assert!(!model.document().buffer.to_string().contains("vacuum"));
         }
+    }
+
+    #[test]
+    fn commit_character_preserves_the_literal_when_the_primary_range_is_invalid() {
+        let mut model = commit_fixture(false);
+        let menu = model.ui.completion.completion_menu.as_mut().unwrap();
+        let index = menu.filtered[0].1;
+        let MenuInsert::Lsp(data) = &mut menu.items[index].insert else {
+            unreachable!()
+        };
+        data.text_edit = Some((
+            lsp_types::Range::new(
+                lsp_types::Position::new(0, 0),
+                lsp_types::Position::new(1, 2),
+            ),
+            "vacuum".to_owned(),
+        ));
+        let history = model.document().undo_stack.len();
+
+        update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
+
+        assert_eq!(
+            model.document().buffer.to_string(),
+            "// head\nva(\n// tail\n"
+        );
+        assert_eq!(model.document().undo_stack.len(), history + 1);
     }
 
     #[test]
@@ -1584,7 +2046,7 @@ mod tests {
                     "// done".to_owned(),
                 ),
             ];
-            let menu = model.ui.completion_menu.as_mut().unwrap();
+            let menu = model.ui.completion.completion_menu.as_mut().unwrap();
             menu.query_start = Cursor::at(1, 2);
             let index = menu.filtered[0].1;
             let MenuInsert::Lsp(data) = &mut menu.items[index].insert else {
@@ -1594,6 +2056,8 @@ mod tests {
                 Range::new(Position::new(1, 3), Position::new(1, 5)),
                 "vacuum()".into(),
             ));
+            data.request_position = Some(Position::new(1, 5));
+            data.request_query = Some("va".to_owned());
             data.caret_offset = Some(7);
             data.commit_characters = std::sync::Arc::from(['🦀']);
             if !late_edits {
@@ -1607,12 +2071,19 @@ mod tests {
                     model.document().buffer.to_string(),
                     "// head\r\n🦀.va🦀\r\n// tail\r\n"
                 );
+                let candidate = model
+                    .ui
+                    .completion
+                    .completion_menu
+                    .as_ref()
+                    .and_then(|menu| menu.pending_resolve)
+                    .unwrap();
                 update(
                     &mut model,
                     Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                         document_id: state.document_id,
                         revision: state.revision,
-                        selected: 0,
+                        candidate,
                         detail: None,
                         documentation: None,
                         additional_text_edits: if late_edits { extras } else { Vec::new() },
@@ -1645,17 +2116,34 @@ mod tests {
             )),
         ] {
             let mut model = commit_fixture(true);
-            let state = model.ui.completion_menu.clone().unwrap();
+            let state = model.ui.completion.completion_menu.clone().unwrap();
             update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
+            let candidate = model
+                .ui
+                .completion
+                .completion_menu
+                .as_ref()
+                .and_then(|menu| menu.pending_resolve)
+                .unwrap();
             update(&mut model, action);
             let before_reply = model.document().buffer.to_string();
-            resolve_commit(&mut model, state.document_id, state.revision);
+            update(
+                &mut model,
+                Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
+                    document_id: state.document_id,
+                    revision: state.revision,
+                    candidate,
+                    detail: None,
+                    documentation: None,
+                    additional_text_edits: Vec::new(),
+                }),
+            );
             assert_eq!(model.document().buffer.to_string(), before_reply);
-            assert!(model.ui.completion_commit.is_none());
+            assert!(model.ui.completion.completion_commit.is_none());
         }
         for disable in [false, true] {
             let mut model = commit_fixture(true);
-            let state = model.ui.completion_menu.clone().unwrap();
+            let state = model.ui.completion.completion_menu.clone().unwrap();
             update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
             if disable {
                 model.config.completion.enabled = false;
@@ -1667,14 +2155,14 @@ mod tests {
                 model.document().buffer.to_string(),
                 "// head\nva(\n// tail\n"
             );
-            assert!(model.ui.completion_commit.is_none());
+            assert!(model.ui.completion.completion_commit.is_none());
         }
     }
 
     #[test]
     fn commit_character_wait_survives_copy_blink_stale_reply_and_repeat_accept() {
         let mut model = commit_fixture(true);
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         let cmd = update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
         assert!(cmd_contains(&cmd, |cmd| matches!(
             cmd,
@@ -1693,7 +2181,7 @@ mod tests {
                 cmd,
                 Cmd::LspResolveCompletionItem { .. }
             )));
-            assert!(model.ui.completion_commit.is_some());
+            assert!(model.ui.completion.completion_commit.is_some());
         }
         assert!(refresh_after_syntax(&mut model, state.document_id).is_none());
         resolve_commit(
@@ -1701,7 +2189,7 @@ mod tests {
             state.document_id,
             state.revision.wrapping_sub(1),
         );
-        assert!(model.ui.completion_commit.is_some());
+        assert!(model.ui.completion.completion_commit.is_some());
         resolve_commit(&mut model, state.document_id, state.revision);
         assert_eq!(
             model.document().buffer.to_string(),
@@ -1713,7 +2201,7 @@ mod tests {
     fn commit_character_multi_cursor_restores_exact_peer_history() {
         for resolve in [false, true] {
             let mut model = commit_fixture(resolve);
-            let menu = model.ui.completion_menu.clone();
+            let menu = model.ui.completion.completion_menu.clone();
             let overlay = model.ui.cursor_overlay;
             update(
                 &mut model,
@@ -1721,7 +2209,7 @@ mod tests {
                     crate::model::SplitDirection::Vertical,
                 )),
             );
-            model.ui.completion_menu = menu;
+            model.ui.completion.completion_menu = menu;
             model.ui.cursor_overlay = overlay;
             model.document_mut().buffer = "// head\nva va\n// tail\n".into();
             for editor in model.editor_area.editors.values_mut() {
@@ -1748,7 +2236,7 @@ mod tests {
                 .iter()
                 .map(|(id, editor)| (*id, editor.cursors.clone(), editor.selections.clone()))
                 .collect();
-            let state = model.ui.completion_menu.clone().unwrap();
+            let state = model.ui.completion.completion_menu.clone().unwrap();
             let history = model.document().undo_stack.len();
             update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
             if resolve {
@@ -1782,7 +2270,7 @@ mod tests {
     #[test]
     fn commit_character_can_reuse_an_existing_enter_resolve() {
         let mut model = commit_fixture(true);
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
         let cmd = update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
         assert!(!cmd_contains(&cmd, |cmd| matches!(
@@ -1815,10 +2303,10 @@ mod tests {
             }
             update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
             assert!(!model.document().buffer.to_string().contains("vacuum"));
-            assert!(model.ui.completion_commit.is_none());
+            assert!(model.ui.completion.completion_commit.is_none());
         }
         let mut model = commit_fixture(true);
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
         model.document_mut().file_path = Some("/tmp/proj/renamed.rs".into());
         resolve_commit(&mut model, state.document_id, state.revision);
@@ -1826,7 +2314,7 @@ mod tests {
             model.document().buffer.to_string(),
             "// head\nva(\n// tail\n"
         );
-        assert!(model.ui.completion_commit.is_none());
+        assert!(model.ui.completion.completion_commit.is_none());
     }
 
     #[test]
@@ -1842,19 +2330,26 @@ mod tests {
                 .lsp
                 .signature_trigger_characters
                 .insert(server, (vec!["(".into()], vec![]));
-            let state = model.ui.completion_menu.clone().unwrap();
+            let state = model.ui.completion.completion_menu.clone().unwrap();
             let mut cmd = update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
             if resolve {
                 assert!(!cmd_contains(&cmd, |cmd| matches!(
                     cmd,
                     Cmd::LspScheduleCompletion { .. }
                 )));
+                let candidate = model
+                    .ui
+                    .completion
+                    .completion_menu
+                    .as_ref()
+                    .and_then(|menu| menu.pending_resolve)
+                    .unwrap();
                 cmd = update(
                     &mut model,
                     Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                         document_id: state.document_id,
                         revision: state.revision,
-                        selected: 0,
+                        candidate,
                         detail: None,
                         documentation: None,
                         additional_text_edits: Vec::new(),
@@ -1885,8 +2380,9 @@ mod tests {
     #[test]
     fn commit_character_uses_the_new_selection_after_pending_enter_navigation() {
         let mut model = commit_fixture(true);
-        let state = model.ui.completion_menu.as_mut().unwrap();
+        let state = model.ui.completion.completion_menu.as_mut().unwrap();
         let mut second = state.items[state.filtered[0].1].clone();
+        second.id = crate::completion::session::CandidateId::UNASSIGNED;
         second.label = "valid".into();
         second.filter_text = "valid".into();
         let MenuInsert::Lsp(data) = &mut second.insert else {
@@ -1894,28 +2390,56 @@ mod tests {
         };
         data.text = "valid".into();
         state.items.push(second);
+        state
+            .assign_candidate_ids()
+            .expect("candidate id allocation");
         state.filtered = filter_and_sort(&state.items, "va");
         let state = state.clone();
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+        let first_candidate = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .and_then(|menu| menu.pending_resolve)
+            .expect("first candidate resolving");
         update(&mut model, Msg::Completion(CompletionMsg::MenuNext));
         assert_eq!(model.ui.cursor_overlay.unwrap().selected, 1);
         let cmd = update(&mut model, Msg::Document(DocumentMsg::InsertChar('(')));
         assert!(cmd_contains(&cmd, |cmd| matches!(
             cmd,
-            Cmd::LspResolveCompletionItem { selected: 1, .. }
+            Cmd::LspResolveCompletionItem { .. }
         )));
-        resolve_commit(&mut model, state.document_id, state.revision);
-        assert!(model.ui.completion_commit.is_some());
-        assert_eq!(
-            model.document().buffer.to_string(),
-            "// head\nva(\n// tail\n"
-        );
         update(
             &mut model,
             Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                 document_id: state.document_id,
                 revision: state.revision,
-                selected: 1,
+                candidate: first_candidate,
+                detail: None,
+                documentation: None,
+                additional_text_edits: Vec::new(),
+            }),
+        );
+        assert!(model.ui.completion.completion_commit.is_some());
+        assert_eq!(
+            model.document().buffer.to_string(),
+            "// head\nva(\n// tail\n"
+        );
+        let candidate = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .unwrap()
+            .pending_resolve
+            .unwrap();
+        update(
+            &mut model,
+            Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
+                document_id: state.document_id,
+                revision: state.revision,
+                candidate,
                 detail: None,
                 documentation: None,
                 additional_text_edits: Vec::new(),
@@ -1935,7 +2459,12 @@ mod tests {
         // word-start tier above the buffer words (which don't).
         open_menu_with_lsp_response(&mut model, &["vacuum", "valid"]);
 
-        let state = model.ui.completion_menu.as_ref().expect("still open");
+        let state = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .expect("still open");
         let sources: Vec<_> = state.items.iter().map(|i| i.source).collect();
         assert!(sources.contains(&MenuSourceId::Lsp));
         assert!(
@@ -1955,14 +2484,17 @@ mod tests {
         model.config.completion.menu.enabled = false;
         place_cursor(&mut model, 2, 0);
         type_str(&mut model, "va");
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
         update(&mut model, Msg::Completion(CompletionMsg::TriggerMenu));
         assert!(model.ui.has_visible_completion());
         type_str(&mut model, "l");
-        assert_eq!(model.ui.completion_menu.as_ref().unwrap().query, "val");
+        assert_eq!(
+            model.ui.completion.completion_menu.as_ref().unwrap().query,
+            "val"
+        );
         update(&mut model, Msg::Completion(CompletionMsg::Dismiss));
         type_str(&mut model, "u");
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
     }
 
     #[test]
@@ -1972,7 +2504,7 @@ mod tests {
         model.config.completion.menu.min_word_length = 6;
         place_cursor(&mut model, 2, 0);
         type_str(&mut model, "va");
-        let menu = model.ui.completion_menu.as_ref().unwrap();
+        let menu = model.ui.completion.completion_menu.as_ref().unwrap();
         let words: Vec<_> = menu
             .items
             .iter()
@@ -1988,7 +2520,7 @@ mod tests {
         model.config.completion.enabled = false;
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "va");
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
     }
 
     #[test]
@@ -1997,7 +2529,7 @@ mod tests {
         model.config.completion.enabled = false;
         place_cursor(&mut model, 1, 0);
         update_completion(&mut model, CompletionMsg::TriggerMenu);
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
         assert_eq!(
             model.ui.transient_message.map(|t| t.text).as_deref(),
             Some("Autocomplete disabled")
@@ -2009,7 +2541,12 @@ mod tests {
         let mut model = model_with_text("value_vector\n\n");
         model.config.completion.menu.words = WordsMode::Fallback;
         open_menu_with_lsp_response(&mut model, &["vacuum"]);
-        let state = model.ui.completion_menu.as_ref().expect("still open");
+        let state = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .expect("still open");
         assert!(state.items.iter().all(|i| i.source != MenuSourceId::Words));
         assert!(state.items.iter().any(|i| i.source == MenuSourceId::Lsp));
     }
@@ -2019,7 +2556,12 @@ mod tests {
         let mut model = model_with_text("value_vector\n\n");
         model.config.completion.menu.words = WordsMode::Enabled;
         open_menu_with_lsp_response(&mut model, &["vacuum"]);
-        let state = model.ui.completion_menu.as_ref().expect("still open");
+        let state = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .expect("still open");
         assert!(state.items.iter().any(|i| i.source == MenuSourceId::Words));
     }
 
@@ -2031,6 +2573,7 @@ mod tests {
         type_str(&mut model, "va");
         assert!(model
             .ui
+            .completion
             .completion_menu
             .as_ref()
             .is_none_or(|s| s.items.iter().all(|i| i.source != MenuSourceId::Words)));
@@ -2040,7 +2583,7 @@ mod tests {
     fn merging_again_replaces_the_previous_lsp_items() {
         let mut model = model_with_text("value_vector\n\n");
         open_menu_with_lsp_response(&mut model, &["vacuum"]);
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         merge_lsp_completion(
             &mut model,
             state.document_id,
@@ -2050,7 +2593,7 @@ mod tests {
         )
         .unwrap();
 
-        let state = model.ui.completion_menu.as_ref().unwrap();
+        let state = model.ui.completion.completion_menu.as_ref().unwrap();
         let lsp_labels: Vec<&str> = state
             .items
             .iter()
@@ -2068,8 +2611,15 @@ mod tests {
     fn a_merge_for_a_stale_revision_is_dropped() {
         let mut model = model_with_text("value_vector\n\n");
         open_menu_with_lsp_response(&mut model, &["vacuum"]);
-        let state = model.ui.completion_menu.clone().unwrap();
-        let before = model.ui.completion_menu.clone().unwrap().filtered.len();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
+        let before = model
+            .ui
+            .completion
+            .completion_menu
+            .clone()
+            .unwrap()
+            .filtered
+            .len();
 
         merge_lsp_completion(
             &mut model,
@@ -2079,7 +2629,7 @@ mod tests {
             false,
         );
 
-        let state = model.ui.completion_menu.as_ref().unwrap();
+        let state = model.ui.completion.completion_menu.as_ref().unwrap();
         assert_eq!(
             state.filtered.len(),
             before,
@@ -2096,7 +2646,12 @@ mod tests {
         // Type another char: the menu refreshes synchronously (words +
         // snippets + carried LSP items refiltered against "vac").
         type_str(&mut model, "c");
-        let state = model.ui.completion_menu.as_ref().expect("still open");
+        let state = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .expect("still open");
         assert_eq!(state.query, "vac");
         let lsp_labels: Vec<&str> = state
             .items
@@ -2155,7 +2710,8 @@ mod tests {
                 std::path::Path::new("."),
                 None,
             );
-            model.ui.completion_menu = Some(CompletionMenuState {
+            model.ui.completion.completion_menu = Some(CompletionMenuState {
+                identity: crate::completion::menu::MenuIdentity::default(),
                 document_id: doc.id.unwrap(),
                 revision: doc.revision,
                 query_start: Cursor::at(0, 53),
@@ -2189,7 +2745,7 @@ mod tests {
         open_menu_with_lsp_response(&mut model, &["vacuum"]);
 
         // Select the LSP item explicitly.
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         let pos = state
             .filtered
             .iter()
@@ -2201,7 +2757,39 @@ mod tests {
 
         let line = model.document().get_line_cow(1).unwrap();
         assert_eq!(line.trim_end_matches('\n'), "vacuum");
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
+    }
+
+    #[test]
+    fn a_response_from_a_dismissed_session_cannot_enter_a_reopened_menu() {
+        let mut model = model_with_text("value_vector\n\n");
+        place_cursor(&mut model, 1, 0);
+        type_str(&mut model, "va");
+        let old = model.ui.completion.completion_menu.clone().unwrap();
+        update(&mut model, Msg::Completion(CompletionMsg::Dismiss));
+        update(&mut model, Msg::Completion(CompletionMsg::TriggerMenu));
+        let reopened = model.ui.completion.completion_menu.as_ref().unwrap();
+        assert_ne!(reopened.identity.session, old.identity.session);
+
+        assert!(merge_lsp_completion_for_session(
+            &mut model,
+            old.document_id,
+            old.identity.session,
+            lsp_types::Position::new(1, 2),
+            old.revision,
+            vec![lsp_item("valid_fn")],
+            false,
+        )
+        .is_none());
+        assert!(model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .unwrap()
+            .items
+            .iter()
+            .all(|item| item.source != MenuSourceId::Lsp));
     }
 
     #[test]
@@ -2209,8 +2797,9 @@ mod tests {
         for can_resolve in [false, true] {
             let mut model = model_with_text("value_vector\n\n");
             open_menu_with_lsp_response(&mut model, &["vacuum"]);
-            let state = model.ui.completion_menu.as_ref().unwrap();
-            let (document_id, revision) = (state.document_id, state.revision);
+            let state = model.ui.completion.completion_menu.as_ref().unwrap();
+            let (document_id, session, revision) =
+                (state.document_id, state.identity.session, state.revision);
             let raw: lsp_types::CompletionItem = serde_json::from_value(serde_json::json!({
                 "label": "vacuum",
                 "additionalTextEdits": [{
@@ -2232,6 +2821,8 @@ mod tests {
                 &mut model,
                 Msg::Lsp(crate::messages::LspMsg::CompletionResolved {
                     document_id,
+                    session,
+                    position: lsp_types::Position::new(1, 2),
                     revision,
                     items,
                     is_incomplete: false,
@@ -2242,12 +2833,19 @@ mod tests {
             update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
             if can_resolve {
                 assert_eq!(model.document().buffer.to_string(), before);
+                let candidate = model
+                    .ui
+                    .completion
+                    .completion_menu
+                    .as_ref()
+                    .and_then(|menu| menu.pending_resolve)
+                    .unwrap();
                 update(
                     &mut model,
                     Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                         document_id,
                         revision,
-                        selected: 0,
+                        candidate,
                         detail: None,
                         documentation: None,
                         additional_text_edits: vec![],
@@ -2267,7 +2865,7 @@ mod tests {
 
     /// Moves the popup selection onto the item with `label`.
     fn select_item(model: &mut AppModel, label: &str) {
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         let pos = state
             .filtered
             .iter()
@@ -2282,7 +2880,7 @@ mod tests {
         open_menu_with_lsp_response(&mut model, &["valid_fn"]);
         // Mark the item resolve-needing.
         {
-            let state = model.ui.completion_menu.as_mut().unwrap();
+            let state = model.ui.completion.completion_menu.as_mut().unwrap();
             for item in &mut state.items {
                 if let MenuInsert::Lsp(data) = &mut item.insert {
                     data.can_resolve = true;
@@ -2295,7 +2893,7 @@ mod tests {
         // The accept deferred: menu still open, buffer untouched, a resolve
         // command went out.
         assert!(
-            model.ui.completion_menu.is_some(),
+            model.ui.completion.completion_menu.is_some(),
             "menu must stay open while resolving"
         );
         assert_eq!(
@@ -2308,17 +2906,19 @@ mod tests {
             panic!("expected batch, got {cmd:?}")
         };
         assert!(cmds.iter().any(|c| matches!(c,
-            Cmd::LspResolveCompletionItem { raw_item, selected, .. }
-                if raw_item.label == "valid_fn" && *selected == 0)));
+            Cmd::LspResolveCompletionItem { raw_item, candidate, .. }
+                if raw_item.label == "valid_fn"
+                    && Some(*candidate) == model.ui.completion.completion_menu.as_ref().unwrap().pending_resolve)));
 
         // Resolution lands: the deferred accept applies.
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
+        let candidate = state.pending_resolve.unwrap();
         update(
             &mut model,
             Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                 document_id: state.document_id,
                 revision: state.revision,
-                selected: 0,
+                candidate,
                 detail: Some("fn valid_fn()".to_owned()),
                 documentation: None,
                 additional_text_edits: vec![],
@@ -2326,7 +2926,7 @@ mod tests {
         );
 
         assert!(
-            model.ui.completion_menu.is_none(),
+            model.ui.completion.completion_menu.is_none(),
             "resolved accept closes the menu"
         );
         let line = model.document().get_line_cow(1).unwrap();
@@ -2334,11 +2934,81 @@ mod tests {
     }
 
     #[test]
+    fn switching_tabs_cancels_a_deferred_accept_before_its_resolve_lands() {
+        let mut model = model_with_text("value_vector\n\n");
+        open_menu_with_resolvable_item(&mut model, "valid_fn");
+        select_item(&mut model, "valid_fn");
+        update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+        let menu = model.ui.completion.completion_menu.clone().unwrap();
+        let candidate = menu.pending_resolve.unwrap();
+        let original = menu.document_id;
+        let source = model.document().buffer.to_string();
+        let history = model.document().undo_stack.len();
+
+        update(&mut model, Msg::Layout(crate::messages::LayoutMsg::NewTab));
+        assert!(model.ui.completion.completion_menu.is_none());
+        assert_ne!(model.document().id, Some(original));
+        update(
+            &mut model,
+            Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
+                document_id: original,
+                revision: menu.revision,
+                candidate,
+                detail: None,
+                documentation: None,
+                additional_text_edits: vec![],
+            }),
+        );
+
+        let original = model.editor_area.documents.get(&original).unwrap();
+        assert_eq!(original.buffer.to_string(), source);
+        assert_eq!(original.undo_stack.len(), history);
+        assert_eq!(model.document().buffer.len_chars(), 0);
+    }
+
+    #[test]
+    fn switching_to_another_editor_for_the_same_document_cancels_deferred_accept() {
+        let mut model = model_with_text("value_vector\n\n");
+        open_menu_with_resolvable_item(&mut model, "valid_fn");
+        select_item(&mut model, "valid_fn");
+        let original_editor = model.editor_area.focused_editor_id().unwrap();
+        update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+        let menu = model.ui.completion.completion_menu.clone().unwrap();
+        let candidate = menu.pending_resolve.unwrap();
+        let source = model.document().buffer.to_string();
+        let history = model.document().undo_stack.len();
+
+        update(
+            &mut model,
+            Msg::Layout(crate::messages::LayoutMsg::SplitFocused(
+                crate::model::SplitDirection::Horizontal,
+            )),
+        );
+        assert_ne!(model.editor_area.focused_editor_id(), Some(original_editor));
+        assert_eq!(model.document().id, Some(menu.document_id));
+        assert!(model.ui.completion.completion_menu.is_none());
+        update(
+            &mut model,
+            Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
+                document_id: menu.document_id,
+                revision: menu.revision,
+                candidate,
+                detail: None,
+                documentation: None,
+                additional_text_edits: vec![],
+            }),
+        );
+
+        assert_eq!(model.document().buffer.to_string(), source);
+        assert_eq!(model.document().undo_stack.len(), history);
+    }
+
+    #[test]
     fn a_completion_response_landing_mid_resolve_does_not_swallow_the_accept() {
         let mut model = model_with_text("value_vector\n\n");
         open_menu_with_lsp_response(&mut model, &["valid_fn"]);
         {
-            let state = model.ui.completion_menu.as_mut().unwrap();
+            let state = model.ui.completion.completion_menu.as_mut().unwrap();
             for item in &mut state.items {
                 if let MenuInsert::Lsp(data) = &mut item.insert {
                     data.can_resolve = true;
@@ -2347,8 +3017,14 @@ mod tests {
         }
         select_item(&mut model, "valid_fn");
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
-        let state = model.ui.completion_menu.clone().unwrap();
-        assert_eq!(state.pending_resolve, Some(0));
+        let state = model.ui.completion.completion_menu.clone().unwrap();
+        let candidate = state
+            .pending_resolve
+            .expect("accept tracks the candidate identity");
+        assert_ne!(
+            candidate,
+            crate::completion::session::CandidateId::UNASSIGNED
+        );
 
         // A fresh list at the same revision arrives while resolving.
         merge_lsp_completion(
@@ -2359,8 +3035,14 @@ mod tests {
             false,
         );
         assert_eq!(
-            model.ui.completion_menu.as_ref().unwrap().pending_resolve,
-            Some(0),
+            model
+                .ui
+                .completion
+                .completion_menu
+                .as_ref()
+                .unwrap()
+                .pending_resolve,
+            Some(candidate),
             "the in-progress accept must survive the refresh"
         );
 
@@ -2369,7 +3051,7 @@ mod tests {
             Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                 document_id: state.document_id,
                 revision: state.revision,
-                selected: 0,
+                candidate,
                 detail: None,
                 documentation: None,
                 additional_text_edits: vec![],
@@ -2377,6 +3059,53 @@ mod tests {
         );
         let line = model.document().get_line_cow(1).unwrap();
         assert_eq!(line.trim_end_matches('\n'), "valid_fn");
+    }
+
+    #[test]
+    fn equal_labels_keep_distinct_candidate_identity_across_a_refresh() {
+        let mut model = model_with_text("value_vector\n\n");
+        place_cursor(&mut model, 1, 0);
+        type_str(&mut model, "va");
+        let state = model.ui.completion.completion_menu.clone().unwrap();
+        let item = |text: &str| {
+            let mut item = lsp_item("valid_fn");
+            let MenuInsert::Lsp(data) = &mut item.insert else {
+                unreachable!()
+            };
+            data.text = text.to_owned();
+            item
+        };
+        merge_lsp_completion(
+            &mut model,
+            state.document_id,
+            state.revision,
+            vec![item("first()"), item("second()")],
+            false,
+        );
+        update(&mut model, Msg::Completion(CompletionMsg::MenuNext));
+        let selected = model.ui.completion.completion_menu.as_ref().unwrap();
+        let candidate = selected.identity.selected.unwrap();
+        let row = selected.row_for_candidate(candidate).unwrap();
+        let MenuInsert::Lsp(data) = &selected.selected_item(row).unwrap().insert else {
+            unreachable!()
+        };
+        assert_eq!(data.text, "second()");
+
+        merge_lsp_completion(
+            &mut model,
+            state.document_id,
+            state.revision,
+            vec![item("second()"), item("first()")],
+            false,
+        );
+
+        let refreshed = model.ui.completion.completion_menu.as_ref().unwrap();
+        assert_eq!(refreshed.identity.selected, Some(candidate));
+        let row = refreshed.row_for_candidate(candidate).unwrap();
+        let MenuInsert::Lsp(data) = &refreshed.selected_item(row).unwrap().insert else {
+            unreachable!()
+        };
+        assert_eq!(data.text, "second()");
     }
 
     #[test]
@@ -2401,7 +3130,8 @@ mod tests {
             data.can_resolve = true;
             data.additional_text_edits = vec![import.clone()];
         }
-        model.ui.completion_menu = Some(CompletionMenuState {
+        model.ui.completion.completion_menu = Some(CompletionMenuState {
+            identity: crate::completion::menu::MenuIdentity::default(),
             document_id,
             revision,
             query_start: Cursor::at(2, 4),
@@ -2421,7 +3151,7 @@ mod tests {
             Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                 document_id,
                 revision,
-                selected: 0,
+                candidate: crate::completion::session::CandidateId::UNASSIGNED,
                 detail: None,
                 documentation: None,
                 additional_text_edits: vec![import],
@@ -2434,10 +3164,7 @@ mod tests {
     }
 
     #[test]
-    fn a_multi_cursor_lsp_accept_inserts_at_every_cursor() {
-        // Protocol edit ranges only mean anything for the active cursor;
-        // multi-cursor takes the plain-text path so every cursor gets the
-        // completion and none lands at a stale offset.
+    fn a_multi_cursor_lsp_accept_replicates_the_query_and_applies_a_shared_import_once() {
         let mut model = model_with_text("value_vector\n\n\n");
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "va");
@@ -2449,7 +3176,8 @@ mod tests {
         let line2 = model.document().cursor_to_offset(2, 0);
         model.document_mut().buffer.insert(line2, "va");
         model.editor_mut().cursors[1] = Cursor::at(2, 2);
-        let state = model.ui.completion_menu.clone().unwrap();
+        model.editor_mut().selections[1] = Selection::new(Cursor::at(2, 2).to_position());
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         let mut item = lsp_item("vacuum");
         if let MenuInsert::Lsp(data) = &mut item.insert {
             data.text_edit = Some((
@@ -2459,8 +3187,14 @@ mod tests {
                 ),
                 "vacuum".to_owned(),
             ));
+            let point = lsp_types::Position::new(0, 0);
+            data.additional_text_edits = vec![(
+                lsp_types::Range::new(point, point),
+                "use crate::vacuum;\n".to_owned(),
+            )];
         }
-        model.ui.completion_menu = Some(CompletionMenuState {
+        model.ui.completion.completion_menu = Some(CompletionMenuState {
+            identity: crate::completion::menu::MenuIdentity::default(),
             revision: model.document().revision,
             items: vec![item],
             filtered: vec![(0, 0, Vec::new())],
@@ -2472,14 +3206,69 @@ mod tests {
 
         assert_eq!(
             model.document().buffer.to_string(),
-            "value_vector\nvacuum\nvacuum\n"
+            "use crate::vacuum;\nvalue_vector\nvacuum\nvacuum\n"
         );
         let at = |i: usize| {
             let c = model.editor().cursors[i];
             (c.line, c.column)
         };
-        assert_eq!(at(0), (1, 6));
-        assert_eq!(at(1), (2, 6));
+        assert_eq!(at(0), (2, 6));
+        assert_eq!(at(1), (3, 6));
+        update(&mut model, Msg::Document(DocumentMsg::Undo));
+        assert_eq!(
+            model.document().buffer.to_string(),
+            "value_vector\nva\nva\n"
+        );
+    }
+
+    #[test]
+    fn a_multi_cursor_lsp_accept_rejects_incompatible_queries_without_editing() {
+        let mut model = model_with_text("value_vector\n\n\n");
+        place_cursor(&mut model, 1, 0);
+        type_str(&mut model, "va");
+        model.editor_mut().cursors.push(Cursor::at(2, 0));
+        model
+            .editor_mut()
+            .selections
+            .push(Selection::new(Cursor::at(2, 0).to_position()));
+        let line2 = model.document().cursor_to_offset(2, 0);
+        model.document_mut().buffer.insert(line2, "vb");
+        model.editor_mut().cursors[1] = Cursor::at(2, 2);
+        model.editor_mut().selections[1] = Selection::new(Cursor::at(2, 2).to_position());
+        let state = model.ui.completion.completion_menu.clone().unwrap();
+        let mut item = lsp_item("vacuum");
+        if let MenuInsert::Lsp(data) = &mut item.insert {
+            data.text_edit = Some((
+                lsp_types::Range::new(
+                    lsp_types::Position::new(1, 0),
+                    lsp_types::Position::new(1, 2),
+                ),
+                "vacuum".to_owned(),
+            ));
+        }
+        model.ui.completion.completion_menu = Some(CompletionMenuState {
+            identity: crate::completion::menu::MenuIdentity::default(),
+            revision: model.document().revision,
+            items: vec![item],
+            filtered: vec![(0, 0, Vec::new())],
+            ..state
+        });
+        model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Completion));
+        let before = model.document().buffer.to_string();
+        let cursors = model.editor().cursors.clone();
+
+        update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+
+        assert_eq!(model.document().buffer.to_string(), before);
+        assert_eq!(model.editor().cursors, cursors);
+        assert_eq!(
+            model
+                .ui
+                .transient_message
+                .as_ref()
+                .map(|message| message.text.as_str()),
+            Some("This completion needs a single cursor.")
+        );
     }
 
     #[test]
@@ -2487,7 +3276,7 @@ mod tests {
         let mut model = model_with_text("value_vector\n\n");
         open_menu_with_lsp_response(&mut model, &["valid_fn"]);
         {
-            let state = model.ui.completion_menu.as_mut().unwrap();
+            let state = model.ui.completion.completion_menu.as_mut().unwrap();
             for item in &mut state.items {
                 if let MenuInsert::Lsp(data) = &mut item.insert {
                     data.can_resolve = true;
@@ -2496,16 +3285,19 @@ mod tests {
         }
         select_item(&mut model, "valid_fn");
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
 
         // Wrong selected index: the resolution must not fire the accept.
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         update(
             &mut model,
             Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                 document_id: state.document_id,
                 revision: state.revision,
-                selected: 7,
+                candidate: crate::completion::session::CandidateId {
+                    session: crate::completion::session::SessionId(u64::MAX),
+                    serial: 7,
+                },
                 detail: None,
                 documentation: None,
                 additional_text_edits: vec![],
@@ -2541,7 +3333,8 @@ mod tests {
                 "self.bar".to_owned(),
             ));
         }
-        model.ui.completion_menu = Some(CompletionMenuState {
+        model.ui.completion.completion_menu = Some(CompletionMenuState {
+            identity: crate::completion::menu::MenuIdentity::default(),
             document_id,
             revision,
             query_start: Cursor::at(1, 5),
@@ -2563,11 +3356,121 @@ mod tests {
     }
 
     #[test]
+    fn carried_lsp_text_edits_follow_prefix_growth_and_shrinkage() {
+        for (edit, expected_query) in [
+            (DocumentMsg::InsertChar('c'), "vac"),
+            (DocumentMsg::DeleteBackward, "v"),
+        ] {
+            let mut model = model_with_text("value_vector\n\n");
+            place_cursor(&mut model, 1, 0);
+            type_str(&mut model, "va");
+            let state = model.ui.completion.completion_menu.clone().unwrap();
+            let mut item = lsp_item("vacuum");
+            if let MenuInsert::Lsp(data) = &mut item.insert {
+                data.text_edit = Some((
+                    lsp_types::Range::new(
+                        lsp_types::Position::new(1, 0),
+                        lsp_types::Position::new(1, 2),
+                    ),
+                    "vacuum".to_owned(),
+                ));
+            }
+            merge_lsp_completion(
+                &mut model,
+                state.document_id,
+                state.revision,
+                vec![item],
+                false,
+            );
+
+            update(&mut model, Msg::Document(edit));
+            assert_eq!(
+                model.ui.completion.completion_menu.as_ref().unwrap().query,
+                expected_query
+            );
+            select_item(&mut model, "vacuum");
+            update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+            assert_eq!(model.document().get_line_cow(1).unwrap().trim(), "vacuum");
+        }
+    }
+
+    #[test]
+    fn lsp_primary_ranges_must_be_single_line_and_contain_the_request_position() {
+        let invalid_ranges = [
+            lsp_types::Range::new(
+                lsp_types::Position::new(0, 0),
+                lsp_types::Position::new(1, 2),
+            ),
+            lsp_types::Range::new(
+                lsp_types::Position::new(1, 0),
+                lsp_types::Position::new(1, 1),
+            ),
+        ];
+        for range in invalid_ranges {
+            let mut model = model_with_text("value_vector\n\n");
+            open_menu_with_lsp_response(&mut model, &["vacuum"]);
+            let state = model.ui.completion.completion_menu.as_mut().unwrap();
+            let item = state
+                .items
+                .iter_mut()
+                .find(|item| item.label == "vacuum")
+                .unwrap();
+            let MenuInsert::Lsp(data) = &mut item.insert else {
+                unreachable!()
+            };
+            data.text_edit = Some((range, "vacuum".to_owned()));
+            select_item(&mut model, "vacuum");
+            let source = model.document().buffer.to_string();
+            let cursors = model.editor().cursors.clone();
+            let selections = model.editor().selections.clone();
+            let history = model.document().undo_stack.len();
+
+            update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+
+            assert_eq!(model.document().buffer.to_string(), source);
+            assert_eq!(model.editor().cursors, cursors);
+            assert_eq!(model.editor().selections, selections);
+            assert_eq!(model.document().undo_stack.len(), history);
+        }
+    }
+
+    #[test]
+    fn multi_cursor_lsp_accept_rejects_a_nonempty_secondary_selection() {
+        let mut model = model_with_text("value_vector\n\nva\n");
+        open_menu_with_lsp_response(&mut model, &["vacuum"]);
+        model.editor_mut().cursors.push(Cursor::at(2, 2));
+        let mut secondary = Selection::new(Cursor::at(2, 2).to_position());
+        secondary.anchor = Cursor::at(2, 1).to_position();
+        model.editor_mut().selections.push(secondary);
+        select_item(&mut model, "vacuum");
+        let source = model.document().buffer.to_string();
+        let history = model.document().undo_stack.len();
+
+        update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
+
+        assert_eq!(model.document().buffer.to_string(), source);
+        assert_eq!(model.document().undo_stack.len(), history);
+        assert_eq!(
+            model
+                .ui
+                .transient_message
+                .as_ref()
+                .map(|message| message.text.as_str()),
+            Some("This completion needs a single cursor.")
+        );
+    }
+
+    #[test]
     fn accepting_a_snippet_item_places_the_caret_at_its_caret_offset() {
         let mut model = model_with_text("value_vector\n\n");
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "va");
-        let state = model.ui.completion_menu.clone().expect("menu open");
+        let state = model
+            .ui
+            .completion
+            .completion_menu
+            .clone()
+            .expect("menu open");
         let mut item = lsp_item("vacuum");
         if let MenuInsert::Lsp(data) = &mut item.insert {
             // `println!("$0")` as conversion leaves it.
@@ -2614,7 +3517,8 @@ mod tests {
                 "use crate::imported_fn;\n".to_owned(),
             )];
         }
-        model.ui.completion_menu = Some(CompletionMenuState {
+        model.ui.completion.completion_menu = Some(CompletionMenuState {
+            identity: crate::completion::menu::MenuIdentity::default(),
             document_id,
             revision,
             query_start: Cursor::at(2, 4),
@@ -2670,7 +3574,7 @@ mod tests {
                 (lsp_types::Range::new(point, point), text.to_owned())
             })
             .collect();
-        apply_lsp_accept(&mut model, &data, None);
+        apply_lsp_accept(&mut model, &data, None).unwrap();
         assert_eq!(model.document().buffer.to_string(), "α\nvalue(🙂)! tail\n");
         assert_eq!(*model.editor().active_cursor(), Cursor::at(1, 6));
         assert_eq!(
@@ -2700,7 +3604,7 @@ mod tests {
             .into_iter()
             .map(|text| (lsp_types::Range::new(point, point), text.to_owned()))
             .collect();
-        apply_lsp_accept(&mut model, &data, None);
+        apply_lsp_accept(&mut model, &data, None).unwrap();
         assert_eq!(model.document().buffer.to_string(), "αβvaluetail\n");
         assert_eq!(*model.editor().active_cursor(), Cursor::at(0, 7));
         update(&mut model, Msg::Document(DocumentMsg::Undo));
@@ -2708,12 +3612,12 @@ mod tests {
     }
 
     #[test]
-    fn an_additional_edit_inside_the_primary_range_is_dropped_not_swallowed() {
-        // Spec violation (edits must not overlap the main edit), but a
-        // misbehaving server must cost an import, not swallowed characters:
-        // a pure insert strictly inside [query_start..cursor) is dropped.
+    fn an_additional_edit_inside_the_primary_range_rejects_the_completion_atomically() {
+        // Completion edits are atomic: a spec-violating server cannot apply
+        // only the apparently safe subset of an overlapping edit set.
         let mut model = model_with_text("fn main() {}\n\n    imported_fn()\n");
         place_cursor(&mut model, 2, 15);
+        let before = model.document().buffer.to_string();
 
         let doc = model.document();
         let document_id = doc.id.unwrap();
@@ -2739,7 +3643,8 @@ mod tests {
                 ),
             ];
         }
-        model.ui.completion_menu = Some(CompletionMenuState {
+        model.ui.completion.completion_menu = Some(CompletionMenuState {
+            identity: crate::completion::menu::MenuIdentity::default(),
             document_id,
             revision,
             query_start: Cursor::at(2, 4),
@@ -2755,10 +3660,18 @@ mod tests {
 
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
 
-        let text = model.document().buffer.to_string();
         assert_eq!(
-            text, "use crate::imported_fn;\nfn main() {}\n\n    imported_fn()\n",
-            "the inside insert must be dropped, the outside one applied"
+            model.document().buffer.to_string(),
+            before,
+            "no part of an invalid completion may be applied"
+        );
+        assert_eq!(
+            model
+                .ui
+                .transient_message
+                .as_ref()
+                .map(|message| message.text.as_str()),
+            Some("This completion contains invalid or overlapping edits.")
         );
     }
 
@@ -2766,9 +3679,17 @@ mod tests {
     fn incomplete_responses_keep_flagging_re_requests() {
         let mut model = model_with_text("value_vector\n\n");
         open_menu_with_lsp_response(&mut model, &["vax_data"]);
-        assert!(!model.ui.completion_menu.as_ref().unwrap().is_incomplete);
+        assert!(
+            !model
+                .ui
+                .completion
+                .completion_menu
+                .as_ref()
+                .unwrap()
+                .is_incomplete
+        );
 
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         merge_lsp_completion(
             &mut model,
             state.document_id,
@@ -2777,11 +3698,27 @@ mod tests {
             true,
         )
         .unwrap();
-        assert!(model.ui.completion_menu.as_ref().unwrap().is_incomplete);
+        assert!(
+            model
+                .ui
+                .completion
+                .completion_menu
+                .as_ref()
+                .unwrap()
+                .is_incomplete
+        );
 
         // Carried through a keystroke refresh.
         type_str(&mut model, "x");
-        assert!(model.ui.completion_menu.as_ref().unwrap().is_incomplete);
+        assert!(
+            model
+                .ui
+                .completion
+                .completion_menu
+                .as_ref()
+                .unwrap()
+                .is_incomplete
+        );
     }
 
     #[test]
@@ -2798,12 +3735,17 @@ mod tests {
             .insert(LspServerId::from("rust-analyzer"), vec![".".to_owned()]);
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "st");
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
 
         // Typing `.` (a boundary char that would normally dismiss) keeps
         // the menu open and restarts the query at the cursor.
         type_str(&mut model, ".");
-        let state = model.ui.completion_menu.as_ref().expect("menu stays open");
+        let state = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .expect("menu stays open");
         assert_eq!(state.query, "", "query restarts after the trigger char");
         // The `.` itself is already inserted when the sync runs, so the
         // new query starts right after it.
@@ -2824,7 +3766,7 @@ mod tests {
             .insert(LspServerId::from("rust-analyzer"), vec![".".to_owned()]);
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "st");
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         merge_lsp_completion(
             &mut model,
             state.document_id,
@@ -2837,7 +3779,7 @@ mod tests {
         // every string starts with "", so the prefix carry alone would
         // keep them.
         type_str(&mut model, ".");
-        let items = &model.ui.completion_menu.as_ref().unwrap().items;
+        let items = &model.ui.completion.completion_menu.as_ref().unwrap().items;
         assert!(
             !items.iter().any(|i| i.source == MenuSourceId::Lsp),
             "previous word's LSP items must not carry across a trigger char"
@@ -2850,9 +3792,9 @@ mod tests {
         let mut model = model_with_text("value_one\n\n");
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "val");
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
         type_str(&mut model, ".");
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
     }
 
     #[test]
@@ -2861,7 +3803,7 @@ mod tests {
         model.document_mut().id = None;
         place_cursor(&mut model, 1, 0);
         type_str(&mut model, "val");
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
     }
 
     #[test]
@@ -2878,7 +3820,7 @@ mod tests {
         let mut model = model_with_text("value_vector\n\n");
         model.config.completion.menu.words = WordsMode::Enabled;
         open_menu_with_lsp_response(&mut model, &["vec_new"]);
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         let wrong_doc = DocumentId(state.document_id.0 + 99);
         merge_lsp_completion(
             &mut model,
@@ -2889,6 +3831,7 @@ mod tests {
         );
         assert!(!model
             .ui
+            .completion
             .completion_menu
             .as_ref()
             .unwrap()
@@ -2901,7 +3844,7 @@ mod tests {
 
     fn open_menu_with_resolvable_item(model: &mut AppModel, label: &str) {
         open_menu_with_lsp_response(model, &[label]);
-        let state = model.ui.completion_menu.as_mut().unwrap();
+        let state = model.ui.completion.completion_menu.as_mut().unwrap();
         for item in &mut state.items {
             if let MenuInsert::Lsp(data) = &mut item.insert {
                 data.can_resolve = true;
@@ -2910,7 +3853,7 @@ mod tests {
     }
 
     fn selected_lsp_data(model: &AppModel) -> LspInsert {
-        let state = model.ui.completion_menu.as_ref().unwrap();
+        let state = model.ui.completion.completion_menu.as_ref().unwrap();
         let selected = model.ui.cursor_overlay.unwrap().selected;
         match &state.selected_item(selected).unwrap().insert {
             MenuInsert::Lsp(data) => (**data).clone(),
@@ -2931,23 +3874,27 @@ mod tests {
         let mut model = model_with_text("value_vector\n\n");
         open_menu_with_resolvable_item(&mut model, "valid_fn");
         select_item(&mut model, "valid_fn");
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         assert_eq!(state.pending_resolve, None);
         let selected = model.ui.cursor_overlay.unwrap().selected;
+        let candidate = state.candidate_for_row(selected).unwrap();
 
         update(
             &mut model,
             Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                 document_id: state.document_id,
                 revision: state.revision,
-                selected,
+                candidate,
                 detail: Some("fn valid_fn()".to_owned()),
                 documentation: Some("Does the valid thing.".into()),
                 additional_text_edits: vec![],
             }),
         );
 
-        assert!(model.ui.completion_menu.is_some(), "menu stays open");
+        assert!(
+            model.ui.completion.completion_menu.is_some(),
+            "menu stays open"
+        );
         assert_eq!(
             model.document().buffer.to_string(),
             "value_vector\nva\n",
@@ -2966,14 +3913,15 @@ mod tests {
         let mut model = model_with_text("value_vector\n\n");
         open_menu_with_resolvable_item(&mut model, "valid_fn");
         select_item(&mut model, "valid_fn");
-        let state = model.ui.completion_menu.clone().unwrap();
+        let state = model.ui.completion.completion_menu.clone().unwrap();
         let selected = model.ui.cursor_overlay.unwrap().selected;
+        let candidate = state.candidate_for_row(selected).unwrap();
         update(
             &mut model,
             Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                 document_id: state.document_id,
                 revision: state.revision,
-                selected,
+                candidate,
                 detail: None,
                 documentation: Some("docs".into()),
                 additional_text_edits: vec![],
@@ -2985,7 +3933,10 @@ mod tests {
             !cmd_contains(&cmd, |c| matches!(c, Cmd::LspResolveCompletionItem { .. })),
             "an already-resolved item must not resolve again: {cmd:?}"
         );
-        assert!(model.ui.completion_menu.is_none(), "accept applied");
+        assert!(
+            model.ui.completion.completion_menu.is_none(),
+            "accept applied"
+        );
         let line = model.document().get_line_cow(1).unwrap();
         assert_eq!(line.trim_end_matches('\n'), "valid_fn");
     }
@@ -2995,7 +3946,7 @@ mod tests {
         let mut model = model_with_text("value_vector\n\n");
         open_menu_with_lsp_response(&mut model, &["valid_a", "valid_b"]);
         {
-            let state = model.ui.completion_menu.as_mut().unwrap();
+            let state = model.ui.completion.completion_menu.as_mut().unwrap();
             for item in &mut state.items {
                 if let MenuInsert::Lsp(data) = &mut item.insert {
                     data.can_resolve = true;
@@ -3014,8 +3965,9 @@ mod tests {
         assert!(
             cmd_contains(&onto_b, |c| matches!(
                 c,
-                Cmd::LspScheduleResolve { selected, .. }
-                    if *selected == model.ui.cursor_overlay.unwrap().selected
+                Cmd::LspScheduleResolve { candidate, .. }
+                    if Some(*candidate) == model.ui.completion.completion_menu.as_ref().unwrap()
+                        .candidate_for_row(model.ui.cursor_overlay.unwrap().selected)
             )),
             "unresolved item must schedule a docs resolve: {onto_b:?}"
         );
@@ -3055,7 +4007,7 @@ mod tests {
                 cmd,
                 Cmd::LspScheduleCompletion { .. }
             )));
-            let state = model.ui.completion_menu.as_ref().unwrap();
+            let state = model.ui.completion.completion_menu.as_ref().unwrap();
             assert_eq!(state.context, CompletionContext::Member);
             assert!(state.items.is_empty());
             assert!(model.ui.cursor_overlay.is_none());
@@ -3069,6 +4021,7 @@ mod tests {
             );
             assert!(model
                 .ui
+                .completion
                 .completion_menu
                 .as_ref()
                 .unwrap()
@@ -3076,7 +4029,7 @@ mod tests {
                 .iter()
                 .all(|item| item.source == MenuSourceId::Lsp));
             type_str(&mut model, "com");
-            let state = model.ui.completion_menu.as_ref().unwrap();
+            let state = model.ui.completion.completion_menu.as_ref().unwrap();
             assert_eq!(state.context, CompletionContext::Member);
             assert_eq!(state.filtered.len(), 1);
             assert_eq!(state.selected_item(0).unwrap().label, "compile");
@@ -3093,7 +4046,7 @@ mod tests {
             cmd,
             Cmd::LspScheduleCompletion { .. }
         )));
-        let state = model.ui.completion_menu.as_ref().unwrap();
+        let state = model.ui.completion.completion_menu.as_ref().unwrap();
         let (id, revision) = (state.document_id, state.revision);
         merge_lsp_completion(&mut model, id, revision, vec![], false);
         assert!(model.ui.cursor_overlay.is_none());
@@ -3102,7 +4055,7 @@ mod tests {
         assert!(
             merge_lsp_completion(&mut model, id, revision, vec![lsp_item("zzz")], false).is_none()
         );
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
     }
 
     #[test]
@@ -3125,12 +4078,12 @@ mod tests {
             !cmd_contains(&cmd, |cmd| matches!(cmd, Cmd::LspScheduleCompletion { .. })),
             "a parse must not restart the LSP debounce"
         );
-        let state = model.ui.completion_menu.as_ref().unwrap();
+        let state = model.ui.completion.completion_menu.as_ref().unwrap();
         assert_eq!(state.query, "va");
         assert_eq!(state.selected_item(0).unwrap().label, "value_real");
         dismiss(&mut model);
         assert!(refresh_after_syntax(&mut model, id).is_none());
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
     }
 
     #[test]
@@ -3224,11 +4177,12 @@ mod tests {
             vec![".".into()],
         );
         type_str(&mut model, "builder.");
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
         update(&mut model, Msg::Completion(CompletionMsg::TriggerMenu));
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
         assert!(model
             .ui
+            .completion
             .completion_menu
             .as_ref()
             .unwrap()
@@ -3240,7 +4194,7 @@ mod tests {
             type_char_signature_request(&mut model, '('),
             Some((Some("(".to_owned()), false))
         );
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
     }
 
     #[test]

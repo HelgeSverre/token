@@ -423,7 +423,7 @@ pub fn sync_status_bar(model: &mut AppModel) {
         .ui
         .status_bar
         .update_segment(SegmentId::TextPolicy, text_policy);
-    let inline_content = if model.ui.inline_in_flight
+    let inline_content = if model.ui.completion.inline_in_flight
         && model
             .editor_area
             .focused_editor()

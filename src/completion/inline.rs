@@ -33,12 +33,13 @@ pub enum AcceptGranularity {
 /// its revision, and the cursor are all unchanged.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestSnapshot {
+    pub session_id: super::session::SessionId,
     pub document_id: DocumentId,
     pub revision: u64,
     pub line: usize,
     pub column: usize,
     /// Monotonic; the worker keeps only the newest per document.
-    pub request_id: u64,
+    pub request_id: super::session::RequestId,
 }
 
 /// One suggestion request, complete: the worker needs nothing else.
@@ -273,7 +274,8 @@ fn is_repetitive(text: &str) -> bool {
 pub fn build_request(
     document: &Document,
     cursor: (usize, usize),
-    request_id: u64,
+    session_id: super::session::SessionId,
+    request_id: super::session::RequestId,
     language: Option<String>,
     explicit: bool,
 ) -> Option<InlineRequest> {
@@ -295,6 +297,7 @@ pub fn build_request(
     }
     Some(InlineRequest {
         snapshot: RequestSnapshot {
+            session_id,
             document_id,
             revision: document.revision,
             line: cursor.0,
@@ -327,11 +330,12 @@ mod tests {
     fn state(text: &str, consumed: usize) -> InlineSuggestionState {
         InlineSuggestionState {
             snapshot: RequestSnapshot {
+                session_id: crate::completion::session::SessionId(1),
                 document_id: DocumentId(1),
                 revision: 10,
                 line: 2,
                 column: 4,
-                request_id: 1,
+                request_id: crate::completion::session::RequestId(1),
             },
             choices: vec![text.to_owned()],
             selected: 0,
@@ -522,12 +526,28 @@ mod tests {
         let mut doc = Document::with_text("fn main() {\n    let x = ");
         doc.id = Some(DocumentId(3));
         doc.revision = 5;
-        let req = build_request(&doc, (1, 12), 9, Some("rust".into()), false).unwrap();
+        let req = build_request(
+            &doc,
+            (1, 12),
+            crate::completion::session::SessionId(1),
+            crate::completion::session::RequestId(9),
+            Some("rust".into()),
+            false,
+        )
+        .unwrap();
         assert_eq!(req.prefix, "fn main() {\n    let x = ");
         assert_eq!(req.suffix, "\n");
         assert_eq!(req.snapshot.revision, 5);
         assert_eq!((req.snapshot.line, req.snapshot.column), (1, 12));
-        let mid = build_request(&doc, (0, 3), 9, None, true).unwrap();
+        let mid = build_request(
+            &doc,
+            (0, 3),
+            crate::completion::session::SessionId(1),
+            crate::completion::session::RequestId(9),
+            None,
+            true,
+        )
+        .unwrap();
         assert_eq!(mid.prefix, "fn ");
         assert!(mid.suffix.starts_with("main() {"));
         assert!(mid.explicit);

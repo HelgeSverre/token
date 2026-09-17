@@ -135,6 +135,7 @@ fn completion_item_to_menu_item(
     let plain_text = text.unwrap_or_else(|| label.clone());
 
     Some(MenuItem {
+        id: crate::completion::session::CandidateId::UNASSIGNED,
         label: label.clone(),
         filter_text,
         insert: MenuInsert::Lsp(Box::new(LspInsert {
@@ -144,6 +145,8 @@ fn completion_item_to_menu_item(
             raw: std::sync::Arc::clone(&raw),
             can_resolve,
             resolved: false,
+            request_position: None,
+            request_query: None,
             text_edit,
             additional_text_edits: additional_text_edits
                 .as_deref()

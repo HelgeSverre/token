@@ -412,26 +412,16 @@ fn handle_key_inner(
     }
 }
 
-/// Handle a keystroke while a cursor-anchored popup is open. Returns
-/// `Some(cmd)` for the keys the popup claims (Up/Down/Enter/Esc/Tab plus
-/// PageUp/PageDown — overlay-surface.md Phase 5, extended by
-/// lsp-integration.md Phase 5's page navigation); `None` means "not one of
-/// ours", so the caller falls through to the normal editor key path
-/// (typing reaches the document while a completion/hover popup is open).
-///
-/// Called from two places: `runtime::app`'s window-event handler runs it
-/// *before* the keymap so the five claimed keys never reach `is_simple()`
-/// keymap bindings (Up/Down/Enter would otherwise dispatch as
-/// `MoveCursorUp`/`MoveCursorDown`/`InsertNewline` before this module ever
-/// saw them); `handle_key` below runs it again as the non-keymap fallback
-/// path (and is what the unit tests below exercise directly).
+/// Handle keys that remain imperative for non-completion cursor overlays.
+/// Completion uses normal named keymap actions, so it deliberately returns
+/// `None` here and participates in ordinary binding precedence/rebinding.
 pub(crate) fn handle_cursor_overlay_key(
     model: &mut AppModel,
     key: &Key,
     modifiers: KeyModifiers,
 ) -> Option<Option<Cmd>> {
     if model.ui.cursor_overlay.is_none()
-        && model.ui.completion_menu.is_some()
+        && model.ui.completion.completion_menu.is_some()
         && matches!(key, Key::Named(NamedKey::Escape))
         && !(modifiers.ctrl || modifiers.shift || modifiers.alt || modifiers.logo)
     {
@@ -555,33 +545,7 @@ pub(crate) fn handle_cursor_overlay_key(
         return None;
     }
     if kind == token::model::CursorOverlayKind::Completion {
-        // The real menu-completion popup (autocomplete.md Phase 1) routes
-        // through `update()` like every other message, instead of poking
-        // `cursor_overlay.selected` directly the way the demo shell below
-        // does — `MenuNext`/`MenuPrev`/`AcceptMenuItem`/`Dismiss` own the
-        // actual list-navigation/accept/dismiss logic.
-        return match key {
-            Key::Named(NamedKey::ArrowUp) => {
-                Some(update(model, Msg::Completion(CompletionMsg::MenuPrev)))
-            }
-            Key::Named(NamedKey::ArrowDown) => {
-                Some(update(model, Msg::Completion(CompletionMsg::MenuNext)))
-            }
-            Key::Named(NamedKey::PageUp) => {
-                Some(update(model, Msg::Completion(CompletionMsg::MenuPageUp)))
-            }
-            Key::Named(NamedKey::PageDown) => {
-                Some(update(model, Msg::Completion(CompletionMsg::MenuPageDown)))
-            }
-            Key::Named(NamedKey::Enter | NamedKey::Tab) => Some(update(
-                model,
-                Msg::Completion(CompletionMsg::AcceptMenuItem),
-            )),
-            Key::Named(NamedKey::Escape) => {
-                Some(update(model, Msg::Completion(CompletionMsg::Dismiss)))
-            }
-            _ => None,
-        };
+        return None;
     }
     let state = model.ui.cursor_overlay.as_mut()?;
     match key {
@@ -1604,6 +1568,23 @@ mod tests {
     use token::terminal::{PtyHandle, TerminalSession};
     use winit::keyboard::{KeyCode, PhysicalKey};
 
+    fn dispatch_binding(model: &mut AppModel, stroke: token::keymap::Keystroke) -> Option<Cmd> {
+        let context = token::keymap::KeyContext::from_model(model);
+        let action = model
+            .ui
+            .keymap
+            .handle_keystroke_with_context([stroke], Some(&context));
+        let token::keymap::KeyAction::Execute(command) = action else {
+            return None;
+        };
+        let commands: Vec<_> = command
+            .to_msgs()
+            .into_iter()
+            .filter_map(|msg| update(model, msg))
+            .collect();
+        (!commands.is_empty()).then_some(Cmd::Batch(commands))
+    }
+
     #[cfg(any(test, debug_assertions))]
     fn focused_terminal_model() -> (AppModel, mpsc::Receiver<Vec<u8>>) {
         let mut model = AppModel::new(800, 600, 1.0);
@@ -1633,7 +1614,7 @@ mod tests {
             for ch in "va".chars() {
                 update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)));
             }
-            let menu = model.ui.completion_menu.clone().unwrap();
+            let menu = model.ui.completion.completion_menu.clone().unwrap();
             let item = lsp_types::CompletionItem {
                 label: "vacuum".into(),
                 commit_characters: Some(vec!["(".into(), "🦀".into()]),
@@ -1649,6 +1630,8 @@ mod tests {
                 &mut model,
                 Msg::Lsp(LspMsg::CompletionResolved {
                     document_id: menu.document_id,
+                    session: menu.identity.session,
+                    position: lsp_types::Position::new(0, 2),
                     revision: menu.revision,
                     items,
                     is_incomplete: false,
@@ -2182,8 +2165,8 @@ mod tests {
     /// The real menu-completion popup's key routing (as opposed to the
     /// `DebugCompletion` demo shell above), driven the same way production
     /// does: `sync_after_document_edit` opens it as the user types, then
-    /// `handle_key` (the pre-keymap path) routes Up/Down/Enter through
-    /// `update()` into `MenuPrev`/`MenuNext`/`AcceptMenuItem`.
+    /// the keymap dispatches Up/Down/Enter through `update()` into the named
+    /// completion actions.
     #[test]
     fn real_completion_popup_routes_navigation_and_accept() {
         use token::messages::DocumentMsg;
@@ -2196,19 +2179,19 @@ mod tests {
         for ch in "val".chars() {
             update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)));
         }
-        assert!(model.ui.completion_menu.is_some(), "menu should open");
+        assert!(
+            model.ui.completion.completion_menu.is_some(),
+            "menu should open"
+        );
         assert_eq!(
             model.ui.cursor_overlay.map(|o| o.kind),
             Some(token::model::CursorOverlayKind::Completion)
         );
         assert_eq!(model.ui.cursor_overlay.unwrap().selected, 0);
 
-        handle_key(
+        dispatch_binding(
             &mut model,
-            Key::Named(NamedKey::ArrowDown),
-            PhysicalKey::Code(KeyCode::ArrowDown),
-            KeyModifiers::default(),
-            false,
+            token::keymap::Keystroke::key(token::keymap::KeyCode::Down),
         );
         assert_eq!(
             model.ui.cursor_overlay.unwrap().selected,
@@ -2216,20 +2199,41 @@ mod tests {
             "ArrowDown should move the real menu's selection"
         );
 
-        handle_key(
+        dispatch_binding(
             &mut model,
-            Key::Named(NamedKey::Enter),
-            PhysicalKey::Code(KeyCode::Enter),
-            KeyModifiers::default(),
-            false,
+            token::keymap::Keystroke::key(token::keymap::KeyCode::Enter),
         );
         assert!(
-            model.ui.completion_menu.is_none(),
+            model.ui.completion.completion_menu.is_none(),
             "Enter should accept and close the real menu"
         );
         let line = model.document().get_line_cow(2).unwrap();
         // The nearer value_two starts selected; Down moves to value_one.
         assert_eq!(line, "value_one");
+    }
+
+    #[test]
+    fn completion_menu_tab_override_is_honored_by_dispatch() {
+        let mut model = AppModel::new(800, 600, 1.0);
+        model.document_mut().buffer = ropey::Rope::from("value_one\n\n");
+        model.editor_mut().cursors[0] = token::model::Cursor::at(1, 0);
+        model.editor_mut().clear_selection();
+        for ch in "val".chars() {
+            update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)));
+        }
+        let tab = token::keymap::Keystroke::key(token::keymap::KeyCode::Tab);
+        let override_binding =
+            token::keymap::Keybinding::new(tab, token::keymap::Command::DismissMenuCompletion)
+                .when_single(token::keymap::Condition::CompletionMenuVisible);
+        model.ui.keymap = token::keymap::Keymap::with_bindings(token::keymap::merge_bindings(
+            token::keymap::default_bindings(),
+            vec![override_binding],
+        ));
+
+        dispatch_binding(&mut model, tab);
+
+        assert!(model.ui.completion.completion_menu.is_none());
+        assert_eq!(model.document().buffer.to_string(), "value_one\nval\n");
     }
 
     #[test]
@@ -2241,7 +2245,7 @@ mod tests {
         model.editor_mut().cursors[0] = token::model::Cursor::at(0, 8);
         model.editor_mut().clear_selection();
         update(&mut model, Msg::Completion(CompletionMsg::TriggerMenu));
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
         assert!(model.ui.cursor_overlay.is_none());
         for key in [
             NamedKey::Tab,
@@ -2256,13 +2260,11 @@ mod tests {
             )
             .is_none());
         }
-        assert!(handle_cursor_overlay_key(
+        dispatch_binding(
             &mut model,
-            &Key::Named(NamedKey::Escape),
-            KeyModifiers::default()
-        )
-        .is_some());
-        assert!(model.ui.completion_menu.is_none());
+            token::keymap::Keystroke::key(token::keymap::KeyCode::Escape),
+        );
+        assert!(model.ui.completion.completion_menu.is_none());
     }
 
     /// Hover is not the completion popup: overlay-surface.md's Contexts

@@ -636,7 +636,8 @@ mod tests {
         let request = token::completion::inline::build_request(
             model.document(),
             (0, 3),
-            1,
+            token::completion::session::SessionId(1),
+            token::completion::session::RequestId(1),
             Some("rust".into()),
             false,
         )

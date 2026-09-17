@@ -392,12 +392,17 @@ mod tests {
         let hover = pump_until(&mut app, |app| app.model.ui.hover_card.is_some());
         app.process_automation_msg(Msg::Completion(token::messages::CompletionMsg::TriggerMenu));
         let completion = pump_until(&mut app, |app| {
-            app.model.ui.completion_menu.as_ref().is_some_and(|menu| {
-                menu.items.iter().any(|item| {
-                    item.source == token::completion::menu::MenuSourceId::Lsp
-                        && item.label.starts_with("Add")
+            app.model
+                .ui
+                .completion
+                .completion_menu
+                .as_ref()
+                .is_some_and(|menu| {
+                    menu.items.iter().any(|item| {
+                        item.source == token::completion::menu::MenuSourceId::Lsp
+                            && item.label.starts_with("Add")
+                    })
                 })
-            })
         });
         app.teardown_all_lsp_servers();
         assert!(hover, "gopls did not return hover documentation for Add");

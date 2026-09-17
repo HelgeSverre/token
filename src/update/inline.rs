@@ -12,6 +12,7 @@ use crate::completion::inline::{
     MAX_CONSECUTIVE_FAILURES,
 };
 use crate::completion::provider::{InlineJob, InlineSession};
+use crate::completion::session::RequestId;
 use crate::completion::statistics::{Observation, Outcome};
 use crate::config::ProviderConfig;
 use crate::model::{AppModel, FocusTarget, TransientMessage};
@@ -19,22 +20,10 @@ use crate::model::{AppModel, FocusTarget, TransientMessage};
 /// The suggestion the user can see right now, if the document and cursor
 /// still match it.
 pub fn visible(model: &AppModel) -> Option<&InlineSuggestionState> {
-    if model
-        .ui
-        .inline_session
-        .as_ref()
-        .is_some_and(|session| !session_is_current(model, session))
-    {
+    if !crate::completion::interaction::interaction(model).inline_visible {
         return None;
     }
-    if !eligible(model) {
-        return None;
-    }
-    let state = model.ui.inline_suggestion.as_ref()?;
-    let cursor = *model.editor().active_cursor();
-    state
-        .applies_to(model.document(), (cursor.line, cursor.column))
-        .then_some(state)
+    model.ui.completion.inline_suggestion.as_ref()
 }
 
 /// Configuration is borrowed until a request session actually needs a snapshot.
@@ -64,7 +53,7 @@ fn session_is_current(model: &AppModel, session: &InlineSession) -> bool {
         return false;
     }
     let cursor = model.editor().active_cursor();
-    if let Some(state) = &model.ui.inline_suggestion {
+    if let Some(state) = &model.ui.completion.inline_suggestion {
         return state.applies_to(model.document(), (cursor.line, cursor.column));
     }
     let snapshot = &session.snapshot;
@@ -79,12 +68,13 @@ pub(crate) fn reconcile(model: &mut AppModel) -> Option<Cmd> {
     // Opting out discards the current observation, including when toggled back
     // on before this response ends. Only newly requested responses are counted.
     if !model.config.completion.inline.statistics {
-        if let Some(session) = model.ui.inline_session.as_mut() {
+        if let Some(session) = model.ui.completion.inline_session.as_mut() {
             session.observation = None;
         }
     }
     if model
         .ui
+        .completion
         .inline_session
         .as_ref()
         .is_some_and(|session| !session_is_current(model, session))
@@ -143,14 +133,19 @@ pub(crate) fn sync_projection(model: &mut AppModel) -> Option<Cmd> {
 /// `explicit`). Auto-triggers respect the gates; an explicit trigger only
 /// needs a configured backend.
 fn schedule(model: &mut AppModel, explicit: bool) -> Option<Cmd> {
-    if !eligible(model) {
+    let intent = if explicit {
+        crate::completion::interaction::TriggerIntent::ExplicitInline
+    } else {
+        crate::completion::interaction::TriggerIntent::AutomaticInline
+    };
+    if !crate::completion::interaction::may_trigger(model, intent) {
         return None;
     }
     let provider = endpoint(model)?.clone();
     let document_id = model.document().id?;
     if !explicit {
         let ui = &model.ui;
-        if ui.inline_failures >= MAX_CONSECUTIVE_FAILURES {
+        if ui.completion.inline_failures >= MAX_CONSECUTIVE_FAILURES {
             return None;
         }
         let cursor = *model.editor().active_cursor();
@@ -160,19 +155,32 @@ fn schedule(model: &mut AppModel, explicit: bool) -> Option<Cmd> {
             return None;
         }
     } else {
-        model.ui.inline_failures = 0;
+        model.ui.completion.inline_failures = 0;
     }
     let cancel = dismiss(model);
-    model.ui.inline_next_request_id += 1;
+    let Some(session_id) = model.ui.completion.allocate_session() else {
+        model
+            .ui
+            .set_status("Inline completion session limit reached");
+        return Some(Cmd::redraw_status_bar());
+    };
+    let Some(request_id) = model.ui.completion.inline_next_request_id.checked_add(1) else {
+        model
+            .ui
+            .set_status("Inline completion request limit reached");
+        return Some(Cmd::redraw_status_bar());
+    };
+    model.ui.completion.inline_next_request_id = request_id;
     let cursor = *model.editor().active_cursor();
     let snapshot = RequestSnapshot {
+        session_id,
         document_id,
         revision: model.document().revision,
         line: cursor.line,
         column: cursor.column,
-        request_id: model.ui.inline_next_request_id,
+        request_id: RequestId(request_id),
     };
-    model.ui.inline_session = Some(InlineSession {
+    model.ui.completion.inline_session = Some(InlineSession {
         snapshot: snapshot.clone(),
         editor_id: model.editor().id,
         provider,
@@ -208,7 +216,7 @@ pub(crate) fn after_document_edit(
 ) -> Option<Cmd> {
     let mut redraw_line = None;
     let mut usage = None;
-    if let Some(mut state) = model.ui.inline_suggestion.take() {
+    if let Some(mut state) = model.ui.completion.inline_suggestion.take() {
         let cursor = *model.editor().active_cursor();
         let cursor = (cursor.line, cursor.column);
         let kept = match typed_char {
@@ -226,7 +234,7 @@ pub(crate) fn after_document_edit(
             state.valid_revision = model.document().revision;
             if state.applies_to(model.document(), cursor) && !state.remaining().is_empty() {
                 redraw_line = Some(Cmd::redraw_cursor_lines(vec![cursor.0]));
-                model.ui.inline_suggestion = Some(state);
+                model.ui.completion.inline_suggestion = Some(state);
                 return redraw_line;
             }
         }
@@ -265,11 +273,11 @@ pub(crate) fn deadline_fired(
     snapshot: RequestSnapshot,
     explicit: bool,
 ) -> Option<Cmd> {
-    let session = model.ui.inline_session.as_ref()?;
+    let session = model.ui.completion.inline_session.as_ref()?;
     if session.snapshot != snapshot
         || !session_is_current(model, session)
-        || model.ui.inline_in_flight
-        || model.ui.inline_suggestion.is_some()
+        || model.ui.completion.inline_in_flight
+        || model.ui.completion.inline_suggestion.is_some()
     {
         return None;
     }
@@ -279,11 +287,12 @@ pub(crate) fn deadline_fired(
     let request = build_request(
         model.document(),
         (cursor.line, cursor.column),
+        snapshot.session_id,
         snapshot.request_id,
         language,
         explicit,
     )?;
-    model.ui.inline_in_flight = true;
+    model.ui.completion.inline_in_flight = true;
     Some(Cmd::PrepareInlineRequest(Box::new(InlineJob {
         request,
         provider,
@@ -300,7 +309,7 @@ pub(crate) fn context_ready(
     job: Box<InlineJob>,
     root: Option<std::path::PathBuf>,
 ) -> Option<Cmd> {
-    let session = model.ui.inline_session.as_ref()?;
+    let session = model.ui.completion.inline_session.as_ref()?;
     if session.snapshot != job.request.snapshot || session.provider != job.provider {
         return None;
     }
@@ -309,6 +318,7 @@ pub(crate) fn context_ready(
     }
     model
         .ui
+        .completion
         .inline_in_flight
         .then_some(Cmd::RunInlineRequest(job))
 }
@@ -320,21 +330,34 @@ pub(crate) fn ready(
     snapshot: RequestSnapshot,
     texts: Vec<String>,
 ) -> Option<Cmd> {
-    if snapshot.request_id != model.ui.inline_next_request_id {
+    if !model
+        .ui
+        .completion
+        .inline_session
+        .as_ref()
+        .is_some_and(|session| session.snapshot == snapshot)
+    {
+        return None;
+    }
+    // One worker request has one terminal response. After success, partial
+    // acceptance may advance the proposal revision while retaining its
+    // historical snapshot; a duplicate late reply must not dismiss it.
+    if model.ui.completion.inline_suggestion.is_some() {
         return None;
     }
     if model
         .ui
+        .completion
         .inline_session
         .as_ref()
         .is_some_and(|session| !session_is_current(model, session))
     {
         return dismiss(model);
     }
-    model.ui.inline_in_flight = false;
-    model.ui.inline_failures = 0;
+    model.ui.completion.inline_in_flight = false;
+    model.ui.completion.inline_failures = 0;
     let Some(state) = InlineSuggestionState::new(snapshot, texts) else {
-        model.ui.inline_session = None;
+        model.ui.completion.inline_session = None;
         return None;
     };
     let cursor = *model.editor().active_cursor();
@@ -342,12 +365,13 @@ pub(crate) fn ready(
         || !state.applies_to(model.document(), (cursor.line, cursor.column))
         || state.remaining().is_empty()
     {
-        model.ui.inline_session = None;
+        model.ui.completion.inline_session = None;
         return None;
     }
-    model.ui.inline_suggestion = Some(state);
+    model.ui.completion.inline_suggestion = Some(state);
     if let Some(observation) = model
         .ui
+        .completion
         .inline_session
         .as_mut()
         .and_then(|session| session.observation.as_mut())
@@ -360,7 +384,7 @@ pub(crate) fn ready(
 /// Cycling uses the same visibility/session guards as acceptance and painting.
 pub(crate) fn cycle(model: &mut AppModel, forward: bool) -> Option<Cmd> {
     visible(model)?;
-    let state = model.ui.inline_suggestion.as_mut()?;
+    let state = model.ui.completion.inline_suggestion.as_mut()?;
     state
         .cycle(forward)
         .then(|| Cmd::redraw_cursor_lines(vec![model.editor().active_cursor().line]))
@@ -373,21 +397,31 @@ pub(crate) fn failed(
     snapshot: RequestSnapshot,
     error: String,
 ) -> Option<Cmd> {
-    if snapshot.request_id != model.ui.inline_next_request_id {
+    if !model
+        .ui
+        .completion
+        .inline_session
+        .as_ref()
+        .is_some_and(|session| session.snapshot == snapshot)
+    {
+        return None;
+    }
+    if model.ui.completion.inline_suggestion.is_some() {
         return None;
     }
     if model
         .ui
+        .completion
         .inline_session
         .as_ref()
         .is_some_and(|session| !session_is_current(model, session))
     {
         return dismiss(model);
     }
-    model.ui.inline_in_flight = false;
-    model.ui.inline_session = None;
-    model.ui.inline_failures = model.ui.inline_failures.saturating_add(1);
-    let message = if model.ui.inline_failures >= MAX_CONSECUTIVE_FAILURES {
+    model.ui.completion.inline_in_flight = false;
+    model.ui.completion.inline_session = None;
+    model.ui.completion.inline_failures = model.ui.completion.inline_failures.saturating_add(1);
+    let message = if model.ui.completion.inline_failures >= MAX_CONSECUTIVE_FAILURES {
         format!(
             "Inline suggestions paused after repeated errors ({error}); trigger manually to retry"
         )
@@ -427,24 +461,31 @@ pub(crate) fn accept(model: &mut AppModel, granularity: AcceptGranularity) -> Op
     model.reset_cursor_blink();
     // A pending older reply must not replace the retained remainder or report
     // a failure for a request the user has already superseded by accepting.
-    model.ui.inline_next_request_id += 1;
-    model.ui.inline_in_flight = false;
+    if let Some(next) = model.ui.completion.inline_next_request_id.checked_add(1) {
+        model.ui.completion.inline_next_request_id = next;
+    } else {
+        model.ui.completion.inline_session = None;
+        model
+            .ui
+            .set_status("Inline completion request limit reached");
+    }
+    model.ui.completion.inline_in_flight = false;
     let usage = record_outcome(model, Outcome::Accepted);
     let effects = match usage {
         Some(usage) => Cmd::Batch(vec![effects, usage]),
         None => effects,
     };
-    let mut state = model.ui.inline_suggestion.take()?;
+    let mut state = model.ui.completion.inline_suggestion.take()?;
     state.consumed += accepted_chars;
     state.valid_revision = model.document().revision;
     if state.remaining().is_empty() {
-        model.ui.inline_suggestion = None;
+        model.ui.completion.inline_suggestion = None;
         Some(match schedule(model, false) {
             Some(next) => Cmd::Batch(vec![effects, next]),
             None => effects,
         })
     } else {
-        model.ui.inline_suggestion = Some(state);
+        model.ui.completion.inline_suggestion = Some(state);
         Some(effects)
     }
 }
@@ -452,13 +493,19 @@ pub(crate) fn accept(model: &mut AppModel, granularity: AcceptGranularity) -> Op
 /// Escape (or any other reason to hide the ghost text).
 pub(crate) fn dismiss(model: &mut AppModel) -> Option<Cmd> {
     let usage = record_outcome(model, Outcome::Dismissed);
-    let had_session = model.ui.inline_session.take().is_some();
-    let had_suggestion = model.ui.inline_suggestion.take().is_some();
-    let had_request = std::mem::take(&mut model.ui.inline_in_flight);
+    let had_session = model.ui.completion.inline_session.take().is_some();
+    let had_suggestion = model.ui.completion.inline_suggestion.take().is_some();
+    let had_request = std::mem::take(&mut model.ui.completion.inline_in_flight);
     if !(had_session || had_suggestion || had_request) {
         return None;
     }
-    model.ui.inline_next_request_id += 1;
+    if let Some(next) = model.ui.completion.inline_next_request_id.checked_add(1) {
+        model.ui.completion.inline_next_request_id = next;
+    } else {
+        model
+            .ui
+            .set_status("Inline completion request limit reached");
+    }
     let mut commands = vec![
         Cmd::CancelInlineRequest,
         Cmd::redraw_editor(),
@@ -474,6 +521,7 @@ fn record_outcome(model: &mut AppModel, outcome: Outcome) -> Option<Cmd> {
     }
     model
         .ui
+        .completion
         .inline_session
         .as_mut()?
         .observation
@@ -503,7 +551,14 @@ mod tests {
 
     fn arm(model: &mut AppModel) -> RequestSnapshot {
         trigger(model, true);
-        model.ui.inline_session.as_ref().unwrap().snapshot.clone()
+        model
+            .ui
+            .completion
+            .inline_session
+            .as_ref()
+            .unwrap()
+            .snapshot
+            .clone()
     }
 
     #[test]
@@ -522,7 +577,7 @@ mod tests {
             })),
             format!(
                 "Completion::InlineContextReady(request={})",
-                job.request.snapshot.request_id
+                job.request.snapshot.request_id.0
             )
         );
         assert!(matches!(
@@ -530,10 +585,11 @@ mod tests {
             Some(Cmd::RunInlineRequest(_))
         ));
         let mut old = job.clone();
-        old.request.snapshot.request_id = old.request.snapshot.request_id.wrapping_sub(1);
+        old.request.snapshot.request_id =
+            RequestId(old.request.snapshot.request_id.0.checked_sub(1).unwrap());
         assert!(context_ready(&mut model, old, None).is_none());
         assert!(
-            model.ui.inline_in_flight,
+            model.ui.completion.inline_in_flight,
             "late work must not clear newer requests"
         );
         assert!(cancels(&context_ready(
@@ -541,7 +597,7 @@ mod tests {
             job,
             Some("changed-workspace".into())
         )));
-        assert!(!model.ui.inline_in_flight);
+        assert!(!model.ui.completion.inline_in_flight);
         let snapshot = arm(&mut model);
         let Some(Cmd::PrepareInlineRequest(job)) = deadline_fired(&mut model, snapshot, true)
         else {
@@ -782,7 +838,7 @@ mod tests {
             )))
         };
         update(&mut model, failed());
-        assert!(model.ui.inline_statistics_failed);
+        assert!(model.ui.completion.inline_statistics_failed);
         assert!(!model
             .ui
             .transient_message
@@ -797,7 +853,7 @@ mod tests {
             &mut model,
             Msg::Completion(CompletionMsg::InlineStatisticsSaved(Ok(()))),
         );
-        assert!(!model.ui.inline_statistics_failed);
+        assert!(!model.ui.completion.inline_statistics_failed);
         update(&mut model, failed());
         assert!(model.ui.transient_message.is_some());
     }
@@ -824,9 +880,9 @@ mod tests {
         )));
         assert!(ready(&mut model, current.clone(), vec!["old answer".into()]).is_none());
         assert!(failed(&mut model, current, "old error".into()).is_none());
-        assert!(!model.ui.inline_in_flight);
-        assert_eq!(model.ui.inline_failures, 0);
-        assert!(model.ui.inline_suggestion.is_none());
+        assert!(!model.ui.completion.inline_in_flight);
+        assert_eq!(model.ui.completion.inline_failures, 0);
+        assert!(model.ui.completion.inline_suggestion.is_none());
     }
 
     #[test]
@@ -846,8 +902,8 @@ mod tests {
             let snapshot = arm(&mut model);
             deadline_fired(&mut model, snapshot, true);
             assert!(cancels(&update(&mut model, message)));
-            assert!(model.ui.inline_session.is_none());
-            assert!(!model.ui.inline_in_flight);
+            assert!(model.ui.completion.inline_session.is_none());
+            assert!(!model.ui.completion.inline_in_flight);
         }
     }
 
@@ -859,8 +915,17 @@ mod tests {
         let cmd = update(&mut model, Msg::Document(DocumentMsg::InsertChar('a')));
         assert!(cancels(&cmd));
         assert!(find_schedule(&cmd).is_some());
-        assert!(!model.ui.inline_in_flight);
-        assert_ne!(model.ui.inline_session.as_ref().unwrap().snapshot, snapshot);
+        assert!(!model.ui.completion.inline_in_flight);
+        assert_ne!(
+            model
+                .ui
+                .completion
+                .inline_session
+                .as_ref()
+                .unwrap()
+                .snapshot,
+            snapshot
+        );
         assert!(failed(&mut model, snapshot, "stale".into()).is_none());
     }
 
@@ -894,7 +959,7 @@ mod tests {
                 snapshot,
                 "must not show".into()
             )));
-            assert_eq!(model.ui.inline_failures, 0);
+            assert_eq!(model.ui.completion.inline_failures, 0);
             assert_eq!(
                 model
                     .ui
@@ -903,7 +968,7 @@ mod tests {
                     .map(|message| message.text.clone()),
                 previous_status
             );
-            assert!(!model.ui.inline_in_flight);
+            assert!(!model.ui.completion.inline_in_flight);
         }
     }
 
@@ -951,16 +1016,50 @@ mod tests {
     fn snapshot(model: &AppModel) -> RequestSnapshot {
         let cursor = *model.editor().active_cursor();
         RequestSnapshot {
+            session_id: crate::completion::session::SessionId(1),
             document_id: model.document().id.unwrap(),
             revision: model.document().revision,
             line: cursor.line,
             column: cursor.column,
-            request_id: model.ui.inline_next_request_id,
+            request_id: RequestId(model.ui.completion.inline_next_request_id),
         }
     }
 
+    fn inject_pending_session(model: &mut AppModel) -> RequestSnapshot {
+        let session_id = model.ui.completion.allocate_session().unwrap();
+        model.ui.completion.inline_next_request_id = model
+            .ui
+            .completion
+            .inline_next_request_id
+            .checked_add(1)
+            .unwrap();
+        model.ui.completion.inline_suggestion = None;
+        let cursor = *model.editor().active_cursor();
+        let snapshot = RequestSnapshot {
+            session_id,
+            document_id: model.document().id.unwrap(),
+            revision: model.document().revision,
+            line: cursor.line,
+            column: cursor.column,
+            request_id: RequestId(model.ui.completion.inline_next_request_id),
+        };
+        model.ui.completion.inline_session = Some(InlineSession {
+            snapshot: snapshot.clone(),
+            editor_id: model.editor().id,
+            provider: endpoint(model).unwrap().clone(),
+            observation: None,
+        });
+        snapshot
+    }
+
     fn arrive(model: &mut AppModel, text: &str) {
-        let snapshot = snapshot(model);
+        let snapshot = if let Some(session) = model.ui.completion.inline_session.as_ref() {
+            session.snapshot.clone()
+        } else {
+            // Some tests inject a reply while another surface currently blocks
+            // triggering. Model the request as having started just beforehand.
+            inject_pending_session(model)
+        };
         update(
             model,
             Msg::Completion(CompletionMsg::InlineReady {
@@ -982,7 +1081,7 @@ mod tests {
             Msg::Completion(CompletionMsg::AcceptInline(AcceptGranularity::Full)),
         );
         assert_eq!(model.document().buffer.to_string(), "value\n");
-        assert!(model.ui.completion_menu.is_none());
+        assert!(model.ui.completion.completion_menu.is_none());
         update(&mut model, Msg::Document(DocumentMsg::Undo));
         assert_eq!(model.document().buffer.to_string(), "\n");
     }
@@ -1064,7 +1163,7 @@ mod tests {
         // Paused after repeated failures, until an explicit trigger.
         let mut model = model_with_inline("abc\n");
         place(&mut model, 0, 3);
-        model.ui.inline_failures = MAX_CONSECUTIVE_FAILURES;
+        model.ui.completion.inline_failures = MAX_CONSECUTIVE_FAILURES;
         let cmd = update(&mut model, Msg::Document(DocumentMsg::InsertChar('d')));
         assert_eq!(find_schedule(&cmd), None);
         let cmd = update(
@@ -1072,7 +1171,7 @@ mod tests {
             Msg::Completion(CompletionMsg::TriggerInline { explicit: true }),
         );
         assert_eq!(find_schedule(&cmd), Some((0, true)));
-        assert_eq!(model.ui.inline_failures, 0);
+        assert_eq!(model.ui.completion.inline_failures, 0);
     }
 
     #[test]
@@ -1080,11 +1179,19 @@ mod tests {
         let mut model = model_with_inline("let a = \n");
         place(&mut model, 0, 8);
         trigger(&mut model, false);
-        let current = model.ui.inline_session.as_ref().unwrap().snapshot.clone();
+        let current = model
+            .ui
+            .completion
+            .inline_session
+            .as_ref()
+            .unwrap()
+            .snapshot
+            .clone();
         let stale = update(
             &mut model,
             Msg::Completion(CompletionMsg::InlineDeadlineFired {
                 snapshot: RequestSnapshot {
+                    session_id: crate::completion::session::SessionId(1),
                     revision: 99,
                     ..current.clone()
                 },
@@ -1112,10 +1219,16 @@ mod tests {
         assert_eq!(request.prefix, "let a = ");
         assert_eq!(request.suffix, "\n");
         assert_eq!(
-            model.ui.inline_session.as_ref().unwrap().provider,
+            model
+                .ui
+                .completion
+                .inline_session
+                .as_ref()
+                .unwrap()
+                .provider,
             ProviderConfig::default()
         );
-        assert!(model.ui.inline_in_flight);
+        assert!(model.ui.completion.inline_in_flight);
         assert!(!model
             .ui
             .status_bar
@@ -1130,8 +1243,13 @@ mod tests {
         let mut model = model_with_inline("let a = \n");
         place(&mut model, 0, 8);
         let stale = snapshot(&model);
-        model.ui.inline_next_request_id += 1;
-        model.ui.inline_in_flight = true;
+        model.ui.completion.inline_next_request_id = model
+            .ui
+            .completion
+            .inline_next_request_id
+            .checked_add(1)
+            .unwrap();
+        model.ui.completion.inline_in_flight = true;
         update(
             &mut model,
             Msg::Completion(CompletionMsg::InlineReady {
@@ -1139,8 +1257,8 @@ mod tests {
                 texts: vec!["old".into()],
             }),
         );
-        assert!(model.ui.inline_in_flight);
-        assert!(model.ui.inline_suggestion.is_none());
+        assert!(model.ui.completion.inline_in_flight);
+        assert!(model.ui.completion.inline_suggestion.is_none());
         update(
             &mut model,
             Msg::Completion(CompletionMsg::InlineFailed {
@@ -1148,11 +1266,11 @@ mod tests {
                 error: "old failure".into(),
             }),
         );
-        assert!(model.ui.inline_in_flight);
-        assert_eq!(model.ui.inline_failures, 0);
+        assert!(model.ui.completion.inline_in_flight);
+        assert_eq!(model.ui.completion.inline_failures, 0);
         arrive(&mut model, "new");
         assert_eq!(visible(&model).unwrap().remaining(), "new");
-        assert!(!model.ui.inline_in_flight);
+        assert!(!model.ui.completion.inline_in_flight);
         assert!(model
             .ui
             .status_bar
@@ -1175,7 +1293,7 @@ mod tests {
                 texts: vec!["1;".into()],
             }),
         );
-        assert!(model.ui.inline_suggestion.is_none());
+        assert!(model.ui.completion.inline_suggestion.is_none());
         let mut moved = snapshot(&model);
         moved.column = 3;
         update(
@@ -1185,10 +1303,10 @@ mod tests {
                 texts: vec!["1;".into()],
             }),
         );
-        assert!(model.ui.inline_suggestion.is_none());
+        assert!(model.ui.completion.inline_suggestion.is_none());
         arrive(&mut model, "1;");
         assert_eq!(visible(&model).unwrap().remaining(), "1;");
-        assert!(!model.ui.inline_in_flight);
+        assert!(!model.ui.completion.inline_in_flight);
     }
 
     #[test]
@@ -1205,7 +1323,7 @@ mod tests {
         assert_eq!(visible(&model).unwrap().remaining(), " + 2;");
         // A different char drops it.
         update(&mut model, Msg::Document(DocumentMsg::InsertChar('x')));
-        assert!(model.ui.inline_suggestion.is_none());
+        assert!(model.ui.completion.inline_suggestion.is_none());
     }
 
     #[test]
@@ -1219,12 +1337,12 @@ mod tests {
         );
         assert!(visible(&model).is_none(), "cursor moved away");
         assert!(
-            model.ui.inline_suggestion.is_none(),
+            model.ui.completion.inline_suggestion.is_none(),
             "navigation must clear state before computing source movement"
         );
         assert!(model.editor().ghost_text.0.is_none());
         update(&mut model, Msg::Completion(CompletionMsg::DismissInline));
-        assert!(model.ui.inline_suggestion.is_none());
+        assert!(model.ui.completion.inline_suggestion.is_none());
     }
 
     #[test]
@@ -1243,7 +1361,7 @@ mod tests {
         );
         let cursor = *model.editor().active_cursor();
         assert_eq!((cursor.line, cursor.column), (1, 10));
-        assert!(model.ui.inline_suggestion.is_none());
+        assert!(model.ui.completion.inline_suggestion.is_none());
         assert!(find_schedule(&cmd).is_some(), "chained follow-up request");
         update(&mut model, Msg::Document(DocumentMsg::Undo));
         assert_eq!(model.document().buffer.to_string(), "let a = 1\n");
@@ -1264,9 +1382,9 @@ mod tests {
         for ch in "val".chars() {
             update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)));
         }
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
         arrive(&mut model, "ue_two");
-        assert!(model.ui.inline_suggestion.is_none());
+        assert!(model.ui.completion.inline_suggestion.is_none());
     }
 
     #[test]
@@ -1276,7 +1394,7 @@ mod tests {
         model.document_mut().file_path = Some("/tmp/proj/build.rs".into());
         place(&mut model, 0, 8);
         update(&mut model, Msg::Completion(CompletionMsg::TriggerMenu));
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
         assert!(!model.ui.has_visible_completion());
         arrive(&mut model, "compile()");
         assert_eq!(visible(&model).unwrap().remaining(), "compile()");
@@ -1317,7 +1435,7 @@ mod tests {
     #[test]
     fn inline_cycling_changes_only_ghost_state_and_accepts_the_selected_remainder() {
         let mut model = model_with_inline("\n");
-        let snap = snapshot(&model);
+        let snap = inject_pending_session(&mut model);
         ready(
             &mut model,
             snap,
@@ -1329,7 +1447,7 @@ mod tests {
         );
         let revision = model.document().revision;
         let undo_count = model.document().undo_stack.len();
-        let request_id = model.ui.inline_next_request_id;
+        let request_id = model.ui.completion.inline_next_request_id;
         let cmd = update(
             &mut model,
             Msg::Completion(CompletionMsg::CycleInline { forward: false }),
@@ -1339,7 +1457,7 @@ mod tests {
         assert_eq!(visible(&model).unwrap().remaining(), "héllo_two();");
         assert_eq!(model.document().revision, revision);
         assert_eq!(model.document().undo_stack.len(), undo_count);
-        assert_eq!(model.ui.inline_next_request_id, request_id);
+        assert_eq!(model.ui.completion.inline_next_request_id, request_id);
         assert_eq!(model.document().buffer.to_string(), "\n");
         accept(&mut model, AcceptGranularity::Word);
         assert_eq!(model.document().buffer.to_string(), "héllo\n");
@@ -1360,16 +1478,22 @@ mod tests {
         assert!(cycle(&mut model, true).is_none());
         arrive(&mut model, "single");
         assert!(cycle(&mut model, true).is_none());
-        let snap = snapshot(&model);
+        let snap = inject_pending_session(&mut model);
         ready(&mut model, snap, vec!["one".into(), "two".into()]);
         model.document_mut().revision += 1;
         assert!(cycle(&mut model, true).is_none());
         assert_eq!(
-            model.ui.inline_suggestion.as_ref().unwrap().remaining(),
+            model
+                .ui
+                .completion
+                .inline_suggestion
+                .as_ref()
+                .unwrap()
+                .remaining(),
             "one"
         );
         let mut model = model_with_inline("long_tail_at_cursor\n");
-        let snap = snapshot(&model);
+        let snap = inject_pending_session(&mut model);
         ready(&mut model, snap, vec!["one".into(), "two".into()]);
         assert!(cycle(&mut model, false).is_some());
         assert_eq!(visible(&model).unwrap().remaining(), "two");
@@ -1380,9 +1504,7 @@ mod tests {
     fn partial_accept_targets_active_cursor_and_preserves_peer_selections() {
         use crate::messages::LayoutMsg;
         use crate::model::{Position, SplitDirection};
-        let mut model = AppModel::new(800, 600, 1.0);
-        model.config.completion.enabled = false;
-        model.document_mut().buffer = ropey::Rope::from_str("ab\ncd\n");
+        let mut model = model_with_inline("ab\ncd\n");
         let peer = model.editor().id.unwrap();
         update(
             &mut model,
@@ -1427,7 +1549,7 @@ mod tests {
         let mut model = model_with_inline("abc\n");
         place(&mut model, 0, 3);
         for _ in 0..MAX_CONSECUTIVE_FAILURES {
-            let snapshot = snapshot(&model);
+            let snapshot = inject_pending_session(&mut model);
             update(
                 &mut model,
                 Msg::Completion(CompletionMsg::InlineFailed {

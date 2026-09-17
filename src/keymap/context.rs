@@ -25,12 +25,17 @@ pub struct KeyContext {
     /// Ghost text is showing at the cursor (autocomplete.md Phase 2);
     /// Tab accepts it and Escape dismisses it.
     pub inline_suggestion_visible: bool,
+    /// A menu session currently has rows and can route menu actions.
+    pub completion_menu_visible: bool,
+    /// A menu request exists without visible rows. It only claims dismissal.
+    pub completion_session_pending: bool,
 }
 
 impl KeyContext {
     /// The same model facts drive dispatch and displayed shortcut eligibility.
     pub fn from_model(model: &crate::model::AppModel) -> Self {
         let editor = model.editor_area.focused_editor();
+        let completion = crate::completion::interaction::interaction(model);
         Self {
             has_selection: editor.is_some_and(|editor| !editor.active_selection().is_empty()),
             has_multiple_cursors: editor.is_some_and(|editor| editor.has_multiple_cursors()),
@@ -39,7 +44,9 @@ impl KeyContext {
             sidebar_focused: model.ui.focus
                 == crate::model::FocusTarget::Dock(crate::panel::DockPosition::Left),
             overlay_routes_keys: model.ui.cursor_overlay.is_some(),
-            inline_suggestion_visible: crate::update::inline::visible(model).is_some(),
+            inline_suggestion_visible: completion.inline_visible,
+            completion_menu_visible: completion.menu_visible,
+            completion_session_pending: completion.menu_session_pending,
         }
     }
 
@@ -55,6 +62,8 @@ impl KeyContext {
         context.overlay_routes_keys = false;
         // Opening either command surface dismisses inline suggestions.
         context.inline_suggestion_visible = false;
+        context.completion_menu_visible = false;
+        context.completion_session_pending = false;
         context
     }
 
@@ -68,6 +77,8 @@ impl KeyContext {
             sidebar_focused: false,
             overlay_routes_keys: false,
             inline_suggestion_visible: false,
+            completion_menu_visible: false,
+            completion_session_pending: false,
         }
     }
 
@@ -81,6 +92,8 @@ impl KeyContext {
             sidebar_focused: false,
             overlay_routes_keys: false,
             inline_suggestion_visible: false,
+            completion_menu_visible: false,
+            completion_session_pending: false,
         }
     }
 }
@@ -111,6 +124,8 @@ pub enum Condition {
     /// routing keys (overlay-surface.md Phase 5)
     OverlayRoutesKeys,
     InlineSuggestionVisible,
+    CompletionMenuVisible,
+    CompletionSessionPending,
 }
 
 impl Condition {
@@ -127,6 +142,8 @@ impl Condition {
             Condition::SidebarFocused => ctx.sidebar_focused,
             Condition::OverlayRoutesKeys => ctx.overlay_routes_keys,
             Condition::InlineSuggestionVisible => ctx.inline_suggestion_visible,
+            Condition::CompletionMenuVisible => ctx.completion_menu_visible,
+            Condition::CompletionSessionPending => ctx.completion_session_pending,
         }
     }
 

@@ -1,8 +1,24 @@
 # Autocomplete & Inline Suggestions
 
-A pluggable completion system with two rendering surfaces — a popup menu at the cursor and ghost-text inline suggestions — fed by swappable providers: buffer words and snippets first, LSP when it lands, and LLM fill-in-the-middle backends (local or remote) behind one backend abstraction.
+A completion system with two distinct rendering surfaces: a candidate menu at
+the cursor and insert-only inline ghost text. Menu candidates come from buffer
+words, static flattened snippets, paths and LSP. Inline suggestions come from
+the configured FIM provider.
 
-> **Status:** 🚧 In Progress — Phase 1 (menu: words + snippets), Phase 4 (LSP source), and Phase 2 (inline ghost text + llama.cpp `/infill`) shipped. Phase 3 now includes partial acceptance, cancellation, the provider trait, Ollama, OpenAI-compatible native-suffix completions, Mistral FIM, alternative cycling, bounded LRU reuse, conservative syntax/indentation filters, explicit raw FIM formats/inference and opt-in idle recency context (2026-09-07). Phase 5 multi-row/mid-line projection is implemented, with isolated macOS keyboard/pointer/resize checks and release profiling recorded; IME/platform verification and the rest of Phase 5+ remain open. Fixture tests do not prove live model/server compatibility.
+> **Current contract (2026-09-15):** Menu and inline lifecycles have one
+> model-owned completion state while remaining separate sessions. Presentation
+> and key eligibility come from one derived interaction policy. Menu keys are
+> ordinary named keymap actions. Candidate and request identities, rather than
+> labels or row indices, correlate delayed work. Acceptance builds and validates
+> a guarded edit plan before using the shared document transaction. Valid simple
+> multi-cursor LSP query replacements replicate at each compatible caret and
+> shared additional edits apply once; unsupported or malformed plans are rejected
+> without source changes. Inline acceptance remains active-caret-only.
+>
+> Interactive snippet placeholders, edit prediction/replacement ghost text, LSP
+> `inlineCompletion`, streaming, and a generic source-plugin registry are not
+> implemented. The dated phase sketches below are retained as design history;
+> this contract and the implementation take precedence where they differ.
 > **Priority:** P2 (Important)
 > **Effort:** XL (phased — each phase ships independently)
 > **Created:** 2026-08-11

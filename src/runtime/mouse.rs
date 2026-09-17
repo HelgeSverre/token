@@ -509,7 +509,8 @@ mod tests {
             std::path::Path::new("/tmp/fixture"),
             None,
         );
-        model.ui.completion_menu = Some(CompletionMenuState {
+        model.ui.completion.completion_menu = Some(CompletionMenuState {
+            identity: token::completion::menu::MenuIdentity::default(),
             document_id: model.document().id.unwrap(),
             revision: model.document().revision,
             query_start: Cursor::at(0, 0),
@@ -659,7 +660,7 @@ mod tests {
             .expect("editor content outside the card");
         handle_mouse_wheel(&mut model, Some(point), (0, 1).into(), Some(&mut measure));
         assert!(
-            model.ui.completion_menu.is_none(),
+            model.ui.completion.completion_menu.is_none(),
             "scrolling the editor dismisses the attached menu"
         );
         assert_eq!(model.document().buffer.to_string(), "va\n");
@@ -670,6 +671,7 @@ mod tests {
         let mut model = documentation_model();
         model
             .ui
+            .completion
             .completion_menu
             .as_mut()
             .unwrap()
@@ -726,13 +728,14 @@ mod tests {
         let mut model = documentation_model();
         let content = model
             .ui
+            .completion
             .completion_menu
             .as_ref()
             .unwrap()
             .selected_documentation(0)
             .unwrap()
             .clone();
-        model.ui.completion_menu = None;
+        model.ui.completion.completion_menu = None;
         model.ui.hover_card = Some(HoverCardState {
             content: Some(content),
             ..Default::default()
@@ -999,14 +1002,17 @@ mod tests {
         for ch in "val".chars() {
             update(&mut model, Msg::Document(DocumentMsg::InsertChar(ch)));
         }
-        assert!(model.ui.completion_menu.is_some(), "menu should be open");
+        assert!(
+            model.ui.completion.completion_menu.is_some(),
+            "menu should be open"
+        );
         model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::Completion));
 
         let result = handle_cursor_overlay_click(&mut model, Some(0));
 
         assert!(matches!(result, EventResult::Consumed { redraw: true, .. }));
         assert!(
-            model.ui.completion_menu.is_none(),
+            model.ui.completion.completion_menu.is_none(),
             "a row click must accept and close the menu, not just select the row"
         );
         let line = model.document().get_line_cow(1).unwrap();
@@ -1760,7 +1766,7 @@ fn dismiss_overlay_for_press(
         );
     if dismissed {
         model.ui.cursor_overlay = None;
-        model.ui.completion_menu = None;
+        model.ui.completion.completion_menu = None;
         model.ui.hover_card = None;
         model.ui.reference_list = None;
         model.ui.code_action_list = None;
@@ -1930,6 +1936,11 @@ fn handle_cursor_overlay_click(model: &mut AppModel, flat_index: Option<usize>) 
             state.reset_documentation();
         }
         state.selected = idx;
+    }
+    if kind == Some(token::model::CursorOverlayKind::Completion) {
+        if let Some(menu) = model.ui.completion.completion_menu.as_mut() {
+            menu.identity.selected = menu.candidate_for_row(idx);
+        }
     }
     // The activation message may return a Cmd (e.g. CopyToClipboard) that
     // must actually run — same as the keyboard Enter path in
@@ -3262,6 +3273,7 @@ fn scroll_hovered_region(
             }
             let completion_rows = model
                 .ui
+                .completion
                 .completion_menu
                 .as_ref()
                 .map(|m| m.filtered.len())
@@ -3295,6 +3307,11 @@ fn scroll_hovered_region(
             } else {
                 state.scroll.saturating_add(delta as usize).min(max_scroll)
             };
+            if state.kind == token::model::CursorOverlayKind::Completion {
+                if let Some(menu) = model.ui.completion.completion_menu.as_mut() {
+                    menu.identity.scroll = state.scroll;
+                }
+            }
             Some(Cmd::Redraw)
         }
 
@@ -3316,7 +3333,7 @@ fn scroll_hovered_region(
             // The dismissal's own Cmd is merged into whichever scroll
             // command this arm returns, so a dismissal with no scroll
             // still repaints.
-            let completion_dismiss = if model.ui.completion_menu.is_some() {
+            let completion_dismiss = if model.ui.completion.completion_menu.is_some() {
                 update(model, Msg::Completion(CompletionMsg::Dismiss))
             } else {
                 None

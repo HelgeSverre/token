@@ -1517,6 +1517,8 @@ pub enum LspMsg {
     /// keystroke between request and response bumps both.
     CompletionResolved {
         document_id: crate::model::editor_area::DocumentId,
+        session: crate::completion::session::SessionId,
+        position: lsp_types::Position,
         revision: u64,
         items: Vec<crate::completion::menu::MenuItem>,
         is_incomplete: bool,
@@ -1537,13 +1539,13 @@ pub enum LspMsg {
     /// Runtime -> update: a `completionItem/resolve` round trip finished
     /// (or, for a deferred accept, timed out / failed — the extra fields
     /// are then empty and accept proceeds with what the original item
-    /// carried). `selected` echoes the menu selection the resolve was
+    /// carried). `candidate` echoes the stable candidate the resolve was
     /// issued for; `update/completion.rs` merges the fields into that item
     /// and applies the accept only if one is still pending on it.
     CompletionItemResolved {
         document_id: crate::model::editor_area::DocumentId,
         revision: u64,
-        selected: usize,
+        candidate: crate::completion::session::CandidateId,
         detail: Option<String>,
         documentation: Option<crate::model::StyledText>,
         additional_text_edits: Vec<(lsp_types::Range, String)>,

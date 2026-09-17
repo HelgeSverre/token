@@ -891,12 +891,16 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         }
         LspMsg::CompletionResolved {
             document_id,
+            session,
+            position,
             revision,
             items,
             is_incomplete,
-        } => super::completion::merge_lsp_completion(
+        } => super::completion::merge_lsp_completion_for_session(
             model,
             document_id,
+            session,
+            position,
             revision,
             items,
             is_incomplete,
@@ -904,7 +908,7 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
         LspMsg::CompletionItemResolved {
             document_id,
             revision,
-            selected,
+            candidate,
             detail,
             documentation,
             additional_text_edits,
@@ -912,7 +916,7 @@ pub(super) fn update_lsp(model: &mut AppModel, msg: LspMsg) -> Option<Cmd> {
             model,
             document_id,
             revision,
-            selected,
+            candidate,
             detail,
             documentation,
             additional_text_edits,

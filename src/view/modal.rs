@@ -2232,7 +2232,7 @@ pub fn with_cursor_overlay_spec<R>(
     let state = model.ui.cursor_overlay?;
 
     if state.kind == crate::model::CursorOverlayKind::Completion {
-        let menu = model.ui.completion_menu.as_ref()?;
+        let menu = model.ui.completion.completion_menu.as_ref()?;
         let rect = super::caret::editor_text_rect_at(
             model,
             menu.query_start.line,
@@ -3693,6 +3693,7 @@ mod tests {
             None,
         );
         let menu = crate::completion::CompletionMenuState {
+            identity: crate::completion::menu::MenuIdentity::default(),
             document_id: crate::model::DocumentId(1),
             revision: 0,
             query_start: crate::model::Cursor::at(0, 8),
@@ -3725,6 +3726,7 @@ mod tests {
         let doc = model.document();
         let (document_id, revision) = (doc.id.unwrap(), doc.revision);
         let item = |label: &str, docs: Option<&str>| MenuItem {
+            id: crate::completion::session::CandidateId::UNASSIGNED,
             label: label.to_owned(),
             filter_text: label.to_owned(),
             insert: MenuInsert::Lsp(Box::new(LspInsert {
@@ -3737,6 +3739,8 @@ mod tests {
                 }),
                 can_resolve: true,
                 resolved: true,
+                request_position: None,
+                request_query: None,
                 text_edit: None,
                 additional_text_edits: Vec::new(),
                 commit_characters: std::sync::Arc::from([]),
@@ -3749,7 +3753,8 @@ mod tests {
             sort_text: None,
             preselect: false,
         };
-        model.ui.completion_menu = Some(CompletionMenuState {
+        model.ui.completion.completion_menu = Some(CompletionMenuState {
+            identity: crate::completion::menu::MenuIdentity::default(),
             document_id,
             revision,
             query_start: crate::model::Cursor::at(0, 0),

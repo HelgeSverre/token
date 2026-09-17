@@ -34,11 +34,16 @@ pub(super) fn valid(model: &AppModel, request: &PathRequest) -> bool {
             == request.workspace_root.as_ref()
         && model.editor().cursors == request.cursors
         && model.editor().active_cursor_index == request.active_cursor_index
-        && model.ui.completion_menu.as_ref().is_some_and(|menu| {
-            menu.context == CompletionContext::Path
-                && menu.document_id == request.document_id
-                && menu.revision == request.revision
-        })
+        && model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .is_some_and(|menu| {
+                menu.context == CompletionContext::Path
+                    && menu.document_id == request.document_id
+                    && menu.revision == request.revision
+            })
         && model
             .ui
             .cursor_overlay
@@ -47,10 +52,10 @@ pub(super) fn valid(model: &AppModel, request: &PathRequest) -> bool {
 
 pub(in crate::update) fn reconcile(model: &mut AppModel) -> Option<Cmd> {
     // Deferred commit acceptance owns the staged character and older snapshot.
-    if model.ui.completion_commit.is_some() {
+    if model.ui.completion.completion_commit.is_some() {
         return None;
     }
-    let request = model.ui.completion_path.as_ref()?;
+    let request = model.ui.completion.completion_path.as_ref()?;
     if valid(model, request) {
         None
     } else {
@@ -93,19 +98,25 @@ pub(super) fn open(model: &mut AppModel, explicit: bool) -> Option<Cmd> {
         context,
     });
     let cancel = pending_cancel_cmd(model);
-    let carry = model.ui.completion_path.as_ref().is_some_and(|previous| {
-        previous.document_id == request.document_id
-            && previous.editor_id == request.editor_id
-            && previous.file_path == request.file_path
-            && previous.language == request.language
-            && previous.context.directory == request.context.directory
-            && previous.context.start == request.context.start
-            && (request.context.query.starts_with(&previous.context.query)
-                || previous.context.query.starts_with(&request.context.query))
-    });
+    let carry = model
+        .ui
+        .completion
+        .completion_path
+        .as_ref()
+        .is_some_and(|previous| {
+            previous.document_id == request.document_id
+                && previous.editor_id == request.editor_id
+                && previous.file_path == request.file_path
+                && previous.language == request.language
+                && previous.context.directory == request.context.directory
+                && previous.context.start == request.context.start
+                && (request.context.query.starts_with(&previous.context.query)
+                    || previous.context.query.starts_with(&request.context.query))
+        });
     let mut items = if carry {
         model
             .ui
+            .completion
             .completion_menu
             .as_mut()
             .map(|menu| std::mem::take(&mut menu.items))
@@ -113,10 +124,30 @@ pub(super) fn open(model: &mut AppModel, explicit: bool) -> Option<Cmd> {
     } else {
         Vec::new()
     };
+    let carried_identity = carry
+        .then(|| {
+            model
+                .ui
+                .completion
+                .completion_menu
+                .as_ref()
+                .map(|menu| menu.identity.clone())
+        })
+        .flatten();
     items.retain(|item| item.source == MenuSourceId::Lsp || request.context.ready);
     let filtered = filter_and_sort(&items, &request.context.query);
     dismiss(model);
-    model.ui.completion_menu = Some(CompletionMenuState {
+    let identity = if let Some(identity) = carried_identity {
+        identity
+    } else {
+        let Some(session) = model.ui.completion.allocate_session() else {
+            model.ui.set_status("Completion session limit reached");
+            return Some(Cmd::redraw_status_bar());
+        };
+        crate::completion::menu::MenuIdentity::new(session)
+    };
+    let mut menu = CompletionMenuState {
+        identity,
         context: CompletionContext::Path,
         selection_changed: false,
         document_id: request.document_id,
@@ -127,9 +158,16 @@ pub(super) fn open(model: &mut AppModel, explicit: bool) -> Option<Cmd> {
         filtered,
         is_incomplete: false,
         pending_resolve: None,
-    });
+    };
+    if menu.assign_candidate_ids().is_none() {
+        model.ui.set_status("Completion candidate limit reached");
+        return Some(Cmd::redraw_status_bar());
+    }
+    menu.identity.selected = menu.candidate_for_row(menu.preferred_index());
+    model.ui.completion.completion_menu = Some(menu);
     model.ui.cursor_overlay = model
         .ui
+        .completion
         .completion_menu
         .as_ref()
         .filter(|menu| !menu.filtered.is_empty())
@@ -138,7 +176,7 @@ pub(super) fn open(model: &mut AppModel, explicit: bool) -> Option<Cmd> {
             overlay.selected = menu.preferred_index();
             overlay
         });
-    model.ui.completion_path = Some(Arc::clone(&request));
+    model.ui.completion.completion_path = Some(Arc::clone(&request));
     let mut cmds = vec![Cmd::Redraw, Cmd::CancelPathCompletion];
     cmds.extend(cancel);
     if request.context.ready {
@@ -147,6 +185,13 @@ pub(super) fn open(model: &mut AppModel, explicit: bool) -> Option<Cmd> {
     if lsp_capable(model) {
         cmds.push(Cmd::LspScheduleCompletion {
             document_id: request.document_id,
+            session: model
+                .ui
+                .completion
+                .completion_menu
+                .as_ref()?
+                .identity
+                .session,
             revision: request.revision,
             position: crate::lsp::position_to_lsp(
                 model.document(),
@@ -162,12 +207,13 @@ pub(super) fn refresh_after_syntax(
     model: &mut AppModel,
     document_id: crate::model::DocumentId,
 ) -> Option<Cmd> {
-    let request = model.ui.completion_path.as_ref()?;
+    let request = model.ui.completion.completion_path.as_ref()?;
     if request.document_id != document_id
         || request.context.ready
         || !valid(model, request)
         || model
             .ui
+            .completion
             .completion_menu
             .as_ref()
             .is_some_and(|menu| menu.pending_resolve.is_some())
@@ -188,6 +234,7 @@ pub(super) fn ready(
     }
     if !model
         .ui
+        .completion
         .completion_path
         .as_ref()
         .is_some_and(|current| Arc::ptr_eq(current, &request))
@@ -206,11 +253,16 @@ pub(super) fn ready(
             // A language server can resolve import aliases that do not name a
             // real directory. Failure of the local source must not discard it.
             if !lsp_capable(model)
-                && !model.ui.completion_menu.as_ref().is_some_and(|menu| {
-                    menu.items
-                        .iter()
-                        .any(|item| item.source == MenuSourceId::Lsp)
-                })
+                && !model
+                    .ui
+                    .completion
+                    .completion_menu
+                    .as_ref()
+                    .is_some_and(|menu| {
+                        menu.items
+                            .iter()
+                            .any(|item| item.source == MenuSourceId::Lsp)
+                    })
             {
                 return dismiss_with_cleanup(model);
             }
@@ -223,6 +275,7 @@ pub(super) fn ready(
         .filter_map(|entry| {
             let text = request.context.insertion(&entry)?;
             Some(MenuItem {
+                id: crate::completion::session::CandidateId::UNASSIGNED,
                 label: if entry.is_directory {
                     format!("{}/", entry.name)
                 } else {
@@ -249,27 +302,25 @@ pub(super) fn ready(
             })
         })
         .collect();
-    let menu = model.ui.completion_menu.as_mut()?;
+    let previous_overlay = model.ui.cursor_overlay;
+    let menu = model.ui.completion.completion_menu.as_mut()?;
     if menu.pending_resolve.is_some() {
         return None;
     }
-    let previous_overlay = model.ui.cursor_overlay;
-    let selected = model
-        .ui
-        .cursor_overlay
+    let selected = previous_overlay
         .and_then(|overlay| menu.selected_item(overlay.selected))
-        .map(|item| (item.source, item.label.clone()));
+        .cloned();
     menu.items.retain(|item| item.source != MenuSourceId::Paths);
     menu.items.extend(items);
+    if let Some(previous) = selected.as_ref() {
+        menu.preserve_id_for(previous);
+    }
+    menu.assign_candidate_ids()?;
     menu.filtered = filter_and_sort(&menu.items, &menu.query);
     model.ui.cursor_overlay = (!menu.filtered.is_empty()).then(|| {
         let mut overlay = previous_overlay
             .unwrap_or_else(|| CursorOverlayState::new(CursorOverlayKind::Completion));
-        let preserved = selected.and_then(|(source, label)| {
-            menu.filtered.iter().position(|(_, index, _)| {
-                menu.items[*index].source == source && menu.items[*index].label == label
-            })
-        });
+        let preserved = selected.and_then(|item| menu.row_for_candidate(item.id));
         overlay.selected = preserved.unwrap_or_else(|| menu.preferred_index());
         if preserved.is_none() {
             overlay.reset_documentation();
@@ -281,6 +332,8 @@ pub(super) fn ready(
             0,
         )
         .scroll_offset;
+        menu.identity.selected = menu.candidate_for_row(overlay.selected);
+        menu.identity.scroll = overlay.scroll;
         overlay
     });
     if results.truncated {
@@ -292,7 +345,7 @@ pub(super) fn ready(
 }
 
 pub(super) fn accept(model: &mut AppModel, text: &str) -> Option<Cmd> {
-    let request = model.ui.completion_path.as_ref()?;
+    let request = model.ui.completion.completion_path.as_ref()?;
     if !valid(model, request) {
         return dismiss_with_cleanup(model);
     }
@@ -302,7 +355,7 @@ pub(super) fn accept(model: &mut AppModel, text: &str) -> Option<Cmd> {
 /// Also used after a validated LSP deferred accept retracts its staged literal.
 /// Its old coordinates are restored, though the internal revision has advanced.
 pub(super) fn apply(model: &mut AppModel, text: &str) -> Option<Cmd> {
-    let request = model.ui.completion_path.as_ref()?;
+    let request = model.ui.completion.completion_path.as_ref()?;
     let explicit = request.explicit;
     let mut edits = Vec::new();
     for &cursor in &request.cursors {
@@ -401,12 +454,12 @@ mod tests {
         model.config.completion.menu.enabled = false;
         let automatic = update(&mut model, Msg::Document(DocumentMsg::InsertChar('a')));
         assert!(extract(automatic).is_none());
-        assert!(model.ui.completion_path.is_none());
+        assert!(model.ui.completion.completion_path.is_none());
         let request = trigger(&mut model).expect("manual path request");
         reply(&mut model, request, "assets", true);
         assert!(model.ui.has_visible_completion());
         update(&mut model, Msg::Document(DocumentMsg::InsertChar('s')));
-        let request = model.ui.completion_path.clone().unwrap();
+        let request = model.ui.completion.completion_path.clone().unwrap();
         assert_eq!(request.context.query, "as");
         reply(&mut model, request, "assets", true);
         let next = extract(update(
@@ -475,15 +528,38 @@ mod tests {
         );
         let document_id = model.document().id.unwrap();
         let revision = model.document().revision;
+        let session = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .unwrap()
+            .identity
+            .session;
         update(
             model,
             Msg::Lsp(crate::messages::LspMsg::CompletionResolved {
                 document_id,
+                session,
+                position: crate::lsp::position_to_lsp(
+                    model.document(),
+                    model.editor().active_cursor().to_position(),
+                ),
                 revision,
                 items,
                 is_incomplete: false,
             }),
         );
+    }
+
+    fn pending_candidate(model: &AppModel) -> crate::completion::session::CandidateId {
+        model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .and_then(|menu| menu.pending_resolve)
+            .expect("server candidate is resolving")
     }
 
     #[test]
@@ -493,7 +569,7 @@ mod tests {
         trigger(&mut model);
         let request = parse(&mut model).unwrap();
         server_reply(&mut model, "asset.rs", false);
-        let menu = model.ui.completion_menu.as_mut().unwrap();
+        let menu = model.ui.completion.completion_menu.as_mut().unwrap();
         let MenuInsert::Lsp(data) = &mut menu.items[0].insert else {
             panic!("server item");
         };
@@ -513,6 +589,7 @@ mod tests {
         assert_eq!(
             model
                 .ui
+                .completion
                 .completion_menu
                 .as_ref()
                 .unwrap()
@@ -531,7 +608,7 @@ mod tests {
         let request = parse(&mut model).unwrap();
         server_reply(&mut model, "as-set-new.rs", false);
         reply(&mut model, Arc::clone(&request), "as-set-local.rs", false);
-        let menu = model.ui.completion_menu.as_ref().unwrap();
+        let menu = model.ui.completion.completion_menu.as_ref().unwrap();
         assert_eq!(menu.selected_item(0).unwrap().source, MenuSourceId::Lsp);
         assert_eq!(menu.filtered.len(), 2);
         update(
@@ -568,18 +645,19 @@ mod tests {
             update(&mut model, Msg::Document(DocumentMsg::InsertChar('!')));
             if resolve {
                 assert_eq!(model.document().buffer.to_string(), "let s = \"./as!old\";");
-                assert!(model.ui.completion_commit.is_some());
+                assert!(model.ui.completion.completion_commit.is_some());
                 reply(&mut model, Arc::clone(&request), "asset-local.rs", false);
                 assert!(
-                    model.ui.completion_commit.is_some(),
+                    model.ui.completion.completion_commit.is_some(),
                     "late directory reply cannot cancel acceptance"
                 );
+                let candidate = pending_candidate(&model);
                 update(
                     &mut model,
                     Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                         document_id: request.document_id,
                         revision: request.revision,
-                        selected: 0,
+                        candidate,
                         detail: None,
                         documentation: None,
                         additional_text_edits: Vec::new(),
@@ -590,7 +668,7 @@ mod tests {
                 model.document().buffer.to_string(),
                 "let s = \"./asset.rs!\";"
             );
-            assert!(model.ui.completion_commit.is_none());
+            assert!(model.ui.completion.completion_commit.is_none());
             update(&mut model, Msg::Document(DocumentMsg::Undo));
             assert_eq!(model.document().buffer.to_string(), "let s = \"./asold\";");
         }
@@ -609,7 +687,7 @@ mod tests {
                 result: Err("No such directory".into()),
             }),
         );
-        assert!(model.ui.completion_menu.is_some());
+        assert!(model.ui.completion.completion_menu.is_some());
         assert!(model.ui.cursor_overlay.is_none());
         server_reply(&mut model, "asset.rs", false);
         assert!(model.ui.cursor_overlay.is_some());
@@ -625,11 +703,12 @@ mod tests {
         let mut model = fixture("let s = \"./as|\";", LanguageId::Rust);
         model.config.lsp.enabled = true;
         trigger(&mut model);
-        let request = Arc::clone(model.ui.completion_path.as_ref().unwrap());
+        let request = Arc::clone(model.ui.completion.completion_path.as_ref().unwrap());
         server_reply(&mut model, "asset.rs", true);
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
         assert!(model
             .ui
+            .completion
             .completion_menu
             .as_ref()
             .unwrap()
@@ -638,17 +717,19 @@ mod tests {
         parse(&mut model);
         assert!(model
             .ui
+            .completion
             .completion_menu
             .as_ref()
             .unwrap()
             .pending_resolve
             .is_some());
+        let candidate = pending_candidate(&model);
         update(
             &mut model,
             Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                 document_id: request.document_id,
                 revision: request.revision,
-                selected: 0,
+                candidate,
                 detail: None,
                 documentation: None,
                 additional_text_edits: Vec::new(),
@@ -687,10 +768,24 @@ mod tests {
             std::path::Path::new("/project"),
             None,
         );
+        let session = model
+            .ui
+            .completion
+            .completion_menu
+            .as_ref()
+            .unwrap()
+            .identity
+            .session;
+        let position = crate::lsp::position_to_lsp(
+            model.document(),
+            model.editor().active_cursor().to_position(),
+        );
         update(
             &mut model,
             Msg::Lsp(crate::messages::LspMsg::CompletionResolved {
                 document_id: request.document_id,
+                session,
+                position,
                 revision: request.revision,
                 items,
                 is_incomplete: false,
@@ -724,13 +819,14 @@ mod tests {
         let request = parse(&mut model).unwrap();
         server_reply(&mut model, "asset.rs", true);
         update(&mut model, Msg::Document(DocumentMsg::InsertChar('!')));
-        assert!(model.ui.completion_commit.is_some());
+        assert!(model.ui.completion.completion_commit.is_some());
+        let candidate = pending_candidate(&model);
         update(
             &mut model,
             Msg::Lsp(crate::messages::LspMsg::CompletionItemResolved {
                 document_id: request.document_id,
                 revision: request.revision,
-                selected: 0,
+                candidate,
                 detail: None,
                 documentation: None,
                 additional_text_edits: Vec::new(),
@@ -755,7 +851,7 @@ mod tests {
             );
             assert!(model.ui.cursor_overlay.is_none());
             assert_eq!(parse(&mut model).is_some(), allowed);
-            assert_eq!(model.ui.completion_path.is_some(), allowed);
+            assert_eq!(model.ui.completion.completion_path.is_some(), allowed);
         }
     }
 
@@ -831,7 +927,7 @@ mod tests {
                 _ => unreachable!(),
             }
             reply(&mut model, request, "assets", true);
-            assert!(model.ui.completion_path.is_none());
+            assert!(model.ui.completion.completion_path.is_none());
             assert!(model.ui.cursor_overlay.is_none());
             assert_eq!(model.document().buffer.to_string(), "./as");
         }

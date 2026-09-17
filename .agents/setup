@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+step() {
+    local label="$1"
+    shift
+    echo "==> $label"
+    time "$@"
+}
+
+packages=(
+    build-essential
+    curl
+    git
+    libayatana-appindicator3-dev
+    libgtk-3-dev
+    librsvg2-dev
+    libwayland-dev
+    libwebkit2gtk-4.1-dev
+    libxkbcommon-dev
+    pkg-config
+)
+missing_packages=()
+for package in "${packages[@]}"; do
+    if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q '^install ok installed$'; then
+        missing_packages+=("$package")
+    fi
+done
+
+if ((${#missing_packages[@]})); then
+    step "Updating apt metadata" sudo apt-get update
+    step "Installing system dependencies" sudo env DEBIAN_FRONTEND=noninteractive \
+        apt-get install -y "${missing_packages[@]}"
+else
+    echo "==> System dependencies already installed"
+fi
+
+if [[ ! -x "$HOME/.cargo/bin/rustup" ]]; then
+    step "Installing rustup" bash -c \
+        'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none'
+fi
+
+export PATH="$HOME/.cargo/bin:$PATH"
+step "Installing the stable Rust toolchain" rustup toolchain install stable \
+    --profile minimal --component clippy,rustfmt
+rustup default stable
+
+if ! command -v just >/dev/null 2>&1; then
+    step "Installing just" cargo install just --locked
+else
+    echo "==> just already installed"
+fi
+
+if ! command -v cargo-nextest >/dev/null 2>&1; then
+    echo "==> Installing cargo-nextest"
+    time curl --proto '=https' --tlsv1.2 -LsSf https://get.nexte.st/latest/linux |
+        tar zxf - -C "$HOME/.cargo/bin"
+else
+    echo "==> cargo-nextest already installed"
+fi
+
+step "Fetching locked Rust dependencies" cargo fetch --locked
+step "Building Rust development targets" cargo build --locked --all-targets --all-features
+step "Installing locked website dependencies" npm ci --prefix website
+
+echo "==> Orb setup complete"

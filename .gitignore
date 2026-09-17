@@ -50,6 +50,7 @@ wip/*
 dumps/
 threads/
 draft.README.md
+.amp/portals/*
 
 # Git worktrees
 .worktrees/

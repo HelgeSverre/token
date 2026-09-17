@@ -188,9 +188,15 @@ mod tests {
     fn recency_comment_fallback_covers_physical_lines_without_changing_active_text() {
         let mut document = crate::model::Document::with_text("α\r\n    ");
         document.id = Some(crate::model::DocumentId(1));
-        let mut request =
-            super::super::inline::build_request(&document, (1, 4), 1, Some("rust".into()), false)
-                .unwrap();
+        let mut request = super::super::inline::build_request(
+            &document,
+            (1, 4),
+            crate::completion::session::SessionId(1),
+            crate::completion::session::RequestId(1),
+            Some("rust".into()),
+            false,
+        )
+        .unwrap();
         request.extra_context.push(ContextChunk {
             filename: "helper.rs".into(),
             text: "one\rtwo\r\nthree\n".into(),

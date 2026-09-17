@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# This repository has no backing services or session-scoped authentication.
+# Keep wake-up fast; the toolchain and dependencies are restored from the orb snapshot.
+echo "Orb environment ready"

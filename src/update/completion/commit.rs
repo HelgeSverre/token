@@ -26,10 +26,10 @@ fn eligible(model: &AppModel) -> bool {
 }
 
 pub(super) fn pending_is_valid(model: &AppModel) -> bool {
-    let Some(pending) = &model.ui.completion_commit else {
+    let Some(pending) = &model.ui.completion.completion_commit else {
         return false;
     };
-    let Some(menu) = &model.ui.completion_menu else {
+    let Some(menu) = &model.ui.completion.completion_menu else {
         return false;
     };
     let Some(overlay) = model.ui.cursor_overlay else {
@@ -46,18 +46,18 @@ pub(super) fn pending_is_valid(model: &AppModel) -> bool {
         && model.editor().active_cursor_index == pending.active_cursor_index
         && menu.document_id == pending.document_id
         && menu.revision.wrapping_add(1) == pending.revision
-        && menu.pending_resolve == Some(pending.selected)
+        && menu.pending_resolve == Some(pending.candidate)
         && overlay.kind == CursorOverlayKind::Completion
-        && overlay.selected == pending.selected
+        && menu.candidate_for_row(overlay.selected) == Some(pending.candidate)
 }
 
 pub(in crate::update) fn cancel_pending_commit(model: &mut AppModel) -> Option<Cmd> {
-    model.ui.completion_commit.as_ref()?;
+    model.ui.completion.completion_commit.as_ref()?;
     dismiss_with_cleanup(model)
 }
 
 pub(in crate::update) fn reconcile_pending_commit(model: &mut AppModel) -> Option<Cmd> {
-    if model.ui.completion_commit.is_some() && !pending_is_valid(model) {
+    if model.ui.completion.completion_commit.is_some() && !pending_is_valid(model) {
         dismiss_with_cleanup(model)
     } else {
         None
@@ -80,7 +80,7 @@ pub(in crate::update) fn try_commit_character(
     model: &mut AppModel,
     character: char,
 ) -> Option<Cmd> {
-    let menu = model.ui.completion_menu.as_ref()?;
+    let menu = model.ui.completion.completion_menu.as_ref()?;
     let overlay = model.ui.cursor_overlay?;
     if character.is_control() || !eligible(model) {
         return None;
@@ -101,6 +101,7 @@ pub(in crate::update) fn try_commit_character(
     let MenuInsert::Lsp(data) = &menu.selected_item(overlay.selected)?.insert else {
         return None;
     };
+    let candidate = menu.candidate_for_row(overlay.selected)?;
     if !data.commit_characters.contains(&character) {
         return None;
     }
@@ -109,7 +110,18 @@ pub(in crate::update) fn try_commit_character(
     }
     if !data.can_resolve || data.resolved {
         let data = data.clone();
-        let edits = apply_lsp_accept(model, &data, Some(character));
+        let edits = match apply_lsp_accept(model, &data, Some(character)) {
+            Ok(edits) => edits,
+            Err(failure) => {
+                model.ui.set_status(failure.message());
+                let insertion = super::super::document::update_document(
+                    model,
+                    DocumentMsg::InsertChar(character),
+                );
+                let _ = dismiss(model);
+                insertion
+            }
+        };
         return after_commit(model, character, edits).or(Some(Cmd::Redraw));
     }
 
@@ -118,11 +130,34 @@ pub(in crate::update) fn try_commit_character(
     let file_path = model.document().file_path.clone()?;
     let language = model.document().language;
     // Resolve against the original item before staging the literal keystroke.
-    // A pending Enter resolve is reused, not superseded by another request.
-    let resolve = accept_selected(model);
+    // Reuse a pending resolve only when it belongs to this exact candidate;
+    // navigation may have selected another equal-looking item meanwhile.
+    let resolve = if menu.pending_resolve == Some(candidate) {
+        None
+    } else {
+        let resolve = Cmd::LspResolveCompletionItem {
+            document_id,
+            revision: menu.revision,
+            server_id: data.server_id.clone(),
+            root: data.root.clone(),
+            raw_item: std::sync::Arc::clone(&data.raw),
+            candidate,
+            purpose: ResolvePurpose::Accept,
+        };
+        model
+            .ui
+            .completion
+            .completion_menu
+            .as_mut()?
+            .pending_resolve = Some(candidate);
+        Some(resolve)
+    };
+    // A commit character supersedes an Enter/click accept that was waiting on
+    // this same resolve. From here the staged literal's stronger guard owns it.
+    model.ui.completion.completion_accept = None;
     let insertion =
         super::super::document::update_document(model, DocumentMsg::InsertChar(character));
-    model.ui.completion_commit = Some(PendingCommit {
+    model.ui.completion.completion_commit = Some(PendingCommit {
         character,
         document_id,
         editor_id,
@@ -132,7 +167,7 @@ pub(in crate::update) fn try_commit_character(
         cursors: model.editor().cursors.clone(),
         active_cursor_index: model.editor().active_cursor_index,
         undo_len: model.document().undo_stack.len(),
-        selected: overlay.selected,
+        candidate,
     });
     // Keep the menu's original revision until resolve; ordinary refiltering
     // would discard it at the punctuation boundary. Run the resolve effect LAST:
@@ -182,7 +217,16 @@ pub(super) fn finish_pending(
     // Restore the pristine coordinate basis so all existing UTF-16 conversion,
     // overlap filtering, snippet placement and multi-cursor rules remain shared.
     let _ = apply_planned_edits(model, pending.document_id, &removals, EditCarets::Preserve);
-    let edits = apply_lsp_accept(model, data, Some(pending.character));
+    let edits = match apply_lsp_accept(model, data, Some(pending.character)) {
+        Ok(edits) => edits,
+        Err(failure) => {
+            model.ui.set_status(failure.message());
+            super::super::document::update_document(
+                model,
+                DocumentMsg::InsertChar(pending.character),
+            )
+        }
+    };
     join_history(model, pending.undo_len);
     after_commit(model, pending.character, edits)
 }

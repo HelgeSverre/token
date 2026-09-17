@@ -44,7 +44,7 @@ fn open_menu(
     // but unrendered would otherwise be mistaken for still-open by
     // whatever reads it next (e.g. completion re-triggering on the next
     // edit via `sync_after_document_edit`'s `menu_open` check).
-    model.ui.completion_menu = None;
+    model.ui.completion.completion_menu = None;
     model.ui.hover_card = None;
     model.ui.reference_list = None;
     model.ui.code_action_list = None;
@@ -222,7 +222,8 @@ mod tests {
         // completion as still open on the next edit.
         let mut model = AppModel::new(800, 600, 1.0);
         let document_id = model.document().id.unwrap();
-        model.ui.completion_menu = Some(crate::completion::menu::CompletionMenuState {
+        model.ui.completion.completion_menu = Some(crate::completion::menu::CompletionMenuState {
+            identity: crate::completion::menu::MenuIdentity::default(),
             document_id,
             revision: 0,
             query_start: crate::model::Cursor::at(0, 0),
@@ -243,7 +244,7 @@ mod tests {
         open_menu(&mut model, target, (0, 0, 0));
 
         assert!(
-            model.ui.completion_menu.is_none(),
+            model.ui.completion.completion_menu.is_none(),
             "the sibling completion popup's state must be cleared, not just overwritten"
         );
         assert_eq!(

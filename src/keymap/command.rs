@@ -335,6 +335,12 @@ pub enum Command {
     // ========================================================================
     /// Explicitly open the menu-completion popup (Ctrl+Space)
     TriggerCompletionMenu,
+    AcceptMenuCompletion,
+    DismissMenuCompletion,
+    NextMenuCompletion,
+    PreviousMenuCompletion,
+    NextMenuCompletionPage,
+    PreviousMenuCompletionPage,
     /// Inline ghost-text suggestions (autocomplete.md Phase 2)
     TriggerInlineSuggestion,
     AcceptInlineSuggestion,
@@ -643,6 +649,12 @@ impl Command {
 
             // Completion
             TriggerCompletionMenu => vec![Msg::Completion(CompletionMsg::TriggerMenu)],
+            AcceptMenuCompletion => vec![Msg::Completion(CompletionMsg::AcceptMenuItem)],
+            DismissMenuCompletion => vec![Msg::Completion(CompletionMsg::Dismiss)],
+            NextMenuCompletion => vec![Msg::Completion(CompletionMsg::MenuNext)],
+            PreviousMenuCompletion => vec![Msg::Completion(CompletionMsg::MenuPrev)],
+            NextMenuCompletionPage => vec![Msg::Completion(CompletionMsg::MenuPageDown)],
+            PreviousMenuCompletionPage => vec![Msg::Completion(CompletionMsg::MenuPageUp)],
             TriggerInlineSuggestion => {
                 vec![Msg::Completion(CompletionMsg::TriggerInline {
                     explicit: true,
@@ -897,6 +909,12 @@ impl Command {
             CsvExit => "Exit CSV View",
 
             TriggerCompletionMenu => "Trigger Completion",
+            AcceptMenuCompletion => "Accept Menu Completion",
+            DismissMenuCompletion => "Dismiss Menu Completion",
+            NextMenuCompletion => "Next Menu Completion",
+            PreviousMenuCompletion => "Previous Menu Completion",
+            NextMenuCompletionPage => "Next Menu Completion Page",
+            PreviousMenuCompletionPage => "Previous Menu Completion Page",
             TriggerInlineSuggestion => "Trigger Inline Suggestion",
             AcceptInlineSuggestion => "Accept Inline Suggestion",
             AcceptInlineWord => "Accept Inline Suggestion Word",
