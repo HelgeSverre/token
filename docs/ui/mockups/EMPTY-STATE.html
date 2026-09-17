@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Empty state · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .empty-demo { height: 414px; display: grid; grid-template-columns: 1fr 244px; overflow: hidden; }
+    .empty-list { border-right: 1px solid var(--line); background: var(--panel); }
+    .empty-list-head { height: 37px; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid var(--line); }
+    .empty-list-title { display:flex; gap:8px; align-items:center; color:var(--text); }
+    .empty-message { height:calc(100% - 38px); display:flex; align-items:center; justify-content:center; text-align:center; }
+    .empty-message p { margin:6px 0 0; font-size:12px; color:var(--faint); }
+    .empty-title { color:var(--muted); font-size:13px; }
+    .empty-side { padding:14px 12px; background:var(--editor); }
+    .empty-side h3 { margin:0 0 14px; font-size:11px; color:var(--faint); letter-spacing:.06em; text-transform:uppercase; font-weight:400; }
+    .scope-row { display:flex; align-items:center; gap:8px; padding:7px 6px; font-size:12px; color:var(--muted); }
+    .scope-row.active { background:var(--control-selected); color:var(--control-selected-fg); border-radius:4px; }
+    .empty-variants { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:14px; }
+    .empty-variant { border:1px solid var(--line); background:var(--panel); min-height:72px; padding:12px; }
+    .empty-variant strong { display:block; font-weight:400; font-size:12px; color:var(--text); margin-bottom:5px; }
+    .empty-variant span { display:block; color:var(--faint); font-size:11px; line-height:15px; }
+  </style>
+</head>
+<body>
+  <script src="../../../prototypes/debug-performance-themes.js"></script><script src="shared.js"></script>
+  <script>
+    Mockup.mount({
+      id: 'EMPTY-STATE', title: 'Empty state',
+      description: 'Feature-owned, passive explanation for an empty collection.',
+      status: 'Proposed component',
+      content: `
+        <section class="window empty-demo" aria-label="Problems panel with no diagnostics">
+          <div class="empty-list">
+            <div class="empty-list-head"><div class="empty-list-title">${Mockup.icon('warning')} <span>Problems</span><span class="badge">0</span></div><button class="btn quiet" aria-label="Problems options">${Mockup.icon('more')}</button></div>
+            <div class="empty-message"><div>${Mockup.icon('check', 20)}<div class="empty-title">No problems in this file</div><p>Diagnostics update when the active document changes.</p></div></div>
+          </div>
+          <aside class="empty-side"><h3>Scope</h3><div class="scope-row active">${Mockup.icon('file')} Current file</div><div class="scope-row">${Mockup.icon('folder')} Workspace</div><div class="separator" style="margin:13px 0"></div><span class="help">The empty message belongs to Problems. It has no focus, action, or retained state.</span></aside>
+        </section>
+        <div class="empty-variants" aria-label="Empty state comparisons">
+          <div class="empty-variant"><div class="state-label">Outline · current</div><strong>No outline available</strong><span>Rendered from the focused document’s parsed outline.</span></div>
+          <div class="empty-variant"><div class="state-label">Usages · searching</div><strong>Searching references…</strong><span>A result-collection summary, not a reusable empty state.</span></div>
+          <div class="empty-variant"><div class="state-label">Proposed · filtered</div><strong>No matching files</strong><span>Optional detail and retry only when the owning feature defines them.</span></div>
+        </div>`
+    });
+  </script>
+</body></html>

@@ -6,14 +6,29 @@ Token supports fully customizable color themes via YAML configuration files.
 
 ## Available Themes
 
-Token ships with four built-in themes:
+Token ships with fifteen built-in themes:
 
-| Theme         | File               | Description                       |
-|---------------|--------------------|------------------------------------|
-| Default Dark  | `dark.yaml`        | VS Code-inspired dark theme        |
-| Fleet Dark    | `fleet-dark.yaml`  | JetBrains Fleet-inspired dark theme|
-| GitHub Dark   | `github-dark.yaml` | GitHub's dark theme                |
-| GitHub Light  | `github-light.yaml`| GitHub's light theme               |
+| Theme              | ID               | File                 | Light/Dark | Description                                                                        |
+|--------------------|------------------|----------------------|------------|-------------------------------------------------------------------------------------|
+| Default Dark       | `default-dark`   | `dark.yaml`          | Dark       | VS Code-inspired dark theme                                                         |
+| Study              | `study`          | `study.yaml`         | Dark       | Cool graphite surfaces with restrained teal accents, from the performance-panel study |
+| Fleet Dark         | `fleet-dark`     | `fleet-dark.yaml`    | Dark       | JetBrains Fleet-inspired dark theme                                                |
+| GitHub Dark        | `github-dark`    | `github-dark.yaml`   | Dark       | GitHub's dark theme                                                                 |
+| GitHub Light       | `github-light`   | `github-light.yaml`  | Light      | GitHub's light theme                                                               |
+| Dracula            | `dracula`        | `dracula.yaml`       | Dark       | The iconic dark theme with bold purples, pinks, and cyans                          |
+| Catppuccin Mocha   | `mocha`          | `mocha.yaml`         | Dark       | Soothing pastel theme with warm, cozy colors                                       |
+| Nord               | `nord`           | `nord.yaml`          | Dark       | Arctic, north-bluish color palette with dimmed pastels                             |
+| Tokyo Night        | `tokyo-night`    | `tokyo-night.yaml`   | Dark       | Neon lights of downtown Tokyo at night                                             |
+| Gruvbox Dark       | `gruvbox-dark`   | `gruvbox-dark.yaml`  | Dark       | Retro groove color scheme with warm, earthy tones                                  |
+| Liseth Solutions   | `liseth`         | `liseth.yaml`        | Dark       | Liseth Solutions brandbook: navy ground, cyan hero, blue and purple accents        |
+| Jake               | `jake`           | `jake.yaml`          | Dark       | Rose on near-black, after jakefile.dev                                             |
+| Sema               | `sema`           | `sema.yaml`          | Dark       | Warm parchment on charcoal with gold, after sema-lang.com                           |
+| Glue               | `glue`           | `glue.yaml`          | Dark       | Graphite with a yellow highlighter, after getglue.dev                               |
+| FEdit              | `fedit`          | `fedit.yaml`         | Dark       | Zinc terminal green, after fedit.dev                                                |
+
+The same themes are shown in the website theme gallery
+(`website/src/data/themes.ts`, generated from `themes/*.yaml` by
+`scripts/generate-themes.mjs`).
 
 ---
 
@@ -74,6 +89,7 @@ Colors use hexadecimal format:
 | `cursor_color`           | Primary cursor color                 |
 | `selection_background`   | Selected text background             |
 | `secondary_cursor_color` | Multi-cursor secondary cursor color  |
+| `indent_guide`           | Indentation guide line color         |
 
 #### `gutter` - Line Numbers Area
 
@@ -90,6 +106,7 @@ Colors use hexadecimal format:
 |--------------|--------------------------|
 | `background` | Status bar background    |
 | `foreground` | Status bar text color    |
+| `border`     | Status bar border color  |
 
 #### `sidebar` - File Tree Sidebar
 
@@ -129,6 +146,49 @@ Colors use hexadecimal format:
 | `warning`              | Warning message color            |
 | `error`                | Error message color              |
 
+Extended palette keys (optional; when omitted they are derived from the core
+colors — for example, hairlines are mixed from the panel background and
+foreground, and severity colors fall back to the core error/warning):
+
+| Key                     | Description                              |
+|-------------------------|------------------------------------------|
+| `accent`                | Accent color for active work             |
+| `accent_bright`         | Brighter accent variant                  |
+| `panel_background`      | Overlay panel background                |
+| `panel_secondary`       | Secondary panel tier background         |
+| `recessed_wash`         | Recessed background wash                 |
+| `hairline`              | Thin separator lines                     |
+| `selection_wash`        | Selected-row background wash             |
+| `match_on_selection`    | Match text color on selected rows        |
+| `text_primary`          | Primary text color                       |
+| `text_bright`           | Bright text color                        |
+| `text_secondary`        | Secondary text color                    |
+| `text_dim`              | Dim text color                           |
+| `keycap_bg`             | Shortcut keycap background               |
+| `keycap_border`         | Shortcut keycap border                   |
+| `keycap_fg`             | Shortcut keycap text                     |
+| `severity_error`        | Error severity icon color                |
+| `severity_error_text`   | Error severity text color                |
+| `severity_warning`      | Warning severity icon color              |
+| `severity_warning_text` | Warning severity text color              |
+| `severity_info`         | Info severity icon color                 |
+| `severity_info_text`    | Info severity text color                 |
+| `severity_hint`         | Hint severity icon color                 |
+| `severity_hint_text`    | Hint severity text color                 |
+
+#### `button` - Buttons (optional)
+
+| Key                   | Description                       |
+|-----------------------|-----------------------------------|
+| `background`          | Rest background                    |
+| `background_hover`    | Hover background                   |
+| `background_pressed`  | Pressed background                 |
+| `background_selected` | Selected background                |
+| `foreground`          | Label text color                   |
+| `foreground_disabled` | Disabled label text color          |
+| `border`              | Border color                       |
+| `focus_ring`          | Focus ring color                   |
+
 #### `csv` - CSV Viewer/Editor Mode
 
 | Key                       | Description                       |
@@ -139,6 +199,28 @@ Colors use hexadecimal format:
 | `selected_cell_background`| Background of selected cell       |
 | `selected_cell_border`    | Border around selected cell       |
 | `number_foreground`       | Color for numeric cell values     |
+
+#### `image_preview` - Image Viewer
+
+| Key                  | Description                                          |
+|----------------------|------------------------------------------------------|
+| `checkerboard_light` | Light checkerboard square behind transparent images  |
+| `checkerboard_dark`  | Dark checkerboard square behind transparent images   |
+| `checkerboard_size`  | Checkerboard square size in pixels                  |
+
+#### `scrollbar` - Scrollbars
+
+| Key           | Description                    |
+|---------------|--------------------------------|
+| `track`       | Scrollbar track color          |
+| `thumb`       | Scrollbar thumb color          |
+| `thumb_hover` | Scrollbar thumb color on hover |
+
+#### `splitter` - Split Panes
+
+| Key          | Description               |
+|--------------|---------------------------|
+| `background` | Splitter divider color   |
 
 ### Syntax Colors
 
@@ -267,6 +349,13 @@ These colors are used for syntax highlighting across all supported languages:
    ```
 
 3. **Restart Token** and select your theme from the Command Palette.
+
+> **Note:** Sections and individual keys are optional — anything omitted falls
+> back to defaults derived from the colors you do provide (for example,
+> `overlay.hairline` is mixed from the panel background and foreground, and
+> `editor.indent_guide` falls back to a foreground/background-derived color).
+> A complete theme file like the example above will look consistent
+> everywhere; a minimal one will still work.
 
 ---
 

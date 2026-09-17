@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Status bar · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .status-study { height:100%; display:grid; grid-template-rows:minmax(0,1fr) 132px; gap:14px; }
+    .status-window { min-height:0; display:grid; grid-template-rows:36px 1fr 26px; overflow:hidden; }
+    .status-tabs { display:flex; align-items:end; background:var(--tabs-bg); border-bottom:1px solid var(--line); }
+    .status-tabs span { height:35px; display:flex; align-items:center; gap:7px; padding:0 13px; color:var(--tab-active-fg); background:var(--tab-active-bg); border-top:1px solid var(--focus); border-right:1px solid var(--line); font-size:12px; }
+    .status-code { padding:10px 0; overflow:hidden; background:var(--editor); font:12px/22px var(--font-mono); }
+    .status-code div { display:grid; grid-template-columns:52px minmax(0,1fr); height:22px; white-space:pre; }
+    .status-code b { color:var(--gutter-fg); text-align:right; padding-right:13px; border-right:1px solid var(--line); font-weight:400; }
+    .status-code span { padding-left:12px; color:var(--code-fg); }
+    .status-code .current span { background:var(--current-line); }
+    .native-status { height:26px; display:flex; align-items:center; gap:0; padding:0 10px; color:var(--status-fg); background:var(--status-bg); border-top:1px solid var(--status-border); font-size:11px; overflow:hidden; white-space:nowrap; }
+    .native-status .left { display:flex; align-items:center; gap:9px; min-width:0; }
+    .native-status .right { display:flex; align-items:center; gap:8px; margin-left:auto; }
+    .native-status .segment { display:inline-flex; align-items:center; gap:5px; }
+    .native-status .sep { width:1px; height:12px; background:rgba(255,255,255,.36); margin:0 9px; }
+    .status-notes { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+    .status-note { min-height:0; padding:10px 12px; }
+    .status-note .state-label { margin:0 0 8px; }
+    .status-note p { margin:0; color:var(--faint); font-size:11px; line-height:1.38; }
+    .status-note .value { color:var(--text); display:block; font:12px/1.5 var(--font-mono); }
+  </style>
+</head>
+<body>
+  <script src="../../../prototypes/debug-performance-themes.js"></script>
+  <script src="shared.js"></script>
+  <script>
+    (() => {
+      const code=['<span class="syntax-keyword">pub fn</span> <span class="syntax-function">sync_status_bar</span>(model: <span class="syntax-type">&amp;mut AppModel</span>) {','    <span class="syntax-keyword">let</span> segments = &amp;<span class="syntax-keyword">mut</span> model.ui.status_bar;','    segments.<span class="syntax-function">set_file_name</span>(document.display_name());','    segments.<span class="syntax-function">set_cursor</span>(editor.cursor_position());','    segments.<span class="syntax-function">set_diagnostics</span>(document.diagnostics());','}'];
+      const rows=code.map((x,i)=>`<div class="${i===2?'current':''}"><b>${62+i}</b><span>${x}</span></div>`).join('');
+      Mockup.mount({
+        id:'STATUS-BAR', title:'Status bar', status:'Established surface · visual study',
+        description:'A passive, full-width bottom-edge projection of the focused document. It is separate from pane footers and owns no actions.',
+        content:`<div class="status-study">
+          <section class="window status-window" aria-label="Editor with application status bar"><div class="status-tabs"><span>${Mockup.icon('file')} status_bar.rs <i class="muted">•</i></span></div><div class="status-code">${rows}</div><footer class="native-status"><span class="left"><span class="segment">${Mockup.icon('file',14)} status_bar.rs</span><span class="sep"></span><span class="segment">Saved</span></span><span class="right"><span class="segment">${Mockup.icon('warning',14)} 2</span><span class="segment">Rust Analyzer</span><span class="sep"></span><span class="segment mono">Ln 64, Col 17</span><span class="segment mono">Spaces: 4</span><span class="segment mono">UTF-8</span></span></footer></section>
+          <section class="status-notes" aria-label="Status bar contract notes"><div class="surface status-note"><div class="state-label">Current visual study</div><span class="value">26 logical px</span><p>Roomier prototype-style illustration. Native Token documents a 19 logical-pixel bar at 1×.</p></div><div class="surface status-note"><div class="state-label">Segment ownership</div><span class="value">focused document</span><p>File, diagnostics and cursor state derive from their owners. A transient message occupies one fixed slot.</p></div><div class="surface status-note"><div class="state-label">Passive projection</div><span class="value">no input machine</span><p>Visual separators are measured layout detail, not action affordances or toolbar controls.</p></div></section>
+        </div>`
+      });
+    })();
+  </script>
+</body>
+</html>

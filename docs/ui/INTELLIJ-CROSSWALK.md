@@ -48,13 +48,13 @@ family documents describe implementation status and proposed contracts.
 | ---------------------------- | --------------------------------------------------------------------------------------------------------- |
 | Main toolbar                 | Toolbar; adopting an always-visible main toolbar is a separate product decision                           |
 | Project/VCS/run widgets      | Compositions of select, menu, button and status; do not invent these workflows just to populate a gallery |
-| Tool window stripes          | Potential panel-navigation composition; defer until there is a concrete navigation need                   |
+| Tool window stripes          | [ActivityRail](ACTIVITY-RAIL.md), specified for left/right edges; implementation remains deferred |
 | Editor area and tabs         | Editor surface, tabs and splitter                                                                         |
 | Gutter and inlays            | Editor-surface subcomponents, backed by the existing visual-row geometry                                  |
 | Inspection widget            | Diagnostic/status composition; not a second diagnostics state store                                       |
 | Floating toolbar             | Toolbar inside anchored popup; avoid automatic display without an explicit interaction design             |
 | Status bar/widgets           | Status bar                                                                                                |
-| Navigation bar               | Breadcrumb navigation is a possible later component; no automatic replacement of Token's explorer         |
+| Navigation bar               | [BreadcrumbBar](BREADCRUMBS.md), proposed per editor group; complements existing Explorer and tabs |
 | Dialogs                      | Dialog; keep Settings as its separate preferences page                                                    |
 | Popups                       | Popup, specialized into menu, completion and documentation content                                        |
 | Notifications/alerts/banners | Notification or dialog according to whether interaction must block                                        |

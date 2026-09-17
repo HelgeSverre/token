@@ -1,5 +1,11 @@
 # Splitter
 
+<!-- token-ui-mockup:begin SPLITTER -->
+[![Visual target under review: Splitter](mockups/renders/SPLITTER-emphasised.png)](mockups/SPLITTER.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/SPLITTER.png) · [Open normal mockup](mockups/SPLITTER.html?view=normal) · [Open emphasised mockup](mockups/SPLITTER.html?view=emphasised).*
+<!-- token-ui-mockup:end SPLITTER -->
+
 A splitter is the movable boundary of an editor-area `SplitContainer`. It is not
 a generic divider: it owns neither panes, focus, nor persistence. This chapter
 specifies the current layout-tree implementation and its real constraint gap.

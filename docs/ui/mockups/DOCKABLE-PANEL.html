@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dockable panel · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css">
+  <script src="../../../prototypes/debug-performance-themes.js"></script><script src="shared.js"></script>
+  <style>
+    .dockable-study { display:grid; grid-template-columns:minmax(0,1fr) 292px; gap:18px; height:100%; min-height:0; }
+    .work-canvas { position:relative; min-height:0; overflow:hidden; border:1px solid var(--window-border,#3c3c3c); background:var(--editor,#1e1e1e); }
+    .canvas-tabs { height:34px; display:flex; align-items:end; padding-left:10px; gap:2px; background:var(--tabs-bg,#252526); border-bottom:1px solid var(--line,#3c3c3c); }
+    .canvas-tab { height:33px; display:flex; align-items:center; padding:0 12px; color:var(--tab-inactive-fg,#808080); font-size:11px; } .canvas-tab.active { color:var(--bright,#fff); background:var(--editor,#1e1e1e); border:1px solid var(--line,#3c3c3c); border-bottom:0; }
+    .canvas-crumb { height:29px; display:flex; align-items:center; gap:7px; padding:0 12px; border-bottom:1px solid var(--line,#3c3c3c); color:var(--muted,#c9cbcf); font-size:11px; }
+    .canvas-code { padding:13px 0 0 52px; font:12px/21px "JetBrains Mono",monospace; color:var(--code-fg,#d4d4d4); }
+    .canvas-code div { white-space:pre; } .canvas-code .comment { color:var(--syntax-comment,#6a9955); } .canvas-code .keyword { color:var(--syntax-keyword,#c586c0); } .canvas-code .function { color:var(--syntax-fn,#dcdcaa); }
+    .floating-panel { position:absolute; z-index:2; top:78px; right:20px; width:278px; border:1px solid var(--control-selected-border,#007acc); box-shadow:0 14px 28px rgba(0,0,0,.34); background:var(--panel,#252526); }
+    .float-header { height:37px; display:flex; align-items:center; padding:0 9px 0 11px; border-bottom:1px solid var(--line,#3c3c3c); color:var(--bright,#fff); font-size:12px; }
+    .float-actions { display:flex; gap:2px; margin-left:auto; } .float-action { display:grid; place-items:center; width:23px; height:23px; color:var(--muted,#c9cbcf); background:transparent; border:0; border-radius:3px; }
+    .float-body { padding:10px 11px 9px; } .frame-now { display:flex; justify-content:space-between; align-items:baseline; color:var(--muted,#c9cbcf); font-size:10px; } .frame-now strong { color:var(--stat-fg,#ececee); font:15px "JetBrains Mono",monospace; font-weight:400; }
+    .performance-history { height:58px; margin:8px 0; padding:1px 5px; border:1px solid var(--soft-line,#313438); background:var(--editor,#1e1e1e); }
+    .performance-history svg { display:block; width:100%; height:54px; }
+    .float-row { display:flex; justify-content:space-between; padding:4px 0; border-top:1px solid rgba(60,60,60,.65); color:var(--stage-fg,#ccc); font-size:10px; } .float-row code { color:var(--muted,#c9cbcf); font:10px "JetBrains Mono",monospace; }
+    .float-footer { height:26px; display:flex; align-items:center; justify-content:space-between; padding:0 11px; border-top:1px solid var(--line,#3c3c3c); color:var(--faint,#8d9198); font-size:10px; }
+    .float-note { position:absolute; z-index:1; right:19px; top:356px; width:278px; color:var(--faint,#8d9198); font-size:10px; line-height:14px; }
+    .dock-comparison { display:grid; grid-template-rows:auto minmax(0,1fr) auto; min-height:0; border:1px solid var(--line,#3c3c3c); background:var(--panel,#252526); }
+    .comparison-title { padding:11px 12px 8px; border-bottom:1px solid var(--line,#3c3c3c); color:var(--muted,#c9cbcf); font-size:11px; }
+    .docked-panel { margin:11px; border:1px solid var(--soft-line,#313438); background:var(--editor,#1e1e1e); }
+    .docked-head { height:34px; display:flex; align-items:center; padding:0 9px; border-bottom:1px solid var(--line,#3c3c3c); color:var(--bright,#fff); font-size:11px; }
+    .state-line { display:flex; align-items:center; gap:7px; margin-top:7px; color:var(--faint,#8d9198); font-size:10px; } .state-line i { width:6px; height:6px; border:1px solid var(--focus,#4daaff); border-radius:50%; }
+    .comparison-footer { padding:0 12px 12px; color:var(--faint,#8d9198); font-size:10px; line-height:14px; }
+  </style>
+</head>
+<body>
+  <script>
+    (() => {
+      const i = (n) => Mockup.icon(n, 14);
+      const history = Mockup.sparkline({ values:[8.0,8.8,8.4,11.6,8.7,9.3,8.3,9.1,8.6,9.8,8.4,8.9], color:'var(--teal)', width:236, height:54 });
+      const performanceContent = `<div class="float-body"><div class="frame-now"><span>Frame time</span><strong>8.42 ms</strong></div><div class="performance-history" aria-label="Fixed frame time history">${history}</div><div class="float-row"><span>Layout</span><code>1.24 ms</code></div><div class="float-row"><span>Text</span><code>2.08 ms</code></div><div class="float-row"><span>Raster</span><code>3.51 ms</code></div></div><footer class="float-footer"><span>120 samples</span><span class="mono">p95 11.6</span></footer>`;
+      const content = `<div class="dockable-study">
+        <section class="work-canvas" aria-label="Editor with floating performance inspection panel">
+          <nav class="canvas-tabs"><span class="canvas-tab active">chrome.rs</span><span class="canvas-tab">frame.rs</span></nav>
+          <div class="canvas-crumb">src <span>›</span> layout <span>›</span> chrome.rs</div>
+          <div class="canvas-code"><div><span class="keyword">pub fn</span> <span class="function">solve_chrome</span>(model: &amp;AppModel) {</div><div>    <span class="comment">// Canvas stays editable while the panel is open.</span></div><div>    let work = editor_area(model);</div><div>    place_docks(work, model);</div><div>}</div><br><div><span class="keyword">fn</span> paint_frame(frame: &amp;Frame) {</div><div>    renderer.render(frame);</div></div>
+          <section class="floating-panel" aria-label="Floating Performance panel">
+            <header class="float-header">Performance <div class="float-actions"><button class="float-action" aria-label="Dock panel">${i('dock')}</button><button class="float-action" aria-label="Close panel">${i('close')}</button></div></header>
+            ${performanceContent}
+          </section>
+          <div class="float-note">A floating panel is in Token's window, does not block the editor, and keeps the same identity when it returns to a dock.</div>
+        </section>
+        <aside class="dock-comparison" aria-label="Docked comparison">
+          <div class="comparison-title">Same panel · docked presentation</div>
+          <section class="docked-panel"><header class="docked-head">Performance <span style="margin-left:auto;color:var(--muted,#c9cbcf)">${i('float')}</span></header>${performanceContent}</section>
+          <div class="comparison-footer">Close remembers the current presentation. Reopen restores this float or its dock return slot.</div>
+        </aside>
+      </div>`;
+      Mockup.mount({ id:'DOCKABLE-PANEL', title:'Dockable panel', description:'One in-window panel that can move between a dock slot and a floating inspection rectangle.', status:'Proposed component', content });
+    })();
+  </script>
+</body>
+</html>

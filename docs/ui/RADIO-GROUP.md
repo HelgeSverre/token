@@ -1,5 +1,11 @@
 # Radio group
 
+<!-- token-ui-mockup:begin RADIO-GROUP -->
+[![Visual target under review: Radio group](mockups/renders/RADIO-GROUP-emphasised.png)](mockups/RADIO-GROUP.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/RADIO-GROUP.png) · [Open normal mockup](mockups/RADIO-GROUP.html?view=normal) · [Open emphasised mockup](mockups/RADIO-GROUP.html?view=emphasised).*
+<!-- token-ui-mockup:end RADIO-GROUP -->
+
 ## Current status
 
 Token has no radio-circle painter, radio-group model, radio messages, or radio

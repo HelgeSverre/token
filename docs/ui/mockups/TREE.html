@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tree · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .tree-study { block-size:100%; display:grid; grid-template-rows:minmax(0,1fr) 72px; gap:16px; }
+    .tree-examples, .tree-captions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; min-block-size:0; }
+    .tree-example { display:grid; grid-template-rows:40px minmax(0,1fr); gap:12px; min-inline-size:0; min-block-size:0; }
+    .tree-example h2 { color:var(--bright); font-size:13px; line-height:20px; }
+    .tree-example-intro { color:var(--faint); font-size:11px; line-height:17px; margin-block-start:3px; }
+    .tree-pane { display:grid; grid-template-rows:34px minmax(0,1fr); min-inline-size:0; min-block-size:0; border:1px solid var(--line); border-radius:3px; background:var(--sidebar-bg); }
+    .tree-pane-header { display:flex; align-items:center; gap:8px; padding-inline:10px; border-block-end:1px solid var(--line); color:var(--text); font-size:12px; }
+    .tree-pane-header .source { flex:1; min-inline-size:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .tree-pane-header .format { color:var(--faint); font-size:10px; white-space:nowrap; }
+    .tree-content { min-inline-size:0; min-block-size:0; padding:8px 6px; color:var(--sidebar-fg); }
+    .tree-content ul, .tree-content li { list-style:none; margin:0; padding:0; }
+    .tree-children { position:relative; }
+    .tree-children::before { content:""; position:absolute; inset-block:0; inset-inline-start:calc(12.5px + var(--guide-depth) * 16px); inline-size:1px; background:var(--soft-line); }
+    .branch { position:relative; block-size:26px; display:flex; align-items:center; gap:4px; padding-inline:calc(6px + var(--depth) * 16px) 8px; border-radius:2px; min-inline-size:0; font-size:12px; line-height:18px; white-space:nowrap; }
+    .branch-disclosure { flex:none; inline-size:14px; block-size:14px; display:grid; place-items:center; color:var(--faint); }
+    .branch-label { min-inline-size:0; overflow:hidden; text-overflow:ellipsis; }
+    .branch-detail { margin-inline-start:auto; padding-inline-start:6px; color:var(--faint); font:10px/18px var(--font-mono); font-variant-numeric:tabular-nums; }
+    .branch-value { margin-inline-start:auto; padding-inline-start:8px; min-inline-size:0; max-inline-size:56%; overflow:hidden; text-overflow:ellipsis; color:var(--faint); font:11px/18px var(--font-mono); }
+    .branch-value.string { color:var(--syntax-string); }
+    .branch-value.number { color:var(--syntax-number); }
+    .branch-value.boolean, .branch-value.null { color:var(--syntax-keyword); }
+    .tree-kind { flex:none; display:grid; place-items:center; inline-size:14px; block-size:14px; margin-inline-end:2px; border:1px solid color-mix(in srgb,var(--syntax-type) 40%,transparent); border-radius:2px; color:var(--syntax-type); font:10px/12px var(--font-mono); }
+    .tree-symbols .branch-label, .tree-data .branch-label { font:11.5px/18px var(--font-mono); }
+    .branch.is-selected { background:var(--sidebar-selected); color:var(--sidebar-selected-fg); }
+    .branch.is-focused { background:var(--control-selected); color:var(--control-selected-fg); outline:1px solid var(--focus); outline-offset:-1px; }
+    .branch.is-focused .branch-disclosure, .branch.is-focused .branch-detail { color:var(--control-selected-fg); }
+    .tree-caption { padding-block-start:10px; border-block-start:1px solid var(--line); color:var(--faint); font-size:11px; line-height:17px; }
+    .tree-caption strong { display:block; margin-block-end:3px; color:var(--muted); font-size:11px; }
+  </style>
+</head>
+<body>
+  <script src="../../../prototypes/debug-performance-themes.js"></script>
+  <script src="shared.js"></script>
+  <script>
+    (() => {
+      const escape = Mockup.escape;
+
+      // One row renderer; features supply their hierarchy, optional symbol,
+      // trailing content and selected/expanded identities. These are static states.
+      function renderNodes(nodes, depth = 0) {
+        return nodes.map((node, index) => {
+          const hasChildren = Boolean(node.children?.length);
+          const expanded = hasChildren && node.open !== false;
+          const selected = Boolean(node.selected);
+          const disclosure = hasChildren ? Mockup.icon(expanded ? 'chevron-down' : 'chevron-right', 14) : '';
+          const value = node.value === undefined ? '' : `<span class="branch-value ${escape(node.type ?? '')}">${escape(node.value)}</span>`;
+          const accessibleName = `${node.label}${node.value === undefined ? '' : `: ${node.value}`}${node.line ? `, line ${node.line}` : ''}`;
+          return `<li role="treeitem" aria-label="${escape(accessibleName)}" aria-level="${depth + 1}" aria-posinset="${index + 1}" aria-setsize="${nodes.length}" aria-selected="${selected}"${hasChildren ? ` aria-expanded="${expanded}"` : ''}>
+            <div class="branch${selected ? ' is-selected' : ''}${node.focused ? ' is-focused' : ''}" style="--depth:${depth}">
+              <span class="branch-disclosure" aria-hidden="true">${disclosure}</span>
+              ${node.kind ? `<span class="tree-kind" aria-hidden="true">${escape(node.kind)}</span>` : ''}
+              <span class="branch-label" title="${escape(node.label)}">${escape(node.label)}</span>
+              ${value}${node.line ? `<span class="branch-detail" aria-hidden="true">${node.line}</span>` : ''}
+            </div>
+            ${expanded ? `<ul class="tree-children" role="group" style="--guide-depth:${depth}">${renderNodes(node.children, depth + 1)}</ul>` : ''}
+          </li>`;
+        }).join('');
+      }
+
+      const outline = [{ label:'Editing', line:1, children:[
+        { label:'Getting started', line:5, children:[
+          { label:'Open a workspace', line:8 },
+          { label:'Open a file', line:16 }
+        ]},
+        { label:'Navigation', line:24, children:[
+          { label:'Go to line', line:29 },
+          { label:'Go to symbol', line:37, selected:true, focused:true },
+          { label:'Switch tabs', line:45 }
+        ]},
+        { label:'Search and replace', line:54, open:false, children:[{ label:'Search scope', line:60 }] },
+        { label:'Multiple cursors', line:82 },
+        { label:'Configuration', line:99, children:[
+          { label:'Typography', line:102 },
+          { label:'Keyboard shortcuts', line:118 }
+        ]},
+        { label:'Troubleshooting', line:136, open:false, children:[{ label:'Common questions', line:140 }] }
+      ]}];
+
+      const type = (label, children = [], options = {}) => ({ label, kind:'C', children, ...options });
+      const hierarchy = [type('Node', [
+        type('Element', [
+          type('HTMLElement', [
+            type('HTMLButtonElement'), type('HTMLInputElement', [], { selected:true }),
+            type('HTMLSelectElement'), type('HTMLTextAreaElement')
+          ]),
+          type('SVGElement', [type('SVGGraphicsElement')], { open:false })
+        ]),
+        type('CharacterData', [type('Text'), type('Comment')]),
+        type('Document'), type('DocumentType'),
+        type('DocumentFragment', [type('ShadowRoot')], { open:false })
+      ])];
+
+      // Illustrative data, not a proposed Token configuration schema. The same
+      // parsed object could come from JSON or YAML; counts are derived from it.
+      const exampleDocument = {
+        name:'token-editor',
+        folders:['src', 'tests'],
+        editor:{ font:{ family:'JetBrains Mono', size:14 }, tabSize:4, wordWrap:false, rulers:[80, 120] },
+        diagnostics:{ enabled:true, severity:'warning' },
+        archived:null
+      };
+      const expandedPaths = new Set(['$', '$.folders', '$.editor', '$.editor.font']);
+      function dataNode(label, value, path) {
+        const array = Array.isArray(value);
+        const collection = value !== null && typeof value === 'object';
+        const entries = collection ? Object.entries(value) : [];
+        return {
+          label,
+          value:collection ? (array ? `[${entries.length}]` : `{${entries.length}}`) : JSON.stringify(value),
+          type:collection ? 'collection' : value === null ? 'null' : typeof value,
+          open:expandedPaths.has(path),
+          selected:path === '$.editor.tabSize',
+          children:entries.map(([key, child]) => dataNode(array ? `[${key}]` : key, child, `${path}.${key}`))
+        };
+      }
+
+      function example({ id, title, description, source, format, className = '', nodes }) {
+        return `<section class="tree-example" aria-labelledby="${id}-title">
+          <header><h2 id="${id}-title">${escape(title)}</h2><p class="tree-example-intro">${escape(description)}</p></header>
+          <div class="tree-pane">
+            <header class="tree-pane-header"><span class="source mono">${escape(source)}</span><span class="format">${escape(format)}</span></header>
+            <div class="tree-content ${className}"><ul role="tree" aria-label="${escape(title)} — static visual example">${renderNodes(nodes)}</ul></div>
+          </div>
+        </section>`;
+      }
+
+      Mockup.mount({
+        id:'TREE', title:'Tree', status:'Proposed component',
+        description:'One hierarchy primitive, three contexts. Disclosure and indentation stay consistent; icons and trailing content are optional.',
+        content:`<div class="tree-study">
+          <div class="tree-examples">
+            ${example({ id:'outline', title:'Markdown outline', description:'Text-only headings · no leading icons', source:'editing.md', format:'Outline', nodes:outline })}
+            ${example({ id:'hierarchy', title:'Class hierarchy', description:'Inheritance · optional class symbols', source:'Node', format:'Subtypes', className:'tree-symbols', nodes:hierarchy })}
+            ${example({ id:'data', title:'Structured data', description:'JSON / YAML · keys, collections and values', source:'example.json', format:'Structure', className:'tree-data', nodes:[dataNode('$', exampleDocument, '$')] })}
+          </div>
+          <div class="tree-captions">
+            <p class="tree-caption"><strong>Text only · selection and focus</strong>The icon slot disappears; leaf labels still align with expandable headings.</p>
+            <p class="tree-caption"><strong>Symbols · inactive selection</strong>Class marks describe nodes. A disclosure arrow alone signals children.</p>
+            <p class="tree-caption"><strong>Values · collapsed collections</strong>Keys retain their hierarchy; values and collection sizes share the trailing slot.</p>
+          </div>
+        </div>`
+      });
+    })();
+  </script>
+</body>
+</html>

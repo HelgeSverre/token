@@ -7,15 +7,15 @@ use super::controls::{
 use super::frame::RoundedRectMaskCache;
 use super::geometry::WidgetRect;
 use super::overlay_surface::{
-    self, Accessory, Anchor, Body, Field, FlatIndex, Header, OverlaySpec, Row, RowIcon, Section,
-    WidthRule,
+    self, Accessory, Anchor, Body, ChoicePresentation, Documentation, Field, FlatIndex, Header,
+    OverlaySpec, Row, RowIcon, Section, WidthRule, Zones,
 };
 use super::scrollbar::{render_scrollbar, ScrollbarColors, ScrollbarGeometry, ScrollbarState};
 use super::{FontRole, Frame, GlyphCache, TextFieldOptions, TextFieldRenderer, TextPainter};
 use crate::completion::menu::MenuItemKind;
 use crate::editable::{EditConstraints, EditableState, Position, StringBuffer};
 use crate::model::gallery::{GalleryState, Preview, Specimen, CATEGORIES};
-use crate::model::Rect;
+use crate::model::{Rect, Span, SpanStyle, StyledText};
 use crate::theme::Theme;
 
 /// One layout snapshot drives drawing, wheel limits, and pointer handling.
@@ -34,8 +34,48 @@ pub struct GalleryLayout {
 pub struct GalleryRow {
     pub specimen: &'static Specimen,
     pub rect: Rect,
-    /// Local to the row, independent of its scroll position.
+    /// Bordered specimen canvas, local to the row and independent of scrolling.
     pub preview: Rect,
+    /// Padded content bounds inside the specimen canvas.
+    pub content: Rect,
+}
+
+const PREVIEW_PAD: f32 = 24.0;
+const STACKED_PREVIEW_Y: f32 = 96.0;
+const NORMAL_ROW_EXTRA: f32 = 64.0;
+const STACKED_ROW_EXTRA: f32 = 144.0;
+const DIVIDER_BOTTOM_INSET: f32 = 16.0;
+
+fn preview_pad_x(preview: Preview) -> f32 {
+    if matches!(
+        preview,
+        Preview::SettingsForm
+            | Preview::SettingsRecords(_)
+            | Preview::SearchCollection(_)
+            | Preview::CompletionDocumentation
+    ) {
+        48.0
+    } else {
+        PREVIEW_PAD
+    }
+}
+
+fn metadata_above(preview: Preview) -> bool {
+    matches!(
+        preview,
+        Preview::SettingsForm
+            | Preview::SettingsRecords(_)
+            | Preview::SearchCollection(_)
+            | Preview::CompletionDocumentation
+    )
+}
+
+fn row_extra(preview: Preview) -> f32 {
+    if metadata_above(preview) {
+        STACKED_ROW_EXTRA
+    } else {
+        NORMAL_ROW_EXTRA
+    }
 }
 
 /// Fixture constraints, not a control's stretch allocation. Heights describe
@@ -61,26 +101,40 @@ fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
         Preview::FieldMultiline => (if compact { 220.0 } else { 320.0 }, 100.0),
         Preview::Checkbox(_) => (field_width, 14.0),
         Preview::Select { .. } => (field_width, 29.0),
-        Preview::SelectOptions => (field_width, 113.0),
+        Preview::SelectOptions => (field_width, 171.0),
         Preview::ChoiceGroup => (field_width, if compact { 74.0 } else { 48.0 }),
         Preview::Disclosure { .. } => (field_width, 22.0),
-        Preview::SearchField => (popup_width, 72.0),
-        Preview::ListRow => (popup_width, 56.0),
+        Preview::SearchField => (popup_width, 184.0),
+        Preview::ListRow => (popup_width, 176.0),
         Preview::FormValidation => (popup_width, 96.0),
-        Preview::MenuRows { .. } => (popup_width, 80.0),
+        Preview::SettingsForm => (if compact { 400.0 } else { 580.0 }, 600.0),
+        Preview::SettingsRecords(_) => (if compact { 500.0 } else { 580.0 }, 600.0),
+        Preview::SearchCollection(crate::model::gallery::SearchCollectionPreview::Grouped) => {
+            (if compact { 500.0 } else { 580.0 }, 420.0)
+        }
+        Preview::SearchCollection(
+            crate::model::gallery::SearchCollectionPreview::Loading
+            | crate::model::gallery::SearchCollectionPreview::Empty,
+        ) => (if compact { 500.0 } else { 580.0 }, 220.0),
+        Preview::CompletionDocumentation => (if compact { 500.0 } else { 580.0 }, 320.0),
+        Preview::HoverDocumentation | Preview::SignatureHelp => (popup_width, 150.0),
+        Preview::MenuRows { .. } => (popup_width, 168.0),
         Preview::Chrome(
             crate::model::gallery::ChromePreview::BottomPanel
             | crate::model::gallery::ChromePreview::RightPanel,
         ) => (popup_width, 140.0),
+        Preview::Chrome(crate::model::gallery::ChromePreview::ProblemsPopulated) => {
+            (popup_width, 300.0)
+        }
         Preview::Chrome(crate::model::gallery::ChromePreview::DocumentDrag) => (popup_width, 48.0),
         Preview::Chrome(_) => (popup_width, 32.0),
         Preview::OverlayTabs => (popup_width, 56.0),
         Preview::Scrollbar {
             horizontal: true, ..
-        } => (field_width, 12.0),
+        } => (popup_width, 110.0),
         Preview::Scrollbar {
             horizontal: false, ..
-        } => (field_width, 96.0),
+        } => (popup_width, 160.0),
         Preview::Splitter { .. } => (field_width, 72.0),
     }
 }
@@ -99,7 +153,10 @@ impl GalleryLayout {
         let specimens = state.specimens();
         let total = (specimens
             .iter()
-            .map(|spec| (specimen_size(spec.preview, state.compact).1 + 64.0).max(112.0) * s)
+            .map(|spec| {
+                let content_h = specimen_size(spec.preview, state.compact).1;
+                (content_h + PREVIEW_PAD * 2.0 + row_extra(spec.preview)).max(112.0) * s
+            })
             .sum::<f32>()) as usize;
         let visible = viewport.height as usize;
         let offset = state
@@ -114,17 +171,35 @@ impl GalleryLayout {
             .into_iter()
             .map(|spec| {
                 let (control_w, control_h) = specimen_size(spec.preview, state.compact);
-                let height = (control_h + 64.0).max(112.0) * s;
+                let stacked = metadata_above(spec.preview);
+                let pad_x = preview_pad_x(spec.preview);
+                let canvas_w = control_w + pad_x * 2.0;
+                let canvas_h = control_h + PREVIEW_PAD * 2.0;
+                let height = (canvas_h + row_extra(spec.preview)).max(112.0) * s;
                 let rect = Rect::new(viewport.x, row_y, viewport.width, height);
                 row_y += height;
-                let max_preview_w = if state.compact { 260.0 } else { 400.0 };
+                let max_preview_w = if state.compact { 284.0 } else { 424.0 };
                 let metadata_w = (viewport.width / s - max_preview_w - 48.0).clamp(180.0, 420.0);
+                let preview_x = if stacked {
+                    ((viewport.width / s - canvas_w) / 2.0).max(12.0)
+                } else {
+                    (metadata_w + 32.0)
+                        .min(viewport.width / s - canvas_w - 12.0)
+                        .max(12.0)
+                };
+                let preview = Rect::new(
+                    preview_x * s,
+                    if stacked { STACKED_PREVIEW_Y } else { 16.0 } * s,
+                    canvas_w * s,
+                    canvas_h * s,
+                );
                 GalleryRow {
                     specimen: spec,
                     rect,
-                    preview: Rect::new(
-                        (metadata_w + 32.0) * s,
-                        16.0 * s,
+                    preview,
+                    content: Rect::new(
+                        preview.x + pad_x * s,
+                        preview.y + PREVIEW_PAD * s,
                         control_w * s,
                         control_h * s,
                     ),
@@ -165,6 +240,7 @@ pub struct GalleryRenderer {
     ui_cache: GlyphCache,
     masks: RoundedRectMaskCache,
     row_buffer: Vec<u32>,
+    specimen_buffer: Vec<u32>,
 }
 
 struct SpecimenPaintContext<'a> {
@@ -182,6 +258,7 @@ impl GalleryRenderer {
             ui_cache: GlyphCache::new(),
             masks: RoundedRectMaskCache::new(),
             row_buffer: Vec::new(),
+            specimen_buffer: Vec::new(),
         })
     }
 
@@ -317,12 +394,19 @@ impl GalleryRenderer {
             }
             let row_size = (rect.width.ceil() as usize, rect.height.ceil() as usize);
             self.row_buffer.resize(row_size.0 * row_size.1, 0);
+            let (preview_x, preview_y, preview_w, preview_h) =
+                crate::layout::snapshot::snap(row.preview);
+            self.specimen_buffer.resize(preview_w * preview_h, 0);
             {
                 // Local rendering keeps popup anchoring and unsigned paint
                 // coordinates independent of the gallery's scroll position.
                 let mut tile = Frame::new(&mut self.row_buffer, row_size.0, row_size.1);
                 tile.clear(colors.panel_background.to_argb_u32());
-                let metadata_width = row.preview.x as usize - px(32.0);
+                let metadata_width = if metadata_above(row.specimen.preview) {
+                    row_size.0.saturating_sub(px(24.0))
+                } else {
+                    row.preview.x as usize - px(32.0)
+                };
                 for (label, y, font_size, color) in [
                     (row.specimen.id, 12.0, 15.0, colors.text_bright),
                     (row.specimen.source, 38.0, 11.0, colors.text_dim),
@@ -349,14 +433,44 @@ impl GalleryRenderer {
                     masks: &mut self.masks,
                     theme,
                     scale,
-                    size: row_size,
+                    size: (preview_w, preview_h),
                 };
-                paint_specimen(
-                    &mut tile,
-                    &mut painter,
-                    &mut context,
-                    row.specimen,
+                let canvas_bg = darken_argb(colors.panel_background.to_argb_u32());
+                {
+                    let mut specimen = Frame::new(&mut self.specimen_buffer, preview_w, preview_h);
+                    specimen.clear(canvas_bg);
+                    let local_content = Rect::new(
+                        row.content.x - row.preview.x,
+                        row.content.y - row.preview.y,
+                        row.content.width,
+                        row.content.height,
+                    );
+                    paint_specimen(
+                        &mut specimen,
+                        &mut painter,
+                        &mut context,
+                        row.specimen,
+                        local_content,
+                    );
+                }
+                for y in 0..preview_h {
+                    for x in 0..preview_w {
+                        tile.set_pixel(
+                            preview_x + x,
+                            preview_y + y,
+                            self.specimen_buffer[y * preview_w + x],
+                        );
+                    }
+                }
+                let stroke = ((2.0 * scale).round().max(2.0)) as usize;
+                let dash = (4.0 * scale).round().max(2.0) as usize;
+                let step = (8.0 * scale).round().max(4.0) as usize;
+                tile.stroke_dotted_rect(
                     row.preview,
+                    stroke,
+                    dash,
+                    step,
+                    colors.hairline.to_argb_u32(),
                 );
                 painter.draw_sized(
                     &mut tile,
@@ -369,7 +483,7 @@ impl GalleryRenderer {
                 );
                 tile.fill_rect_px(
                     px(12.0),
-                    row_size.1.saturating_sub(px(6.0)),
+                    row_size.1.saturating_sub(px(DIVIDER_BOTTOM_INSET as f64)),
                     row_size.0.saturating_sub(px(24.0)),
                     1,
                     colors.hairline.to_argb_u32(),
@@ -467,6 +581,125 @@ fn paint_field(
     frame.pop_clip();
 }
 
+fn darken_argb(color: u32) -> u32 {
+    let channel = |shift| ((color >> shift) & 0xff_u32) * 82_u32 / 100_u32;
+    (color & 0xff00_0000) | (channel(16) << 16) | (channel(8) << 8) | channel(0)
+}
+
+fn gallery_modal_model(
+    theme: &Theme,
+    painter: &TextPainter,
+    size: (usize, usize),
+    scale: f64,
+) -> crate::model::AppModel {
+    let mut model = crate::model::AppModel::new(size.0 as u32, size.1 as u32, scale);
+    model.theme = theme.clone();
+    model.line_height = painter.line_height();
+    model.char_width = painter.char_width();
+    model.recompute_tab_bar_height_from_line_height();
+    model
+}
+
+fn paint_search_collection(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    masks: &mut RoundedRectMaskCache,
+    theme: &Theme,
+    size: (usize, usize),
+    scale: f64,
+    preview: crate::model::gallery::SearchCollectionPreview,
+) {
+    use crate::model::gallery::SearchCollectionPreview;
+    use crate::model::{FileFinderState, ModalState, SearchTab};
+    use std::path::{Path, PathBuf};
+
+    let mut model = gallery_modal_model(theme, painter, size, scale);
+    let mut state = crate::model::ui::CommandPaletteState::default();
+    state.set_input(match preview {
+        SearchCollectionPreview::Grouped => "render",
+        SearchCollectionPreview::Loading => "workspace",
+        SearchCollectionPreview::Empty => "definitely-no-match",
+    });
+    match preview {
+        SearchCollectionPreview::Grouped => {
+            state.active_tab = SearchTab::All;
+            state.matches.truncate(4);
+            state.files_available = true;
+            let root = PathBuf::from("/workspace/token");
+            let mut files = FileFinderState::new(Vec::new(), root.clone());
+            files.results = [
+                "src/view/gallery.rs",
+                "src/view/overlay_surface.rs",
+                "src/view/panels.rs",
+                "src/model/ui.rs",
+                "docs/ui/LIST.md",
+            ]
+            .iter()
+            .enumerate()
+            .map(|(index, relative)| {
+                crate::model::FileMatch::from_path(
+                    &root.join(relative),
+                    Path::new(&root),
+                    100 - index as u32,
+                    Vec::new(),
+                )
+            })
+            .collect();
+            files.selected_index = 1;
+            state.files = Some(files);
+            state.all_selected = 2;
+        }
+        SearchCollectionPreview::Loading => {
+            state.active_tab = SearchTab::Symbols;
+            state.files_available = true;
+            state.symbols.available = true;
+            state.symbols.searching = true;
+        }
+        SearchCollectionPreview::Empty => {
+            state.active_tab = SearchTab::All;
+            state.matches.clear();
+            state.files_available = true;
+            state.files = Some(FileFinderState::new(
+                Vec::new(),
+                PathBuf::from("/workspace/token"),
+            ));
+            state.symbols.available = true;
+        }
+    }
+    model.ui.active_modal = Some(ModalState::CommandPalette(state));
+    super::modal::render_modals(frame, painter, &model, size.0, size.1, masks);
+}
+
+fn paint_settings_records(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    masks: &mut RoundedRectMaskCache,
+    theme: &Theme,
+    size: (usize, usize),
+    scale: f64,
+    preview: crate::model::gallery::SettingsRecordsPreview,
+) {
+    use crate::model::gallery::SettingsRecordsPreview;
+    use crate::model::ModalState;
+
+    let mut model = gallery_modal_model(theme, painter, size, scale);
+    if matches!(preview, SettingsRecordsPreview::Empty) {
+        model.config.lsp.servers.clear();
+    }
+    let selected = match preview {
+        SettingsRecordsPreview::Selected => Some("rust-analyzer"),
+        SettingsRecordsPreview::Empty => None,
+    };
+    let mut state = crate::settings::SettingsState::new(&model.config);
+    state.form = Some(crate::settings::forms::SettingsForm::language_server(
+        selected,
+        &model.config,
+    ));
+    state.refresh_entries(&model.config);
+    model.ui.active_modal = Some(ModalState::Settings(state));
+    super::modal::render_modals(frame, painter, &model, size.0, size.1, masks);
+}
+
 fn paint_specimen(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -480,6 +713,12 @@ fn paint_specimen(
     let masks = &mut *context.masks;
     use crate::model::gallery::Preview;
     match spec.preview {
+        Preview::SearchCollection(preview) => {
+            paint_search_collection(frame, painter, masks, theme, size, scale, preview)
+        }
+        Preview::SettingsRecords(preview) => {
+            paint_settings_records(frame, painter, masks, theme, size, scale, preview)
+        }
         Preview::Chrome(kind) => {
             super::gallery_chrome::render(frame, painter, theme, rect, scale, kind)
         }
@@ -514,13 +753,89 @@ fn paint_specimen(
             fits,
             end,
         } => {
-            let state =
-                ScrollbarState::new(if fits { 10 } else { 100 }, 10, if end { 90 } else { 25 });
+            let surface = widget(rect);
+            frame.fill_rounded_rect(
+                surface.x,
+                surface.y,
+                surface.w,
+                surface.h,
+                (4.0 * scale) as usize,
+                theme.overlay.panel_secondary.to_argb_u32(),
+                masks,
+            );
+            let inset = (10.0 * scale) as usize;
+            let scrollbar_size = (12.0 * scale) as usize;
+            let viewport = WidgetRect {
+                x: surface.x + inset,
+                y: surface.y + inset,
+                w: surface.w.saturating_sub(inset * 2),
+                h: surface.h.saturating_sub(inset * 2),
+            };
+            frame.push_clip(Rect::new(
+                viewport.x as f32,
+                viewport.y as f32,
+                viewport.w as f32,
+                viewport.h as f32,
+            ));
+            let scroll_shift = if end { 42.0 } else { 12.0 };
+            for (index, label) in [
+                "Overview",
+                "Editor settings",
+                "Language services",
+                "Appearance",
+                "Key bindings",
+                "Advanced",
+            ]
+            .iter()
+            .enumerate()
+            {
+                let y = viewport.y as f32
+                    + (index as f32 * 26.0 - if fits { 0.0 } else { scroll_shift }) * scale as f32;
+                painter.draw_sized(
+                    frame,
+                    viewport.x + (8.0 * scale) as usize,
+                    y.max(0.0) as usize,
+                    label,
+                    (11.0 * scale) as f32,
+                    0.0,
+                    theme.overlay.text_primary.to_argb_u32(),
+                );
+                frame.fill_rect_px(
+                    viewport.x + (8.0 * scale) as usize,
+                    (y + 19.0 * scale as f32).max(0.0) as usize,
+                    viewport.w.saturating_sub((28.0 * scale) as usize),
+                    1,
+                    theme.overlay.hairline.to_argb_u32(),
+                );
+            }
+            frame.pop_clip();
+
+            let (total, visible, offset) = if fits {
+                (100, 100, 0)
+            } else if end {
+                (400, 100, 300)
+            } else {
+                (400, 100, 90)
+            };
+            let state = ScrollbarState::new(total, visible, offset);
             let geometry = if horizontal {
-                ScrollbarGeometry::horizontal(rect, &state)
+                ScrollbarGeometry::horizontal(
+                    Rect::new(
+                        viewport.x as f32,
+                        (viewport.y + viewport.h.saturating_sub(scrollbar_size)) as f32,
+                        viewport.w as f32,
+                        scrollbar_size as f32,
+                    ),
+                    &state,
+                )
             } else {
                 ScrollbarGeometry::vertical(
-                    Rect::new(rect.x, rect.y, 12.0 * scale as f32, rect.height),
+                    Rect::new(
+                        (viewport.x + viewport.w.saturating_sub(scrollbar_size)) as f32,
+                        viewport.y as f32,
+                        scrollbar_size as f32,
+                        viewport.h as f32,
+                    ),
                     &state,
                 )
             };
@@ -625,14 +940,21 @@ fn paint_specimen(
             paint_field(frame, painter, theme, rect, &content, true);
         }
         Preview::SearchField => {
-            let rows = [Row {
+            let rows = [
+                ("serde_json::Value", "crate"),
+                ("serde_json::Map", "crate"),
+                ("serde::Serialize", "dependency"),
+                ("serialize_document", "src/document.rs"),
+                ("deserialize_config", "src/config.rs"),
+            ]
+            .map(|(label, detail)| Row {
                 icon: RowIcon::None,
-                label: "serde_json::Value",
+                label,
                 match_indices: &[0, 1, 2, 3, 4],
-                detail: Some("crate"),
+                detail: Some(detail),
                 detail_style: None,
                 accessory: Accessory::None,
-            }];
+            });
             let sections = [Section {
                 title: None,
                 rows: &rows,
@@ -652,7 +974,7 @@ fn paint_specimen(
                     sections: &sections,
                     selected: FlatIndex(0),
                     scroll: 0,
-                    max_visible: 1,
+                    max_visible: rows.len(),
                 },
                 footer: None,
                 hover_row: None,
@@ -708,6 +1030,232 @@ fn paint_specimen(
                 );
             }
         }
+        Preview::SettingsForm => {
+            let rows = [
+                Row {
+                    icon: RowIcon::None,
+                    label: "Code completion",
+                    match_indices: &[],
+                    detail: Some("Enable completion requests"),
+                    detail_style: None,
+                    accessory: Accessory::Choices {
+                        labels: &["Disabled", "Enabled"],
+                        active: Some(1),
+                        presentation: ChoicePresentation::Checkbox,
+                    },
+                },
+                Row {
+                    icon: RowIcon::None,
+                    label: "Auto-save",
+                    match_indices: &[],
+                    detail: Some("When modified files are saved"),
+                    detail_style: None,
+                    accessory: Accessory::Choices {
+                        labels: &["Off", "Focus", "Idle", "Both"],
+                        active: Some(1),
+                        presentation: ChoicePresentation::Select,
+                    },
+                },
+                Row {
+                    icon: RowIcon::None,
+                    label: "Advanced settings",
+                    match_indices: &[],
+                    detail: None,
+                    detail_style: None,
+                    accessory: Accessory::Choices {
+                        labels: &["Reveal"],
+                        active: None,
+                        presentation: ChoicePresentation::Disclosure,
+                    },
+                },
+                Row {
+                    icon: RowIcon::None,
+                    label: "Cursor blink",
+                    match_indices: &[],
+                    detail: Some("Caret animation speed"),
+                    detail_style: None,
+                    accessory: Accessory::Choices {
+                        labels: &["Off", "Slow", "Fast"],
+                        active: Some(2),
+                        presentation: ChoicePresentation::Buttons,
+                    },
+                },
+                Row {
+                    icon: RowIcon::None,
+                    label: "Indent guides",
+                    match_indices: &[],
+                    detail: Some("Show vertical indentation lines"),
+                    detail_style: None,
+                    accessory: Accessory::Choices {
+                        labels: &["Hidden", "Visible"],
+                        active: Some(1),
+                        presentation: ChoicePresentation::Checkbox,
+                    },
+                },
+            ];
+            let sections = [Section {
+                title: Some("Editor"),
+                rows: &rows,
+            }];
+            let overlay = OverlaySpec {
+                tabs: None,
+                anchor: Anchor::Settings {
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: rect.width / scale as f32,
+                        max: rect.width / scale as f32,
+                    },
+                    subpage: true,
+                    hovered_choice: None,
+                    actions_row: None,
+                    collection: None,
+                },
+                header: None,
+                body: Body::List {
+                    sections: &sections,
+                    selected: FlatIndex(1),
+                    scroll: 0,
+                    max_visible: rows.len(),
+                },
+                footer: None,
+                hover_row: None,
+                docs: None,
+            };
+            render_overlay(frame, painter, masks, theme, &overlay, size, scale);
+        }
+        Preview::CompletionDocumentation => {
+            let rows = [
+                Row {
+                    icon: RowIcon::KindBadge(MenuItemKind::Method),
+                    label: "render_component",
+                    match_indices: &[0, 1, 2, 3, 4, 5],
+                    detail: Some("fn(&Theme) -> Frame"),
+                    detail_style: Some(SpanStyle::Code),
+                    accessory: Accessory::None,
+                },
+                Row {
+                    icon: RowIcon::KindBadge(MenuItemKind::Function),
+                    label: "render_overlay",
+                    match_indices: &[0, 1, 2, 3, 4, 5],
+                    detail: None,
+                    detail_style: None,
+                    accessory: Accessory::None,
+                },
+                Row {
+                    icon: RowIcon::KindBadge(MenuItemKind::Function),
+                    label: "render_gallery",
+                    match_indices: &[0, 1, 2, 3, 4, 5],
+                    detail: Some("fn(&GalleryState)"),
+                    detail_style: Some(SpanStyle::Code),
+                    accessory: Accessory::None,
+                },
+                Row {
+                    icon: RowIcon::KindBadge(MenuItemKind::Field),
+                    label: "render_cache",
+                    match_indices: &[0, 1, 2, 3, 4, 5],
+                    detail: Some("GlyphCache"),
+                    detail_style: Some(SpanStyle::Code),
+                    accessory: Accessory::None,
+                },
+                Row {
+                    icon: RowIcon::KindBadge(MenuItemKind::Module),
+                    label: "renderer",
+                    match_indices: &[0, 1, 2, 3, 4, 5],
+                    detail: Some("crate::view"),
+                    detail_style: Some(SpanStyle::Code),
+                    accessory: Accessory::None,
+                },
+            ];
+            let sections = [Section {
+                title: Some("Completions"),
+                rows: &rows,
+            }];
+            let mut docs = StyledText::default();
+            docs.push_styled(
+                "fn render_component(theme: &Theme) -> Frame\n",
+                SpanStyle::Code,
+            );
+            docs.push_str(
+                "\nRenders a component with production layout, clipping, and theme roles.\n\n",
+            );
+            docs.push_str(
+                "The returned frame uses the same geometry for painting and hit testing.",
+            );
+            let logical_width = rect.width / scale as f32;
+            let menu_width = if logical_width <= 500.0 { 180.0 } else { 210.0 };
+            let overlay = OverlaySpec {
+                tabs: None,
+                anchor: Anchor::Cursor {
+                    x: (rect.x + rect.width - menu_width * scale as f32) as usize,
+                    y: rect.y as usize,
+                    h: (18.0 * scale) as usize,
+                    prefer_below: true,
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: menu_width,
+                        max: menu_width,
+                    },
+                },
+                header: None,
+                body: Body::List {
+                    sections: &sections,
+                    selected: FlatIndex(0),
+                    scroll: 0,
+                    max_visible: rows.len(),
+                },
+                footer: None,
+                hover_row: None,
+                docs: Some(Documentation::from(&docs)),
+            };
+            render_overlay(frame, painter, masks, theme, &overlay, size, scale);
+        }
+        Preview::HoverDocumentation | Preview::SignatureHelp => {
+            let signature = if matches!(spec.preview, Preview::SignatureHelp) {
+                "render(frame: &mut Frame, theme: &Theme)"
+            } else {
+                "pub fn render_component(theme: &Theme) -> Frame"
+            };
+            let active_start = signature.find("theme").unwrap_or(0);
+            let code_spans = [Span {
+                range: active_start..active_start + "theme".len(),
+                style: SpanStyle::Accent,
+            }];
+            let zones = Zones {
+                banner: matches!(spec.preview, Preview::HoverDocumentation).then_some((
+                    overlay_surface::Severity::Info,
+                    "Production renderer",
+                    "Token",
+                )),
+                code: Some(signature),
+                code_spans: &code_spans,
+                text: Some(if matches!(spec.preview, Preview::SignatureHelp) {
+                    "Theme values are resolved before painting. (1 of 2)"
+                } else {
+                    "Uses shared layout and painter paths. Inline code and prose retain their font roles."
+                }),
+                ..Default::default()
+            };
+            let overlay = OverlaySpec {
+                tabs: None,
+                anchor: Anchor::Cursor {
+                    x: rect.x as usize,
+                    y: rect.y as usize,
+                    h: (18.0 * scale) as usize,
+                    prefer_below: true,
+                    width: WidthRule {
+                        pct: 0.0,
+                        min: (rect.width / scale as f32).max(240.0),
+                        max: (rect.width / scale as f32).max(240.0),
+                    },
+                },
+                header: None,
+                body: Body::Zones(zones),
+                footer: None,
+                hover_row: None,
+                docs: None,
+            };
+            render_overlay(frame, painter, masks, theme, &overlay, size, scale);
+        }
         Preview::Checkbox(checked) => {
             let mut r = widget(rect);
             r.w = (14.0 * scale) as usize;
@@ -735,14 +1283,21 @@ fn paint_specimen(
             );
         }
         Preview::SelectOptions => {
+            let options = [
+                "On focus loss",
+                "On window change",
+                "After idle delay",
+                "On explicit save",
+                "Never",
+            ];
             let mut anchor = widget(rect);
             anchor.h = (29.0 * scale) as usize;
             render_select(frame, painter, theme, anchor, "On focus loss", true, scale);
-            for (index, option) in ["On focus loss", "On window change", "Never"]
+            for (index, option) in options
                 .iter()
                 .zip(select_option_rects(
                     anchor,
-                    3,
+                    options.len(),
                     anchor.y + anchor.h,
                     widget(rect).y + widget(rect).h,
                     scale,
@@ -808,22 +1363,50 @@ fn paint_specimen(
         }
         Preview::MenuRows { hover } => {
             let keycaps = overlay_surface::binding_chips("⌘K ⌘C");
-            let first = [Row {
-                icon: RowIcon::None,
-                label: "Format Document",
-                match_indices: &[],
-                detail: None,
-                detail_style: None,
-                accessory: Accessory::Keycaps(&keycaps),
-            }];
-            let second = [Row {
-                icon: RowIcon::None,
-                label: "Rename Symbol",
-                match_indices: &[],
-                detail: None,
-                detail_style: None,
-                accessory: Accessory::None,
-            }];
+            let first = [
+                Row {
+                    icon: RowIcon::None,
+                    label: "Format Document",
+                    match_indices: &[],
+                    detail: None,
+                    detail_style: None,
+                    accessory: Accessory::Keycaps(&keycaps),
+                },
+                Row {
+                    icon: RowIcon::None,
+                    label: "Rename Symbol",
+                    match_indices: &[],
+                    detail: None,
+                    detail_style: None,
+                    accessory: Accessory::None,
+                },
+                Row {
+                    icon: RowIcon::None,
+                    label: "Go to Definition",
+                    match_indices: &[],
+                    detail: None,
+                    detail_style: None,
+                    accessory: Accessory::None,
+                },
+            ];
+            let second = [
+                Row {
+                    icon: RowIcon::None,
+                    label: "Copy Path",
+                    match_indices: &[],
+                    detail: None,
+                    detail_style: None,
+                    accessory: Accessory::None,
+                },
+                Row {
+                    icon: RowIcon::None,
+                    label: "Reveal in File Explorer",
+                    match_indices: &[],
+                    detail: None,
+                    detail_style: None,
+                    accessory: Accessory::None,
+                },
+            ];
             let sections = [
                 Section {
                     title: None,
@@ -842,7 +1425,7 @@ fn paint_specimen(
                     sections: &sections,
                     selected: FlatIndex(0),
                     scroll: 0,
-                    max_visible: 3,
+                    max_visible: 6,
                 },
                 footer: None,
                 hover_row: hover.then_some(FlatIndex(1)),
@@ -851,14 +1434,21 @@ fn paint_specimen(
             render_overlay(frame, painter, masks, theme, &overlay, size, scale);
         }
         Preview::ListRow => {
-            let rows = [Row {
-                icon: RowIcon::KindBadge(MenuItemKind::Method),
-                label: "render_component",
+            let rows = [
+                (MenuItemKind::Method, "render_component", "fn(&Theme)"),
+                (MenuItemKind::Function, "render_overlay", "fn(&OverlaySpec)"),
+                (MenuItemKind::Field, "render_cache", "GlyphCache"),
+                (MenuItemKind::Module, "renderer", "crate::view"),
+                (MenuItemKind::Type, "RenderTarget", "struct"),
+            ]
+            .map(|(kind, label, detail)| Row {
+                icon: RowIcon::KindBadge(kind),
+                label,
                 match_indices: &[0, 1, 2, 3, 4, 5],
-                detail: Some("fn(&Theme)"),
+                detail: Some(detail),
                 detail_style: None,
                 accessory: Accessory::None,
-            }];
+            });
             let sections = [Section {
                 title: Some("Completions"),
                 rows: &rows,
@@ -871,7 +1461,7 @@ fn paint_specimen(
                     sections: &sections,
                     selected: FlatIndex(0),
                     scroll: 0,
-                    max_visible: 2,
+                    max_visible: rows.len(),
                 },
                 footer: None,
                 hover_row: None,
@@ -931,7 +1521,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn chrome_specimens_render_at_compact_width_and_hidpi() {
+    fn production_compositions_render_at_compact_width_and_hidpi() {
         let mut renderer = GalleryRenderer::new().unwrap();
         let theme = Theme::default_dark();
         for scale in [1.0, 2.0] {
@@ -939,6 +1529,8 @@ mod tests {
                 matches!(
                     s.preview,
                     Preview::Chrome(_)
+                        | Preview::SettingsRecords(_)
+                        | Preview::SearchCollection(_)
                         | Preview::OverlayTabs
                         | Preview::Scrollbar { .. }
                         | Preview::Splitter { .. }
@@ -949,7 +1541,7 @@ mod tests {
                     ..Default::default()
                 };
                 state.query.insert_text(spec.id);
-                let size = ((900.0 * scale) as usize, (440.0 * scale) as usize);
+                let size = ((900.0 * scale) as usize, (900.0 * scale) as usize);
                 let mut pixels = vec![0; size.0 * size.1];
                 let layout = renderer.render(&mut pixels, size, scale, &state, &theme);
                 let last_category = layout.categories.last().unwrap();
@@ -1051,21 +1643,21 @@ mod tests {
                         );
                         match row.specimen.preview {
                             Preview::IconButton => {
-                                assert_eq!(row.preview.width, row.preview.height)
+                                assert_eq!(row.content.width, row.content.height)
                             }
                             Preview::FieldFocused
                             | Preview::FieldUnfocused
                             | Preview::FieldSelection => {
-                                assert_eq!(row.preview.height, 34.0 * scale as f32)
+                                assert_eq!(row.content.height, 34.0 * scale as f32)
                             }
                             Preview::ChoiceGroup => {
                                 let choices = choice_group_rects(
-                                    widget(row.preview),
+                                    widget(row.content),
                                     &["Automatic", "On", "Off"],
                                     scale,
                                 );
                                 assert!(choices.iter().all(|choice| (choice.y + choice.h) as f32
-                                    <= row.preview.y + row.preview.height));
+                                    <= row.content.y + row.content.height));
                             }
                             _ => {}
                         }

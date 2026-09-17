@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Select visual reference</title>
+    <link rel="stylesheet" href="shared.css">
+    <link rel="stylesheet" href="ide.css">
+    <style>
+      .select-preferences-wrap { position: relative; min-block-size: 0; }
+      .select-preferences-wrap > .ide-window { block-size: 100%; }
+      .select-open-row { min-block-size: 34px; }
+      .select-anchor { inline-size: 220px; min-block-size: 28px; }
+      .select-face { inline-size: 100%; block-size: 28px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-inline: 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--input-background); color: var(--text); font-size: 12px; text-align: left; }
+      .select-face.ide-control-width { inline-size: 220px; }
+      .select-face.open { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); border-radius: 3px 3px 0 0; }
+      .select-popup { position: absolute; z-index: 3; inset-inline-start: 348px; inset-block-start: 179px; inline-size: 220px; padding: 3px; border: 1px solid var(--focus); border-radius: 0 0 3px 3px; background: var(--tooltip-bg); box-shadow: 0 8px 16px #00000055; }
+      .select-option { inline-size: 100%; min-block-size: 26px; display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: center; gap: 5px; padding-inline: 6px; border: 0; border-radius: 2px; background: transparent; color: var(--text); font-size: 12px; text-align: left; }
+      .select-option.selected { background: var(--control-selected); color: var(--control-selected-fg); }
+      .select-option[aria-disabled="true"] { color: var(--faint); }
+      .select-check { display: flex; justify-content: center; color: var(--bright); }
+      .select-states { --state-count: 4; }
+      .select-mini { inline-size: min(100%, 176px); min-block-size: 28px; display: flex; align-items: center; justify-content: space-between; gap: 7px; padding-inline: 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--input-background); color: var(--text); font-size: 12px; }
+      .select-mini.focus { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+      .select-mini.disabled { color: var(--faint); opacity: .48; }
+    </style>
+  </head>
+  <body>
+    <script src="../../../prototypes/debug-performance-themes.js"></script>
+    <script src="shared.js"></script>
+    <script src="ide.js"></script>
+    <script>
+      const option = (label, { selected = false, disabled = false } = {}) => `
+        <button class="select-option${selected ? ' selected' : ''}" type="button" role="option"${selected ? ' aria-selected="true"' : ''}${disabled ? ' aria-disabled="true"' : ''}>
+          <span class="select-check">${selected ? Mockup.icon('check', 13) : ''}</span><span>${label}</span>
+        </button>`;
+      const openWidth = `
+        <div class="select-anchor">
+          <button class="select-face open" type="button" role="combobox" aria-label="Indent width" aria-expanded="true" aria-controls="indent-options"><span>4 spaces</span>${Mockup.icon('chevron-down', 14)}</button>
+        </div>`;
+      const content = `
+        <div class="ide-study">
+          <div class="ide-scene">
+            <div class="select-preferences-wrap">
+            ${Ide.preferences({
+              section: 'Editor',
+              title: 'Editor',
+              content: `
+                <section class="ide-group" aria-label="Indentation settings">
+                  <div class="ide-group-title">Indentation</div>
+                  <div class="ide-form-row"><label for="indent-style">Indent style</label><button id="indent-style" class="select-face ide-control-width" type="button" role="combobox" aria-expanded="false"><span>Spaces</span>${Mockup.icon('chevron-down', 14)}</button></div>
+                  <div class="ide-form-row select-open-row"><label>Indent width</label>${openWidth}</div>
+                  <div class="ide-form-row"><label for="line-ending">Line ending</label><button id="line-ending" class="select-face ide-control-width" type="button" role="combobox" aria-expanded="false"><span>LF</span>${Mockup.icon('chevron-down', 14)}</button></div>
+                </section>`
+            })}
+            <div class="select-popup" id="indent-options" role="listbox" aria-label="Indent width options">
+              ${option('2 spaces')}${option('4 spaces', { selected: true })}${option('8 spaces')}
+            </div></div>
+            <aside class="ide-notes" aria-label="Select study notes">
+              <section class="ide-note"><h3>Committed setting</h3><p>The closed face reports the durable Settings choice.</p></section>
+              <section class="ide-note"><h3>Open preview</h3><p>Keyboard movement highlights an option before activation commits it.</p></section>
+            </aside>
+          </div>
+          <div class="ide-states select-states" aria-label="Select visual states">
+            <section class="ide-state"><div class="state-label">Closed</div><div class="select-mini"><span>Spaces</span>${Mockup.icon('chevron-down', 14)}</div></section>
+            <section class="ide-state"><div class="state-label">Focused</div><div class="select-mini focus"><span>4 spaces</span>${Mockup.icon('chevron-down', 14)}</div></section>
+            <section class="ide-state"><div class="state-label">No options</div><div class="select-mini disabled"><span>No options</span>${Mockup.icon('chevron-down', 14)}</div></section>
+            <section class="ide-state"><div class="state-label">Unavailable</div><div class="select-mini disabled"><span>Workspace default</span>${Mockup.icon('chevron-down', 14)}</div></section>
+          </div>
+        </div>`;
+      Mockup.mount({ id: 'SELECT', title: 'Select', description: 'A non-editable Settings value picker with its options attached to the source field.', status: 'Established surface · visual study', content });
+    </script>
+  </body>
+</html>

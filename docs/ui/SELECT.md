@@ -1,5 +1,11 @@
 # Select
 
+<!-- token-ui-mockup:begin SELECT -->
+[![Visual target under review: Select](mockups/renders/SELECT-emphasised.png)](mockups/SELECT.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/SELECT.png) · [Open normal mockup](mockups/SELECT.html?view=normal) · [Open emphasised mockup](mockups/SELECT.html?view=emphasised).*
+<!-- token-ui-mockup:end SELECT -->
+
 ## Current boundary
 
 Token's select is a non-editable, single-value popup button, not a general

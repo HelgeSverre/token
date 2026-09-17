@@ -1,5 +1,11 @@
 # Toolbar — terminal chrome and future reusable contract
 
+<!-- token-ui-mockup:begin TOOLBAR -->
+[![Visual target under review: Toolbar](mockups/renders/TOOLBAR-emphasised.png)](mockups/TOOLBAR.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/TOOLBAR.png) · [Open normal mockup](mockups/TOOLBAR.html?view=normal) · [Open emphasised mockup](mockups/TOOLBAR.html?view=emphasised).*
+<!-- token-ui-mockup:end TOOLBAR -->
+
 ## Boundary and status
 
 Token has no shared `Toolbar` model, painter, overflow menu, focus policy, or customization system. The nearest implemented surface is terminal tab/action chrome. It couples terminal session lifecycle, tab scrolling, and four action cells; it is layout evidence, not a generic toolbar. A toolbar is persistent controls for one stable scope; it is not a tab strip, menu, or Settings category row.

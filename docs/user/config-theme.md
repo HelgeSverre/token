@@ -38,9 +38,20 @@ Custom themes are stored in:
 | Theme | ID | Description |
 |-------|-----|-------------|
 | Default Dark | `default-dark` | VS Code-inspired dark theme |
+| Study | `study` | Cool graphite with restrained teal accents, from the performance-panel study |
 | Fleet Dark | `fleet-dark` | JetBrains Fleet dark theme |
 | GitHub Dark | `github-dark` | GitHub dark theme |
 | GitHub Light | `github-light` | GitHub light theme |
+| Dracula | `dracula` | The iconic dark theme with bold purples, pinks, and cyans |
+| Catppuccin Mocha | `mocha` | Soothing pastel theme with warm, cozy colors |
+| Nord | `nord` | Arctic, north-bluish color palette with dimmed pastels |
+| Tokyo Night | `tokyo-night` | Neon lights of downtown Tokyo at night |
+| Gruvbox Dark | `gruvbox-dark` | Retro groove color scheme with warm, earthy tones |
+| Liseth Solutions | `liseth` | Liseth Solutions brandbook: navy ground, cyan hero, blue and purple accents |
+| Jake | `jake` | Rose on near-black, after jakefile.dev |
+| Sema | `sema` | Warm parchment on charcoal with gold, after sema-lang.com |
+| Glue | `glue` | Graphite with a yellow highlighter, after getglue.dev |
+| FEdit | `fedit` | Zinc terminal green, after fedit.dev |
 
 ---
 

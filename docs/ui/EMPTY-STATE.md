@@ -1,5 +1,11 @@
 # Empty states: feature-owned passive projections
 
+<!-- token-ui-mockup:begin EMPTY-STATE -->
+[![Visual target under review: Empty states: feature-owned passive projections](mockups/renders/EMPTY-STATE-emphasised.png)](mockups/EMPTY-STATE.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/EMPTY-STATE.png) · [Open normal mockup](mockups/EMPTY-STATE.html?view=normal) · [Open emphasised mockup](mockups/EMPTY-STATE.html?view=emphasised).*
+<!-- token-ui-mockup:end EMPTY-STATE -->
+
 An empty state explains why a particular surface has no rows. It is not a shared Token model, a loading spinner, an error notification, or an editor containing zero bytes. Token renders independent empty projections; no EmptyState struct, generic action, or common input machine exists.
 
 ## Current data sources and ownership

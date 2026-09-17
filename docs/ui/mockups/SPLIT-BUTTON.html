@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Split button visual reference</title>
+    <link rel="stylesheet" href="shared.css">
+    <link rel="stylesheet" href="ide.css">
+    <style>
+      .split-window { position: relative; overflow: hidden; }
+      .split-window .editor-context { flex: 1; border: 0; border-radius: 0; box-shadow: none; }
+      .split-action { position: relative; display: inline-flex; min-block-size: 28px; border: 1px solid var(--control-selected-border); border-radius: 3px; background: var(--control-selected-border); color: var(--bright); }
+      .split-action button { min-block-size: 26px; border: 0; background: transparent; color: inherit; font-size: 12px; }
+      .split-main { padding-inline: 10px; }
+      .split-disclosure { inline-size: 28px; display: grid; place-items: center; border-inline-start: 1px solid color-mix(in srgb, var(--bright) 32%, transparent) !important; }
+      .split-disclosure.focused { outline: 1px solid var(--focus); outline-offset: -3px; }
+      .split-popup { position: absolute; z-index: 4; inset-inline-start: 7px; inset-block-start: 31px; inline-size: 222px; padding: 3px; border: 1px solid var(--tooltip-border); border-radius: 3px; background: var(--tooltip-bg); box-shadow: 0 8px 16px #00000055; }
+      .split-popup button { inline-size: 100%; min-block-size: 27px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-inline: 7px; border: 0; border-radius: 2px; background: transparent; color: var(--text); font-size: 12px; text-align: left; }
+      .split-popup button.selected { background: var(--control-selected); color: var(--bright); }
+      .split-popup button[aria-disabled="true"] { color: var(--faint); }
+      .split-popup .keycap { transform: scale(.82); transform-origin: right center; }
+      .split-notes { padding-block-start: 2px; }
+      .split-states { --state-count: 3; }
+      .split-mini { display: inline-flex; }
+      .split-mini.disabled { opacity: .45; }
+    </style>
+  </head>
+  <body>
+    <script src="../../../prototypes/debug-performance-themes.js"></script>
+    <script src="shared.js"></script>
+    <script src="ide.js"></script>
+    <script>
+      const source = [
+        { number: 128, text: '#[test]' },
+        { number: 129, text: 'fn layout_snapshot_keeps_dock_rects() {' },
+        { number: 130, text: '    let snapshot = chrome(&model);' },
+        { number: 131, text: '    assert!(snapshot.rect(UiKey::EditorArea).is_some());', active: true },
+        { number: 132, text: '}' },
+        { number: 133, text: '' },
+        { number: 134, text: '// Selected build task: targeted layout test' }
+      ];
+      const split = (label, { focused = false, disabled = false } = {}) => `
+        <div class="split-action" role="group" aria-label="${label} action">
+          <button class="split-main" type="button"${disabled ? ' disabled' : ''}>${label}</button>
+          <button class="split-disclosure${focused ? ' focused' : ''}" type="button" aria-label="${label} alternatives"${disabled ? ' disabled' : ''}>${Mockup.icon('chevron-down', 13)}</button>
+        </div>`;
+      const content = `
+        <div class="ide-study">
+          <div class="ide-scene">
+            <section class="ide-window ide-context split-window" aria-label="Editor run action">
+              <div class="ide-toolstrip">
+                <div class="split-action" role="group" aria-label="Run task">
+                  <button class="split-main" type="button">Run</button><button class="split-disclosure" type="button" aria-expanded="true" aria-label="Run alternatives">${Mockup.icon('chevron-down', 13)}</button>
+                </div>
+                <span class="ide-tool-separator"></span><span class="muted">token-editor</span><span class="grow"></span><span class="mono dim">cargo test layout_snapshot</span>
+              </div>
+              <div class="split-popup" role="menu" aria-label="Run alternatives">
+                <button type="button" role="menuitem"><span>Run current target</span><span class="keycap">⌃R</span></button>
+                <button class="selected" type="button" role="menuitem" aria-current="true"><span>Run selected test</span><span class="keycap">⌃⇧R</span></button>
+                <button type="button" role="menuitem"><span>Run with arguments…</span></button>
+                <div class="separator" role="separator"></div>
+                <button type="button" role="menuitem" aria-disabled="true"><span>Run with profiler</span><span class="muted">Unavailable</span></button>
+              </div>
+              ${Mockup.editor({ title: 'chrome_tests.rs', tabs: ['chrome_tests.rs', 'layout.rs'], breadcrumb: { path: ['src', 'layout', 'chrome_tests.rs'], symbol: 'layout_snapshot_keeps_dock_rects' }, sidebar: false, status: true, lines: source })}
+            </section>
+            <aside class="ide-notes split-notes" aria-label="Split button study notes">
+              <section class="ide-note"><h3>Common action</h3><p>The main half invokes the current run target.</p></section>
+              <section class="ide-note"><h3>Alternatives</h3><p>The disclosure opens choices only; selecting one is a separate owner action.</p></section>
+            </aside>
+          </div>
+          <div class="ide-states split-states" aria-label="Split button visual states">
+            <section class="ide-state"><div class="state-label">Joined control</div><div class="split-mini">${split('Run')}</div></section>
+            <section class="ide-state"><div class="state-label">Disclosure focus</div><div class="split-mini">${split('Run', { focused: true })}</div></section>
+            <section class="ide-state"><div class="state-label">Unavailable</div><div class="split-mini disabled">${split('Run', { disabled: true })}</div></section>
+          </div>
+        </div>`;
+      Mockup.mount({ id: 'SPLIT-BUTTON', title: 'Split button', description: 'A proposed desktop action: the main half runs the current target; disclosure opens alternatives.', status: 'Proposed component', content });
+    </script>
+  </body>
+</html>

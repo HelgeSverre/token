@@ -1,5 +1,11 @@
 # Form — implementation reference
 
+<!-- token-ui-mockup:begin FORM -->
+[![Visual target under review: Form](mockups/renders/FORM-emphasised.png)](mockups/FORM.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/FORM.png) · [Open normal mockup](mockups/FORM.html?view=normal) · [Open emphasised mockup](mockups/FORM.html?view=emphasised).*
+<!-- token-ui-mockup:end FORM -->
+
 This chapter documents the only open-ended form workflow currently implemented:
 the LSP and inline-provider editor in Settings. It is deliberately not a claim
 that Token has a general `Form` widget. Durable configuration stays in

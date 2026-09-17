@@ -1,5 +1,11 @@
 # Text field — implementation reference
 
+<!-- token-ui-mockup:begin TEXT-FIELD -->
+[![Visual target under review: Text field](mockups/renders/TEXT-FIELD-emphasised.png)](mockups/TEXT-FIELD.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/TEXT-FIELD.png) · [Open normal mockup](mockups/TEXT-FIELD.html?view=normal) · [Open emphasised mockup](mockups/TEXT-FIELD.html?view=emphasised).*
+<!-- token-ui-mockup:end TEXT-FIELD -->
+
 Token text fields are deliberately split rather than a monolithic event widget.
 EditableState<StringBuffer> owns value, cursor, selection, constraints and
 history; the consuming feature owns focus, drag capture and submit policy;

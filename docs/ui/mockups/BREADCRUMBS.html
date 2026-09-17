@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Breadcrumbs · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css">
+  <script src="../../../prototypes/debug-performance-themes.js"></script>
+  <script src="shared.js"></script>
+  <style>
+    .breadcrumbs-study { display:grid; grid-template-columns:minmax(0, 1fr) 286px; gap:18px; height:100%; min-height:0; }
+    .editor-study { min-height:0; display:grid; grid-template-rows:35px 30px minmax(0,1fr); border:1px solid var(--window-border, #3c3c3c); background:var(--editor, #1e1e1e); }
+    .doc-tabs { display:flex; align-items:end; padding:0 9px; gap:2px; background:var(--tabs-bg, #252526); border-bottom:1px solid var(--tab-border, #3c3c3c); }
+    .doc-tab { height:34px; display:flex; align-items:center; gap:7px; padding:0 11px; color:var(--tab-inactive-fg, #808080); font-size:12px; border:1px solid transparent; border-bottom:0; }
+    .doc-tab.active { color:var(--tab-active-fg,#fff); background:var(--tab-active-bg,#1e1e1e); border-color:var(--tab-border,#3c3c3c); }
+    .tab-mark { width:7px; height:7px; border-radius:50%; background:var(--syntax-comment,#6a9955); opacity:.9; }
+    .crumbbar { min-width:0; display:flex; align-items:center; gap:7px; padding:0 12px; color:var(--muted,#c9cbcf); border-bottom:1px solid var(--line,#3c3c3c); background:var(--editor,#1e1e1e); font-size:12px; white-space:nowrap; overflow:hidden; }
+    .crumb { display:flex; align-items:center; gap:5px; flex:0 0 auto; }
+    .crumb.current { color:var(--bright,#fff); }
+    .crumb.symbol { color:var(--syntax-fn,#dcdcaa); }
+    .crumb-sep { color:var(--faint,#8d9198); opacity:.75; flex:0 0 auto; }
+    .crumb-file { color:var(--file-icon,#9cdcfe); }
+    .source { display:grid; grid-template-columns:44px minmax(0,1fr); min-height:0; font:12px/21px "JetBrains Mono", monospace; color:var(--code-fg,#d4d4d4); }
+    .gutter { padding:14px 10px 0 0; text-align:right; color:var(--gutter-fg,#858585); border-right:1px solid rgba(60,60,60,.45); }
+    .code { padding:14px 0 0 16px; overflow:hidden; }
+    .code div { height:21px; white-space:pre; }
+    .code .active-line { margin-left:-16px; padding-left:16px; background:var(--current-line,#2a2a2a); }
+    .kw { color:var(--syntax-keyword,#c586c0); } .ty { color:var(--syntax-type,#4ec9b0); } .fn { color:var(--syntax-fn,#dcdcaa); } .cm { color:var(--syntax-comment,#6a9955); }
+    .crumb-notes { display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; gap:12px; min-height:0; }
+    .narrow-card { border:1px solid var(--line,#3c3c3c); background:var(--panel,#252526); padding:12px; }
+    .narrow-title { display:flex; justify-content:space-between; color:var(--muted,#c9cbcf); font-size:11px; margin-bottom:9px; }
+    .narrow-shell { width:224px; border:1px solid var(--soft-line,#313438); background:var(--editor,#1e1e1e); }
+    .narrow-tabs { height:27px; display:flex; align-items:end; padding-left:7px; border-bottom:1px solid var(--line,#3c3c3c); }
+    .narrow-tabs span { height:26px; display:flex; align-items:center; padding:0 8px; color:var(--tab-active-fg,#fff); background:var(--tab-active-bg,#1e1e1e); font-size:10px; border:1px solid var(--line,#3c3c3c); border-bottom:0; }
+    .narrow-crumb { height:28px; min-width:0; display:flex; align-items:center; gap:6px; padding:0 8px; border-bottom:1px solid var(--line,#3c3c3c); overflow:hidden; white-space:nowrap; font-size:10px; }
+    .overflow-trigger { width:20px; height:20px; display:inline-grid; place-items:center; border:1px solid var(--line,#3c3c3c); padding:0; border-radius:3px; color:var(--bright,#fff); background:var(--control-bg,#35373c); flex:0 0 auto; }
+    .truncate { min-width:0; overflow:hidden; text-overflow:ellipsis; color:var(--syntax-fn,#dcdcaa); }
+    .anatomy { display:grid; gap:8px; padding:12px; border-left:2px solid var(--control-selected-border,#007acc); background:rgba(255,255,255,.025); color:var(--muted,#c9cbcf); font-size:11px; line-height:16px; }
+    .anatomy strong { color:var(--bright,#fff); font-size:12px; font-weight:400; }
+    .anatomy .tiny-rule { height:1px; background:var(--line,#3c3c3c); }
+  </style>
+</head>
+<body>
+  <script>
+    (() => {
+      const icon = (name, size = 14) => Mockup.icon(name, size);
+      const content = `
+        <div class="breadcrumbs-study">
+          <section class="editor-study" aria-label="Editor group with document tabs and breadcrumbs">
+            <nav class="doc-tabs" aria-label="Open documents">
+              <div class="doc-tab"><span class="tab-mark"></span>layout.rs</div>
+              <div class="doc-tab active">chrome.rs</div>
+              <div class="doc-tab">frame.rs</div>
+            </nav>
+            <nav class="crumbbar" aria-label="Current document path">
+              <span class="crumb">${icon('folder')} src</span><span class="crumb-sep">›</span>
+              <span class="crumb">layout</span><span class="crumb-sep">›</span>
+              <span class="crumb current"><span class="crumb-file">${icon('file')}</span>chrome.rs</span><span class="crumb-sep">›</span>
+              <span class="crumb symbol">solve_chrome</span>
+            </nav>
+            <div class="source" aria-label="Rust source content">
+              <div class="gutter">114<br>115<br>116<br>117<br>118<br>119<br>120<br>121</div>
+              <div class="code"><div><span class="kw">pub fn</span> <span class="fn">solve_chrome</span>(model: &amp;<span class="ty">AppModel</span>) {</div><div>    <span class="kw">let</span> status = status_rect(model);</div><div>    <span class="cm">// One solved source of geometry.</span></div><div class="active-line">    <span class="kw">let</span> work = shell_rect(model, status);</div><div>    layout.editor = work.inset(chrome);</div><div>    layout.dock = dock_rect(work, model);</div><div>}</div></div>
+            </div>
+          </section>
+          <aside class="crumb-notes" aria-label="Breadcrumb state references">
+            <div class="narrow-card">
+              <div class="narrow-title"><span>Narrow group</span><span class="mono muted">224 px</span></div>
+              <div class="narrow-shell" data-clip-demo>
+                <div class="narrow-tabs"><span>chrome.rs</span></div>
+                <div class="narrow-crumb"><button class="overflow-trigger" aria-label="Show hidden path segments">${icon('more', 12)}</button><span class="crumb-sep">›</span>${icon('file', 12)}<span class="truncate" style="color:var(--text,#ccc)">chrome.rs</span><span class="crumb-sep">›</span><span class="truncate">solve_chrome</span></div>
+              </div>
+            </div>
+            <div class="anatomy">
+              <strong>Editor-scope navigation</strong>
+              <span>Tabs select a document. This row locates the active document and an optional symbol inside that group.</span>
+              <div class="tiny-rule"></div>
+              <span>The quiet bottom rule separates navigation chrome from source content. Leading path segments collapse before the current document.</span>
+            </div>
+          </aside>
+        </div>`;
+      Mockup.mount({
+        id: 'BREADCRUMBS',
+        title: 'Breadcrumbs',
+        description: 'A proposed editor-group path and symbol navigator below document tabs.',
+        status: 'Proposed component',
+        content,
+      });
+    })();
+  </script>
+</body>
+</html>

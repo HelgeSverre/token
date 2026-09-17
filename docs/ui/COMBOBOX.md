@@ -1,5 +1,11 @@
 # Editable ComboBox — proposed implementation reference
 
+<!-- token-ui-mockup:begin COMBOBOX -->
+[![Visual target under review: Editable ComboBox](mockups/renders/COMBOBOX-emphasised.png)](mockups/COMBOBOX.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/COMBOBOX.png) · [Open normal mockup](mockups/COMBOBOX.html?view=normal) · [Open emphasised mockup](mockups/COMBOBOX.html?view=emphasised).*
+<!-- token-ui-mockup:end COMBOBOX -->
+
 Token currently has no editable ComboBox. The existing
 [Select](SELECT.md) is a finite, non-editable chooser: SelectState owns open,
 active and scroll only; the gallery owns the committed theme index and commit

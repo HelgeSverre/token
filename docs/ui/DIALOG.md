@@ -1,5 +1,11 @@
 # Dialog (modal) — Token implementation reference
 
+<!-- token-ui-mockup:begin DIALOG -->
+[![Visual target under review: Dialog (modal)](mockups/renders/DIALOG-emphasised.png)](mockups/DIALOG.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/DIALOG.png) · [Open normal mockup](mockups/DIALOG.html?view=normal) · [Open emphasised mockup](mockups/DIALOG.html?view=emphasised).*
+<!-- token-ui-mockup:end DIALOG -->
+
 ## Boundary and current representation
 
 In product vocabulary a dialog is a bounded decision/workflow; code calls it a modal because it captures top-level input. UiState.active_modal is optional, giving the single-dialog invariant. Settings is deliberately a separate preferences page using Anchor::Settings and category/form navigation, not a command palette.

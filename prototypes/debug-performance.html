@@ -1,0 +1,760 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="An interactive Token performance-panel design study with synthetic frame-time charts, stage timings, and a resizable right dock." />
+    <title>Performance · Token design prototype</title>
+    <link rel="icon" href="data:," />
+    <script src="debug-performance-themes.js"></script>
+    <script>
+      // Apply a selected repository palette before paint. A classic script works
+      // over file:// too; there is no fetch, server dependency, or external CDN.
+      (() => {
+        const query = new URLSearchParams(location.search);
+        let saved;
+        try { saved = localStorage.getItem("token-performance-theme"); } catch {}
+        // `study` keeps selecting the original hand-tuned design study. The
+        // built-in Study theme uses an explicit selector/URL alias so the two
+        // palettes remain comparable rather than silently colliding.
+        const selectedId = query.get("theme") || saved || "default-dark";
+        const builtinId = selectedId === "builtin-study" ? "study" : selectedId;
+        const theme = selectedId === "study"
+          ? undefined
+          : window.TOKEN_PERFORMANCE_THEMES?.themes.find((item) => item.id === builtinId);
+        document.documentElement.dataset.theme = theme ? selectedId : "study";
+        if (theme) {
+          for (const [name, value] of Object.entries(theme.colors)) document.documentElement.style.setProperty(name, value);
+          document.documentElement.style.colorScheme = theme.scheme;
+          document.querySelector('meta[name="color-scheme"]').content = theme.scheme;
+        }
+      })();
+    </script>
+    <style>
+      @font-face { font-family: Inter; src: url("../assets/Inter-Regular.ttf"); font-display: swap; }
+      @font-face { font-family: "JetBrains Mono"; src: url("../assets/JetBrainsMono.ttf"); font-display: swap; }
+      :root {
+        color-scheme: dark;
+        --desk: #111315; --editor: #181b1e; --panel: #1c2023; --chrome: #202427;
+        --line: #32383c; --soft-line: #2a3034; --text: #dce1e4; --muted: #a0a9af;
+        --faint: #858f97; --teal: #79d8bd; --blue: #8eaff0; --amber: #e6bb7c;
+        --violet: #b3a0e1; --red: #ed918b; --dock-width: 392px;
+        --control-bg: #262c30; --control-hover: #30373d; --control-selected: #34423e;
+        --control-selected-fg: #bbf4e2; --control-selected-border: #4b6e62; --hover: #343b40;
+        --window-border: #3a4247; --title-bg: #262b2f; --title-fg: #b3bcc3;
+        --sidebar-bg: #1d2124; --sidebar-fg: #a1abb3; --sidebar-selected: #30393f; --sidebar-selected-fg: #e0e6e9;
+        --folder-icon: #8d9ca7; --file-icon: #bc9b81;
+        --tabs-bg: #1d2124; --tab-active-bg: #181b1e; --tab-active-fg: #cfd7dd;
+        --tab-inactive-bg: #1d2124; --tab-inactive-fg: #8e999f; --tab-border: #2a3034;
+        --code-fg: #bcc8cf; --current-line: #232e32; --gutter-bg: transparent;
+        --gutter-fg: #8e9aa2; --gutter-active: #8e9aa2;
+        --syntax-keyword: #be9acb; --syntax-type: #8ab7c4; --syntax-fn: #a9be90; --syntax-comment: #809383;
+        --scrollbar: #39434b; --scrollbar-track: transparent; --bright: #e8f2ef;
+        --tooltip-bg: #12191fed; --tooltip-border: #51616a; --tooltip-fg: #e5eeef;
+        --stat-fg: #d4dfe3; --stage-fg: #c0cbd0; --cache-fg: #d0dded;
+        --status-bg: #24292d; --status-fg: #a1aeb7; --status-border: #32383c;
+        --focus: #79d8bd; --chart-grid: #30393d; --chart-label: #929fa7;
+        --chart-budget: #ddbb87; --chart-cursor: #91a39d; --chart-selected: #e0fff4;
+        --ui: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+        --mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      body { margin: 0; color: var(--text); background: var(--desk); font: .75rem/1.5 var(--ui); -webkit-font-smoothing: antialiased; }
+      button, select { font: inherit; color: inherit; }
+      button { cursor: pointer; }
+      button, select { border: 1px solid var(--line); border-radius: 5px; background: var(--control-bg); min-block-size: 28px; padding: 4px 9px; }
+      button:hover, select:hover { background: var(--control-hover); }
+      :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+      button[aria-pressed="true"] { background: var(--control-selected); color: var(--control-selected-fg); border-color: var(--control-selected-border); }
+      button.icon-button { display: grid; place-items: center; inline-size: 28px; padding: 5px; border-color: transparent; background: transparent; color: var(--muted); }
+      button.icon-button:hover { background: var(--hover); color: var(--text); }
+      svg { inline-size: 16px; block-size: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+      h1, h2, h3, p, figure { margin: 0; }
+      h1 { font-size: .8rem; font-weight: 600; }
+      h2 { font-size: .76rem; font-weight: 600; }
+      .mono, output, .numeric { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+      .muted { color: var(--muted); }
+      .spacer { flex: 1; }
+      .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
+      .lab-header { display: flex; align-items: center; gap: 12px; padding: 0 24px; block-size: 56px; }
+      .brand { display: flex; align-items: center; gap: 9px; font-size: .92rem; letter-spacing: -.03em; }
+      .brand-mark { color: var(--teal); font: 600 1.15rem var(--mono); }
+      .lab-label { border-inline-start: 1px solid var(--line); padding-inline-start: 12px; color: var(--muted); }
+      .theme-picker { display: inline-flex; gap: 7px; align-items: center; color: var(--muted); font-size: .65rem; }
+      .theme-picker select { max-inline-size: 190px; font-size: .65rem; }
+      .theme-source { color: var(--muted); text-decoration-color: var(--line); }
+      .code-line.selected-line .line-number { color: var(--gutter-active); }
+      /* This compares native defaults, not fontdue rasterization. Both modes
+         still use the browser's text engine and this proposed panel layout. */
+      [data-typography="native"] .code { font-size: 14px; line-height: var(--native-line, 18.5px); }
+      [data-typography="native"] .tree-row { font: 14px/22px var(--mono); padding-block: 0; }
+      [data-typography="native"] .editor-tab { font: 14px/var(--native-line, 18.5px) var(--mono); padding-block: 4px; }
+      [data-typography="native"] .dock-header h1 { font: 400 14px/var(--native-line, 18.5px) var(--mono); }
+      [data-typography="native"] .stage-table td,
+      [data-typography="native"] .stage-table td:last-child { font: 14px/var(--native-line, 18.5px) var(--mono); }
+      [data-typography="native"] .stage-table th:first-child { inline-size: 58%; }
+      [data-typography="native"] .stage-table th:nth-child(2) { inline-size: 18%; }
+      [data-typography="native"] .stage-table th:last-child { inline-size: 24%; }
+      [data-typography="native"] .statusbar,
+      [data-typography="native"] .status-action { font: 12px/15px var(--ui); }
+      .concept { font-size: .63rem; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+      .app { margin-inline: 20px; block-size: calc(100dvh - 120px); min-block-size: 540px; display: grid; grid-template-rows: 38px minmax(0, 1fr) 26px; border: 1px solid var(--window-border); border-radius: 9px; box-shadow: 0 16px 50px #0004; overflow: clip; }
+      .titlebar { display: flex; gap: 16px; align-items: center; padding-inline: 14px; background: var(--title-bg); border-block-end: 1px solid var(--line); }
+      .traffic { display: flex; gap: 7px; }
+      .traffic i { inline-size: 10px; block-size: 10px; border-radius: 50%; background: #ed736b; }
+      .traffic i:nth-child(2) { background: #ddbb70; } .traffic i:nth-child(3) { background: #8aba83; }
+      .window-title { flex: 1; text-align: center; color: var(--title-fg); font-size: .69rem; }
+      .titlebar > svg { color: var(--muted); }
+      .workspace { position: relative; display: grid; grid-template-columns: 184px minmax(0, 1fr) var(--dock-width) 37px; grid-template-rows: minmax(0, 1fr); min-block-size: 0; }
+      .explorer { background: var(--sidebar-bg); border-inline-end: 1px solid var(--soft-line); min-inline-size: 0; overflow: auto; padding-block: 14px; }
+      .explorer-title { color: var(--sidebar-fg); padding: 0 15px 17px; font-size: .64rem; letter-spacing: .09em; text-transform: uppercase; }
+      .tree-row { display: flex; gap: 8px; align-items: center; padding: 4px 14px; color: var(--sidebar-fg); white-space: nowrap; }
+      .tree-row.indent { padding-inline-start: 29px; } .tree-row.deep { padding-inline-start: 46px; }
+      .tree-row.selected { background: var(--sidebar-selected); color: var(--sidebar-selected-fg); }
+      .tree-icon { inline-size: 12px; color: var(--folder-icon); font: .75rem var(--mono); }
+      .tree-icon.rust { color: var(--file-icon); font-size: .6rem; }
+      .editor { min-inline-size: 0; min-block-size: 0; background: var(--editor); display: flex; flex-direction: column; }
+      .editor-tabs { display: flex; align-items: center; min-block-size: 37px; background: var(--tabs-bg); border-block-end: 1px solid var(--tab-border); }
+      .editor-tab { padding: 10px 16px; font-size: .69rem; color: var(--tab-inactive-fg); background: var(--tab-inactive-bg); border-inline-end: 1px solid var(--tab-border); }
+      .editor-tab.active { background: var(--tab-active-bg); color: var(--tab-active-fg); border-block-start: 1px solid var(--teal); }
+      .editor-tab .file-dot { color: var(--file-icon); padding-inline-end: 7px; }
+      .breadcrumbs { color: var(--muted); display: flex; gap: 11px; padding: 12px 20px; border-block-end: 1px solid var(--soft-line); font-size: .66rem; }
+      .code { flex: 1; min-block-size: 0; overflow: auto; padding-block: 10px 40px; font: .72rem/1.95 var(--mono); color: var(--code-fg); scrollbar-color: var(--scrollbar) var(--scrollbar-track); }
+      .code-line { display: flex; min-inline-size: max-content; padding-inline-end: 30px; }
+      .code-line.selected-line { background: var(--current-line); }
+      .line-number { color: var(--gutter-fg); background: var(--gutter-bg); inline-size: 57px; padding-inline-end: 17px; text-align: end; user-select: none; flex: none; }
+      .code-line code { white-space: pre; font: inherit; }
+      .syntax-keyword { color: var(--syntax-keyword); } .syntax-type { color: var(--syntax-type); } .syntax-fn { color: var(--syntax-fn); } .syntax-comment { color: var(--syntax-comment); }
+      .editor-footnote { padding: 12px 20px; border-block-start: 1px solid var(--soft-line); color: var(--faint); font-size: .64rem; display: flex; gap: 8px; }
+      .dock { position: relative; display: flex; flex-direction: column; min-inline-size: 0; min-block-size: 0; background: var(--panel); border-inline-start: 1px solid var(--line); container: performance / inline-size; }
+      .resize-handle { position: absolute; inset: 0 auto 0 -4px; inline-size: 7px; z-index: 5; cursor: col-resize; touch-action: none; }
+      .resize-handle:hover, .resize-handle:focus-visible { background: var(--hover); }
+      .dock-header { display: flex; align-items: center; gap: 8px; padding-inline: 16px 10px; min-block-size: 37px; border-block-end: 1px solid var(--line); background: var(--chrome); }
+      .dock-header > svg { color: var(--teal); inline-size: 15px; }
+      .panel-body { overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--scrollbar) var(--scrollbar-track); flex: 1; min-block-size: 0; }
+      .capture-toolbar { display: flex; align-items: center; gap: 6px; padding: 13px 17px 9px; }
+      .live { display: inline-flex; align-items: center; gap: 6px; color: var(--teal); font-size: .65rem; }
+      .live-dot { inline-size: 5px; block-size: 5px; background: currentColor; border-radius: 50%; }
+      .live.paused { color: var(--amber); }
+      .capture-toolbar .divider { inline-size: 1px; block-size: 13px; background: var(--line); margin-inline: 7px; }
+      .capture-toolbar .sample-rate { color: var(--faint); font: .6rem var(--mono); }
+      .capture-toolbar button { min-block-size: 25px; font-size: .64rem; }
+      .section { padding: 14px 17px; border-block-end: 1px solid var(--line); }
+      .frame-section { padding-block-start: 5px; }
+      .section-heading { display: flex; align-items: center; gap: 8px; margin-block-end: 13px; }
+      .section-heading .meta { margin-inline-start: auto; font-size: .61rem; color: var(--muted); }
+      .frame-hero { display: flex; align-items: end; justify-content: space-between; gap: 10px; margin-block: 5px 13px; }
+      .hero-value { font: 2.2rem/1.2 var(--mono); letter-spacing: -.065em; color: var(--bright); }
+      .hero-value .unit { font: .88rem var(--mono); color: var(--muted); letter-spacing: 0; margin-inline-start: 7px; }
+      .frame-label { color: var(--muted); font-size: .64rem; margin-block-end: 5px; }
+      .health { text-align: end; padding-block-end: 4px; }
+      .health-state { color: var(--teal); font-size: .65rem; }
+      .health-state.over { color: var(--amber); }
+      .health-detail { font: .61rem var(--mono); color: var(--muted); margin-block-start: 5px; }
+      .chart-wrap { position: relative; }
+      canvas { display: block; inline-size: 100%; }
+      #frame-chart { block-size: 110px; cursor: crosshair; }
+      .chart-axis { display: flex; justify-content: space-between; margin-block: 5px 11px; color: var(--faint); font: .59rem var(--mono); }
+      .chart-tooltip { position: absolute; pointer-events: none; inset-block-start: 5px; inset-inline-start: 8px; background: var(--tooltip-bg); border: 1px solid var(--tooltip-border); border-radius: 4px; padding: 6px 8px; color: var(--tooltip-fg); font: .62rem var(--mono); z-index: 2; }
+      .chart-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .chart-legend { font-size: .62rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+      .legend-line { inline-size: 13px; block-size: 2px; background: var(--teal); }
+      .segments { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: clip; }
+      .segments button { border: 0; border-radius: 0; min-block-size: 23px; padding: 3px 7px; background: transparent; font-size: .59rem; color: var(--muted); }
+      .segments button[aria-pressed="true"] { color: var(--control-selected-fg); background: var(--control-selected); }
+      .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-block-start: 14px; }
+      .stat + .stat { border-inline-start: 1px solid var(--line); padding-inline-start: 16px; }
+      .stat-name { display: block; color: var(--muted); font-size: .6rem; margin-block-end: 4px; }
+      .stat-value { font: .76rem var(--mono); color: var(--stat-fg); }
+      .composition { display: flex; gap: 2px; block-size: 6px; margin-block: 0 13px; border-radius: 2px; overflow: clip; }
+      .composition span { min-inline-size: 1px; }
+      .stage-table { inline-size: 100%; border-collapse: collapse; table-layout: fixed; }
+      .stage-table th { font-weight: 400; font-size: .57rem; color: var(--faint); padding-block-end: 7px; text-align: start; }
+      .stage-table th:first-child { inline-size: 49%; }
+      .stage-table th:nth-child(2) { inline-size: 23%; }
+      .stage-table th:last-child { text-align: end; inline-size: 28%; }
+      .stage-table td { padding-block: 3px; font-size: .65rem; }
+      .stage-table td:last-child { text-align: end; font: .64rem var(--mono); white-space: nowrap; }
+      .stage-table tbody tr { border-block-end: 1px solid var(--soft-line); }
+      .stage-table tbody tr:last-child { border: 0; }
+      .stage-table tr:hover { background: var(--hover); }
+      .stage-dot { display: inline-block; inline-size: 5px; block-size: 5px; border-radius: 1px; margin-inline-end: 8px; vertical-align: middle; background: var(--series); }
+      .spark { block-size: 18px; }
+      .stage-table td:nth-child(2) { padding-inline-end: 2px; }
+      .stage-label { color: var(--stage-fg); }
+      .stage-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-block-start: 9px; color: var(--faint); font-size: .57rem; }
+      .stage-footer button { border-color: transparent; background: transparent; color: var(--muted); padding: 3px 0; font-size: .6rem; min-block-size: 22px; }
+      .stage-footer button:hover { color: var(--teal); }
+      .cache-summary { display: flex; align-items: start; gap: 13px; }
+      .cache-value { font: 1.4rem/1.2 var(--mono); color: var(--cache-fg); letter-spacing: -.04em; }
+      .cache-value span { font-size: .75rem; color: var(--muted); }
+      .cache-label { font-size: .6rem; color: var(--muted); margin-block-start: 3px; }
+      #cache-chart { flex: 1; min-inline-size: 0; block-size: 43px; }
+      .cache-details { display: flex; gap: 14px; justify-content: space-between; margin-block-start: 14px; color: var(--muted); font-size: .6rem; }
+      .cache-details output { color: var(--stat-fg); margin-inline-start: 4px; font-size: .61rem; }
+      .diagnostic-note { display: flex; gap: 8px; padding: 13px 17px 16px; color: var(--faint); font-size: .61rem; line-height: 1.6; }
+      .diagnostic-note svg { margin-block-start: 2px; inline-size: 13px; block-size: 13px; }
+      .dock-footer { display: flex; align-items: center; gap: 6px; border-block-start: 1px solid var(--line); min-block-size: 29px; padding-inline: 16px; color: var(--faint); font-size: .57rem; }
+      .dock-footer .seed { margin-inline-start: auto; font-family: var(--mono); }
+      .activity-rail { background: var(--sidebar-bg); border-inline-start: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; gap: 10px; padding-block: 10px; color: var(--muted); }
+      .activity-rail > svg { margin: 5px; }
+      .activity-rail button[aria-pressed="true"] { color: var(--teal); background: var(--control-selected); border-color: var(--control-selected-border); }
+      .statusbar { display: flex; align-items: center; gap: 16px; background: var(--status-bg); border-block-start: 1px solid var(--status-border); padding-inline: 12px; color: var(--status-fg); font-size: .61rem; }
+      .statusbar .branch { color: var(--status-fg); }
+      .statusbar svg { inline-size: 12px; block-size: 12px; }
+      .status-action { display: flex; align-items: center; gap: 5px; border: none; background: transparent; min-block-size: 22px; padding: 0 5px; color: var(--status-fg); font-size: .6rem; }
+      .lab-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 15px 24px; color: var(--muted); font-size: .66rem; }
+      .lab-toolbar .toolbar-label { color: var(--text); margin-inline-end: 3px; }
+      .lab-toolbar label { display: inline-flex; gap: 7px; align-items: center; }
+      .lab-toolbar select, .lab-toolbar button { font-size: .65rem; }
+      .lab-hint { margin-inline-start: auto; color: var(--faint); font-size: .62rem; }
+      .app.floating .workspace, .app.panel-hidden .workspace { grid-template-columns: 184px minmax(0, 1fr) 37px; }
+      .app.floating .dock { position: absolute; z-index: 4; inset: 12px 49px 12px auto; inline-size: var(--dock-width); border: 1px solid var(--line); border-radius: 7px; box-shadow: 0 15px 50px #0007; }
+      .app.floating .resize-handle { display: none; }
+      @container performance (width < 350px) {
+        .section { padding-inline: 13px; } .hero-value { font-size: 1.95rem; }
+        .stage-table th:first-child { inline-size: 47%; } .stage-table td { font-size: .61rem; }
+        .cache-details { gap: 7px; } .sample-rate { display: none; }
+      }
+      @media (max-width: 1100px) {
+        .lab-header { flex-wrap: wrap; block-size: auto; min-block-size: 56px; padding-block: 10px; gap: 8px; }
+        .workspace { grid-template-columns: minmax(0, 1fr) var(--dock-width) 37px; }
+        .explorer { display: none; }
+        .app.floating .workspace, .app.panel-hidden .workspace { grid-template-columns: minmax(0, 1fr) 37px; }
+        .lab-hint { display: none; }
+      }
+      @media (max-width: 700px) {
+        .app { margin-inline: 10px; block-size: calc(100dvh - 190px); min-block-size: 540px; }
+        .lab-header { padding-inline: 14px; } .concept { display: none; }
+        .lab-toolbar { padding: 13px 14px; gap: 9px; }
+        .workspace, .app.floating .workspace { grid-template-columns: minmax(0, 1fr) 37px; }
+        .editor { display: none; } .resize-handle { display: none; }
+        .app.floating .dock { position: relative; inset: auto; inline-size: auto; border: 0; border-inline-start: 1px solid var(--line); border-radius: 0; box-shadow: none; }
+        .app.panel-hidden .editor { display: flex; }
+        .statusbar { gap: 8px; } .statusbar .optional { display: none; }
+        .lab-toolbar .toolbar-label { display: none; }
+      }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
+    </style>
+  </head>
+  <body>
+    <svg class="visually-hidden" aria-hidden="true"><defs>
+      <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 19V5m0 14h18M6 14l4-5 4 3 6-7" /></symbol>
+      <symbol id="i-dock" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.2"/></symbol>
+      <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></symbol>
+      <symbol id="i-files" viewBox="0 0 24 24"><path d="M8 4H4v16h12v-4M8 2h8l4 4v10H8zM16 2v5h4"/></symbol>
+    </defs></svg>
+    <header class="lab-header">
+      <div class="brand"><span class="brand-mark">⌘</span> token</div>
+      <span class="lab-label">Performance / design study</span>
+      <span class="spacer"></span>
+      <label class="theme-picker" for="theme-select">Theme <select id="theme-select"><option value="study">Original study (custom)</option></select></label>
+      <label class="theme-picker" for="typography-select">Typography <select id="typography-select" title="Token defaults compares font roles and sizes; browser rasterization remains."><option value="study">Study</option><option value="native">Token defaults</option></select></label>
+    </header>
+    <main class="app" id="app">
+      <div class="titlebar">
+        <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="window-title">token-editor <span class="muted">— chrome.rs</span></div>
+        <svg aria-hidden="true"><use href="#i-dock"/></svg>
+      </div>
+      <div class="workspace">
+        <aside class="explorer" aria-label="Example project files">
+          <div class="explorer-title">Explorer</div>
+          <div class="tree-row"><span class="tree-icon">⌄</span>token-editor</div>
+          <div class="tree-row indent"><span class="tree-icon">⌄</span>src</div>
+          <div class="tree-row indent"><span class="tree-icon">⌄</span>layout</div>
+          <div class="tree-row deep selected"><span class="tree-icon rust">R</span>chrome.rs</div>
+          <div class="tree-row deep"><span class="tree-icon rust">R</span>editor.rs</div>
+          <div class="tree-row deep"><span class="tree-icon rust">R</span>snapshot.rs</div>
+          <div class="tree-row deep"><span class="tree-icon rust">R</span>tree.rs</div>
+          <div class="tree-row indent"><span class="tree-icon">›</span>model</div>
+          <div class="tree-row indent"><span class="tree-icon">›</span>runtime</div>
+          <div class="tree-row indent"><span class="tree-icon">›</span>update</div>
+          <div class="tree-row indent"><span class="tree-icon">›</span>view</div>
+          <div class="tree-row indent"><span class="tree-icon rust">R</span>perf.rs</div>
+          <div class="tree-row"><span class="tree-icon">›</span>tests</div>
+          <div class="tree-row"><span class="tree-icon">›</span>docs</div>
+          <div class="tree-row"><span class="tree-icon">◇</span>Cargo.toml</div>
+        </aside>
+        <section class="editor" aria-label="Editor context illustration">
+          <div class="editor-tabs"><div class="editor-tab active"><span class="file-dot">R</span>chrome.rs <span class="muted">&nbsp; ×</span></div><div class="editor-tab">perf.rs</div><span class="spacer"></span></div>
+          <div class="breadcrumbs"><span>src</span><span>›</span><span>layout</span><span>›</span><span>chrome.rs</span><span>›</span><span>solve_chrome</span></div>
+          <div class="code" id="code-view"></div>
+          <div class="editor-footnote"><svg aria-hidden="true"><use href="#i-dock"/></svg>Keep the document in view. Inspect rendering alongside it.</div>
+        </section>
+        <!-- Native implementation path: chrome.rs declares Dock / PanelContent;
+             a performance scene consumes those solved rects, following view/panels.rs.
+             The sections below are proposed reusable layout/painting components.
+             This HTML uses CSS layout; it does not execute the Rust Clay engine. -->
+        <aside class="dock" id="performance-panel" aria-labelledby="panel-title">
+          <div class="resize-handle" id="resize-handle" role="separator" tabindex="0" aria-label="Performance panel width" aria-orientation="vertical" aria-valuemin="320" aria-valuemax="560" aria-valuenow="392"></div>
+          <div class="dock-header"><svg aria-hidden="true"><use href="#i-chart"/></svg><h1 id="panel-title">Performance</h1><span class="spacer"></span>
+            <button class="icon-button" id="float-toggle" aria-label="Float performance panel" title="Float / dock panel"><svg aria-hidden="true"><use href="#i-dock"/></svg></button>
+            <button class="icon-button" id="close-panel" aria-label="Close performance panel" title="Close (F2)"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+          </div>
+          <div class="panel-body">
+            <div class="capture-toolbar">
+              <span class="live" id="live-state"><span class="live-dot"></span><span id="live-text">Live</span></span>
+              <span class="divider"></span><span class="sample-rate">20 samples/s</span><span class="spacer"></span>
+              <button id="pause" aria-pressed="false">Pause</button>
+              <button class="icon-button" id="reset" aria-label="Clear captured history" title="Clear captured history"><svg aria-hidden="true"><use href="#i-reset"/></svg></button>
+            </div>
+            <section class="section frame-section">
+              <div class="frame-hero"><div><h2 class="frame-label">Frame time</h2><div class="hero-value"><span id="frame-value">—</span><span class="unit">ms</span></div></div>
+                <div class="health"><div class="health-state" id="health-state">Within budget</div><div class="health-detail" id="headroom">— headroom</div></div>
+              </div>
+              <figure aria-label="Simulated frame duration history">
+                <div class="chart-wrap"><canvas id="frame-chart" role="img" aria-label="Frame time history with a frame budget reference line. Summary statistics appear below."></canvas><div id="chart-tooltip" class="chart-tooltip" hidden></div></div>
+                <div class="chart-axis"><span id="axis-start">−30 s</span><span id="axis-middle">−15 s</span><span>now</span></div>
+                <figcaption class="chart-footer"><span class="chart-legend"><span class="legend-line"></span>Frame duration</span><div class="segments" role="group" aria-label="History window"><button data-window="10" aria-pressed="false">10s</button><button data-window="30" aria-pressed="true">30s</button><button data-window="60" aria-pressed="false">60s</button></div></figcaption>
+              </figure>
+              <div class="stats"><div class="stat"><span class="stat-name">Median</span><output class="stat-value" id="median">—</output></div><div class="stat"><span class="stat-name">95th percentile</span><output class="stat-value" id="p95">—</output></div><div class="stat"><span class="stat-name">Over budget</span><output class="stat-value" id="over-budget">—</output></div></div>
+            </section>
+            <section class="section">
+              <div class="section-heading"><h2>Render breakdown</h2><span class="meta">Latest sample · ms</span></div>
+              <div class="composition" id="composition" aria-hidden="true"></div>
+              <table class="stage-table"><caption class="visually-hidden">Latest simulated stage timings. Sparkline scales are independent.</caption><thead><tr><th scope="col">Stage</th><th scope="col">History</th><th scope="col">Time</th></tr></thead><tbody id="stage-rows"></tbody></table>
+              <div class="stage-footer"><button id="more-stages" aria-expanded="false" aria-controls="stage-rows">+ 4 more stages</button><span>Independent sparkline scales</span></div>
+            </section>
+            <section class="section">
+              <div class="section-heading"><h2>Glyph cache</h2><span class="meta">Current sample</span></div>
+              <div class="cache-summary"><div><div class="cache-value"><span id="hit-rate" style="font: inherit; color: inherit">—</span><span> %</span></div><div class="cache-label">cache hit rate</div></div><canvas id="cache-chart" role="img" aria-label="Glyph cache hit rate history, from 85 to 100 percent"></canvas></div>
+              <div class="cache-details"><span>Entries <output id="cache-entries">—</output></span><span>Hits <output id="cache-hits">—</output></span><span>Misses <output id="cache-misses">—</output></span></div>
+            </section>
+            <div class="diagnostic-note"><svg aria-hidden="true"><use href="#i-info"/></svg><p>Diagnostic view. The current F2 overlay forces full redraws; timings describe work while instrumentation is visible.</p></div>
+          </div>
+          <div class="dock-footer"><span class="live-dot"></span>Synthetic data<span class="seed" id="seed-label">seed A17C</span></div>
+        </aside>
+        <nav class="activity-rail" aria-label="Dock controls"><svg aria-hidden="true"><use href="#i-files"/></svg><svg aria-hidden="true"><path d="M4 6h16M4 12h12M4 18h8"/></svg><button class="icon-button" id="rail-toggle" aria-label="Show performance panel" aria-pressed="true" title="Performance (F2)"><svg aria-hidden="true"><use href="#i-chart"/></svg></button><span class="spacer"></span><svg aria-hidden="true"><use href="#i-info"/></svg></nav>
+      </div>
+      <footer class="statusbar"><span class="branch">⑂ main</span><span>✓ No problems</span><span class="spacer"></span><span class="optional">Ln 132, Col 41</span><span class="optional">UTF-8</span><span>Rust</span><button class="status-action" id="status-toggle"><svg aria-hidden="true"><use href="#i-chart"/></svg>Performance <span class="muted">F2</span></button></footer>
+    </main>
+    <footer class="lab-toolbar" aria-label="Prototype controls">
+      <span class="toolbar-label">Preview</span>
+      <label for="workload">Workload <select id="workload"><option value="idle">Idle document</option><option value="editing" selected>Editing Rust</option><option value="scrolling">Fast scrolling</option><option value="stress">Heavy repaint</option></select></label>
+      <label for="budget">Budget <select id="budget"><option value="120" selected>120 Hz · 8.33 ms</option><option value="60">60 Hz · 16.67 ms</option></select></label>
+      <button id="mode-toggle" aria-pressed="false">Float panel</button><button id="reseed">New seed</button>
+      <span class="lab-hint"><a class="theme-source" id="theme-source" href="../themes/dark.yaml">themes/dark.yaml</a> · Drag the divider to resize</span>
+    </footer>
+    <div class="visually-hidden" id="announcer" role="status"></div>
+    <script>
+      (() => {
+        "use strict";
+        const $ = (id) => document.getElementById(id);
+        const SAMPLE_INTERVAL = 1 / 20;
+        const MAX_HISTORY = 60 / SAMPLE_INTERVAL + 1;
+        const motionPreference = matchMedia("(prefers-reduced-motion: reduce)");
+        const state = {
+          seed: 0xa17c, workload: "editing", window: 30, budget: 1000 / 120,
+          paused: motionPreference.matches, visible: true, floating: false,
+          time: 60, lastSample: 60, history: [], pointer: null,
+        };
+        const scenarios = {
+          idle: { level: 0.5, burst: 0.22, activity: 0.12 },
+          editing: { level: 1, burst: 1, activity: 0.5 },
+          scrolling: { level: 1.52, burst: 1.6, activity: 0.85 },
+          stress: { level: 2.65, burst: 3.1, activity: 1 },
+        };
+        // A subset of the shared PerfStage vocabulary in src/perf.rs. The small
+        // chrome stages are explicitly grouped, rather than counted twice.
+        const stages = [
+          { key: "glyphs", label: "Text glyphs", source: "TextGlyphs", color: "#79d8bd", base: 1.65, seed: 101, frequency: .36, delay: 0, sensitivity: 1.8 },
+          { key: "copy", label: "Buffer copy", source: "BufferCopy", color: "#8eaff0", base: .63, seed: 229, frequency: .24, delay: .12, sensitivity: .22 },
+          { key: "decorations", label: "Text decorations", source: "TextDecorations", color: "#b3a0e1", base: .38, seed: 347, frequency: .47, delay: .035, sensitivity: .65 },
+          { key: "sidebar", label: "Sidebar", source: "Sidebar", color: "#e6bb7c", base: .23, seed: 461, frequency: .18, delay: .09, sensitivity: .14 },
+          { key: "dock", label: "Right dock", source: "RightDock", color: "#87baca", base: .19, seed: 587, frequency: .31, delay: .15, sensitivity: .12 },
+          { key: "plan", label: "Build plan", source: "BuildPlan", color: "#b7c68e", base: .14, seed: 691, frequency: .52, delay: .015, sensitivity: .26 },
+          { key: "layout", label: "Layout", source: "Layout", color: "#d3a48c", base: .09, seed: 809, frequency: .43, delay: .04, sensitivity: .29 },
+          { key: "present", label: "Surface present", source: "SurfacePresent", color: "#bd9caf", base: .12, seed: 929, frequency: .63, delay: .18, sensitivity: .34 },
+          { key: "other", label: "Other stages", source: "Clear, TabBar, TextBackground, TextCursors, Gutter, Scrollbars, Splitters, StatusBar, SurfaceAcquire", color: "#8f9fac", base: .24, seed: 1049, frequency: .27, delay: .07, sensitivity: .18 },
+          { key: "untracked", label: "Untracked", source: "Frame time minus tracked stages", color: "#737f87", base: .13, seed: 1171, frequency: .71, delay: .21, sensitivity: .16 },
+        ];
+
+        function hash(value, seed) {
+          let x = (value | 0) ^ seed;
+          x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+          x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+          return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+        }
+        // Seeded 1D gradient Perlin noise: independent lattice gradients with
+        // quintic interpolation (zero first/second derivatives at boundaries).
+        function perlin(x, seed) {
+          const i = Math.floor(x), f = x - i;
+          const fade = f * f * f * (f * (f * 6 - 15) + 10);
+          const a = (hash(i, seed) * 2 - 1) * f;
+          const b = (hash(i + 1, seed) * 2 - 1) * (f - 1);
+          return (a + fade * (b - a)) * 2;
+        }
+        function noise(t, seed) {
+          return perlin(t, seed) * .65 + perlin(t * 2.07 + 11.3, seed + 19) * .25
+            + perlin(t * 4.13 + 29.1, seed + 53) * .1;
+        }
+        // Sparse shared workload events, with an asymmetric rise/recovery.
+        // Series respond at different delays and strengths to the same event.
+        function burst(t) {
+          let value = 0;
+          const segment = Math.floor(t / 8);
+          for (let i = segment - 1; i <= segment; i++) {
+            const center = i * 8 + 1 + hash(i, state.seed + 7001) * 5;
+            const delta = t - center;
+            const width = delta < 0 ? .10 : .28 + hash(i, state.seed + 7003) * .38;
+            value += Math.exp(-.5 * (delta / width) ** 2) * (.6 + hash(i, state.seed + 7007));
+          }
+          return value;
+        }
+        function sample(t, previous) {
+          const mode = scenarios[state.workload];
+          const common = noise(t * .14 + 43.7, state.seed + 1709);
+          const values = stages.map((stage) => {
+            const seed = state.seed + stage.seed;
+            const independent = noise((t - stage.delay) * stage.frequency + stage.seed * .071, seed);
+            // Positive, right-skewed variation around a stable baseline.
+            const sway = Math.exp(independent * .72 + common * .24);
+            const tail = Math.max(0, perlin(t * 3.1 + stage.seed, seed + 301)) ** 3 * .12;
+            const spike = burst(t - stage.delay) * mode.burst * stage.sensitivity;
+            return Math.max(.003, stage.base * mode.level * (sway + tail) + spike);
+          });
+          const total = values.reduce((sum, value) => sum + value, 0);
+          const cacheNoise = noise(t * .21 + 8.41, state.seed + 2111);
+          const requests = Math.round(1700 + 3000 * mode.activity + noise(t * .32 + 74, state.seed + 2399) * 800);
+          const missRate = Math.max(.001, .003 + mode.activity * .009 + (cacheNoise + .5) * .012 + burst(t - .08) * .019 * mode.activity);
+          const misses = Math.round(requests * Math.min(.14, missRate));
+          const hits = requests - misses;
+          // A bounded cache fills on novel glyphs, then evicts at capacity.
+          const novel = Math.floor(misses * Math.max(0, noise(t * .5 + 18, state.seed + 2579)) * .09);
+          const entries = Math.min(8192, (previous?.entries ?? 1840) + novel);
+          return { t, values, total, hits, misses, entries, hitRate: hits / requests * 100 };
+        }
+        function fillHistory() {
+          state.time = 60; state.lastSample = 60; state.pointer = null;
+          state.history = [];
+          for (let i = 0; i < MAX_HISTORY; i++) {
+            state.history.push(sample(i * SAMPLE_INTERVAL, state.history.at(-1)));
+          }
+          $("seed-label").textContent = `seed ${state.seed.toString(16).toUpperCase().padStart(4, "0")}`;
+        }
+        function visibleHistory() {
+          // Anchor to the latest captured sample, so pause preserves the window.
+          const end = state.history.at(-1).t;
+          return state.history.filter((item) => item.t >= end - state.window - .0001);
+        }
+        function announce(message) { $("announcer").textContent = message; }
+        function formatted(value, digits = 2) { return value.toFixed(digits); }
+        function milliseconds(value) { return `${formatted(value)} ms`; }
+
+        // One chart primitive serves the frame timeline and all sparklines.
+        // ResizeObserver controls backing stores so Retina rendering stays sharp.
+        const charts = new Map();
+        const observer = new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            const chart = charts.get(entry.target);
+            chart.width = entry.contentRect.width; chart.height = entry.contentRect.height;
+            resizeCanvas(chart);
+          }
+          draw();
+        });
+        function resizeCanvas(chart) {
+          const dpr = window.devicePixelRatio || 1;
+          chart.dpr = dpr;
+          chart.canvas.width = Math.round(chart.width * dpr);
+          chart.canvas.height = Math.round(chart.height * dpr);
+          chart.context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        function registerChart(canvas, getValue, color, options = {}) {
+          const chart = { canvas, context: canvas.getContext("2d"), getValue, color, options, width: 0, height: 0, dpr: 0 };
+          charts.set(canvas, chart); observer.observe(canvas);
+        }
+        stages.forEach((stage, index) => {
+          const tr = document.createElement("tr");
+          tr.style.setProperty("--series", stage.color);
+          if (index >= 6) { tr.hidden = true; tr.dataset.extraStage = ""; }
+          tr.innerHTML = `<td><span class="stage-dot"></span><span class="stage-label" title="${stage.source}">${stage.label}</span></td><td><canvas class="spark" aria-hidden="true"></canvas></td><td><output id="stage-${stage.key}">—</output></td>`;
+          $("stage-rows").append(tr);
+          const segment = document.createElement("span");
+          segment.style.background = stage.color; segment.title = stage.label;
+          segment.id = `composition-${stage.key}`;
+          $("composition").append(segment);
+          registerChart(tr.querySelector("canvas"), (point) => point.values[index], stage.color);
+        });
+        registerChart($("frame-chart"), (point) => point.total, "#79d8bd", { main: true });
+        registerChart($("cache-chart"), (point) => point.hitRate, "#8eaff0", { min: 85, max: 100 });
+        // Outputs remain readable on demand without announcing every sample.
+        document.querySelectorAll("output").forEach((output) => output.setAttribute("aria-live", "off"));
+
+        const repositoryThemes = window.TOKEN_PERFORMANCE_THEMES?.themes ?? [];
+        const originalSeries = stages.map((stage) => stage.color);
+        const themeGroup = document.createElement("optgroup");
+        themeGroup.label = "Token built-in themes";
+        for (const theme of repositoryThemes) {
+          const selectorId = theme.id === "study" ? "builtin-study" : theme.id;
+          const label = theme.id === "study" ? "Study (built-in theme)" : theme.name;
+          themeGroup.append(new Option(label, selectorId));
+        }
+        $("theme-select").append(themeGroup);
+        let chartPalette;
+        function readChartPalette() {
+          const css = getComputedStyle(document.documentElement);
+          const color = (name) => css.getPropertyValue(`--${name}`).trim();
+          return { frame: color("teal"), cache: color("blue"), grid: color("chart-grid"),
+            label: color("chart-label"), budget: color("chart-budget"),
+            cursor: color("chart-cursor"), selected: color("chart-selected") };
+        }
+        function updatePreviewUrl(key, value) {
+          try {
+            const url = new URL(location.href); url.searchParams.set(key, value);
+            history.replaceState(null, "", url);
+          } catch { /* Some file:// environments disallow history changes. */ }
+        }
+        function applyTheme(selectorId, persist = true) {
+          const builtinId = selectorId === "builtin-study" ? "study" : selectorId;
+          const theme = selectorId === "study"
+            ? undefined
+            : repositoryThemes.find((item) => item.id === builtinId);
+          const root = document.documentElement;
+          const tokens = new Set(repositoryThemes.flatMap((item) => Object.keys(item.colors)));
+          for (const name of tokens) root.style.removeProperty(name);
+          if (theme) for (const [name, value] of Object.entries(theme.colors)) root.style.setProperty(name, value);
+          root.dataset.theme = theme ? selectorId : "study";
+          root.style.colorScheme = theme?.scheme ?? "dark";
+          document.querySelector('meta[name="color-scheme"]').content = theme?.scheme ?? "dark";
+          $("theme-select").value = root.dataset.theme;
+          const source = $("theme-source");
+          source.textContent = theme?.source ?? "Original custom palette";
+          if (theme) source.setAttribute("href", `../${theme.source}`); else source.removeAttribute("href");
+          chartPalette = readChartPalette();
+          stages.forEach((stage, index) => {
+            stage.color = theme?.series[index] ?? originalSeries[index];
+            const row = $("stage-rows").children[index]; row.style.setProperty("--series", stage.color);
+            $(`composition-${stage.key}`).style.background = stage.color;
+            charts.get(row.querySelector("canvas")).color = stage.color;
+          });
+          charts.get($("frame-chart")).color = chartPalette.frame;
+          charts.get($("cache-chart")).color = chartPalette.cache;
+          if (persist) {
+            try { localStorage.setItem("token-performance-theme", root.dataset.theme); } catch {}
+            updatePreviewUrl("theme", root.dataset.theme);
+            announce(`Theme: ${theme ? `${theme.name} (built-in)` : "Original study (custom)"}.`);
+          }
+          draw();
+        }
+        $("theme-select").addEventListener("change", (event) => applyTheme(event.target.value));
+        $("typography-select").addEventListener("change", (event) => {
+          document.documentElement.dataset.typography = event.target.value;
+          updatePreviewUrl("typography", event.target.value);
+          announce(`Typography: ${event.target.selectedOptions[0].textContent}.`);
+        });
+        const typography = new URLSearchParams(location.search).get("typography") === "native" ? "native" : "study";
+        $("typography-select").value = typography;
+        document.documentElement.dataset.typography = typography;
+        function updateNativeMetrics() {
+          // JetBrainsMono.ttf hhea: (1020 - -300) / 1000 = 1.32 em.
+          // Native line_height() rounds up in physical pixels, then we convert
+          // back to CSS pixels: 18.5 at 2x, 19 at 1x for the default 14px font.
+          const scale = window.devicePixelRatio || 1;
+          document.documentElement.style.setProperty("--native-line", `${Math.ceil(14 * 1.32 * scale) / scale}px`);
+        }
+        updateNativeMetrics();
+        window.addEventListener("resize", updateNativeMetrics);
+        applyTheme(document.documentElement.dataset.theme, false);
+
+        function renderChart(chart, points) {
+          const { context: ctx, width: w, height: h, getValue, options, color } = chart;
+          if (w <= 0 || h <= 0) return;
+          if (chart.dpr !== (window.devicePixelRatio || 1)) resizeCanvas(chart);
+          ctx.clearRect(0, 0, w, h);
+          const main = options.main;
+          const top = main ? 15 : 2, bottom = h - (main ? 5 : 2);
+          const min = options.min ?? 0;
+          const maximum = Math.max(...points.map(getValue));
+          const max = options.max ?? (main ? Math.max(state.budget * 1.48, Math.ceil(maximum / 5) * 5) : Math.max(.05, maximum * 1.17));
+          const end = state.time, start = end - state.window;
+          const x = (point) => 2 + (point.t - start) / state.window * (w - 5);
+          const y = (value) => bottom - (value - min) / (max - min) * (bottom - top);
+          if (main) {
+            ctx.font = '9px "JetBrains Mono", monospace';
+            ctx.fillStyle = chartPalette.label;
+            ctx.fillText(`${formatted(max, 0)} ms`, 0, 9);
+            ctx.strokeStyle = chartPalette.grid; ctx.lineWidth = 1;
+            [0, max / 2, max].forEach((value) => { ctx.beginPath(); ctx.moveTo(0, y(value)); ctx.lineTo(w, y(value)); ctx.stroke(); });
+            ctx.setLineDash([3, 4]); ctx.strokeStyle = chartPalette.budget;
+            ctx.beginPath(); ctx.moveTo(0, y(state.budget)); ctx.lineTo(w, y(state.budget)); ctx.stroke(); ctx.setLineDash([]);
+            ctx.textAlign = "right"; ctx.fillStyle = chartPalette.budget;
+            ctx.fillText(`${formatted(state.budget)} ms budget`, w - 2, y(state.budget) - 6); ctx.textAlign = "left";
+          }
+          ctx.save(); ctx.beginPath(); ctx.rect(0, top, w, bottom - top + 2); ctx.clip();
+          ctx.beginPath(); points.forEach((point, i) => i ? ctx.lineTo(x(point), y(getValue(point))) : ctx.moveTo(x(point), y(getValue(point))));
+          if (points.length === 1) { ctx.lineTo(x(points[0]) + 1, y(getValue(points[0]))); }
+          ctx.lineWidth = main ? 1.65 : 1.15; ctx.strokeStyle = color; ctx.stroke();
+          ctx.lineTo(x(points.at(-1)), bottom); ctx.lineTo(x(points[0]), bottom); ctx.closePath();
+          const fill = ctx.createLinearGradient(0, top, 0, bottom); fill.addColorStop(0, `${color}30`); fill.addColorStop(1, `${color}03`); ctx.fillStyle = fill; ctx.fill();
+          if (main) {
+            const last = points.at(-1);
+            ctx.beginPath(); ctx.arc(x(last), y(last.total), 2.5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+            if (state.pointer !== null) {
+              const selected = inspectedPoint(points);
+              ctx.strokeStyle = chartPalette.cursor; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(x(selected), top); ctx.lineTo(x(selected), bottom); ctx.stroke(); ctx.setLineDash([]);
+              ctx.beginPath(); ctx.arc(x(selected), y(selected.total), 3, 0, Math.PI * 2); ctx.fillStyle = chartPalette.selected; ctx.fill();
+            }
+          }
+          ctx.restore();
+        }
+        function inspectedPoint(points) {
+          const target = state.time - state.window + state.pointer * state.window;
+          return points.reduce((best, point) => Math.abs(point.t - target) < Math.abs(best.t - target) ? point : best, points[0]);
+        }
+        function draw() {
+          if (!state.visible || !state.history.length) return;
+          const points = visibleHistory();
+          for (const chart of charts.values()) renderChart(chart, points);
+          const tooltip = $("chart-tooltip");
+          tooltip.hidden = state.pointer === null;
+          if (state.pointer !== null) {
+            const point = inspectedPoint(points);
+            tooltip.textContent = `${formatted(point.t - state.time, 1)} s   ${milliseconds(point.total)}`;
+          }
+        }
+        function updateReadouts() {
+          const points = visibleHistory(), latest = points.at(-1);
+          const sorted = points.map((point) => point.total).sort((a, b) => a - b);
+          const percentile = (fraction) => sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)];
+          $("frame-value").textContent = formatted(latest.total);
+          const over = latest.total > state.budget;
+          $("health-state").textContent = over ? "Over budget" : "Within budget";
+          $("health-state").classList.toggle("over", over);
+          $("headroom").textContent = `${milliseconds(Math.abs(state.budget - latest.total))} ${over ? "over" : "headroom"}`;
+          $("median").textContent = milliseconds(percentile(.5)); $("p95").textContent = milliseconds(percentile(.95));
+          $("over-budget").textContent = `${formatted(points.filter((point) => point.total > state.budget).length / points.length * 100, 1)} %`;
+          stages.forEach((stage, index) => {
+            $(`stage-${stage.key}`).textContent = formatted(latest.values[index]);
+            $(`composition-${stage.key}`).style.flexGrow = latest.values[index] / latest.total;
+          });
+          $("hit-rate").textContent = formatted(latest.hitRate, 1);
+          $("cache-entries").textContent = latest.entries.toLocaleString("en-US");
+          $("cache-hits").textContent = latest.hits.toLocaleString("en-US");
+          $("cache-misses").textContent = latest.misses.toLocaleString("en-US");
+          $("axis-start").textContent = `−${state.window} s`; $("axis-middle").textContent = `−${state.window / 2} s`;
+          $("frame-chart").setAttribute("aria-label", `Simulated ${state.window} second frame history. Latest ${milliseconds(latest.total)}, median ${milliseconds(percentile(.5))}, 95th percentile ${milliseconds(percentile(.95))}. Budget ${milliseconds(state.budget)}.`);
+        }
+
+        let frameRequest = null, previousTime = null, lastPaint = 0, lastReadout = 0;
+        function animate(now) {
+          frameRequest = null;
+          if (previousTime !== null) state.time += Math.min((now - previousTime) / 1000, .2);
+          previousTime = now;
+          while (state.lastSample + SAMPLE_INTERVAL <= state.time) {
+            state.lastSample += SAMPLE_INTERVAL;
+            state.history.push(sample(state.lastSample, state.history.at(-1)));
+            if (state.history.length > MAX_HISTORY) state.history.shift();
+          }
+          if (now - lastPaint >= 1000 / 30) { draw(); lastPaint = now; }
+          if (now - lastReadout >= 200) { updateReadouts(); lastReadout = now; }
+          schedule();
+        }
+        function schedule() {
+          const shouldRun = !state.paused && state.visible && !document.hidden;
+          if (!shouldRun) {
+            if (frameRequest !== null) cancelAnimationFrame(frameRequest);
+            frameRequest = null; previousTime = null;
+          } else if (frameRequest === null) frameRequest = requestAnimationFrame(animate);
+        }
+        function syncPause() {
+          $("pause").textContent = state.paused ? "Resume" : "Pause";
+          $("pause").setAttribute("aria-pressed", String(state.paused));
+          $("live-text").textContent = state.paused ? "Paused" : "Live";
+          $("live-state").classList.toggle("paused", state.paused);
+          updateReadouts(); draw();
+          schedule();
+        }
+        $("pause").addEventListener("click", () => { state.paused = !state.paused; syncPause(); announce(state.paused ? "Capture paused." : "Capture resumed."); });
+        $("reset").addEventListener("click", () => {
+          state.history = [sample(state.time, state.history.at(-1))]; state.lastSample = state.time; state.pointer = null;
+          updateReadouts(); draw(); announce("Captured history cleared.");
+        });
+        $("more-stages").addEventListener("click", (event) => {
+          const expanded = event.currentTarget.getAttribute("aria-expanded") !== "true";
+          event.currentTarget.setAttribute("aria-expanded", String(expanded));
+          event.currentTarget.textContent = expanded ? "− Fewer stages" : "+ 4 more stages";
+          document.querySelectorAll("[data-extra-stage]").forEach((row) => { row.hidden = !expanded; });
+          draw();
+        });
+        document.querySelectorAll("[data-window]").forEach((button) => button.addEventListener("click", () => {
+          state.window = Number(button.dataset.window);
+          document.querySelectorAll("[data-window]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+          updateReadouts(); draw();
+        }));
+        $("workload").addEventListener("change", (event) => {
+          state.workload = event.target.value; fillHistory(); updateReadouts(); draw();
+          announce("Synthetic history regenerated for the selected workload.");
+        });
+        $("budget").addEventListener("change", (event) => { state.budget = 1000 / Number(event.target.value); updateReadouts(); draw(); });
+        $("reseed").addEventListener("click", () => {
+          state.seed = (state.seed + 0x9e37) >>> 0; fillHistory(); updateReadouts(); draw();
+          announce("New independent simulation seeds generated.");
+        });
+        function setVisibility(visible) {
+          state.visible = visible; $("performance-panel").hidden = !visible;
+          $("app").classList.toggle("panel-hidden", !visible); $("rail-toggle").setAttribute("aria-pressed", String(visible));
+          schedule(); if (visible) { updateReadouts(); draw(); $("pause").focus(); } else $("rail-toggle").focus();
+        }
+        $("close-panel").addEventListener("click", () => setVisibility(false));
+        ["rail-toggle", "status-toggle"].forEach((id) => $(id).addEventListener("click", () => setVisibility(!state.visible)));
+        document.addEventListener("keydown", (event) => { if (event.key === "F2") { event.preventDefault(); setVisibility(!state.visible); } });
+        function toggleMode() {
+          state.floating = !state.floating; $("app").classList.toggle("floating", state.floating);
+          $("mode-toggle").textContent = state.floating ? "Dock panel" : "Float panel";
+          $("mode-toggle").setAttribute("aria-pressed", String(state.floating));
+          $("float-toggle").setAttribute("aria-label", state.floating ? "Dock performance panel" : "Float performance panel");
+          if (!state.visible) setVisibility(true);
+        }
+        $("mode-toggle").addEventListener("click", toggleMode); $("float-toggle").addEventListener("click", toggleMode);
+        const handle = $("resize-handle");
+        function setWidth(width) {
+          const bounded = Math.round(Math.max(320, Math.min(560, window.innerWidth - 140, width)));
+          document.documentElement.style.setProperty("--dock-width", `${bounded}px`);
+          handle.setAttribute("aria-valuenow", bounded);
+        }
+        let drag = null;
+        handle.addEventListener("pointerdown", (event) => {
+          if (event.button !== 0) return;
+          drag = { x: event.clientX, width: $("performance-panel").getBoundingClientRect().width };
+          handle.setPointerCapture(event.pointerId); event.preventDefault();
+        });
+        handle.addEventListener("pointermove", (event) => { if (drag) setWidth(drag.width + drag.x - event.clientX); });
+        handle.addEventListener("pointerup", () => { drag = null; });
+        handle.addEventListener("pointercancel", () => { drag = null; });
+        handle.addEventListener("keydown", (event) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+          event.preventDefault(); const current = Number(handle.getAttribute("aria-valuenow"));
+          setWidth(event.key === "Home" ? 320 : event.key === "End" ? 560 : current + (event.key === "ArrowLeft" ? 16 : -16));
+        });
+        $("frame-chart").addEventListener("pointermove", (event) => {
+          const rect = event.currentTarget.getBoundingClientRect(); state.pointer = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)); draw();
+        });
+        $("frame-chart").addEventListener("pointerleave", () => { state.pointer = null; draw(); });
+        document.addEventListener("visibilitychange", schedule);
+        motionPreference.addEventListener("change", (event) => { if (event.matches) { state.paused = true; syncPause(); } });
+
+        // Static editor context: an abridged excerpt of src/layout/chrome.rs.
+        const code = [
+          "// Shared geometry for painting and hit testing.",
+          "t.node(", "    ElementDecl {", "        dir: Dir::Row,", "        sizing: SizingAxes::grow(),", "        ..Default::default()", "    },", "    |t| {", "        t.leaf(ElementDecl {", "            key: Some(UiKey::EditorArea),", "            sizing: SizingAxes::grow(),", "            ..Default::default()", "        });", "",
+          "        if let Some(width) = right_dock_width {", "            declare_dock(", "                t,", "                model,", "                DockPosition::Right,", "                SizingAxes::new(", "                    Sizing::Fixed(width),", "                    Sizing::GROW,", "                ),", "                include_dock_contents,", "            );", "        }", "    },", ");", "", "let mut measure = CellMeasure {", "    char_width: model.char_width,", "    line_height: model.line_height as f32,", "};", "", "tree.solve(root, model.metrics.scale_factor, &mut measure)",
+        ];
+        function escapeHtml(value) { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"); }
+        code.forEach((line, i) => {
+          const row = document.createElement("div"); row.className = `code-line${i === 18 ? " selected-line" : ""}`;
+          let colored = escapeHtml(line).replace(/\b(if|let|mut|as)\b/g, '<span class="syntax-keyword">$1</span>').replace(/\b(ElementDecl|Dir|SizingAxes|UiKey|Some|DockPosition|Sizing|Default|CellMeasure)\b/g, '<span class="syntax-type">$1</span>').replace(/\b(declare_dock|solve|grow|leaf|node|new|default)\b/g, '<span class="syntax-fn">$1</span>');
+          if (line.startsWith("//")) colored = `<span class="syntax-comment">${escapeHtml(line)}</span>`;
+          row.innerHTML = `<span class="line-number" aria-hidden="true">${114 + i}</span><code>${colored || " "}</code>`;
+          $("code-view").append(row);
+        });
+        fillHistory(); updateReadouts(); syncPause();
+        document.fonts.ready.then(draw);
+      })();
+    </script>
+  </body>
+</html>

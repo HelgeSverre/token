@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Table · Token UI reference</title><link rel="stylesheet" href="shared.css">
+  <style>
+    .table-study { height:100%; display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:16px; }
+    .data-window { min-height:0; display:grid; grid-template-rows:40px 1fr 26px; overflow:hidden; }
+    .data-title { display:flex; align-items:center; gap:8px; padding:0 12px; border-bottom:1px solid var(--line); font-size:12px; }.data-title .path { color:var(--faint); font:11px var(--font-mono); }.data-title .grow { flex:1; }.data-title .badge { font-size:10px; }
+    .grid-viewport { min-height:0; position:relative; overflow:hidden; background:var(--editor); }
+    .csv-grid { display:grid; grid-template-columns:40px 1.55fr .75fr .95fr 1.3fr; grid-auto-rows:33px; min-width:100%; font:12px var(--font-mono); }
+    .cell { display:flex; align-items:center; min-width:0; padding:0 8px; border-right:1px solid var(--soft-line); border-bottom:1px solid var(--soft-line); color:var(--code-fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .head { color:var(--muted); background:var(--panel); font:11px var(--font-ui); }.corner { justify-content:center; color:var(--faint); }.rowhead { justify-content:flex-end; padding-right:9px; background:var(--gutter-bg); color:var(--gutter-fg); font-size:11px; }.cell.number { color:var(--syntax-number); }.cell.kind { color:var(--syntax-type); }.cell.selected { position:relative; background:rgba(38,79,120,.48); color:var(--bright); }.cell.selected::after { content:''; position:absolute; inset:-1px; border:2px solid var(--focus); pointer-events:none; }.cell.editing { background:var(--editor); outline:2px solid var(--focus); outline-offset:-2px; color:var(--bright); }.cell.editing .caret { display:inline-block; width:1px; height:15px; background:var(--bright); margin-left:1px; }
+    .table-scroll-y { position:absolute; top:5px; bottom:5px; right:5px; width:6px; background:var(--scrollbar-track); border-radius:4px; }.table-scroll-y b { display:block; width:6px; height:72px; margin-top:23px; background:var(--scrollbar); border-radius:4px; }.table-scroll-x { position:absolute; left:40px; right:13px; bottom:5px; height:6px; background:var(--scrollbar-track); border-radius:4px; }.table-scroll-x b { display:block; width:185px; height:6px; margin-left:120px; background:var(--scrollbar); border-radius:4px; }
+    .data-footer { display:flex; align-items:center; padding:0 10px; background:var(--panel); border-top:1px solid var(--line); font-size:11px; color:var(--faint); }.data-footer span + span { margin-left:14px; }.data-footer .right { margin-left:auto; }
+    .table-states { min-height:0; display:grid; grid-template-rows:1fr 1fr; gap:16px; }.table-note { padding:12px; }.table-note h2 { margin:0 0 10px; font-size:13px; font-weight:400; }.table-note p { margin:0; color:var(--faint); font-size:11px; line-height:16px; }.micro-grid { display:grid; grid-template-columns:28px 1fr 1fr; grid-auto-rows:26px; margin-top:12px; border:1px solid var(--line); font-size:10px; overflow:hidden; }.micro-grid > span { display:flex; align-items:center; padding:0 5px; border-right:1px solid var(--soft-line); border-bottom:1px solid var(--soft-line); }.micro-grid .mh { background:var(--panel); color:var(--muted); }.micro-grid .ms { background:var(--control-selected); color:var(--bright); outline:1px solid var(--focus); outline-offset:-1px; }
+  </style>
+</head>
+<body>
+  <script src="../../../prototypes/debug-performance-themes.js"></script><script src="shared.js"></script>
+  <script>
+    (() => {
+      const icon = (n) => Mockup.icon(n, 16);
+      const row = (n, name, kind, count, state) => `<span class="cell rowhead">${n}</span><span class="cell ${state === 'editing' ? 'editing' : ''}">${name}${state === 'editing' ? '<span class="caret" aria-hidden="true"></span>' : ''}</span><span class="cell kind">${kind}</span><span class="cell number ${state === 'selected' ? 'selected' : ''}">${count}</span><span class="cell">${n === 5 ? 'Row receives a pending parse result' : n === 6 ? 'Use a bounded cell value for preview' : n === 7 ? 'Selection follows the solved viewport' : 'Ready'}</span>`;
+      Mockup.mount({
+        id:'TABLE', title:'Table', status:'Established surface · visual study',
+        description:'A two-axis data viewport for CSV values. Header, row, selection, editing cell, and independent scroll geometry remain visible together.',
+        content:`
+          <div class="table-study">
+            <section class="window data-window" aria-label="CSV data table">
+              <header class="data-title">${icon('code')} <span>benchmarks.csv</span><span class="path">data/benchmarks.csv</span><span class="grow"></span><span class="badge">4 columns</span></header>
+              <div class="grid-viewport" role="grid" aria-label="Benchmark data">
+                <div class="csv-grid">
+                  <span class="cell head corner">#</span><span class="cell head">stage</span><span class="cell head">kind</span><span class="cell head">samples</span><span class="cell head">note</span>
+                  ${row(1, 'layout_tree', 'render', '1,204')}
+                  ${row(2, 'text_shaping', 'render', '2,560')}
+                  ${row(3, 'visible_rows', 'layout', '818', 'selected')}
+                  ${row(4, 'gpu_submit', 'frame', '419')}
+                  ${row(5, 'csv_preview', 'parse', '64', 'editing')}
+                  ${row(6, 'syntax_query', 'parse', '1,920')}
+                  ${row(7, 'cache_reuse', 'frame', '332')}
+                  ${row(8, 'accessibility', 'view', '88')}
+                </div>
+                <div class="table-scroll-y" aria-hidden="true"><b></b></div><div class="table-scroll-x" aria-hidden="true"><b></b></div>
+              </div>
+              <footer class="data-footer"><span>CSV</span><span>Cell D3</span><span>7 rows × 4 columns</span><span class="right">UTF-8</span></footer>
+            </section>
+            <aside class="table-states">
+              <section class="surface table-note"><div class="state-label">Cell selection</div><h2>One active cell, bounded by the grid</h2><p>Header cells orient the data. The current selection is readable with a border as well as a quiet fill.</p><div class="micro-grid" role="grid" aria-label="Selected cell sample"><span class="mh">#</span><span class="mh">name</span><span class="mh">ms</span><span>3</span><span>paint</span><span class="ms">1.82</span><span>4</span><span>present</span><span>0.14</span></div></section>
+              <section class="surface table-note"><div class="state-label">Editing cell</div><h2>Editing retains its column context</h2><p>The input stays inside a single solved cell. A narrow viewport clips values without losing row and column headers.</p><div class="row" style="margin-top:14px"><span class="keycap">esc</span><span class="muted">cancel</span><span class="keycap">↵</span><span class="muted">commit</span></div></section>
+            </aside>
+          </div>`
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scroll area · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .scroll-study { height:100%; display:grid; grid-template-columns:minmax(0,1fr) 288px; gap:16px; }
+    .scroll-window { min-height:0; display:grid; grid-template-rows:38px 1fr; }
+    .scroll-window-head { display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid var(--line); font-size:12px; }
+    .scroll-viewport { position:relative; min-height:0; overflow:hidden; background:var(--editor); padding:10px 26px 10px 0; }
+    .scroll-rows { transform:none; }
+    .scroll-row { height:22px; display:grid; grid-template-columns:52px minmax(0,1fr); align-items:center; font:12px/22px var(--font-mono); }
+    .scroll-row .n { color:var(--gutter-fg); text-align:right; padding-right:13px; user-select:none; }
+    .scroll-row .text { color:var(--code-fg); padding-left:12px; border-left:1px solid var(--line); white-space:pre; }
+    .scroll-row.current .text { background:var(--current-line); }
+    .scroll-row.mark .n { color:var(--amber); }
+    .scroll-track { position:absolute; width:8px; top:8px; right:8px; bottom:8px; border-radius:6px; background:var(--scrollbar-track); }
+    .scroll-thumb { position:absolute; width:8px; border-radius:6px; background:var(--scrollbar); }
+    .scroll-thumb.hover { box-shadow:0 0 0 1px color-mix(in srgb,var(--bright) 12%,transparent); background:var(--scrollbar-hover); }
+    .scroll-end { position:absolute; right:6px; bottom:7px; width:12px; height:12px; color:var(--faint); display:grid; place-items:center; font:10px/1 var(--font-mono); }
+    .axis-states { min-height:0; display:grid; grid-template-rows:1fr 1fr; gap:12px; }
+    .axis-card { min-height:0; padding:0; overflow:hidden; }
+    .axis-card .state-label { margin:0; padding:8px 10px; border-bottom:1px solid var(--line); }
+    .horizontal-demo { position:relative; margin:10px; height:45px; overflow:hidden; background:var(--input-background); border:1px solid var(--line); border-radius:4px; }
+    .horizontal-code { position:absolute; left:-64px; top:12px; width:420px; color:var(--code-fg); white-space:nowrap; font:11px/1 var(--font-mono); }
+    .h-track { position:absolute; left:10px; right:10px; bottom:6px; height:5px; background:var(--scrollbar-track); border-radius:5px; }
+    .h-thumb { position:absolute; left:45px; width:126px; height:5px; background:var(--scrollbar); border-radius:5px; }
+    .axis-copy { padding:0 10px; color:var(--faint); font-size:11px; line-height:1.4; }
+    .end-range { display:grid; grid-template-columns:34px minmax(0,1fr); gap:9px; align-items:center; margin:8px 10px 0; color:var(--muted); font-size:10px; line-height:1.3; }
+    .end-track { position:relative; width:6px; height:35px; border-radius:5px; background:var(--scrollbar-track); margin-inline:auto; }
+    .end-track i { position:absolute; inset-inline:0; bottom:0; height:12px; border-radius:5px; background:var(--scrollbar-hover); }
+  </style>
+</head>
+<body>
+  <script src="../../../prototypes/debug-performance-themes.js"></script>
+  <script src="shared.js"></script>
+  <script>
+    (async () => {
+      // Fixed source data; geometry below is measured from the rendered viewport.
+      const fixture = { projectedRows:96, rowHeight:22, position:528 };
+      fixture.firstRow = 1 + Math.floor(fixture.position / fixture.rowHeight);
+      const total = fixture.projectedRows * fixture.rowHeight;
+      const rows = Array.from({length:24}, (_,i) => {
+        const n=fixture.firstRow+i; const cls=i===7?'current':i===4?'mark':'';
+        const body = i===4 ? '<span class="syntax-comment">// overview mark: warning in visible projection</span>' : i===7 ? '<span class="syntax-keyword">let</span> visible_rows = viewport.<span class="syntax-function">drawn_count</span>();' : i===12 ? '<span class="syntax-keyword">if</span> soft_wrap { horizontal.<span class="syntax-function">hide</span>(); }' : `    <span class="syntax-function">project_row</span>(row_${n}, offset);`;
+        return `<div class="scroll-row ${cls}"><span class="n">${n}</span><span class="text">${body}</span></div>`;
+      }).join('');
+      await Mockup.mount({
+        id:'SCROLL-AREA', title:'Scroll area', status:'Established surface · visual study',
+        description:'One fixed editor viewport: 96 projected rows, 22 logical pixels per row, and a scrollbar derived from the visible extent.',
+        content:`<div class="scroll-study">
+          <section class="window scroll-window" aria-label="Editor projection with vertical scrollbar">
+            <header class="scroll-window-head"><span class="row">${Mockup.icon('file')} <span class="mono">editor_scrollbars.rs</span></span><span class="muted">${fixture.projectedRows} projected rows · y ${fixture.position} px</span></header>
+            <div class="scroll-viewport" data-clip-demo aria-label="Clipped projected rows ${fixture.firstRow} through ${fixture.firstRow + 23}">
+              <div class="scroll-rows">${rows}</div><div class="scroll-track" aria-hidden="true"><span class="scroll-thumb hover"></span></div><span class="scroll-end" aria-hidden="true">⌄</span>
+            </div>
+          </section>
+          <aside class="axis-states" aria-label="Scrollbar state comparisons">
+            <section class="surface axis-card"><div class="state-label">Horizontal comparison · unwrapped</div><div class="horizontal-demo" data-clip-demo><span class="horizontal-code">viewport_map.row_count × line_height − content_extent</span><span class="h-track"><i class="h-thumb"></i></span></div><p class="axis-copy">The same pure axis applies here. Soft wrap suppresses horizontal editor scrolling.</p></section>
+            <section class="surface axis-card"><div class="state-label">Vertical axis · logical pixels</div><div class="axis-copy stack" style="padding-top:9px;gap:4px"><div class="row"><span class="muted">total</span><span class="mono grow" style="text-align:right">${total.toLocaleString('en-US')} px</span></div><div class="row"><span class="muted">visible</span><span class="mono grow visible-extent" style="text-align:right"></span></div><div class="row"><span class="muted">position</span><span class="mono grow" style="text-align:right">${fixture.position} px</span></div></div><div class="end-range"><span class="end-track" aria-hidden="true"><i></i></span><span><span class="mono end-position"></span> is the end-of-range position; the thumb pins to the track end.</span></div></section>
+          </aside>
+        </div>`
+      });
+      window.__mockupReady = false;
+      const viewport = document.querySelector('.scroll-viewport');
+      const viewportStyle = getComputedStyle(viewport);
+      const visible = viewport.clientHeight - parseFloat(viewportStyle.paddingTop) - parseFloat(viewportStyle.paddingBottom);
+      const maxScroll = total - visible;
+      const track = document.querySelector('.scroll-track').clientHeight;
+      const thumb = Math.max(16, track * visible / total);
+      Object.assign(document.querySelector('.scroll-thumb').style, {
+        height: `${thumb}px`, top: `${fixture.position / maxScroll * (track - thumb)}px`,
+      });
+      document.querySelector('.visible-extent').textContent = `${visible.toLocaleString('en-US')} px`;
+      document.querySelector('.end-position').textContent = `${maxScroll.toLocaleString('en-US')} px`;
+      window.__mockupReady = true;
+    })();
+  </script>
+</body>
+</html>

@@ -1,5 +1,11 @@
 # Label
 
+<!-- token-ui-mockup:begin LABEL -->
+[![Visual target under review: Label](mockups/renders/LABEL-emphasised.png)](mockups/LABEL.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/LABEL.png) · [Open normal mockup](mockups/LABEL.html?view=normal) · [Open emphasised mockup](mockups/LABEL.html?view=emphasised).*
+<!-- token-ui-mockup:end LABEL -->
+
 ## Current representation and ownership
 
 Label is a presentation role, not a retained Token widget. Its caller owns

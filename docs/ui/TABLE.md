@@ -1,5 +1,11 @@
 # Table implementation manual
 
+<!-- token-ui-mockup:begin TABLE -->
+[![Visual target under review: Table implementation manual](mockups/renders/TABLE-emphasised.png)](mockups/TABLE.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/TABLE.png) · [Open normal mockup](mockups/TABLE.html?view=normal) · [Open emphasised mockup](mockups/TABLE.html?view=emphasised).*
+<!-- token-ui-mockup:end TABLE -->
+
 Token's only table is CSV viewer/editor mode: an alternate `EditorState` view
 over the same `Document`, not a reusable sortable grid. Parsed CSV values,
 selection, viewport, widths, in-cell editing and document synchronization form

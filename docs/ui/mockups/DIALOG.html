@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dialog visual reference</title>
+    <link rel="stylesheet" href="shared.css">
+    <style>
+      .dialog-stage { height: 416px; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--editor); }
+      .dialog-background { height: 100%; opacity: .44; filter: saturate(.72); pointer-events: none; }
+      .dialog-background .window { height: 100%; }
+      .dialog-shade { position: absolute; inset: 0; background: #00000046; z-index: 2; }
+      .dialog-box { position: absolute; z-index: 3; top: 78px; left: 50%; width: 424px; transform: translateX(-50%); border: 1px solid var(--tooltip-border); border-radius: 6px; background: var(--panel); box-shadow: 0 18px 42px #00000073; }
+      .dialog-heading { padding: 18px 20px 10px; color: var(--bright); font-size: 16px; line-height: 22px; }
+      .dialog-copy { padding: 0 20px 18px; color: var(--muted); font-size: 13px; line-height: 19px; }
+      .dialog-path { margin: 0 20px 18px; padding: 8px 10px; border: 1px solid var(--soft-line); border-radius: 4px; background: var(--editor); color: var(--text); font: 11px/16px var(--font-mono); }
+      .dialog-actions { padding: 12px 14px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--soft-line); background: var(--chrome); }
+      .dialog-actions .btn { min-width: 76px; }
+      .dialog-actions .btn.primary { background: var(--focus); border-color: var(--focus); color: var(--bright); }
+      .dialog-notes { position: absolute; z-index: 4; bottom: 16px; left: 16px; right: 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .dialog-note { padding: 8px 10px; border: 1px solid #ffffff1c; border-radius: 4px; background: #1e1e1ed9; color: var(--faint); font-size: 11px; }
+      .dialog-note b { display: block; color: var(--muted); font-weight: 400; margin-bottom: 2px; }
+      .dialog-states { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .dialog-states .state-card { min-height: 72px; padding: 10px; }
+      .dialog-state-row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; color: var(--muted); font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <script src="../../../prototypes/debug-performance-themes.js"></script>
+    <script src="shared.js"></script>
+    <script>
+      const source = [
+        'pub fn save(&mut self) -> Result<()> {',
+        '    self.document.write()?;',
+        '    Ok(())',
+        '}',
+        '',
+        '// Unsaved changes remain in this editor.',
+        'let dirty = document.is_dirty();'
+      ];
+      const content = `
+        <section class="dialog-stage" aria-label="Unsaved changes dialog over editor">
+          <div class="dialog-background">${Mockup.editor({ title: 'commands.rs', tabs: ['commands.rs', 'theme.rs'], breadcrumb: true, sidebar: true, status: true, lines: source })}</div>
+          <div class="dialog-shade" aria-hidden="true"></div>
+          <section class="dialog-box" role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-copy">
+            <div class="dialog-heading" id="dialog-title">Save changes before closing?</div>
+            <div class="dialog-copy" id="dialog-copy">You have unsaved changes. Save them before closing this editor, or discard them.</div>
+            <div class="dialog-path">src/update/commands.rs</div>
+            <div class="dialog-actions">
+              <button class="btn quiet" type="button">Cancel</button>
+              <button class="btn" type="button">Don’t Save</button>
+              <button class="btn primary focused" type="button">Save</button>
+            </div>
+          </section>
+          <div class="dialog-notes" aria-label="Dialog behavior notes">
+            <div class="dialog-note"><b>Focus</b>trapped in the decision</div>
+            <div class="dialog-note"><b>Escape</b>cancels without closing</div>
+            <div class="dialog-note"><b>Backdrop</b>subdues, does not discard</div>
+          </div>
+        </section>
+        <div class="dialog-states" aria-label="Dialog decision variants">
+          <div class="state-card"><div class="state-label">Destructive confirmation</div><div class="dialog-state-row"><span>Discard 3 pending edits?</span><button class="btn" type="button">Discard</button></div></div>
+          <div class="state-card"><div class="state-label">Validation remains local</div><div class="dialog-state-row"><span class="muted">Name is required</span><button class="btn primary" type="button">Create</button></div></div>
+        </div>`;
+      Mockup.mount({
+        id: 'DIALOG',
+        title: 'Dialog',
+        description: 'A focused decision above the editor that owns the blocking interaction.',
+        status: 'Established surface · visual study',
+        content
+      });
+    </script>
+  </body>
+</html>

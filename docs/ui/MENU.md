@@ -1,5 +1,11 @@
 # Menu — context-menu implementation reference
 
+<!-- token-ui-mockup:begin MENU -->
+[![Visual target under review: Menu](mockups/renders/MENU-emphasised.png)](mockups/MENU.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/MENU.png) · [Open normal mockup](mockups/MENU.html?view=normal) · [Open emphasised mockup](mockups/MENU.html?view=emphasised).*
+<!-- token-ui-mockup:end MENU -->
+
 ## Scope
 
 A menu is a transient, ordered command set anchored to a trigger and dismissed after its declared route. Token's real menu is the editor/tab/file-tree context menu. Completion, references, code actions, and Settings Select use some overlay machinery but have distinct data ownership and are not arbitrary `MenuItem` consumers.

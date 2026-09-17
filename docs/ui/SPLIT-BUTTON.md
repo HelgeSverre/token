@@ -1,5 +1,11 @@
 # Split button — proposed implementation contract
 
+<!-- token-ui-mockup:begin SPLIT-BUTTON -->
+[![Visual target under review: Split button](mockups/renders/SPLIT-BUTTON-emphasised.png)](mockups/SPLIT-BUTTON.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/SPLIT-BUTTON.png) · [Open normal mockup](mockups/SPLIT-BUTTON.html?view=normal) · [Open emphasised mockup](mockups/SPLIT-BUTTON.html?view=emphasised).*
+<!-- token-ui-mockup:end SPLIT-BUTTON -->
+
 ## Status and boundary
 
 Token has **no split-button implementation**. This is intentionally a future

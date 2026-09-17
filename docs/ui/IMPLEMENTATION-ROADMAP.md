@@ -31,11 +31,16 @@ Evidence: [button](../../src/view/button.rs),
 
 ## Recommended slice 1: explicit form-control semantics
 
-**Why first:** the production Settings painter still recognizes checkbox and
-disclosure presentation by literal label arrays (`Off`/`On`, `Show`/`Hide`).
-That couples presentation to wording and makes named gallery states less useful
-for adjusting the real UI. This is verified code structure, not a claim of an
-observed localization bug.
+**Implemented:** Settings now carries explicit checkbox, select, disclosure and
+button presentation through its choice projection. Display labels no longer
+select the painter or hit-testing behavior, and the gallery includes a production
+Settings composition.
+
+**Original motivation:** the production Settings painter recognized checkbox and
+disclosure presentation by literal label arrays (`Off`/`On`, `Show`/`Hide`). That
+coupled presentation to wording and made named gallery states less useful for
+adjusting the real UI. The typed presentation implemented above removes that
+coupling.
 
 **Deliver:** explicit semantic descriptors for boolean choice, disclosure,
 fixed-value choice and field validation. Preserve `SettingsForm`, typed setting
@@ -58,10 +63,15 @@ and display scale changes. Keep tests targeted to those actual contracts.
 
 ## Recommended slice 2: documentation and contextual overlays
 
-**Why next:** documentation is a substantial existing application surface that
-the current 46-specimen catalog does not show. Its mixed code/UI typography,
-anchoring, scrolling and async ownership make real fixtures more valuable than
-another generic button variant.
+**Implemented gallery coverage:** completion with documentation, hover
+documentation and signature help now render through the production overlay
+surface. Existing runtime/update tests remain the interaction authority for
+selection changes, stale replies, scrolling and dismissal.
+
+**Original motivation:** documentation was a substantial existing application
+surface absent from the original 46-specimen catalog. Its mixed code/UI
+typography, anchoring, scrolling and async ownership made real fixtures more
+valuable than another generic button variant.
 
 **Deliver:** production hover/documentation and completion-with-documentation
 fixtures, short/long/error/loading contexts where supported, signature help and
@@ -74,6 +84,13 @@ changing selected completion cannot leave mismatched docs. Interaction checks
 exercise real owners rather than simulating behavior solely in a static tile.
 
 ## Recommended slice 3: navigation, collections and panel content
+
+**Implemented collection slice:** the gallery now includes a deterministic Outline
+tree, a populated Problems dock with grouped severities and collapse/selection
+states, grouped/loading/empty Search Everywhere collections, and selected/empty
+Settings record collections. Each fixture enters through its production model,
+spec builder and painter. The actual Usages dock remains a distinct future fixture;
+Search Everywhere covers the grouped search-result portion of this slice.
 
 **Deliver:** explorer/outline tree rows, grouped Problems/Usages rows, actual
 Settings record list, search/picker empty and loading states, and panel toolbar
@@ -95,6 +112,35 @@ gallery-local approximation of a document. Tie back to the
 [editor geometry reference](../EDITOR_UI_REFERENCE.md). A special-mode preview
 must not enter plain-text fast paths.
 
+## Performance-study adoption: proposed parallel tracks
+
+The 2026-09-16 [component decision record](PROTOTYPE-COMPONENTS.md) adds concrete
+consumers for several previously deferred concepts. These specifications do not
+change the implementation status of the gallery slices above.
+
+- **Shared pane chrome:** implement title/optional actions and optional
+  leading/trailing footer content from [Pane chrome](PANE-CHROME.md). Integrate
+  actions alongside existing dock tabs without repeating the active title in a
+  second header. Add production-backed gallery states as each helper lands.
+- **Performance:** follow the [feature plan](../feature/performance-panel.md)
+  for coherent completed-frame data, right-dock content and then generic
+  [floating placement](DOCKABLE-PANEL.md). Keep existing instrumentation and
+  omit the live/pause/reload row and decorative header icon. No rail is needed.
+- **Editor polish:** follow the separate [visual-polish plan](../feature/editor-visual-polish.md)
+  for native comparison fixtures, tab/status spacing, measured UI-font roles,
+  and separately tested code line pitch. Preserve user-selected fonts and themes.
+- **Breadcrumbs:** implement the [editor-group contract](BREADCRUMBS.md) as a
+  distinct viewport/navigation integration. Shared styling does not permit a
+  feature-local editor inset or a pointer-only navigation control.
+- **Activity rails:** [left/right rail semantics](ACTIVITY-RAIL.md) are now
+  specified but remain deferred. They are not a prerequisite for docking,
+  floating, breadcrumbs, or typography polish.
+
+Performance work can proceed independently of the global typography rollout.
+Prototype readouts and plots should first be feature-local compositions of
+existing labels, rows and pure plotting helpers; extract more universal
+primitives only when another concrete consumer needs the same contract.
+
 ## Conditional additions, not prerequisites
 
 - **Combo box:** add when a concrete field accepts both suggestions and custom
@@ -108,8 +154,9 @@ must not enter plain-text fast paths.
 - **Icon registry and badge roles:** useful once a concrete set of production
   icons can migrate together; explicit fallback/accessible labels must accompany
   icon polish.
-- **Breadcrumbs, onboarding, floating action bars:** later product decisions;
-  the IntelliJ catalog alone is not a reason to make Token noisier.
+- **Onboarding and floating action bars:** later product decisions; the IntelliJ
+  catalog alone is not a reason to make Token noisier. Breadcrumbs and dockable
+  panels now have the separate user-requested proposals above.
 
 ## What not to consolidate
 

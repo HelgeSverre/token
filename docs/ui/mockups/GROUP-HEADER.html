@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Group header · Token UI reference</title>
+  <link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="ide.css">
+  <style>
+    .advanced-disclosure { inline-size:100%; min-block-size:28px; display:flex; align-items:center; gap:8px; padding:4px 7px; border:0; border-block-end:1px solid var(--soft-line); background:transparent; color:var(--title-fg); text-align:start; font-size:12px; }
+    .advanced-disclosure.focused { outline:1px solid var(--focus); outline-offset:1px; background:var(--hover); }
+    .advanced-disclosure .summary { color:var(--faint); font-size:11px; }
+    .group-indent { margin-inline-start:24px; padding-inline-start:12px; border-inline-start:1px solid var(--soft-line); }
+    .group-indent .ide-form-row { grid-template-columns:126px minmax(0,1fr); }
+    .header-sample { display:flex; align-items:center; gap:8px; min-block-size:28px; color:var(--text); font-size:12px; }
+    .header-sample.focused { outline:1px solid var(--focus); outline-offset:2px; background:var(--hover); }
+  </style>
+</head>
+<body>
+  <script src="../../../prototypes/debug-performance-themes.js"></script><script src="shared.js"></script><script src="ide.js"></script>
+  <script>
+  Mockup.mount({
+    id: 'GROUP-HEADER', title: 'Group header',
+    description: 'A proposed semantic header groups related Settings rows while expansion remains in the form owner.',
+    status: 'Proposed component',
+    content: `
+      <div class="ide-study">
+        <div class="ide-scene">
+          ${Ide.preferences({ section: 'Language servers', title: 'rust-analyzer', content: `
+            <section class="ide-group" aria-label="Language server basics">
+              <div class="ide-group-title">Server</div>
+              <div class="ide-form-row"><span>Command</span><div class="field ide-control-width mono" role="textbox" aria-label="Command" aria-readonly="true">rust-analyzer</div></div>
+              <label class="ide-form-row"><span>Enabled</span><span class="ide-check-row"><input type="checkbox" checked aria-label="Enable rust-analyzer">Start for Rust documents</span></label>
+            </section>
+            <section class="ide-group" aria-label="Advanced options">
+              <button class="advanced-disclosure focused" type="button" aria-expanded="true"><span aria-hidden="true">${Mockup.icon('chevron-down', 14)}</span><span>Advanced</span><span class="grow"></span><span class="summary">2 options</span></button>
+              <div class="group-indent">
+                <div class="ide-form-row"><span>Arguments</span><div class="field ide-control-width mono" role="textbox" aria-label="Arguments" aria-readonly="true">--log-file /tmp/ra.log</div></div>
+                <div class="ide-form-row"><span>Initialization</span><div class="field ide-control-width mono" role="textbox" aria-label="Initialization options" aria-readonly="true">{ \"checkOnSave\": true }</div></div>
+              </div>
+            </section>` })}
+          <aside class="ide-notes" aria-label="Group header annotations">
+            <div class="ide-note"><h3>Current owner</h3><p>The existing Advanced row is part of the Settings form draft.</p></div>
+            <div class="ide-note"><h3>Proposed boundary</h3><p>A named group can add a description and focused disclosure state.</p></div>
+          </aside>
+        </div>
+        <section class="ide-states" style="--state-count:3" aria-label="Group header states">
+          <div class="ide-state"><span class="state-label">Current Advanced row</span><div class="header-sample">${Mockup.icon('chevron-down',14)}<span>Advanced</span></div><p class="ide-state-caption">A feature-owned settings entry.</p></div>
+          <div class="ide-state"><span class="state-label">Focused disclosure</span><div class="header-sample focused">${Mockup.icon('chevron-down',14)}<span>Advanced</span></div><p class="ide-state-caption">Focus is visible apart from expansion.</p></div>
+          <div class="ide-state"><span class="state-label">Collapsed</span><div class="header-sample">${Mockup.icon('chevron-right',14)}<span>Advanced</span><span class="grow"></span><span class="dim">2 options</span></div><p class="ide-state-caption">Dependent rows consume no space.</p></div>
+        </section>
+      </div>`
+  });
+  </script>
+</body>
+</html>

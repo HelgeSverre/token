@@ -39,6 +39,19 @@ All notable changes to Token are documented in this file.
 
 ### Settings
 
+- Give Settings choices explicit checkbox, select, disclosure or button
+  presentation so changing their visible labels cannot change the control kind.
+
+### Development
+
+- Expand the native UI gallery with a production Settings composition,
+  documentation and signature overlays, a populated Outline tree, grouped
+  Problems and Search Everywhere collections, and Settings record lists.
+- Give every gallery specimen a padded, darker, dotted preview canvas; keep
+  narrow completion/documentation layouts contained and use representative
+  five-entry data sets for list-like previews. Show scrollbar states inside
+  representative content viewports and improve spacing between specimen rows.
+
 - Add optional clangd, HTML, CSS/SCSS, JSON, YAML, Marksman, Lua and Bash language
   server presets, plus Prettier, rustfmt, gofmt, clang-format and shfmt formatter
   presets with installation guidance and copyable commands. Existing defaults
@@ -98,6 +111,9 @@ All notable changes to Token are documented in this file.
 
 ### Theming
 
+- Add the built-in Study theme: a cool graphite palette with restrained teal
+  accents, adapted from the performance-panel visual study and available in the
+  editor and website theme gallery.
 - Allow themes to style selected buttons independently of pressed buttons with
   `ui.button.background_selected`, and disabled labels with
   `ui.button.foreground_disabled`. Existing themes retain their selected styling.

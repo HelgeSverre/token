@@ -348,6 +348,14 @@ impl MenuItemKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChoicePresentation {
+    Buttons,
+    Checkbox,
+    Disclosure,
+    Select,
+}
+
 pub enum Accessory<'a> {
     SettingInput {
         content: &'a crate::editable::EditableState<crate::editable::StringBuffer>,
@@ -366,6 +374,7 @@ pub enum Accessory<'a> {
     Choices {
         labels: &'a [&'a str],
         active: Option<usize>,
+        presentation: ChoicePresentation,
     },
     DimText(&'a str),
     Check,
@@ -2489,7 +2498,7 @@ fn render_list(
                             .saturating_sub(painter.line_height_for_size(meta_size)))
                             / 2;
                     match &row.accessory {
-                        Accessory::Choices { labels, active } => {
+                        Accessory::Choices { labels, active, .. } => {
                             for (index, (label, chip)) in
                                 labels.iter().zip(choice_rects).enumerate()
                             {
@@ -5781,6 +5790,7 @@ mod tests {
                 accessory: Accessory::Choices {
                     labels: &["Off", "Slow", "Normal", "Fast"],
                     active: None,
+                    presentation: ChoicePresentation::Buttons,
                 },
             })
             .collect();

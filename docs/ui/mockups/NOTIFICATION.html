@@ -1,0 +1,23 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Notification · Token UI reference</title><link rel="stylesheet" href="shared.css"><style>
+  .notice-demo { height:414px; position:relative; overflow:hidden; background:var(--editor); }
+  .notice-demo .editor-tabs { height:37px; } .notice-code { padding:16px 0; opacity:.62; }
+  .notice-stack { position:absolute; right:18px; top:54px; width:326px; display:grid; gap:8px; }
+  .notice { display:grid; grid-template-columns:18px 1fr auto; gap:10px; padding:11px 12px; border:1px solid var(--tooltip-border); border-left:3px solid var(--focus); border-radius:5px; background:var(--tooltip-bg); box-shadow:0 8px 22px #0000003d; }
+  .notice.warning { border-left-color:var(--amber); } .notice.error { border-left-color:var(--red); }
+  .notice strong { display:block; color:var(--tooltip-fg); font-size:12px; font-weight:400; margin-bottom:2px; } .notice p { margin:0; color:var(--faint); font-size:11px; line-height:15px; }
+  .notice button { align-self:start; width:18px; height:18px; padding:1px; color:var(--muted); }
+  .notification-bottom { height:26px; position:absolute; bottom:0; left:0; right:0; display:flex; align-items:center; padding:0 12px; gap:8px; background:var(--status-bg); color:var(--status-fg); font-size:12px; }
+  .notice-notes { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; } .notice-note { border:1px solid var(--line); padding:10px 12px; background:var(--panel); font-size:11px; color:var(--faint); line-height:16px; } .notice-note b { font-weight:400; color:var(--muted); }
+</style></head><body><script src="../../../prototypes/debug-performance-themes.js"></script><script src="shared.js"></script><script>
+Mockup.mount({id:'NOTIFICATION',title:'Notification',description:'A proposed, scoped notice surface; today’s feedback is a one-slot status flash.',status:'Proposed component',content:`
+  <section class="window notice-demo" aria-label="Proposed notification placement over an editor">
+    <div class="editor-tabs"><div class="editor-tab selected">renderer.rs</div><div class="editor-tab">theme.rs</div></div>
+    <div class="notice-code code-view">${Mockup.code({start:118,active:122,lines:['pub fn draw_status_bar(&mut self, frame: &mut Frame) {','    let message = model.status_bar.current_message();','    frame.draw_text(message, status_rect);','}','', 'fn status_segments(model: &AppModel) -> Vec<Segment> {','    model.status_bar.segments()','}']})}</div>
+    <div class="notice-stack">
+      <article class="notice"><div>${Mockup.icon('info')}</div><div><strong>Formatting complete</strong><p>124 lines updated in renderer.rs</p></div><button class="btn quiet" aria-label="Dismiss formatting notice">${Mockup.icon('close')}</button></article>
+      <article class="notice warning"><div>${Mockup.icon('warning')}</div><div><strong>Indexing is taking longer</strong><p>Workspace scan continues in the background.</p></div><button class="btn quiet" aria-label="Dismiss indexing notice">${Mockup.icon('close')}</button></article>
+    </div>
+    <div class="notification-bottom">${Mockup.icon('check')} <span>Saved renderer.rs</span><span style="opacity:.75">· status flash today</span></div>
+  </section>
+  <div class="notice-notes"><div class="notice-note"><div class="state-label">Current status bar</div><b>Saved renderer.rs</b> replaces one passive transient message and expires by its owner’s deadline.</div><div class="notice-note"><div class="state-label">Proposed stack</div><b>Scoped notices</b> need IDs, queue policy, dismissal, actions, and exact scope removal before implementation.</div></div>`});
+</script></body></html>

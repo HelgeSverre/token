@@ -958,4 +958,43 @@ mod tooling_tests {
         assert!(!form.saving);
         assert_eq!(form.fields[0].input.text(), "/my/custom-ruff");
     }
+
+    #[test]
+    fn removing_the_selected_record_cannot_leave_that_record_selected() {
+        let mut model = AppModel::new(1200, 900, 1.0);
+        super::super::update(
+            &mut model,
+            crate::messages::Msg::Ui(crate::messages::UiMsg::ToggleModal(ModalId::Settings)),
+        );
+        open_server(&mut model, Some("rust-analyzer"));
+        let session = Arc::clone(
+            &state_mut(&mut model.ui)
+                .and_then(|state| state.form.as_ref())
+                .expect("server form is open")
+                .session,
+        );
+
+        update_settings(
+            &mut model,
+            SettingsMsg::FormApplied {
+                session,
+                change: Box::new(SettingsChange::Remove {
+                    collection: CollectionKind::LanguageServers,
+                    id: "rust-analyzer".into(),
+                }),
+                result: Ok(()),
+            },
+        );
+
+        assert!(!model.config.lsp.servers.contains_key("rust-analyzer"));
+        let state = state_mut(&mut model.ui).expect("Settings remains open");
+        assert_eq!(state.category, crate::settings::CategoryId::LanguageServers);
+        assert!(
+            matches!(
+                state.form.as_ref().map(|form| &form.kind),
+                Some(FormKind::LanguageServer(Some(id))) if id != "rust-analyzer"
+            ),
+            "the collection may select a remaining record, but not the removed one"
+        );
+    }
 }

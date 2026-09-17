@@ -1,5 +1,11 @@
 # Group header
 
+<!-- token-ui-mockup:begin GROUP-HEADER -->
+[![Visual target under review: Group header](mockups/renders/GROUP-HEADER-emphasised.png)](mockups/GROUP-HEADER.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/GROUP-HEADER.png) · [Open normal mockup](mockups/GROUP-HEADER.html?view=normal) · [Open emphasised mockup](mockups/GROUP-HEADER.html?view=emphasised).*
+<!-- token-ui-mockup:end GROUP-HEADER -->
+
 ## Boundary: current disclosure is not a generic group header
 
 Token has no `GroupHeader` type. The nearest current implementation is the

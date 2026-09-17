@@ -1,0 +1,143 @@
+version: 1
+name: "Study"
+author: "Token"
+description: "Cool graphite surfaces with restrained teal accents, developed from Token's performance-panel design study"
+
+ui:
+  editor:
+    # Exact anchors from the original performance study.
+    indent_guide: "#2A3034"
+    background: "#181B1E"
+    foreground: "#BCC8CF"
+    current_line_background: "#232E32"
+    cursor_color: "#79D8BD"
+    selection_background: "#34423E"
+    secondary_cursor_color: "#79D8BD80"
+
+  gutter:
+    # The study used a transparent gutter. Use the opaque editor ground to
+    # reproduce that transparent-on-editor composition in the native theme.
+    background: "#181B1E"
+    foreground: "#8E9AA2"
+    foreground_active: "#8E9AA2"
+    border_color: "#2A3034"
+
+  status_bar:
+    background: "#24292D"
+    foreground: "#A1AEB7"
+    border: "#32383C"
+
+  sidebar:
+    background: "#1D2124"
+    foreground: "#A1ABB3"
+    selection_background: "#30393F"
+    selection_foreground: "#E0E6E9"
+    hover_background: "#343B40"
+    folder_icon: "#8D9CA7"
+    file_icon: "#BC9B81"
+    border: "#2A3034"
+
+  # This is the quieter internal rule from the study. The heavier #32383C
+  # stays available to pane and status-bar boundaries above.
+  splitter:
+    background: "#2A3034"
+
+  tab_bar:
+    background: "#1D2124"
+    active_background: "#181B1E"
+    active_foreground: "#CFD7DD"
+    inactive_background: "#1D2124"
+    inactive_foreground: "#8E999F"
+    border: "#2A3034"
+    modified_indicator: "#79D8BD"
+
+  overlay:
+    # The tooltip/popup treatment from the study is deliberately darker and
+    # translucent; overlay panel tiers preserve the dock's separate surfaces.
+    border: "#51616A"
+    background: "#12191FED"
+    foreground: "#E5EEEF"
+    input_background: "#181B1E"
+    selection_background: "#34423E"
+    highlight: "#79D8BD"
+    warning: "#E6BB7C"
+    error: "#ED918B"
+    accent: "#79D8BD"
+    accent_bright: "#BBF4E2"
+    panel_background: "#1C2023"
+    panel_secondary: "#202427"
+    recessed_wash: "#181B1E"
+    hairline: "#30393D"
+    selection_wash: "#34423E"
+    match_on_selection: "#E0FFF4"
+    text_primary: "#D4DFE3"
+    text_bright: "#E8F2EF"
+    text_secondary: "#A0A9AF"
+    text_dim: "#858F97"
+    keycap_bg: "#262C30"
+    keycap_border: "#3A4247"
+    keycap_fg: "#C0CBD0"
+    severity_error: "#ED918B"
+    severity_warning: "#E6BB7C"
+    severity_info: "#8EAFF0"
+    severity_hint: "#929FA7"
+    severity_error_text: "#FFC3BF"
+    severity_warning_text: "#F5CF94"
+    severity_info_text: "#BFCEFC"
+    severity_hint_text: "#CAD4D9"
+
+  csv:
+    header_background: "#202427"
+    header_foreground: "#D4DFE3"
+    grid_line: "#30393D"
+    selected_cell_background: "#34423E80"
+    selected_cell_border: "#79D8BD"
+    number_foreground: "#B3A0E1"
+
+  button:
+    # The original study's controls: calm graphite rest states, teal only for
+    # selected/focused work, and a legible disabled label.
+    background: "#262C30"
+    background_hover: "#30373D"
+    background_pressed: "#34423E"
+    background_selected: "#34423E"
+    foreground: "#D4DFE3"
+    foreground_disabled: "#858F97"
+    border: "#32383C"
+    focus_ring: "#79D8BD"
+
+  image_preview:
+    checkerboard_light: "#24292D"
+    checkerboard_dark: "#1C2023"
+    checkerboard_size: 8
+
+  scrollbar:
+    # Use the opaque editor ground to reproduce the study's transparent track
+    # over the editor surface.
+    track: "#181B1E"
+    thumb: "#39434B"
+    thumb_hover: "#4B5760"
+
+  syntax:
+    keyword: "#BE9ACB"
+    function: "#A9BE90"
+    function_builtin: "#79D8BD"
+    string: "#E6BB7C"
+    number: "#B3A0E1"
+    comment: "#809383"
+    type: "#8AB7C4"
+    variable: "#BCC8CF"
+    variable_builtin: "#8EAFF0"
+    property: "#87BACA"
+    operator: "#BCC8CF"
+    punctuation: "#BCC8CF"
+    constant: "#B3A0E1"
+    tag: "#BE9ACB"
+    attribute: "#A9BE90"
+    escape: "#E6BB7C"
+    label: "#B3A0E1"
+    text: "#BCC8CF"
+    text_emphasis: "#D4DFE3"
+    text_strong: "#E8F2EF"
+    text_title: "#8EAFF0"
+    text_uri: "#79D8BD"

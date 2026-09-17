@@ -1,5 +1,11 @@
 # Cursor popup — Token implementation reference
 
+<!-- token-ui-mockup:begin POPUP -->
+[![Visual target under review: Cursor popup](mockups/renders/POPUP-emphasised.png)](mockups/POPUP.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/POPUP.png) · [Open normal mockup](mockups/POPUP.html?view=normal) · [Open emphasised mockup](mockups/POPUP.html?view=emphasised).*
+<!-- token-ui-mockup:end POPUP -->
+
 ## Boundary and current representation
 
 Token has a cursor-overlay family, not a generic Popup widget. A visible popup combines shared interaction state with feature-owned payload. OverlaySpec is a borrowed render/hit-test projection, never a store. Current kinds are Completion, Hover, References, Code Actions, and Context Menu, plus debug fixtures ([model](../../src/model/ui.rs)). Signature help is a sibling float and may coexist with completion.

@@ -1,0 +1,16 @@
+{
+  "name": "token-ui-mockups",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Reproducible visual references for Token UI component documentation.",
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs",
+    "check": "node render.mjs --check",
+    "update-docs": "node render.mjs --update-docs",
+    "determinism": "node render.mjs --determinism"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

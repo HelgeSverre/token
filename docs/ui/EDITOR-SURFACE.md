@@ -1,5 +1,11 @@
 # Editor surface
 
+<!-- token-ui-mockup:begin EDITOR-SURFACE -->
+[![Visual target under review: Editor surface](mockups/renders/EDITOR-SURFACE-emphasised.png)](mockups/EDITOR-SURFACE.html?view=emphasised)
+
+*Visual target under review. [Normal PNG](mockups/renders/EDITOR-SURFACE.png) · [Open normal mockup](mockups/EDITOR-SURFACE.html?view=normal) · [Open emphasised mockup](mockups/EDITOR-SURFACE.html?view=emphasised).*
+<!-- token-ui-mockup:end EDITOR-SURFACE -->
+
 The editor surface is Token's domain composition for an active document view in
 one editor group. It is not a reusable multiline field. Features and gallery
 fixtures must drive the production renderer rather than inventing a second text
