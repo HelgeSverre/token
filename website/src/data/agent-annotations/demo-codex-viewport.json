@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 1,
+  "sessionId": "demo-codex-viewport",
+  "sourceDigest": "f1fa3f4bd0ccd28f1705a4ab1c2fe535f08930ab4dd775c9e34200bc97afaa91",
+  "title": "Keep the selection visible when wrapped lines resize",
+  "summary": "A resize bug becomes a shared-geometry cleanup: reproduce the failure, add a layout-revision guard, check special tabs, and verify narrow and high-DPI views. The branch is left uncommitted for review.",
+  "evidenceMessageIds": [
+    "m001",
+    "m027",
+    "m029",
+    "m048",
+    "m062",
+    "m065"
+  ],
+  "chapters": [
+    {
+      "id": "reproduce",
+      "title": "Reproduce the resize failure",
+      "startMessageId": "m001",
+      "endMessageId": "m006",
+      "evidenceMessageIds": [
+        "m001",
+        "m006"
+      ],
+      "summary": "The caret is measured against visual rows from before the width changes."
+    },
+    {
+      "id": "shared-geometry",
+      "title": "Reuse shared visual-row geometry",
+      "startMessageId": "m007",
+      "endMessageId": "m012",
+      "evidenceMessageIds": [
+        "m007",
+        "m012"
+      ],
+      "summary": "Keep the resize path bounded to the viewport and selection."
+    },
+    {
+      "id": "special-tabs",
+      "title": "Check image and CSV isolation",
+      "startMessageId": "m013",
+      "endMessageId": "m015",
+      "evidenceMessageIds": [
+        "m013",
+        "m015"
+      ]
+    },
+    {
+      "id": "delegate",
+      "title": "Delegate the test inventory",
+      "startMessageId": "m016",
+      "endMessageId": "m018",
+      "evidenceMessageIds": [
+        "m016",
+        "m018"
+      ]
+    },
+    {
+      "id": "regression",
+      "title": "Write the failing regression test",
+      "startMessageId": "m019",
+      "endMessageId": "m023",
+      "evidenceMessageIds": [
+        "m019",
+        "m023"
+      ],
+      "summary": "A second resize exposes the stale caret geometry."
+    },
+    {
+      "id": "revision-guard",
+      "title": "Guard against repeated layout commands",
+      "startMessageId": "m024",
+      "endMessageId": "m030",
+      "evidenceMessageIds": [
+        "m024",
+        "m030"
+      ]
+    },
+    {
+      "id": "boundaries",
+      "title": "Cover selection boundaries and special tabs",
+      "startMessageId": "m031",
+      "endMessageId": "m033",
+      "evidenceMessageIds": [
+        "m031",
+        "m033"
+      ]
+    },
+    {
+      "id": "instrumentation",
+      "title": "Extend the shared performance stages",
+      "startMessageId": "m034",
+      "endMessageId": "m036",
+      "evidenceMessageIds": [
+        "m034",
+        "m036"
+      ]
+    },
+    {
+      "id": "formatting",
+      "title": "Fix formatting without unrelated churn",
+      "startMessageId": "m037",
+      "endMessageId": "m042",
+      "evidenceMessageIds": [
+        "m037",
+        "m042"
+      ]
+    },
+    {
+      "id": "visual-checks",
+      "title": "Inspect narrow and high-DPI layouts",
+      "startMessageId": "m043",
+      "endMessageId": "m048",
+      "evidenceMessageIds": [
+        "m043",
+        "m048"
+      ]
+    },
+    {
+      "id": "stale-commands",
+      "title": "Test out-of-order resize commands",
+      "startMessageId": "m049",
+      "endMessageId": "m054",
+      "evidenceMessageIds": [
+        "m049",
+        "m054"
+      ]
+    },
+    {
+      "id": "verification",
+      "title": "Review changes and run the suite",
+      "startMessageId": "m055",
+      "endMessageId": "m062",
+      "evidenceMessageIds": [
+        "m055",
+        "m062"
+      ]
+    },
+    {
+      "id": "handoff",
+      "title": "Leave the branch ready for review",
+      "startMessageId": "m063",
+      "endMessageId": "m072",
+      "evidenceMessageIds": [
+        "m063",
+        "m072"
+      ]
+    }
+  ],
+  "outcome": {
+    "summary": "Targeted viewport tests and the full suite pass in this example. The changes remain on the working branch for local review; no commit is created.",
+    "evidenceMessageIds": [
+      "m056",
+      "m061",
+      "m062",
+      "m065"
+    ]
+  },
+  "highlights": [
+    {
+      "id": "failed-reproduction",
+      "title": "The regression test fails before the fix",
+      "messageId": "m023",
+      "evidenceMessageIds": [
+        "m023"
+      ]
+    },
+    {
+      "id": "format-failure",
+      "title": "Formatting catches a missing comma",
+      "messageId": "m038",
+      "evidenceMessageIds": [
+        "m038",
+        "m039"
+      ]
+    },
+    {
+      "id": "final-numstat",
+      "title": "Inspect the complete file-change footprint",
+      "messageId": "m058",
+      "evidenceMessageIds": [
+        "m058"
+      ]
+    },
+    {
+      "id": "handoff-no-commit",
+      "title": "Leave the branch uncommitted for review",
+      "messageId": "m065",
+      "evidenceMessageIds": [
+        "m063",
+        "m065"
+      ]
+    }
+  ]
+}

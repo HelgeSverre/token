@@ -1,0 +1,21 @@
+{
+  "id": "demo-amp-release-notes",
+  "agent": "amp",
+  "title": "Clarify the preview-image changelog entry",
+  "startedAt": "2026-02-09T11:23:00Z",
+  "branch": "docs/preview-image-changelog",
+  "files": [
+    {"path":"docs/CHANGELOG.md","kind":"modified","added":5,"removed":2,"evidenceMessageIds":["r006"]},
+    {"path":"docs/ui/README.md","kind":"modified","added":6,"removed":0,"evidenceMessageIds":["r006"]}
+  ],
+  "messages": [
+    {"id":"r001","role":"user","timestamp":"2026-02-09T11:23:00Z","text":"The preview-image changelog line is vague. Make it say what users can do, and link the UI guide."},
+    {"id":"r002","role":"assistant","agent":"amp","timestamp":"2026-02-09T11:23:19Z","text":"I’ll check the existing release voice and the guide’s terminology."},
+    {"id":"r003","role":"assistant","agent":"amp","timestamp":"2026-02-09T11:23:51Z","tools":[{"id":"rt003","name":"read","label":"Read documentation context","input":"docs/CHANGELOG.md\ndocs/ui/README.md","output":"The changelog uses concise user-facing verbs; the guide calls this behavior image preview.","status":"completed"}]},
+    {"id":"r004","role":"user","timestamp":"2026-02-09T11:24:18Z","text":"Keep it to the capability, not implementation detail."},
+    {"id":"r005","role":"assistant","agent":"amp","timestamp":"2026-02-09T11:24:34Z","text":"I’ll describe opening images beside text and point to the visual guide."},
+    {"id":"r006","role":"assistant","agent":"amp","timestamp":"2026-02-09T11:25:06Z","tools":[{"id":"rt006","name":"git_diff_numstat","label":"Inspect documentation edit","input":"git diff --numstat","output":"5\t2\tdocs/CHANGELOG.md\n6\t0\tdocs/ui/README.md","status":"completed"}]},
+    {"id":"r007","role":"assistant","agent":"amp","timestamp":"2026-02-09T11:25:24Z","text":"The fictional documentation edit is ready to review."}
+  ],
+  "isFixture": true
+}

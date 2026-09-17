@@ -22,3 +22,8 @@ img {
   max-width: 100%;
   height: auto;
 }
+
+/* Native scrolling respects the visitor's motion preference. */
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}

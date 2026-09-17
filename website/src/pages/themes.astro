@@ -440,8 +440,12 @@ const codePreview = `<span class="kw">use</span> <span class="ty">std</span><spa
           if (key && key in c) {
             const dot = row.querySelector('.swatch-dot') as HTMLElement;
             const hex = row.querySelector('.swatch-hex') as HTMLElement;
+            const colorInput = row.querySelector('.swatch-color-input') as HTMLInputElement;
+            const hexInput = row.querySelector('.swatch-hex-input') as HTMLInputElement;
             dot.style.background = c[key];
             hex.textContent = c[key];
+            colorInput.value = c[key].substring(0, 7);
+            hexInput.value = c[key];
           }
         });
       }

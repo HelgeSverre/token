@@ -1,0 +1,272 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+import AgentIdentity from '../components/agent/AgentIdentity.astro';
+import Icon from '../components/agent/Icon.astro';
+import {sessions, fictionalPreview, privatePreview} from '../lib/agent-session-data';
+import {
+  SESSION_PAGE_SIZE,
+  TURN_BANDS, CONTAINS_OPTIONS,
+  buildSessionIndex,
+  orderedIndexedSessions,
+  paginateIndexedSessions,
+} from '../lib/session-index.mjs';
+import {agentIconName,agentName} from '../lib/agent-identity.mjs';
+import {absoluteDate, fullTimestamp, relativeAge} from '../lib/session-view.mjs';
+import '../styles/agent.css';
+
+const sessionIndex = buildSessionIndex(sessions);
+const initialRecords = paginateIndexedSessions(
+  orderedIndexedSessions(sessionIndex.sessions.filter(session => !session.parentSessionId)),
+  1,
+  SESSION_PAGE_SIZE,
+).items;
+const agentFacets = sessionIndex.facets.agents;
+const turnFacets = sessionIndex.facets.turns;
+const toolFacets = sessionIndex.facets.tools;
+---
+<SiteLayout title="Agent sessions — Token" description="Browse the conversations behind Token." noindex>
+  <div class="agent-page">
+    <div class="agent-frame browser-frame">
+      <header class="frame-toolbar"><span class="frame-path">sessions/</span><span class="toolbar-info">{sessionIndex.totals.main.sessions} {fictionalPreview ? 'sample sessions' : 'sessions'}</span></header>
+      <aside class="browser-facets" aria-label="Session filters">
+        <form id="session-filters">
+          <search><label for="session-search">Search titles</label><input id="session-search" type="search" name="q" placeholder="Search sessions…" autocomplete="off" disabled /></search>
+          <details class="facet-section" data-facet-section="agent" open><summary id="agent-filter-title"><span>Agent</span><span class="facet-selected-count" hidden></span><Icon class="facet-chevron"/></summary><fieldset aria-labelledby="agent-filter-title"><div class="facet-scroll" role="region" aria-labelledby="agent-filter-title" tabindex="0">{agentFacets.map(({id,count})=><label class="facet-option"><input type="checkbox" name="agent" value={id} disabled /><AgentIdentity agent={id}/><span class="facet-count" data-agent-count={id}>{count}</span></label>)}</div></fieldset></details>
+          <details class="facet-section" data-facet-section="turns" open><summary id="facet-title-turns"><span>Human turns</span><span class="facet-selected-count" hidden></span><Icon class="facet-chevron"/></summary><fieldset aria-labelledby="facet-title-turns">{TURN_BANDS.map(({id,label})=><label class="facet-option"><input type="checkbox" name="turns" value={id} disabled /><span>{label}</span><span class="facet-count" data-turn-count={id}>{turnFacets.find(facet=>facet.id===id)?.count || 0}</span></label>)}</fieldset></details>
+          <details class="facet-section" data-facet-section="tools" open><summary id="tool-filter-title"><span>Tool use includes</span><span class="facet-selected-count" hidden></span><Icon class="facet-chevron"/></summary><fieldset aria-labelledby="tool-filter-title"><div class="facet-scroll" role="region" aria-labelledby="tool-filter-title" tabindex="0">{toolFacets.map(({id,count})=><label class="facet-option"><input type="checkbox" name="tools" value={id} disabled /><span class="facet-tool-name" title={id}>{id}</span><span class="facet-count" data-tool-count={id}>{count}</span></label>)}</div></fieldset></details>
+          <details class="facet-section" data-facet-section="dates" open><summary id="facet-title-dates"><span>Started (UTC)</span><span class="facet-selected-count" hidden></span><Icon class="facet-chevron"/></summary><fieldset class="date-filters" aria-labelledby="facet-title-dates"><label for="date-from">From</label><input id="date-from" type="date" name="from" disabled /><label for="date-to">Through</label><input id="date-to" type="date" name="to" disabled /></fieldset></details>
+          <details class="facet-section" data-facet-section="files" open><summary id="facet-title-files"><span>Files touched</span><span class="facet-selected-count" hidden></span><Icon class="facet-chevron"/></summary><fieldset aria-labelledby="facet-title-files"><input type="search" name="file" aria-label="File path or extension" placeholder="Path or extension, e.g. .rs" disabled /></fieldset></details>
+          <details class="facet-section" data-facet-section="contains" open><summary id="facet-title-contains"><span>Session contains</span><span class="facet-selected-count" hidden></span><Icon class="facet-chevron"/></summary><fieldset aria-labelledby="facet-title-contains">{CONTAINS_OPTIONS.map(({id,label})=><label class="facet-option"><input type="checkbox" name="contains" value={id} disabled /><span>{label}</span><span class="facet-count" data-contains-count={id}>{sessionIndex.facets.contains.find(facet=>facet.id===id)?.count || 0}</span></label>)}</fieldset></details>
+          <label class="facet-option child-filter"><input type="checkbox" name="children" disabled /><span>Show subagent sessions</span></label>
+          <button class="text-button reset-filters" type="reset" disabled>Clear filters</button>
+        </form>
+        <noscript><p class="facet-help">Showing the first {SESSION_PAGE_SIZE} main sessions. Filters and additional sessions need JavaScript.</p></noscript>
+      </aside>
+      <section class="browser-results" aria-labelledby="browser-heading" data-session-index-url="/agent-index.json">
+        <header class="browser-heading"><div><h1 id="browser-heading">Agent sessions</h1><p id="result-count" role="status" aria-live="polite">{sessionIndex.totals.main.sessions} sessions · newest first</p></div><label class="sort-control">Order<select id="session-sort" disabled><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label></header>
+        <div class="session-column-labels" aria-hidden="true"><span>Session</span><span>Agent</span><span>Started</span><span>Turns</span></div>
+        <ul class="session-list" id="session-list">
+          {initialRecords.map(session=>{
+            const children = sessionIndex.sessions.filter(child=>child.parentSessionId===session.id).length;
+            return <li data-session-row={session.id}>
+              <a class="session-row" href={`/agent/${session.id}`}>
+                <div class="session-row-main"><h2>{session.displayTitle}</h2><div class="session-row-notes">{session.branch&&<span class="row-branch">⑂ {session.branch}</span>}{children>0&&<span>{children} subagent</span>}{session.annotated&&<span class="annotation-indicator">Annotated</span>}</div></div>
+                <span class="row-agent"><AgentIdentity agent={session.agent}/></span>
+                <span class="row-date"><time datetime={session.startedAt || undefined} title={fullTimestamp(session.startedAt)}>{absoluteDate(session.startedAt)}</time><span data-relative-date={session.startedAt || ''} title={fullTimestamp(session.startedAt)}>{relativeAge(session.startedAt)}</span></span>
+                <span class="row-turns">{session.turns}<span class="mobile-turn-label"> turns</span></span>
+              </a>
+            </li>;
+          })}
+        </ul>
+        <div id="empty-results" class="empty-results" hidden><h2>No matching sessions</h2><p>Try a different title or clear a filter.</p><button id="empty-reset" class="text-button" type="button">Clear filters</button></div>
+        <div class="session-load-more" id="session-load-more" hidden>
+          <button class="text-button" type="button" aria-controls="session-list">Load more sessions</button>
+        </div>
+        <span class="sr-only" id="load-status" role="status" aria-live="polite"></span>
+      </section>
+      <footer class="frame-status"><span>Chronological archive</span><span id="visible-count">{initialRecords.length} of {sessionIndex.totals.main.sessions} sessions</span></footer>
+    </div>
+    <p class="prototype-note">{fictionalPreview ? 'Design fixtures · these sessions and changes are fictional.' : privatePreview ? 'Local archive · publication review pending.' : 'Recorded development sessions.'} <a href="/built-with-ai">About Token’s development ↗</a></p>
+  </div>
+</SiteLayout>
+<style is:global>
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+  .session-load-more { display:flex; justify-content:center; padding:20px; min-height:52px; }
+  .session-load-more[hidden] { display:none; }
+  .session-load-more button { border:1px solid var(--border); border-radius:var(--r-sm); padding:8px 16px; }
+  .facet-tool-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:10px var(--font-mono); }
+  .session-list > li:nth-child(n+26) { content-visibility:auto; contain-intrinsic-size:auto 108px; }
+</style>
+<script>
+  import {
+    SESSION_PAGE_SIZE,
+    TURN_BANDS, CONTAINS_OPTIONS,
+    indexedFacetCounts,
+    matchesIndexedSession,
+    orderedIndexedSessions,
+  } from '../lib/session-index.mjs';
+  import {agentIconName,agentName} from '../lib/agent-identity.mjs';
+  import {sessionRouteId} from '../lib/transcript-chunks.mjs';
+  import {absoluteDate, fullTimestamp, relativeAge} from '../lib/session-view.mjs';
+
+  const form = document.querySelector<HTMLFormElement>('#session-filters')!;
+  const results = document.querySelector<HTMLElement>('[data-session-index-url]')!;
+  const sort = document.querySelector<HTMLSelectElement>('#session-sort')!;
+  const list = document.querySelector<HTMLUListElement>('#session-list')!;
+  const more = document.querySelector<HTMLElement>('#session-load-more')!;
+  const loadButton = more.querySelector<HTMLButtonElement>('button')!;
+  const loadStatus = document.querySelector<HTMLElement>('#load-status')!;
+  const params = new URLSearchParams(location.search);
+  const search = form.querySelector<HTMLInputElement>('[name=q]')!;
+  const restore = history.state?.agentBrowser;
+  let matching: Array<Record<string, unknown>> = [];
+  let loaded = 0;
+  const childrenByParent = new Map<string, number>();
+  const mobile = matchMedia('(max-width: 768px)');
+  let observer: IntersectionObserver | null = null;
+  let loadFrame = 0;
+  const disclosureKey = 'token-agent-facets';
+  let disclosures: Record<string, boolean> = {};
+  try { disclosures = JSON.parse(sessionStorage.getItem(disclosureKey) || '{}'); } catch {}
+  for (const section of form.querySelectorAll<HTMLDetailsElement>('[data-facet-section]')) {
+    const key = section.dataset.facetSection!;
+    if (typeof disclosures[key] === 'boolean') section.open = disclosures[key];
+    section.addEventListener('toggle', () => {
+      disclosures[key] = section.open;
+      try { sessionStorage.setItem(disclosureKey, JSON.stringify(disclosures)); } catch {}
+    });
+  }
+  let index: {sessions:Array<Record<string, unknown>>; pageSize?:number} | null = null;
+
+  search.value = params.get('q') || '';
+  for (const name of ['from','to','file']) form.querySelector<HTMLInputElement>(`[name=${name}]`)!.value = params.get(name) || '';
+  form.querySelectorAll<HTMLInputElement>('input[type=checkbox]').forEach(input => {
+    input.checked = input.name === 'children' ? params.get('children') === '1' : params.getAll(input.name).includes(input.value);
+  });
+  if (params.get('sort') === 'oldest') sort.value = 'oldest';
+
+  function filters() {
+    const data = new FormData(form);
+    return {query:search.value, from:String(data.get('from') || ''), to:String(data.get('to') || ''), file:String(data.get('file') || ''), contains:data.getAll('contains').map(String), agents:data.getAll('agent').map(String), bands:data.getAll('turns').map(String), tools:data.getAll('tools').map(String), children:data.has('children')};
+  }
+
+  function writeUrl(filterState: ReturnType<typeof filters>) {
+    const query = new URLSearchParams();
+    if (filterState.query) query.set('q', filterState.query);
+    for (const name of ['from','to','file'] as const) if (filterState[name]) query.set(name, filterState[name]);
+    for (const value of filterState.contains) query.append('contains', value);
+    for (const agent of filterState.agents) query.append('agent', agent);
+    for (const band of filterState.bands) query.append('turns', band);
+    for (const tool of filterState.tools) query.append('tools', tool);
+    if (filterState.children) query.set('children', '1');
+    if (sort.value === 'oldest') query.set('sort', 'oldest');
+    history.replaceState({...history.state, agentBrowser:null}, '', location.pathname + (query.size ? `?${query}` : ''));
+  }
+
+  function createRow(session: Record<string, unknown>, childCount: number) {
+    const item = document.createElement('li'); item.dataset.sessionRow = String(session.id);
+    const link = document.createElement('a'); link.className = 'session-row'; link.href = `/agent/${sessionRouteId(String(session.id))}`;
+    const main = document.createElement('div'); main.className = 'session-row-main';
+    const title = document.createElement('h2'); title.textContent = String(session.displayTitle || session.id); main.append(title);
+    const notes = document.createElement('div'); notes.className = 'session-row-notes';
+    if (session.branch) { const branch = document.createElement('span'); branch.className = 'row-branch'; branch.textContent = `⑂ ${session.branch}`; notes.append(branch); }
+    if (childCount) { const child = document.createElement('span'); child.textContent = `${childCount} subagent`; notes.append(child); }
+    if (session.annotated) { const annotated = document.createElement('span'); annotated.className = 'annotation-indicator'; annotated.textContent = 'Annotated'; notes.append(annotated); }
+    main.append(notes);
+    const agent = document.createElement('span'); agent.className = 'row-agent';
+    const identity = document.createElement('span'); identity.className = 'agent-identity';
+    const iconName = agentIconName(String(session.agent || ''));
+    if (!iconName) identity.classList.add('agent-identity--unknown');
+    if (iconName) { const mark = document.createElement('span'); mark.className = `agent-identity-mark agent-identity-mark--${iconName}`; mark.setAttribute('aria-hidden', 'true'); identity.append(mark); }
+    const agentLabel = document.createElement('span'); agentLabel.className = 'agent-identity-name'; agentLabel.textContent = agentName(String(session.agent || '')); agentLabel.title = agentLabel.textContent; identity.append(agentLabel); agent.append(identity);
+    const date = document.createElement('span'); date.className = 'row-date';
+    const time = document.createElement('time'); time.dateTime = String(session.startedAt || ''); time.title = fullTimestamp(String(session.startedAt || '')); time.textContent = absoluteDate(String(session.startedAt || ''));
+    const relative = document.createElement('span'); relative.title = fullTimestamp(String(session.startedAt || '')); relative.textContent = relativeAge(String(session.startedAt || '')); date.append(time, relative);
+    const turns = document.createElement('span'); turns.className = 'row-turns'; turns.append(String(session.turns || 0)); const turnLabel = document.createElement('span'); turnLabel.className = 'mobile-turn-label'; turnLabel.textContent = ' turns'; turns.append(turnLabel);
+    link.append(main, agent, date, turns); item.append(link); return item;
+  }
+
+  function updateLoadedCount() {
+    document.querySelector('#visible-count')!.textContent = `${loaded} of ${matching.length} sessions`;
+    more.hidden = loaded >= matching.length;
+  }
+
+  function appendRows(limit: number) {
+    const batch = matching.slice(loaded, limit);
+    list.append(...batch.map(session => createRow(session, childrenByParent.get(String(session.id)) || 0)));
+    loaded += batch.length;
+    updateLoadedCount();
+  }
+
+  function loadMore() {
+    if (!index || loaded >= matching.length || loadFrame) return;
+    loadFrame = requestAnimationFrame(() => {
+      loadFrame = 0;
+      const firstNew = loaded;
+      const keyboardLoad = document.activeElement === loadButton;
+      appendRows(loaded + (index?.pageSize || SESSION_PAGE_SIZE));
+      // Preserve a keyboard user's place when the button moves below new rows.
+      if (keyboardLoad) (list.children[firstNew]?.querySelector('a') as HTMLElement)?.focus({preventScroll:true});
+      loadStatus.textContent = `${loaded} of ${matching.length} sessions loaded`;
+      observeMore();
+    });
+  }
+
+  function observeMore() {
+    observer?.disconnect();
+    if (!more.hidden) observer?.observe(more);
+  }
+
+  function configureObserver() {
+    observer?.disconnect();
+    if ('IntersectionObserver' in window) {
+      observer = new IntersectionObserver(entries => {
+        if (entries.some(entry => entry.isIntersecting)) loadMore();
+      }, {root:mobile.matches ? null : results, rootMargin:'240px 0px'});
+      observeMore();
+    }
+  }
+  mobile.addEventListener('change', configureObserver);
+  configureObserver();
+
+  function render(updateUrl = true, initialLimit = SESSION_PAGE_SIZE) {
+    if (!index) return;
+    cancelAnimationFrame(loadFrame); loadFrame = 0;
+    const filterState = filters();
+    matching = orderedIndexedSessions(index.sessions.filter(session => matchesIndexedSession(session, filterState)), sort.value);
+    loaded = 0;
+    list.replaceChildren();
+    appendRows(initialLimit);
+    const counts = [
+      ['contains', '[data-contains-count]', 'containsCount', CONTAINS_OPTIONS.map(({id}) => id)],
+      ['agent', '[data-agent-count]', 'agentCount', [...new Set(index.sessions.map(session => String(session.agent || '')))]],
+      ['turns', '[data-turn-count]', 'turnCount', TURN_BANDS.map(({id}) => id)],
+      ['tools', '[data-tool-count]', 'toolCount', [...new Set(index.sessions.flatMap(session => Array.isArray(session.toolNames) ? session.toolNames.map(String) : []))]],
+    ] as const;
+    for (const [facet, selector, key, keys] of counts) {
+      const values = indexedFacetCounts(index.sessions, filterState, facet, keys);
+      form.querySelectorAll<HTMLElement>(selector).forEach(element => element.textContent = String(values[element.dataset[key] || ''] || 0));
+    }
+    document.querySelector('#result-count')!.textContent = `${matching.length} session${matching.length === 1 ? '' : 's'} · ${sort.value === 'oldest' ? 'oldest' : 'newest'} first`;
+    (document.querySelector('#empty-results') as HTMLElement).hidden = matching.length > 0;
+    for (const section of form.querySelectorAll<HTMLDetailsElement>('[data-facet-section]')) {
+      const count = [...section.querySelectorAll<HTMLInputElement>('input')].filter(input => input.type === 'checkbox' ? input.checked : Boolean(input.value)).length;
+      const badge = section.querySelector<HTMLElement>('.facet-selected-count')!;
+      badge.hidden = !count; badge.textContent = String(count); badge.ariaLabel = `${count} active filters`;
+    }
+    if (updateUrl) writeUrl(filterState);
+    observeMore();
+  }
+
+  function resetList() {
+    render();
+    results.scrollTo({top:0, behavior:'instant'});
+    loadStatus.textContent = '';
+  }
+  function rememberPosition() {
+    history.replaceState({...history.state, agentBrowser:{key:location.search, loaded, top:results.scrollTop, pageTop:window.scrollY}}, '');
+  }
+  window.addEventListener('pagehide', rememberPosition);
+  list.addEventListener('click', rememberPosition);
+  form.addEventListener('submit', event => event.preventDefault());
+  form.addEventListener('input', resetList);
+  sort.addEventListener('change', resetList);
+  form.addEventListener('reset', () => { sort.value = 'newest'; setTimeout(resetList, 0); });
+  document.querySelector('#empty-reset')!.addEventListener('click', () => form.reset());
+  loadButton.addEventListener('click', loadMore);
+
+  fetch(results.dataset.sessionIndexUrl!, {cache:'no-cache',headers:{accept:'application/json'}})
+    .then(response => response.ok ? response.json() : Promise.reject(new Error(`Index request failed: ${response.status}`)))
+    .then(value => {
+      index = value;
+      document.querySelectorAll<HTMLInputElement|HTMLButtonElement|HTMLSelectElement>('#session-filters [disabled], #session-sort').forEach(element => element.disabled = false);
+      for (const session of index!.sessions) if (session.parentSessionId) childrenByParent.set(String(session.parentSessionId), (childrenByParent.get(String(session.parentSessionId)) || 0) + 1);
+      const canRestore = restore?.key === location.search && Number.isFinite(restore.loaded);
+      render(false, canRestore ? Math.max(SESSION_PAGE_SIZE, restore.loaded) : SESSION_PAGE_SIZE);
+      if (canRestore) requestAnimationFrame(() => {
+        results.scrollTo({top:restore.top || 0, behavior:'instant'});
+        window.scrollTo({top:restore.pageTop || 0, behavior:'instant'});
+      });
+    })
+    .catch(() => { document.querySelector('#result-count')!.textContent = 'Showing the first sessions · reload to enable filters and loading'; });
+</script>

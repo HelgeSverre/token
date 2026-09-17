@@ -1,0 +1,16 @@
+---
+import Icon from './Icon.astro';
+const {context}=Astro.props;
+const title=session=>session?.displayTitle || session?.title || session?.id;
+const href=session=>`/agent/${session.id}`;
+const unavailableLabel={unresolved:'Previous thread unavailable',ambiguous:'Previous thread ambiguous',cycle:'Handoff cycle not linked'}[context?.status];
+---
+{context&&(context.predecessor||context.successors.length>0||unavailableLabel)&&<nav class="continuation-chain" aria-label="Amp handoff chain">
+  <span class="continuation-label">Handoff</span>
+  {unavailableLabel&&<span class="continuation-unavailable">{unavailableLabel}<code>{context.referenceThreadId}</code></span>}
+  {context.predecessor&&<a class="continuation-link" href={href(context.predecessor)} title={title(context.predecessor)}><Icon name="arrow"/><span>Previous</span><code>{context.predecessor.id}</code></a>}
+  {context.predecessor&&context.successors.length>0&&<span class="continuation-separator" aria-hidden="true">·</span>}
+  {context.successors.length===1&&<a class="continuation-link" href={href(context.successors[0])} title={title(context.successors[0])}><span>Next</span><code>{context.successors[0].id}</code><Icon name="arrow" class="continuation-next-icon"/></a>}
+  {context.successors.length>1&&<details class="continuation-branches"><summary><span>Continued in {context.successors.length} sessions</span><Icon name="chevron"/></summary><ul>{context.successors.map(session=><li><a href={href(session)} title={title(session)}><code>{session.id}</code><span>{title(session)}</span></a></li>)}</ul></details>}
+  {context.position&&<span class="continuation-position">{context.position} of {context.total}</span>}
+</nav>}

@@ -1,0 +1,23 @@
+{
+  "id": "demo-claude-docs-cleanup",
+  "agent": "claude",
+  "title": "Remove stale capture instructions from the UI guide",
+  "startedAt": "2025-12-11T14:30:00Z",
+  "files": [
+    {"path":"docs/ui/README.md","kind":"modified","added":9,"removed":16,"evidenceMessageIds":["d007"]},
+    {"path":"docs/dev/ui-gallery.md","kind":"modified","added":14,"removed":5,"evidenceMessageIds":["d007"]},
+    {"path":"scripts/capture-gallery.mjs","kind":"touched","evidenceMessageIds":["d003"]}
+  ],
+  "messages": [
+    {"id":"d001","role":"user","timestamp":"2025-12-11T14:30:00Z","text":"The UI capture guide still describes the old script. Please update the wording, but confirm the current script behavior before editing docs."},
+    {"id":"d002","role":"assistant","agent":"claude","model":"sonnet","timestamp":"2025-12-11T14:30:22Z","text":"I’ll compare the guide with the script flags and generated artifact location."},
+    {"id":"d003","role":"assistant","agent":"claude","model":"sonnet","timestamp":"2025-12-11T14:30:51Z","tools":[{"id":"dt003","name":"read","label":"Inspect capture script and guide","input":"scripts/capture-gallery.mjs\ndocs/ui/README.md\ndocs/dev/ui-gallery.md","output":"The script now writes review artifacts under target/verification and accepts named scenarios rather than a browser URL.","status":"completed"}]},
+    {"id":"d004","role":"user","timestamp":"2025-12-11T14:31:19Z","text":"Please keep the guide focused on contributors; do not document every script option."},
+    {"id":"d005","role":"assistant","agent":"claude","model":"sonnet","timestamp":"2025-12-11T14:31:40Z","text":"I’ll describe the normal command, the artifact location, and where to look for the full option list."},
+    {"id":"d006","role":"assistant","agent":"claude","model":"sonnet","timestamp":"2025-12-11T14:32:07Z","tools":[{"id":"dt006","name":"patch","label":"Refresh UI capture documentation","input":"docs/ui/README.md\ndocs/dev/ui-gallery.md","output":"Removed the obsolete browser URL workflow and added the current review-artifact guidance.","status":"completed"}]},
+    {"id":"d007","role":"assistant","agent":"claude","model":"sonnet","timestamp":"2025-12-11T14:32:38Z","tools":[{"id":"dt007","name":"git_diff_numstat","label":"Inspect documentation changes","input":"git diff --numstat","output":"9\t16\tdocs/ui/README.md\n14\t5\tdocs/dev/ui-gallery.md","status":"completed"}]},
+    {"id":"d008","role":"user","timestamp":"2025-12-11T14:33:04Z","text":"That is the level of detail I wanted. Thanks."},
+    {"id":"d009","role":"assistant","agent":"claude","model":"sonnet","timestamp":"2025-12-11T14:33:15Z","text":"Done. This fixture ends with documentation only; no application behavior changed."}
+  ],
+  "isFixture": true
+}

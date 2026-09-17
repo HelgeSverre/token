@@ -1,0 +1,54 @@
+{
+  "id": "fixture:rich-session",
+  "agent": "Codex",
+  "title": "Repair wrapped selection geometry",
+  "startedAt": "2026-09-15T09:12:00Z",
+  "branch": "fix/wrapped-selection",
+  "commits": ["abc1234"],
+  "files": [
+    {
+      "path": "src/view/editor_text.rs",
+      "kind": "modified",
+      "added": 18,
+      "removed": 4,
+      "evidenceMessageIds": ["message-2"]
+    }
+  ],
+  "messages": [
+    {
+      "id": "message-1",
+      "role": "user",
+      "timestamp": "2026-09-15T09:12:00Z",
+      "text": "Selection drifts after a soft-wrapped line. Please trace the renderer path."
+    },
+    {
+      "id": "message-2",
+      "role": "assistant",
+      "agent": "Codex",
+      "timestamp": "2026-09-15T09:13:20Z",
+      "text": "I found the wrapped-row offset and adjusted the shared geometry helper. The explicit patch summary adds 18 lines and removes 4.",
+      "tools": [
+        {
+          "id": "tool-1",
+          "name": "apply_patch",
+          "label": "Adjust wrapped selection geometry",
+          "status": "completed",
+          "diff": "@@ -12,4 +12,18 @@"
+        }
+      ]
+    },
+    {
+      "id": "message-3",
+      "role": "tool",
+      "timestamp": "2026-09-15T09:14:00Z",
+      "text": "just test-one wrapped_selection ... ok"
+    },
+    {
+      "id": "message-4",
+      "role": "assistant",
+      "agent": "Codex",
+      "timestamp": "2026-09-15T09:14:12Z",
+      "text": "The focused check now passes."
+    }
+  ]
+}

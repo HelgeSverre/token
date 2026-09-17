@@ -1,0 +1,21 @@
+{
+  "id": "demo-codex-fuzzing",
+  "agent": "codex",
+  "title": "Seed a Unicode selection fuzz regression",
+  "startedAt": "2026-05-16T09:10:00Z",
+  "files": [
+    {"path":"tests/fuzz_selection.rs","kind":"modified","added":33,"removed":0,"evidenceMessageIds":["f006"]},
+    {"path":"tests/fixtures/combining-mark-selection.txt","kind":"modified","added":4,"removed":0,"evidenceMessageIds":["f006"]}
+  ],
+  "messages": [
+    {"id":"f001","role":"user","timestamp":"2026-05-16T09:10:00Z","text":"Turn the combining-mark selection crash into a deterministic fuzz regression."},
+    {"id":"f002","role":"assistant","agent":"codex","model":"gpt-5.6-terra","timestamp":"2026-05-16T09:10:18Z","text":"I’ll minimize the input and seed the existing fuzz harness."},
+    {"id":"f003","role":"user","timestamp":"2026-05-16T09:10:44Z","text":"Please make it readable enough that we know why the seed exists."},
+    {"id":"f004","role":"assistant","agent":"codex","model":"gpt-5.6-terra","timestamp":"2026-05-16T09:11:07Z","tools":[{"id":"ft004","name":"minimize_case","label":"Minimize Unicode reproduction","input":"e\u0301 + arrow-left + extend-selection","output":"Minimal input uses one base character and a combining acute accent.","status":"completed"}]},
+    {"id":"f005","role":"assistant","agent":"codex","model":"gpt-5.6-terra","timestamp":"2026-05-16T09:11:38Z","text":"The seed asserts grapheme boundaries, and the comment explains the former byte-offset mismatch."},
+    {"id":"f006","role":"assistant","agent":"codex","model":"gpt-5.6-terra","timestamp":"2026-05-16T09:12:06Z","tools":[{"id":"ft006","name":"git_diff_numstat","label":"Inspect seed change","input":"git diff --numstat","output":"33\t0\ttests/fuzz_selection.rs\n4\t0\ttests/fixtures/combining-mark-selection.txt","status":"completed"}]},
+    {"id":"f007","role":"user","timestamp":"2026-05-16T09:12:29Z","text":"Looks good. No broader refactor in this pass."},
+    {"id":"f008","role":"assistant","agent":"codex","model":"gpt-5.6-terra","timestamp":"2026-05-16T09:12:41Z","text":"Kept it to the regression seed and fixture."}
+  ],
+  "isFixture": true
+}

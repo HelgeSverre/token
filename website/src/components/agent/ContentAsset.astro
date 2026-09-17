@@ -1,0 +1,7 @@
+---
+// Imported large bodies remain separate assets, never silently truncated text.
+const {reference,label='Full content'}=Astro.props;
+const valid=reference?.storage==='asset'&&typeof reference.href==='string'&&/^\/agent-assets\/[a-f0-9]{64}\.txt$/.test(reference.href);
+const size=Number.isFinite(reference?.bytes)?`${(reference.bytes/1024).toLocaleString('en',{maximumFractionDigits:1})} KiB`:null;
+---
+{valid?<a class="content-asset" href={reference.href} download>{label}{size&&<span>{size}</span>}</a>:<p class="content-unavailable">{label} unavailable</p>}

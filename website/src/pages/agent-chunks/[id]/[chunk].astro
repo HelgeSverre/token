@@ -1,0 +1,21 @@
+---
+import TranscriptMessages from '../../../components/agent/TranscriptMessages.astro';
+import {sessions} from '../../../lib/agent-session-data';
+import {transcriptChunk, transcriptChunks} from '../../../lib/transcript-chunks.mjs';
+
+export function getStaticPaths() {
+  return sessions.flatMap(session => {
+    const {count} = transcriptChunks(session);
+    return Array.from({length: count}, (_, chunk) => ({
+      params: {id: session.id, chunk: String(chunk)},
+      props: {session, chunk},
+    }));
+  });
+}
+
+const {session, chunk} = Astro.props;
+const page = transcriptChunk(session, chunk);
+---
+<div data-transcript-chunk={chunk} data-session-id={session.id}>
+  <TranscriptMessages session={page} sessions={sessions} annotation={session.annotation} showOmissions={chunk===0}/>
+</div>

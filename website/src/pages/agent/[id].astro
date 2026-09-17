@@ -1,0 +1,68 @@
+---
+import AgentLayout from '../../layouts/AgentLayout.astro';
+import Icon from '../../components/agent/Icon.astro';
+import TranscriptMessages from '../../components/agent/TranscriptMessages.astro';
+import ContinuationChain from '../../components/agent/ContinuationChain.astro';
+import {sessions,continuationIndex} from '../../lib/agent-session-data';
+import {agentName,absoluteDate,relativeAge,detailTitle,fullTimestamp} from '../../lib/session-view.mjs';
+import {transcriptChunk,transcriptChunkPath,transcriptChunks} from '../../lib/transcript-chunks.mjs';
+import {continuationContext} from '../../lib/session-continuations.mjs';
+import {canonicalizeWorkspacePaths as displayText} from '../../lib/session-paths.mjs';
+import '../../styles/agent.css';
+export function getStaticPaths(){return sessions.map(session=>({params:{id:session.id},props:{session}}));}
+const {session}=Astro.props;
+const annotation=session.annotation;
+const hasAnnotations=!!(annotation?.title||annotation?.summary||annotation?.chapters?.length||annotation?.highlights?.length||annotation?.outcome);
+const turns=session.messages.filter(m=>m.role==='user');
+const descendantIds=new Set([session.id]);
+for(let previous=0;previous!==descendantIds.size;){previous=descendantIds.size;for(const s of sessions)if(descendantIds.has(s.parentSessionId))descendantIds.add(s.id);}
+const children=sessions.filter(s=>s.id!==session.id&&descendantIds.has(s.id));
+const sessionViews=[session,...children];
+const chunkData=Object.fromEntries(sessionViews.map(s=>[s.id,transcriptChunks(s)]));
+const viewData=sessionViews.map(s=>({id:s.id,title:s.displayTitle,agent:s.agent,branch:s.branch,commits:s.commits||[],startedAt:s.startedAt,turns:s.turns,messages:s.messages.length,parent:s.parentSessionId,chunks:chunkData[s.id].count}));
+const parent=sessions.find(s=>s.id===session.parentSessionId);
+const continuation=continuationContext(continuationIndex,session.id);
+const allModified=session.files.length>0&&session.files.every(f=>f.kind==='modified');
+const anchor=id=>`#message-${id}`;
+---
+<AgentLayout title={`${session.displayTitle} — Token sessions`}>
+  <main class="agent-page viewer-page">
+    <a class="agent-skip" href="#transcript">Skip to transcript</a>
+    <div class="agent-frame detail-frame" data-session-detail data-root-id={session.id} data-views={JSON.stringify(viewData)} data-transcript-chunks={JSON.stringify(chunkData)} data-annotations={hasAnnotations?'on':'off'}>
+      <header class="frame-toolbar"><span class="frame-path">sessions/<span class="session-id">{session.id}</span></span><div class="git-context"><span class="branch-name" hidden={!session.branch}><Icon name="branch"/><span data-branch>{session.branch}</span></span><span data-commits>{session.commits?.map(commit=><a class="commit-ref" href={anchor(commit.evidenceMessageId)} aria-label={`Commit ${commit.sha}; view transcript evidence`}>{commit.sha.slice(0,8)}</a>)}</span></div></header>
+      <aside class="transcript-navigation" aria-label="Session navigation">
+        <a class="back-to-sessions" href="/agent"><Icon name="arrow"/> All sessions</a>
+        <details class="navigation-disclosure" open><summary><span data-outline-label>{annotation?.chapters?.length?'Chapters':'Human turns'}</span><Icon class="section-chevron"/></summary>
+          {annotation?.chapters?.length>0&&<nav class="chapter-list" aria-label="Annotated chapters" data-editorial>{annotation.chapters.map((chapter,i)=><a href={anchor(chapter.startMessageId)}><span class="nav-number">{String(i+1).padStart(2,'0')}</span><span>{displayText(chapter.title)}</span></a>)}</nav>}
+          <nav class="chapter-list" aria-label="Human turns" data-raw-navigation hidden={!!annotation?.chapters?.length}>{turns.map((message,i)=><a href={anchor(message.id)}><span class="nav-number">{String(i+1).padStart(2,'0')}</span><span>{displayText(message.text)?.split('\n')[0].slice(0,220)||'Message'}</span></a>)}</nav>
+        </details>
+
+      </aside>
+      <section class="session-editor" id="transcript" aria-label="Transcript" tabindex="-1">
+        <nav class="session-breadcrumb" aria-label="Session ancestry" hidden={!parent}><a data-parent-back href={parent?`/agent/${parent.id}`:'#'}><Icon name="arrow"/><span>Parent session</span></a><span class="breadcrumb-trail"></span></nav>
+        <div class="transcript-scroll" data-view={session.id} tabindex="0" aria-label="Session messages">
+          <div class="transcript-content">
+            <header class="transcript-heading"><h1 data-session-title data-source-title={detailTitle(session)} data-editorial-title={displayText(annotation?.title)||''}>{displayText(annotation?.title)||detailTitle(session)}</h1>
+              <ContinuationChain context={continuation}/>
+              {hasAnnotations&&<div class="annotation-controls"><span data-editorial class="annotation-label">AI annotation</span><button id="annotation-toggle" class="text-button" type="button" aria-pressed="true" hidden>Hide annotations</button></div>}
+              {annotation?.summary&&<p class="editorial-summary" data-editorial>{displayText(annotation.summary)}</p>}
+            </header>
+            <div data-transcript-messages><TranscriptMessages session={transcriptChunk(session,0)} sessions={sessions} annotation={annotation}/></div>
+            {chunkData[session.id].count>1&&<a class="child-run-link" data-load-more data-session-id={session.id} data-next-chunk="1" href={transcriptChunkPath(session.id,1)}>Load next {Math.min(chunkData[session.id].size,session.messages.length-chunkData[session.id].size)} messages</a>}
+          </div>
+        </div>
+        {children.map(child=><template data-child-template={child.id}><div class="transcript-scroll" data-view={child.id} tabindex="0" aria-label="Subagent messages"><div class="transcript-content compact-transcript"><header class="transcript-heading"><p class="section-label">{agentName(child.agent)} · Subagent</p><h1 tabindex="-1">{displayText(child.annotation?.title)||detailTitle(child)}</h1></header><div data-transcript-messages></div><a class="child-run-link" data-load-more data-session-id={child.id} data-next-chunk="0" href={transcriptChunkPath(child.id,0)}>Load transcript</a></div></div></template>)}
+
+      </section>
+      <aside class="session-context" aria-label="Files and annotations">
+        {session.files.length>0&&<details class="files-panel sidebar-section" open><summary><Icon class="section-chevron"/><span>{allModified?'Files modified':'Files touched'}</span><span class="section-count">{session.files.length}</span></summary><ul class="changed-files">{session.files.map(file=><li><a href={anchor(file.evidenceMessageIds[0])}><span class="file-kind" aria-label={file.kind}>{file.kind==='modified'?'M':'·'}</span><span class="changed-path" title={file.displayPath||file.path}>{file.displayPath||file.path}</span>{Number.isInteger(file.added)&&Number.isInteger(file.removed)?<span class="file-counts"><span class="added-count">+{file.added}</span><span class="removed-count">−{file.removed}</span></span>:<span class="file-touch-label">{file.kind==='modified'?'edited':'touched'}</span>}</a></li>)}</ul></details>}
+        {annotation?.highlights?.length>0&&<details class="highlights-panel sidebar-section" data-editorial open><summary><Icon class="section-chevron"/>Highlights</summary><ul>{annotation.highlights.map(h=><li><a href={anchor(h.messageId)}>{displayText(h.title)}</a>{h.summary&&<p>{displayText(h.summary)}</p>}</li>)}</ul></details>}
+        {annotation?.outcome&&<details class="outcome-panel sidebar-section" data-editorial open><summary><Icon class="section-chevron"/>Outcome</summary><p>{displayText(annotation.outcome.summary)}</p><div class="evidence-links">{annotation.outcome.evidenceMessageIds.map(id=><a href={anchor(id)} aria-label={`Evidence ${id}`}>#{id}</a>)}</div></details>}
+      </aside>
+      <footer class="frame-status"><span data-session-count>{session.turns} human turns · {session.messages.length} messages</span><span class="session-start"><time datetime={session.startedAt} title={fullTimestamp(session.startedAt)}>{absoluteDate(session.startedAt)}</time><span aria-hidden="true"> · </span><span data-relative-date={session.startedAt} title={fullTimestamp(session.startedAt)}>{relativeAge(session.startedAt)}</span></span></footer>
+    </div>
+  </main>
+</AgentLayout>
+<script>
+  import '../../lib/session-navigation';
+</script>

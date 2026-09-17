@@ -1,0 +1,25 @@
+---
+// A Claude Read call pointing at a transient task file. The provider reference
+// is retained below; its body is not assumed to be available in the archive.
+import Icon from './Icon.astro';
+import {toolPresentation} from '../../lib/transcript-content.mjs';
+import {canonicalizeWorkspacePaths} from '../../lib/session-paths.mjs';
+const {reference=null,notification=null}=Astro.props;
+const taskId=reference?.taskId || notification?.taskId;
+const outputPath=reference?.path || notification?.outputPath;
+const status=notification?.status ? toolPresentation(notification.status) : null;
+const original=notification?.source || (outputPath ? `[Read: ${outputPath}]` : '');
+---
+<aside class="claude-task-output" aria-label="Claude temporary task output reference">
+  <div class="claude-task-output-heading">
+    <span class="claude-task-output-mark" aria-hidden="true"></span>
+    <span>{notification ? 'Background task' : 'Read temporary task output'}</span>
+    {status&&<span class:list={['claude-task-status',status.state]}>{status.label}</span>}
+    <code>{taskId}.output</code>
+  </div>
+  <p>{canonicalizeWorkspacePaths(notification?.summary || 'Temporary output file referenced by this Read call.')}</p>
+  <details>
+    <summary>Original record <Icon class="claude-task-output-disclosure"/></summary>
+    <code>{original}</code>
+  </details>
+</aside>

@@ -1,0 +1,18 @@
+{
+  "id": "demo-codex-split-layout",
+  "parentSessionId": "demo-codex-viewport",
+  "agent": "codex",
+  "title": "Inventory wrapped-selection test coverage",
+  "startedAt": "2026-09-12T08:20:55Z",
+  "branch": "feature/viewport-follow-selection",
+  "files": [
+    {"path":"tests/editor_viewport.rs","kind":"touched","evidenceMessageIds":["s002"]},
+    {"path":"tests/editor_navigation.rs","kind":"touched","evidenceMessageIds":["s002"]}
+  ],
+  "messages": [
+    {"id":"s001","role":"user","timestamp":"2026-09-12T08:20:55Z","text":"Find existing viewport and wrapped-selection test coverage. Do not change files."},
+    {"id":"s002","role":"assistant","agent":"codex","model":"gpt-5.6-luna","timestamp":"2026-09-12T08:21:12Z","tools":[{"id":"st002","name":"rg","label":"Search viewport tests","input":"rg -n \"viewport|wrapped|selection\" tests/editor_viewport.rs tests/editor_navigation.rs","output":"Existing tests cover scroll clamping and logical cursor moves. None invalidate wrapping between selection geometry and scrolling.","status":"completed"}]},
+    {"id":"s003","role":"assistant","agent":"codex","model":"gpt-5.6-luna","timestamp":"2026-09-12T08:21:31Z","text":"Report: add a regression case that resizes twice around a tail selection. Existing tests can provide the fixture setup, but none cover this ordering."}
+  ],
+  "isFixture": true
+}

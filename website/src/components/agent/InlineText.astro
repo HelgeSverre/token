@@ -1,0 +1,7 @@
+---
+const {token}=Astro.props;
+---
+{token.type==='code'&&<code>{token.value}</code>}
+{token.type==='strong'&&<strong>{token.value}</strong>}
+{token.type==='link'&&<a href={token.href} target="_blank" rel="noreferrer">{token.value}</a>}
+{token.type==='text'&&token.value}

@@ -5,9 +5,10 @@ import '../styles/global.css';
 interface Props {
   title: string;
   description?: string;
+  noindex?: boolean;
 }
 
-const { title, description = 'A fast, native code editor built in Rust.' } = Astro.props;
+const { title, description = 'A fast, native code editor built in Rust.', noindex = false } = Astro.props;
 ---
 
 <!doctype html>
@@ -17,6 +18,7 @@ const { title, description = 'A fast, native code editor built in Rust.' } = Ast
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
     <meta name="generator" content={Astro.generator} />
+    {noindex && <meta name="robots" content="noindex" />}
 
     <link rel="icon" type="image/png" href="/icon.png" />
 

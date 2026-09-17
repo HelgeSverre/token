@@ -1,0 +1,57 @@
+---
+import Icon from './Icon.astro';
+import ContentAsset from './ContentAsset.astro';
+import AgentIdentity from './AgentIdentity.astro';
+import MessageContent from './MessageContent.astro';
+import ClaudeTaskOutputReference from './ClaudeTaskOutputReference.astro';
+import {agentName,fullTimestamp,groupMessages} from '../../lib/session-view.mjs';
+import {claudeTaskNotification,claudeTaskOutputReference,publicationOmissions,toolPresentation} from '../../lib/transcript-content.mjs';
+import {canonicalizeWorkspacePaths} from '../../lib/session-paths.mjs';
+const {session,sessions=[],annotation=null,prefix='',showOmissions=true}=Astro.props;
+const knownRole=role=>['user','assistant','system','tool'].includes(role)?role:'unknown';
+const groups=groupMessages({...session,messages:session.messages.map(message=>({...message,role:knownRole(message.role)}))});
+const time=iso=>{
+  if(!iso)return null;
+  const date=new Date(iso);
+  return Number.isNaN(date.valueOf())?null:new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'}).format(date);
+};
+const anchor=id=>`#${prefix}message-${id}`;
+const omissions=publicationOmissions(session);
+const taskNotificationsByOutput=new Map(session.messages.map(message=>{
+  const notification=claudeTaskNotification(message.text);
+  return notification ? [notification.outputPath,notification] : null;
+}).filter(Boolean));
+---
+            {showOmissions&&omissions.length>0&&<p class="publication-omission" role="note">Archive view omits {omissions.join(', ')}.</p>}
+            {groups.map(group=>{
+              const first=group.messages[0];
+              const timestamp=time(first.timestamp);
+              const sender=group.role==='user'?'Human':group.role==='system'?'System':group.role==='tool'?'Tool':group.role==='unknown'?'Unknown event':agentName(group.agent);
+              const providerIdentity=group.role!=='user'&&group.role!=='system'&&group.role!=='tool'&&group.role!=='unknown';
+              return <div class:list={['message-group',`role-${group.role}`]}>
+                <div class="message-speaker">{providerIdentity?<AgentIdentity agent={group.agent}/>:<span>{sender}</span>}{timestamp&&<time datetime={first.timestamp} title={fullTimestamp(first.timestamp)}>{timestamp} UTC</time>}</div>
+                {group.messages.map(message=>{
+                  const chapter=annotation?.chapters?.find(c=>c.startMessageId===message.id);
+                  const taskOutputReference=claudeTaskOutputReference(message.text);
+                  const taskNotification=claudeTaskNotification(message.text);
+                  return <article class="message" id={`${prefix}message-${message.id}`} aria-label={`${sender} message ${message.id}`}>
+                    {chapter&&<div class="chapter-marker" data-editorial><span>{canonicalizeWorkspacePaths(chapter.title)}</span>{chapter.summary&&<p>{canonicalizeWorkspacePaths(chapter.summary)}</p>}</div>}
+                    {message.text&&((taskOutputReference||taskNotification)
+                      ? <ClaudeTaskOutputReference reference={taskOutputReference} notification={taskNotification||taskNotificationsByOutput.get(taskOutputReference?.path)}/>
+                      : <MessageContent content={canonicalizeWorkspacePaths(message.text)}/>)}
+                    {message.textContent?.storage==='asset'&&<ContentAsset reference={message.textContent} label="Full message"/>}
+                    {message.tools?.length>0&&<div class="tool-list">{message.tools.map(tool=>{
+                      const state=toolPresentation(tool.status);
+                      return <details class:list={['tool-call',`tool-${state.state}`]}>
+                      <summary><span class:list={['tool-state',state.state]} role="img" aria-label={state.label} title={state.label}>{state.symbol}</span><span class="tool-name">{tool.name||'Unknown tool'}</span>{tool.label&&tool.label!==tool.name&&<span class="tool-label">{canonicalizeWorkspacePaths(tool.label)}</span>}<Icon class="tool-disclosure"/></summary>
+                      <div class="tool-content">{(tool.inputContent||typeof tool.input==='string'&&tool.input.length>0)&&<><p class="tool-section-label">Input</p>{tool.inputContent?.storage==='asset'?<ContentAsset reference={tool.inputContent} label="Full tool input"/>:<pre tabindex="0" aria-label={`${tool.name||'Tool'} input`}><code>{canonicalizeWorkspacePaths(tool.input)}</code></pre>}</>}
+                        {tool.diff&&<><p class="tool-section-label">Diff</p><pre class="tool-diff" tabindex="0" aria-label="Code diff"><code>{canonicalizeWorkspacePaths(tool.diff).split('\n').map(line=><span class:list={['diff-row',{'diff-added':line.startsWith('+')&&!line.startsWith('+++'),'diff-removed':line.startsWith('-')&&!line.startsWith('---')}]}>{line}{'\n'}</span>)}</code></pre></>}
+                        {(tool.output!=null||tool.outputContent)&&<><p class="tool-section-label">Output</p>{tool.outputContent?.storage==='asset'?<ContentAsset reference={tool.outputContent} label="Full tool output"/>:<pre tabindex="0" aria-label={`${tool.name||'Tool'} output`}><code>{canonicalizeWorkspacePaths(tool.output)}</code></pre>}</>}
+                        {tool.subagentSessionId&&sessions.some(s=>s.id===tool.subagentSessionId)&&<a class="child-run-link" href={`/agent/${tool.subagentSessionId}`} data-subagent={tool.subagentSessionId}>Open subagent session <Icon name="external"/></a>}
+                      </div>
+                    </details>})}</div>}
+                    <a class="message-permalink" href={anchor(message.id)} aria-label={`Link to ${message.id}`}>#{message.id}</a>
+                  </article>;
+                })}
+              </div>;
+            })}

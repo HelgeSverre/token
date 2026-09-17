@@ -6,11 +6,12 @@
     "dev": "astro dev",
     "prebuild": "node scripts/generate-themes.mjs",
     "build": "astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "dev:archive": "node scripts/dev-agent-archive.mjs"
   },
   "dependencies": {
-    "@astrojs/sitemap": "^3.7.3",
-    "astro": "^7.2.1",
-    "yaml": "^2.9.0"
+    "@astrojs/sitemap": "^3.7.4",
+    "astro": "^7.3.2",
+    "yaml": "^2.9.1"
   }
 }

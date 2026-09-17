@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://token-editor.dev/schemas/session-annotation-v1.json",
+  "title": "Token session annotation sidecar v1",
+  "description": "Optional, evidence-bound editorial metadata for one immutable session JSON source.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sessionId", "sourceDigest"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "sessionId": { "$ref": "#/$defs/messageReference" },
+    "sourceDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 2800 },
+    "evidenceMessageIds": { "$ref": "#/$defs/evidence" },
+    "chapters": {
+      "type": "array",
+      "maxItems": 40,
+      "items": { "$ref": "#/$defs/chapter" }
+    },
+    "outcome": { "$ref": "#/$defs/outcome" },
+    "highlights": {
+      "type": "array",
+      "maxItems": 30,
+      "items": { "$ref": "#/$defs/highlight" }
+    },
+    "files": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/file" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "required": ["title"] },
+      "then": { "required": ["evidenceMessageIds"] }
+    },
+    {
+      "if": { "required": ["summary"] },
+      "then": { "required": ["evidenceMessageIds"] }
+    },
+    {
+      "if": { "required": ["evidenceMessageIds"] },
+      "then": { "anyOf": [{ "required": ["title"] }, { "required": ["summary"] }] }
+    }
+  ],
+  "$defs": {
+    "messageReference": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/messageReference" }
+    },
+    "chapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "startMessageId", "evidenceMessageIds"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 80 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "startMessageId": { "$ref": "#/$defs/messageReference" },
+        "endMessageId": { "$ref": "#/$defs/messageReference" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 1200 },
+        "evidenceMessageIds": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "evidenceMessageIds"],
+      "properties": {
+        "summary": { "type": "string", "minLength": 1, "maxLength": 1200 },
+        "evidenceMessageIds": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "highlight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "messageId", "evidenceMessageIds"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 80 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "messageId": { "$ref": "#/$defs/messageReference" },
+        "evidenceMessageIds": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "evidenceMessageIds"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "additions": { "type": "integer", "minimum": 0 },
+        "deletions": { "type": "integer", "minimum": 0 },
+        "evidenceMessageIds": { "$ref": "#/$defs/evidence" }
+      }
+    }
+  }
+}

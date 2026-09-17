@@ -1,0 +1,26 @@
+{
+  "id": "demo-claude-navigation",
+  "agent": "claude",
+  "title": "Keep focus after closing the command palette",
+  "startedAt": "2026-03-18T16:08:00Z",
+  "branch": "fix/palette-focus-return",
+  "files": [
+    {"path":"src/view/command_palette.rs","kind":"modified","added":21,"removed":8,"evidenceMessageIds":["n008"]},
+    {"path":"src/runtime/focus.rs","kind":"modified","added":12,"removed":1,"evidenceMessageIds":["n008"]},
+    {"path":"tests/command_palette.rs","kind":"modified","added":29,"removed":0,"evidenceMessageIds":["n008"]},
+    {"path":"docs/ui/keyboard-navigation.md","kind":"touched","evidenceMessageIds":["n010"]}
+  ],
+  "messages": [
+    {"id":"n001","role":"user","timestamp":"2026-03-18T16:08:00Z","text":"Closing the command palette sometimes leaves focus nowhere, so the next keystroke does nothing. Please keep focus on the previous editor target."},
+    {"id":"n002","role":"assistant","agent":"claude","model":"opus","timestamp":"2026-03-18T16:08:18Z","text":"I’ll inspect how the palette saves and restores focus."},
+    {"id":"n003","role":"assistant","agent":"claude","model":"opus","timestamp":"2026-03-18T16:08:40Z","tools":[{"id":"nt003","name":"read","label":"Read palette close path","input":"src/view/command_palette.rs\nsrc/runtime/focus.rs","output":"The close path clears palette focus but only restores the editor after a command executes.","status":"completed"}]},
+    {"id":"n004","role":"user","timestamp":"2026-03-18T16:09:08Z","text":"Esc should work the same way as choosing a command, without moving focus if a modal had it first."},
+    {"id":"n005","role":"assistant","agent":"claude","model":"opus","timestamp":"2026-03-18T16:09:26Z","text":"I’ll restore the stored target only when the palette owns focus and preserve modal precedence."},
+    {"id":"n006","role":"assistant","agent":"claude","model":"opus","timestamp":"2026-03-18T16:09:52Z","tools":[{"id":"nt006","name":"patch","label":"Restore saved focus on palette cancel","input":"src/view/command_palette.rs","output":"Esc and command completion now use the shared focus return helper.","status":"completed"}]},
+    {"id":"n007","role":"user","timestamp":"2026-03-18T16:10:31Z","text":"Add explicit tests for Esc and modal precedence."},
+    {"id":"n008","role":"assistant","agent":"claude","model":"opus","timestamp":"2026-03-18T16:10:58Z","tools":[{"id":"nt008","name":"git_diff_numstat","label":"Inspect focus fix","input":"git diff --numstat","output":"21\t8\tsrc/view/command_palette.rs\n12\t1\tsrc/runtime/focus.rs\n29\t0\ttests/command_palette.rs","status":"completed"}]},
+    {"id":"n009","role":"assistant","agent":"claude","model":"opus","timestamp":"2026-03-18T16:11:12Z","tools":[{"id":"nt009","name":"test","label":"Run palette tests","input":"just test-one command_palette","output":"6 passed, 0 failed","status":"completed"}]},
+    {"id":"n010","role":"assistant","agent":"claude","model":"opus","timestamp":"2026-03-18T16:11:36Z","text":"The behavior is covered and the keyboard navigation note was checked for consistency."}
+  ],
+  "isFixture": true
+}

@@ -1,0 +1,15 @@
+---
+import {inlineTokens} from '../../lib/transcript-content.mjs';
+import InlineText from './InlineText.astro';
+
+const {block}=Astro.props;
+const inline=value=>inlineTokens(value);
+---
+{block.type==='paragraph'&&<p>{inline(block.value).map(token=><InlineText token={token}/>)}</p>}
+{block.type==='heading'&&<div class:list={['message-heading',`message-heading-${block.level}`]}>{inline(block.value).map(token=><InlineText token={token}/>)}</div>}
+{block.type==='code'&&<pre class="message-code" tabindex="0"><code>{block.value}</code></pre>}
+{block.type==='quote'&&<blockquote>{inline(block.value).map(token=><InlineText token={token}/>)}</blockquote>}
+{block.type==='list'&&<ul>{block.items.map(item=><li>{inline(item).map(token=><InlineText token={token}/>)}</li>)}</ul>}
+{block.type==='ordered-list'&&<ol>{block.items.map(item=><li>{inline(item).map(token=><InlineText token={token}/>)}</li>)}</ol>}
+{block.type==='table'&&<div class="message-table-scroll" tabindex="0" aria-label="Transcript table"><table class="message-table"><thead><tr>{block.headers.map((header,index)=><th class:list={[`align-${block.alignments[index]}`]} scope="col">{inline(header).map(token=><InlineText token={token}/>)}</th>)}</tr></thead><tbody>{block.rows.map(row=><tr>{row.map((cell,index)=><td class:list={[`align-${block.alignments[index]}`]}>{inline(cell).map(token=><InlineText token={token}/>)}</td>)}</tr>)}</tbody></table></div>}
+{block.type==='rule'&&<hr/>}

@@ -1,0 +1,23 @@
+{
+  "id": "demo-amp-recovery",
+  "agent": "amp",
+  "startedAt": "2026-07-03T13:45:00Z",
+  "branch": "fix/recover-missing-workspace",
+  "files": [
+    {"path":"src/model/workspace.rs","kind":"modified","added":18,"removed":5,"evidenceMessageIds":["a008"]},
+    {"path":"src/runtime/recovery.rs","kind":"modified","added":27,"removed":3,"evidenceMessageIds":["a008"]},
+    {"path":"tests/workspace_recovery.rs","kind":"modified","added":42,"removed":0,"evidenceMessageIds":["a008"]}
+  ],
+  "messages": [
+    {"id":"a001","role":"user","timestamp":"2026-07-03T13:45:00Z","text":"A restored window can point at a workspace that no longer exists. Please make recovery fall back to an empty workspace instead of failing startup."},
+    {"id":"a002","role":"assistant","agent":"amp","timestamp":"2026-07-03T13:45:15Z","text":"I found recovery returning an error before it can construct the fallback surface.","tools":[{"id":"at002","name":"search","label":"Find workspace restore","input":"workspace restore missing directory startup","output":"src/runtime/recovery.rs restores the last workspace before application state is initialized.","status":"completed"}]},
+    {"id":"a003","role":"user","timestamp":"2026-07-03T13:46:02Z","text":"Keep a visible notice, but do not block opening the editor."},
+    {"id":"a004","role":"assistant","agent":"amp","timestamp":"2026-07-03T13:46:19Z","text":"I’ll return a recoverable outcome with the old path available for the notice."},
+    {"id":"a005","role":"assistant","agent":"amp","timestamp":"2026-07-03T13:47:04Z","tools":[{"id":"at005","name":"apply_patch","label":"Add recoverable missing-workspace outcome","input":"src/runtime/recovery.rs","output":"Patched recovery to construct an empty workspace and enqueue a notice.","status":"completed"}]},
+    {"id":"a006","role":"user","timestamp":"2026-07-03T13:47:40Z","text":"Add a test for a deleted directory and run it."},
+    {"id":"a007","role":"assistant","agent":"amp","timestamp":"2026-07-03T13:48:18Z","tools":[{"id":"at007","name":"test","label":"Run recovery test","input":"just test-one workspace_recovery","output":"1 passed, 0 failed","status":"completed"}]},
+    {"id":"a008","role":"assistant","agent":"amp","timestamp":"2026-07-03T13:48:51Z","tools":[{"id":"at008","name":"git_diff_numstat","label":"Inspect changed lines","input":"git diff --numstat","output":"18\t5\tsrc/model/workspace.rs\n27\t3\tsrc/runtime/recovery.rs\n42\t0\ttests/workspace_recovery.rs","status":"completed"}]},
+    {"id":"a009","role":"assistant","agent":"amp","timestamp":"2026-07-03T13:49:10Z","text":"The fictional recovery path is ready for review."}
+  ],
+  "isFixture": true
+}

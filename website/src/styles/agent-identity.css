@@ -1,0 +1,19 @@
+/* Provider marks are only rendered for the explicit ACP mappings in agent-identity.mjs. */
+.agent-identity { display:inline-flex; align-items:center; min-width:0; gap:7px; color:var(--fg); font:11px/1.3 var(--font-mono); }
+.agent-identity-mark { flex:none; width:15px; height:15px; background:currentColor; -webkit-mask:center / contain no-repeat; mask:center / contain no-repeat; }
+.agent-identity-mark--codex { -webkit-mask-image:url('/agent-icons/codex.svg'); mask-image:url('/agent-icons/codex.svg'); }
+.agent-identity-mark--claude { -webkit-mask-image:url('/agent-icons/claude.svg'); mask-image:url('/agent-icons/claude.svg'); }
+.agent-identity-mark--amp { -webkit-mask-image:url('/agent-icons/amp.svg'); mask-image:url('/agent-icons/amp.svg'); }
+.agent-identity-mark--opencode { -webkit-mask-image:url('/agent-icons/opencode.svg'); mask-image:url('/agent-icons/opencode.svg'); }
+.agent-identity-mark--kimi { -webkit-mask-image:url('/agent-icons/kimi.svg'); mask-image:url('/agent-icons/kimi.svg'); }
+.agent-identity-mark--devin { -webkit-mask-image:url('/agent-icons/devin.svg'); mask-image:url('/agent-icons/devin.svg'); }
+.agent-identity-mark--antigravity { -webkit-mask-image:url('/agent-icons/antigravity.svg'); mask-image:url('/agent-icons/antigravity.svg'); }
+.agent-identity-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.agent-identity--unknown { color:var(--fg-bright); }
+.facet-option .agent-identity { gap:6px; font:inherit; }
+.facet-option .agent-identity-mark { width:13px; height:13px; color:var(--fg-muted); }
+.row-agent { min-width:0; }
+.row-agent .agent-identity { max-width:100%; }
+.message-speaker .agent-identity { color:var(--fg); font:inherit; }
+.message-speaker .agent-identity--unknown { color:var(--fg-bright); }
+.message-speaker .agent-identity-mark { width:14px; height:14px; }

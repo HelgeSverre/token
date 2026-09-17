@@ -1,0 +1,11 @@
+---
+import {agentIconName,agentName} from '../../lib/agent-identity.mjs';
+
+const {agent,class:className=''}=Astro.props;
+const icon=agentIconName(agent);
+const name=agentName(agent);
+---
+<span class:list={['agent-identity',className,{'agent-identity--unknown':!icon}]}>
+  {icon&&<span class:list={['agent-identity-mark',`agent-identity-mark--${icon}`]} aria-hidden="true"></span>}
+  <span class="agent-identity-name" title={name}>{name}</span>
+</span>

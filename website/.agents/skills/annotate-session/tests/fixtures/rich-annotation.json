@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "sessionId": "fixture:rich-session",
+  "sourceDigest": "ccb27e547a3c38f670bb60f7afd70b7575a266e88dd18a60fde74d664d145bbc",
+  "title": "Repair wrapped selection geometry",
+  "summary": "The session traced a soft-wrap selection problem, changed shared geometry, and recorded a passing focused check.",
+  "evidenceMessageIds": ["message-1", "message-2", "message-3"],
+  "chapters": [
+    {
+      "id": "trace-wrapped-selection",
+      "title": "Trace wrapped selection",
+      "startMessageId": "message-1",
+      "endMessageId": "message-2",
+      "summary": "The work narrows the issue to wrapped-row geometry.",
+      "evidenceMessageIds": ["message-1", "message-2"]
+    }
+  ],
+  "outcome": {
+    "summary": "The transcript records a passing focused check after the change; broader verification is not stated.",
+    "evidenceMessageIds": ["message-3", "message-4"]
+  },
+  "highlights": [
+    {
+      "id": "focused-check",
+      "title": "Focused check passes",
+      "messageId": "message-3",
+      "summary": "The tool output reports success for a focused selection test.",
+      "evidenceMessageIds": ["message-3"]
+    }
+  ],
+  "files": [
+    {
+      "path": "src/view/editor_text.rs",
+      "summary": "The transcript explicitly describes a shared geometry adjustment.",
+      "additions": 18,
+      "deletions": 4,
+      "evidenceMessageIds": ["message-2"]
+    }
+  ]
+}

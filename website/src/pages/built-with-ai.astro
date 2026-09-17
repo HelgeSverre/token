@@ -1,8 +1,13 @@
 ---
 import SiteLayout from '../layouts/SiteLayout.astro';
+import {sessionRouteId} from '../lib/transcript-chunks.mjs';
+import {sessions, fictionalPreview} from '../lib/agent-session-data';
+const archiveCount=fictionalPreview ? 171 : sessions.length;
+const archiveHref=fictionalPreview ? 'https://github.com/HelgeSverre/token/tree/main/docs/ampcode-threads' : '/agent';
+const transcriptHref=id=>{const session=sessions.find(s=>s.id===id||s.id.endsWith(':'+id)||s.id==='amp:'+id.replace(/^T-/,''));return session ? '/agent/'+sessionRouteId(session.id) : 'https://github.com/HelgeSverre/token/blob/main/docs/ampcode-threads/'+id+'.md';};
 
 const stats = [
-  { value: '171', label: 'Archived threads' },
+  { value: String(archiveCount), label: 'Archived sessions' },
   { value: 'Rust', label: 'Application core' },
   { value: 'MIT', label: 'License' },
   { value: 'Git', label: 'Durable record' },
@@ -139,14 +144,14 @@ const lessons = [
 
 <!-- Hero -->
 <section class="ai-hero">
-  <p class="ai-tag">Open development / Amp Code / 171 archived threads</p>
+  <p class="ai-tag">Open development / Agent sessions / {archiveCount} archived sessions</p>
   <h1>
     <span>Built with AI,</span>
     <span class="accent">in the open</span>
   </h1>
   <p class="ai-hero-desc">Token is a multi-cursor text editor written in Rust and developed primarily through conversations with <a href="https://ampcode.com" target="_blank">Amp Code</a>. The referenced conversations are preserved alongside the source, design documents, and commit history.</p>
   <div class="ai-hero-actions">
-    <a href="https://github.com/HelgeSverre/token/tree/main/docs/ampcode-threads" class="btn-primary" target="_blank">View archived threads →</a>
+    <a href={archiveHref} class="btn-primary">View agent sessions →</a>
     <a href="https://github.com/helgesverre/token" class="btn-ghost" target="_blank">View source →</a>
   </div>
 </section>
@@ -215,7 +220,7 @@ const lessons = [
 <!-- Notable Threads -->
 <section class="threads-section">
   <h2 class="section-title">Notable threads</h2>
-  <p class="section-desc">Highlights from the repository archive. Each links to a reviewed transcript snapshot.</p>
+  <p class="section-desc">Highlights from the repository archive. Each links to a recorded transcript.</p>
 
   <div class="threads-list">
     {threads.map((t) => (
@@ -231,7 +236,7 @@ const lessons = [
           <p class="thread-desc">{t.summary}</p>
           <div class="thread-footer">
             <span class="thread-lesson"><strong>Lesson:</strong> {t.lesson}</span>
-            <a href={`https://github.com/HelgeSverre/token/blob/main/docs/ampcode-threads/${t.id}.md`} class="thread-link" target="_blank" rel="noopener noreferrer">View transcript →</a>
+            <a href={transcriptHref(t.id)} class="thread-link">View transcript →</a>
           </div>
         </div>
       </details>
@@ -259,8 +264,8 @@ const lessons = [
 <section class="ai-cta">
   <div class="ai-cta-inner">
     <h2>Want to see the conversations?</h2>
-    <p>Browse 171 conversations preserved with the repository, including the prompts, implementation work, and corrections.</p>
-    <a href="https://github.com/HelgeSverre/token/tree/main/docs/ampcode-threads" class="btn-primary" target="_blank">Browse the archive →</a>
+    <p>Browse {archiveCount} archived sessions, including the prompts, implementation work, and corrections.</p>
+    <a href={archiveHref} class="btn-primary">Browse the archive →</a>
   </div>
 </section>
 
