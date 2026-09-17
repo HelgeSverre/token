@@ -1,0 +1,13 @@
+[features]
+hooks = true
+
+# jbcontext-hook:SessionStart:start
+[[hooks.SessionStart]]
+matcher = "startup|resume"
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "sh -c 'jbcontext index --silent >/dev/null 2>&1 &'"
+statusMessage = "jbcontext: kicking off background index"
+timeout = 2
+# jbcontext-hook:SessionStart:end

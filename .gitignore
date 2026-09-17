@@ -57,3 +57,10 @@ draft.README.md
 
 # rustc internal-compiler-error dumps
 rustc-ice-*.txt
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*
