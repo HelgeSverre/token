@@ -16,6 +16,8 @@ pub mod frame;
 pub mod gallery;
 #[cfg(feature = "ui-gallery")]
 mod gallery_chrome;
+#[cfg(feature = "ui-gallery")]
+mod gallery_editor;
 pub mod geometry;
 pub mod helpers;
 pub mod hit_test;

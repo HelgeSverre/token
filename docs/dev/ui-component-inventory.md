@@ -44,7 +44,8 @@ At the time of this inventory there was no central component catalog or
 component-state browser. The [native gallery](ui-gallery.md) now covers buttons,
 icon buttons, fields, settings choices/disclosures/select popups, form
 validation, overlay menus/list rows, surface swatches, all four tab families,
-empty dock panels, scrollbars and splitters. The
+populated Problems/Usages/Outline and terminal panels, editor compositions,
+scrollbars and splitters. The
 [screenshot generator](../../src/bin/screenshot.rs) already renders real
 application scenarios with theme/size/scale overrides and deterministic LSP and
 terminal fixtures. That is useful existing infrastructure, not a kitchen sink.
@@ -207,7 +208,7 @@ proof none exists elsewhere. Sources:
 
 The first native development slice is now implemented on `main` behind the
 `ui-gallery` cargo feature (`just ui-gallery`).
-See [UI Gallery](ui-gallery.md) for its 56 specimens, launch/screenshot commands,
+See [UI Gallery](ui-gallery.md) for its 64 specimens, launch/screenshot commands,
 shared production painters, and explicit remaining scope. The broader proposal
 below remains a direction, not a claim that every inventoried component is covered.
 

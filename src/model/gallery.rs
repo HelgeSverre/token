@@ -10,6 +10,7 @@ pub const CATEGORIES: &[&str] = &[
     "Menus & rows",
     "Structure",
     "Tabs & panels",
+    "Editor",
 ];
 
 #[derive(Clone, Copy)]
@@ -23,7 +24,19 @@ pub enum ChromePreview {
     TerminalExited,
     BottomPanel,
     ProblemsPopulated,
+    UsagesPopulated,
+    TerminalContent,
     RightPanel,
+}
+
+#[derive(Clone, Copy)]
+pub enum EditorPreview {
+    Selection,
+    IndentGuides,
+    Folding,
+    Diagnostics,
+    Inlays,
+    Find,
 }
 
 #[derive(Clone, Copy)]
@@ -78,6 +91,7 @@ pub enum Preview {
     Secondary,
     Recessed,
     Chrome(ChromePreview),
+    Editor(EditorPreview),
     OverlayTabs,
     Scrollbar {
         horizontal: bool,
@@ -232,6 +246,20 @@ pub const SPECIMENS: &[Specimen] = &[
         category: 7,
         source: "view/panels.rs · render_problems_panel",
         tokens: "grouped diagnostics / severity / selection / collapsed file",
+    },
+    Specimen {
+        id: "panel.usages-populated",
+        preview: Preview::Chrome(ChromePreview::UsagesPopulated),
+        category: 7,
+        source: "view/panels.rs · render_usages_panel",
+        tokens: "summary / grouped locations / selection / collapsed file",
+    },
+    Specimen {
+        id: "terminal.content",
+        preview: Preview::Chrome(ChromePreview::TerminalContent),
+        category: 7,
+        source: "panels/terminal.rs · render_terminal_panel",
+        tokens: "ansi colors / selection / link underline / block cursor",
     },
     Specimen {
         id: "panel.outline-populated",
@@ -521,6 +549,48 @@ pub const SPECIMENS: &[Specimen] = &[
         category: 5,
         source: "view/overlay_surface.rs · RowIcon::KindBadge",
         tokens: "overlay selection wash / kind badge / text",
+    },
+    Specimen {
+        id: "editor.selection",
+        preview: Preview::Editor(EditorPreview::Selection),
+        category: 8,
+        source: "view/editor_text.rs · render_text_area / render_gutter",
+        tokens: "editor selection / current_line / bracket_match_background / cursor",
+    },
+    Specimen {
+        id: "editor.indent-guides",
+        preview: Preview::Editor(EditorPreview::IndentGuides),
+        category: 8,
+        source: "view/editor_text.rs · render_line_decoration_stage",
+        tokens: "editor indent_guide / current_line / syntax",
+    },
+    Specimen {
+        id: "editor.folding",
+        preview: Preview::Editor(EditorPreview::Folding),
+        category: 8,
+        source: "view/editor_text.rs · render_gutter_line_number / fold badge",
+        tokens: "editor gutter foreground / fold chevron / fold badge",
+    },
+    Specimen {
+        id: "editor.diagnostics",
+        preview: Preview::Editor(EditorPreview::Diagnostics),
+        category: 8,
+        source: "view/mod.rs · diagnostic_decorations + editor_text.rs render_gutter_mark",
+        tokens: "overlay severity_error / severity_warning / severity_hint / faded text",
+    },
+    Specimen {
+        id: "editor.inlays",
+        preview: Preview::Editor(EditorPreview::Inlays),
+        category: 8,
+        source: "view/editor_text.rs · render_lsp_annotations / render_ghost_text_stage",
+        tokens: "editor ghost_text / syntax",
+    },
+    Specimen {
+        id: "editor.find",
+        preview: Preview::Editor(EditorPreview::Find),
+        category: 8,
+        source: "view/find_bar.rs · render + view/mod.rs find_match_decorations",
+        tokens: "editor bracket_match_background / selection / overlay field",
     },
 ];
 

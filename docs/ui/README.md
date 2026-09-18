@@ -18,7 +18,7 @@ Token retains its model → update → command → render architecture, and its 
 CPU renderer. IntelliJ is a vocabulary and interaction reference, not a framework
 dependency or a mandate to copy its appearance.
 
-The [native gallery](../dev/ui-gallery.md) currently has 56 static specimens.
+The [native gallery](../dev/ui-gallery.md) currently has 64 static specimens.
 Its live shell supports filtering, category navigation, theme selection, width
 selection and scrolling. Static visual coverage is not proof of production
 keyboard handling, accessibility, focus restoration, or asynchronous lifecycle.
@@ -111,7 +111,7 @@ durable external references; Token implementation links point into this reposito
 | Scrolling/layout      | Scroll containers and component guidelines                      | Existing pixel/editor and row/list geometry helpers                        | Keep coordinate units and one geometry authority explicit         |
 | Theme/typography      | Semantic themed components                                      | Resolved theme families and scoped Code/UI painters                        | Add only necessary roles with compatibility fallbacks             |
 | Accessibility         | Semantic and keyboard guidance                                  | Some keyboard paths; no general platform accessibility tree                | Specify roles/focus/announcements as gaps, not implemented claims |
-| Gallery               | Reference illustrations/sample components                       | 56 static production-painter specimens plus an interactive shell           | Add more production collections and scoped interaction verification |
+| Gallery               | Reference illustrations/sample components                       | 64 static production-painter specimens plus an interactive shell           | Add more production collections and scoped interaction verification |
 
 The IntelliJ column describes reference guidance, not a source-code audit of its
 entire toolkit. Token claims link to implementation evidence in the family docs;

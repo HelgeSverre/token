@@ -7,7 +7,7 @@ Cargo feature. All build artifacts stay under `target/`.
 
 ## Current slice
 
-The catalog currently contains 56 labelled visual specimens:
+The catalog currently contains 64 labelled visual specimens:
 
 - Buttons: normal, hovered, pressed, focused, selected, disabled, long label.
 - Icon button: a glyph-label close action, using the standard button painter.
@@ -31,6 +31,15 @@ The catalog currently contains 56 labelled visual specimens:
 - Bottom Problems and right Outline panels: real headers and borders; Outline is
   populated with nested, selected and truncated production tree rows. Problems
   includes grouped files, mixed severities, selection and a collapsed group.
+  Usages is populated with a summary status, grouped locations, a selected
+  location row and a collapsed long-named file, rendered through the dock.
+- Terminal content: a headless session fed deterministic ANSI (prompt, SGR
+  colors, bold, an OSC-8 link and a bare URL), a text selection, a hovered link
+  underline and the block cursor, rendered through the dock with its tab strip.
+- Editor: six real editor-group renders of a 28-line Rust sample: multiple
+  cursors with a selection and matched brackets, indent guides, a collapsed
+  fold, error/warning/hint diagnostics with the marks lane, inlay hints with
+  ghost text, and a docked Find bar with match tints.
 - Settings records: selected language-server records and the production empty
   collection state, including the narrow two-pane Settings layout.
 - Scrollbars: vertical/horizontal, normal/hovered, end position and content fitting,
@@ -81,18 +90,24 @@ compositions is stacked above the canvas instead of competing for horizontal roo
 
 This remains an increment of the [component inventory](ui-component-inventory.md),
 not coverage of every editor component. Complex pickers, interactive specimen
-sandboxes, live theme editing, Problems/Usages collections and editor compositions
-remain subsequent slices.
+sandboxes and live theme editing remain subsequent slices.
 
 Chrome specimens build an isolated `AppModel` and use the real editor/dock/terminal
 layout and painters. Terminal sessions use headless PTY handles: no shell is
 started. Crops preserve native pixel size, not scaled screenshots. The fixtures
 are static visual examples; they do not provide editor or terminal interaction.
+Editor specimens likewise build an isolated `AppModel`, parse and highlight the
+sample synchronously, and paint through `Renderer::render_editor_group`; the
+240-pixel frame shows roughly ten rows, so some tagged lines sit below the fold.
 
 Unsupported styling is not invented: the document-tab fixture includes a dirty
 document, but the current production tab title has no distinct dirty marker.
 The `!` marker represents a save error/external change. Scrollbars likewise have
 no separate pressed/dragging color beyond their existing normal/hover styling.
+The terminal cursor is always a solid block: production ignores DECSCUSR cursor
+shapes, DECTCEM visibility and blink, so `terminal.content` shows only that form.
+Its link underline is the modifier-held hover state; production gates the cue on
+Cmd/Ctrl, while the fixture sets the hovered link directly.
 
 ## Screenshots
 
@@ -142,6 +157,8 @@ as Token. Run `just ui-gallery --help` for options.
   `src/layout/editor.rs`. `Renderer` remains the application orchestrator.
 - `src/view/gallery_chrome.rs`: isolated chrome fixtures and native-size cropping;
   calls the production dock/terminal painters and document-tab layout.
+- `src/view/gallery_editor.rs`: isolated editor fixtures; builds a parsed and
+  highlighted model per variant and calls the production editor-group painter.
 
 Theme colors come from the current resolved palette. New optional YAML keys
 `ui.button.background_selected` and `ui.button.foreground_disabled` separate
@@ -156,7 +173,7 @@ both production and the gallery will actually use it.
 ## Planned performance-study coverage
 
 The [prototype component decision record](../ui/PROTOTYPE-COMPONENTS.md) defines
-new proposed families. They are **not** part of the current 56 specimens and
+new proposed families. They are **not** part of the current 64 specimens and
 should only enter the gallery with production layout/painters:
 
 - `pane-header.*`: title-only, optional icon/actions, truncation and overflow.

@@ -119,6 +119,91 @@ fn populate_problems(model: &mut AppModel) {
     model.problems_panel.collapsed.insert(collapsed);
 }
 
+fn location(path: &str, line: u32, preview: &str) -> crate::update::navigation::LocationItem {
+    crate::update::navigation::LocationItem {
+        path: path.into(),
+        position: lsp_types::Position::new(line, 8),
+        preview: preview.to_owned(),
+        route_hint: None,
+    }
+}
+
+pub(super) fn populate_usages(model: &mut AppModel) {
+    let gallery = "/workspace/token/src/view/gallery.rs";
+    let panels = "/workspace/token/src/view/panels.rs";
+    let collapsed = "/workspace/token/src/runtime/very_long_runtime_module.rs";
+    let usages = &mut model.usages_panel;
+    usages.items = vec![
+        location(
+            gallery,
+            118,
+            "render_dock(&mut frame, &mut painter, &model, position, &chrome);",
+        ),
+        location(gallery, 164, "let dock = render_dock;"),
+        location(panels, 42, "pub fn render_dock("),
+        location(
+            panels,
+            87,
+            "render_dock(frame, painter, model, DockPosition::Bottom, chrome)",
+        ),
+        location(
+            collapsed,
+            12,
+            "super::render_dock(frame, painter, model, position, chrome)",
+        ),
+    ];
+    usages.source = "render_dock".into();
+    usages.status = "5 usages".into();
+    usages.selected_index = Some(2);
+    usages.collapsed.insert(collapsed.into());
+}
+
+/// Feed a headless session sized to the live terminal panel with deterministic
+/// ANSI output, a text selection and a hovered link.
+pub(super) fn populate_terminal_content(model: &mut AppModel) {
+    use alacritty_terminal::index::{Column, Line, Point, Side};
+    use alacritty_terminal::selection::SelectionType;
+
+    let chrome = crate::layout::chrome::chrome(model);
+    let rect = chrome
+        .rect(crate::layout::UiKey::PanelContent(PanelId::Terminal))
+        .unwrap_or_default();
+    let size =
+        crate::panels::terminal::grid_size_for_rect(rect, model.char_width, model.line_height);
+    let (tx, _rx) = std::sync::mpsc::channel();
+    let Some(id) = model.terminal.begin_spawn() else {
+        return;
+    };
+    let (pty, _writes) = crate::terminal::PtyHandle::headless();
+    let mut session = crate::terminal::TerminalSession::new(
+        id,
+        size.rows.max(1).into(),
+        size.cols.max(1).into(),
+        pty,
+        tx,
+    );
+    session.title = "shell".into();
+    session.apply_bytes(
+        b"$ cargo test --features ui-gallery\r\n\
+          \x1b[32mok\x1b[0m 128 passed; 0 failed\r\n\
+          docs: \x1b]8;;https://example.com/docs\x1b\\gallery guide\x1b]8;;\x1b\\ or https://token.dev\r\n\
+          \x1b[1mwarning\x1b[0m: unused variable `frame`\r\n\
+          \x1b[36m-->\x1b[0m src/view/gallery.rs:42:9\r\n\
+          $ \x1b[6;3H",
+    );
+    session.start_selection(
+        Point::new(Line(1), Column(3)),
+        Side::Left,
+        SelectionType::Simple,
+    );
+    session.update_selection(Point::new(Line(1), Column(12)), Side::Right);
+    let link = session.link_at(Point::new(Line(2), Column(8)));
+    model.terminal.sessions.push(session);
+    model.terminal.clear_spawn_pending(id);
+    model.terminal.active = 0;
+    model.terminal.hovered_link = link.map(|link| (id, link));
+}
+
 pub(super) fn render(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -221,6 +306,8 @@ pub(super) fn render(
             ChromePreview::DockTabs
             | ChromePreview::BottomPanel
             | ChromePreview::ProblemsPopulated
+            | ChromePreview::UsagesPopulated
+            | ChromePreview::TerminalContent
             | ChromePreview::RightPanel
             | ChromePreview::TerminalTabs
             | ChromePreview::TerminalOverflow
@@ -252,6 +339,14 @@ pub(super) fn render(
                 if matches!(kind, ChromePreview::ProblemsPopulated) {
                     populate_problems(&mut model);
                     model.dock_layout.bottom.activate(PanelId::Problems);
+                }
+                if matches!(kind, ChromePreview::UsagesPopulated) {
+                    populate_usages(&mut model);
+                    model.dock_layout.bottom.activate(PanelId::Usages);
+                }
+                if matches!(kind, ChromePreview::TerminalContent) {
+                    model.dock_layout.bottom.activate(PanelId::Terminal);
+                    populate_terminal_content(&mut model);
                 }
                 if matches!(
                     kind,
@@ -333,5 +428,48 @@ pub(super) fn render(
                 pixels[(sy + y) * width + sx + x],
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::usages::UsagesRow;
+
+    fn model() -> AppModel {
+        let mut model = AppModel::new(400, 300, 1.0);
+        model.line_height = 20;
+        model.char_width = 8.0;
+        let dock = model.dock_layout.dock_mut(DockPosition::Bottom);
+        dock.panel_ids = vec![PanelId::Terminal, PanelId::Problems, PanelId::Usages];
+        dock.is_open = true;
+        dock.set_size(180.0, 1.0);
+        model
+    }
+
+    #[test]
+    fn usages_fixture_has_file_and_location_rows() {
+        let mut model = model();
+        populate_usages(&mut model);
+        let rows = model.usages_panel.rows();
+        assert!(rows.iter().any(|row| matches!(row, UsagesRow::File { .. })));
+        assert!(rows.iter().any(|row| matches!(row, UsagesRow::Location(_))));
+        assert!(model
+            .usages_panel
+            .selected_index
+            .is_some_and(|i| matches!(rows[i], UsagesRow::Location(_))));
+    }
+
+    #[test]
+    fn terminal_fixture_has_selection_and_hovered_link() {
+        let mut model = model();
+        model.dock_layout.bottom.activate(PanelId::Terminal);
+        populate_terminal_content(&mut model);
+        let session = model.terminal.active_session().unwrap();
+        assert!(session.term().selection.is_some());
+        assert_eq!(
+            model.terminal.hovered_link.as_ref().map(|(id, _)| *id),
+            Some(session.id)
+        );
     }
 }

@@ -75,8 +75,9 @@ valuable than another generic button variant.
 
 **Deliver:** production hover/documentation and completion-with-documentation
 fixtures, short/long/error/loading contexts where supported, signature help and
-edge-placement examples. Add named tooltip states separately; a documentation
-card is not a large tooltip.
+edge-placement examples. Named tooltip states are deferred: no production
+tooltip exists yet, so no specimen is added; a documentation card is not a large
+tooltip.
 
 **Exit criteria:** production content/layout produces the fixture; code header,
 prose and inline code retain their font roles; scrollbar and clipping agree;
@@ -89,8 +90,9 @@ exercise real owners rather than simulating behavior solely in a static tile.
 tree, a populated Problems dock with grouped severities and collapse/selection
 states, grouped/loading/empty Search Everywhere collections, and selected/empty
 Settings record collections. Each fixture enters through its production model,
-spec builder and painter. The actual Usages dock remains a distinct future fixture;
-Search Everywhere covers the grouped search-result portion of this slice.
+spec builder and painter. The Usages dock is now a populated fixture as well
+(`panel.usages-populated`); Search Everywhere covers the grouped search-result
+portion of this slice.
 
 **Deliver:** explorer/outline tree rows, grouped Problems/Usages rows, actual
 Settings record list, search/picker empty and loading states, and panel toolbar
@@ -102,6 +104,12 @@ empty collections, removed selected records and narrow accessory layout work.
 Do not migrate the CSV editor into a generic settings table as collateral work.
 
 ## Recommended slice 4: editor composition specimens
+
+**Implemented editor slice:** six `editor.*` specimens (selection, indent
+guides, folding, diagnostics, inlays, find) render a parsed sample through
+`Renderer::render_editor_group`, and `terminal.content` covers terminal
+selection, link hover and the block cursor. Production has no cursor-shape or
+blink rendering, so no other cursor forms are shown.
 
 **Deliver:** real editor render fixtures for Find, folding, selection/caret,
 indent guides, diagnostics and inlays, then terminal selection/link/cursor

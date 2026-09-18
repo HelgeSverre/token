@@ -53,6 +53,7 @@ fn preview_pad_x(preview: Preview) -> f32 {
             | Preview::SettingsRecords(_)
             | Preview::SearchCollection(_)
             | Preview::CompletionDocumentation
+            | Preview::Editor(_)
     ) {
         48.0
     } else {
@@ -67,6 +68,7 @@ fn metadata_above(preview: Preview) -> bool {
             | Preview::SettingsRecords(_)
             | Preview::SearchCollection(_)
             | Preview::CompletionDocumentation
+            | Preview::Editor(_)
     )
 }
 
@@ -123,11 +125,16 @@ fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
             crate::model::gallery::ChromePreview::BottomPanel
             | crate::model::gallery::ChromePreview::RightPanel,
         ) => (popup_width, 140.0),
-        Preview::Chrome(crate::model::gallery::ChromePreview::ProblemsPopulated) => {
-            (popup_width, 300.0)
+        Preview::Chrome(
+            crate::model::gallery::ChromePreview::ProblemsPopulated
+            | crate::model::gallery::ChromePreview::UsagesPopulated,
+        ) => (popup_width, 300.0),
+        Preview::Chrome(crate::model::gallery::ChromePreview::TerminalContent) => {
+            (popup_width, 180.0)
         }
         Preview::Chrome(crate::model::gallery::ChromePreview::DocumentDrag) => (popup_width, 48.0),
         Preview::Chrome(_) => (popup_width, 32.0),
+        Preview::Editor(_) => (if compact { 500.0 } else { 580.0 }, 240.0),
         Preview::OverlayTabs => (popup_width, 56.0),
         Preview::Scrollbar {
             horizontal: true, ..
@@ -721,6 +728,9 @@ fn paint_specimen(
         }
         Preview::Chrome(kind) => {
             super::gallery_chrome::render(frame, painter, theme, rect, scale, kind)
+        }
+        Preview::Editor(kind) => {
+            super::gallery_editor::render(frame, painter, theme, rect, scale, kind)
         }
         Preview::OverlayTabs => {
             let tabs = [
@@ -1529,6 +1539,7 @@ mod tests {
                 matches!(
                     s.preview,
                     Preview::Chrome(_)
+                        | Preview::Editor(_)
                         | Preview::SettingsRecords(_)
                         | Preview::SearchCollection(_)
                         | Preview::OverlayTabs
