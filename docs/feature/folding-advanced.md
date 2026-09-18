@@ -1,71 +1,50 @@
-# Code Folding - Advanced (Syntax-Based)
+# Code Folding - Advanced (Follow-ups)
 
-> **Implementation plan updated 2026-09-09:** Use the
-> [coordinated save, EditorConfig, and folding plan](file-policy-and-folding-plan.md#syntax-aware-folding-and-saved-state).
-> The historical sketch below is superseded by registry-based syntax providers
-> and fold metadata in the existing session store.
+> **Implementation plan updated 2026-09-09:** Syntax-aware folding and saved fold
+> state shipped in v0.7.0 via the
+> [coordinated save, EditorConfig, and folding plan](../archived/file-policy-and-folding-plan.md#syntax-aware-folding-and-saved-state).
+> This document now tracks only the ideas that plan explicitly deferred.
 
-Syntax-aware folding, region markers, and fold persistence
+Region markers, fold level commands, and manual folds
 
-> **Status:** Superseded by the implemented coordinated plan; historical ideas below may include deferred scope.
+> **Status:** Follow-ups after v0.7.0; nothing below is implemented
 > **Priority:** P3 (Nice-to-have)
-> **Effort:** L (1-2 weeks)
+> **Effort:** M (a few days)
 > **Created:** 2025-12-20
-> **Milestone:** 6 - Productivity
+> **Milestone:** Deferred scope
 > **Feature ID:** F-150b
-> **Prerequisite:** [folding-basic.md](folding-basic.md) must be complete
+> **Prerequisite:** [folding-basic.md](../archived/folding-basic.md) (complete)
 
 ---
 
 ## Overview
 
-This document covers **advanced folding features** that build on the basic indentation-based folding. These features require more complex infrastructure and language-specific knowledge.
+Basic and syntax folding are done. What exists today:
 
-### Prerequisites
+- `src/folding/mod.rs` - `FoldRegion { header, end, kind, offsets, fingerprint, context }` and per-pane collapse state
+- `src/syntax/folding.rs` - tree-sitter fold providers for Rust, JavaScript/TypeScript, Python, JSON/YAML, HTML/CSS, Markdown, and Sema; indentation folding elsewhere
+- `src/folding/persistence.rs` - fold metadata stored on saved tabs in the existing session store (no separate `fold-state.json`)
+- Commands: `ToggleFold`, `CollapseFold`, `ExpandFold`, `CollapseAllFolds`, `ExpandAllFolds` (`src/keymap/command.rs`)
 
-Before implementing this phase:
+User docs live in [user/folding.md](../user/folding.md).
 
-- ✅ Basic indentation-based folding working
-- ✅ Fold regions, toggle, and rendering complete
-- ✅ Shared text viewport / visual-line mapping for collapsed folds
-
-Advanced folding should build on the same shared viewport abstraction used by soft wrap and basic folding. It should not introduce a second visual mapping path.
+The coordinated plan named custom region markers, manual selection folds, and
+fold-to-level commands as follow-ups. They remain open, along with collapsed-header
+summary text. Any of them should build on the shared text viewport / visual-line
+mapping already used by soft wrap and folding, not introduce a second mapping path.
 
 ### Goals (This Phase)
 
-1. **Syntax-based detection** - Use tree-sitter to find functions, classes, etc.
-2. **Region markers** - Support `#region`/`#endregion` comments
-3. **Fold level commands** - Fold to level 1, 2, 3, etc.
-4. **Fold persistence** - Remember fold state across sessions
-5. **Manual folds** - Create custom fold from selection
+1. **Region markers** - Support `#region`/`#endregion` comments
+2. **Fold level commands** - Fold to level 1, 2, 3, etc.
+3. **Manual folds** - Create custom fold from selection
+4. **Fold summaries** - Show e.g. `fn main()` on a collapsed header
 
 ---
 
 ## Features
 
-### 1. Syntax-Based Detection
-
-Use tree-sitter parse tree to detect language constructs:
-
-```rust
-// Rust: functions, impls, structs, enums, mods, match arms
-fn detect_rust_folds(tree: &Tree) -> Vec<FoldRegion> {
-    let foldable = ["function_item", "impl_item", "struct_item",
-                    "enum_item", "mod_item", "match_expression"];
-    // Walk tree, find nodes...
-}
-
-// JavaScript: functions, classes, if/for/while blocks
-fn detect_js_folds(tree: &Tree) -> Vec<FoldRegion> {
-    let foldable = ["function_declaration", "class_declaration",
-                    "method_definition", "if_statement", "for_statement"];
-    // Walk tree, find nodes...
-}
-```
-
-**Integration:** Hook into existing syntax highlighting worker to compute folds after parse.
-
-### 2. Region Markers
+### 1. Region Markers
 
 Support explicit fold regions via comments:
 
@@ -91,7 +70,10 @@ fn detect_region_markers(document: &Document) -> Vec<FoldRegion> {
 }
 ```
 
-### 3. Fold Level Commands
+Marker regions would be emitted as `FoldRegion`s with their own `kind` and merged
+with the syntax/indentation candidates for the document.
+
+### 2. Fold Level Commands
 
 Fold to a specific nesting depth:
 
@@ -101,84 +83,23 @@ Fold to a specific nesting depth:
 | Fold Level 2 | Fold level 1 + level 2 regions |
 | Fold Level 3 | Fold level 1, 2, and 3         |
 
-```rust
-pub fn fold_to_level(&mut self, max_level: usize) {
-    for region in &mut self.regions {
-        region.collapsed = region.level < max_level;
-    }
-}
-```
+`FoldRegion` has no `level` field today; nesting depth would be derived from
+region containment when the command runs.
 
-### 4. Fold Persistence
+### 3. Manual Folds
 
-Save fold state per file:
+Create a fold from the current selection. Manual regions are not derived from the
+document, so they need their own `kind` and must survive edits via the existing
+`offsets`/`fingerprint` anchoring, and persist alongside saved folds.
 
-```json
-// ~/.config/token-editor/fold-state.json
-{
-  "/path/to/file.rs": {
-    "version": 1,
-    "collapsed_lines": [10, 45, 120],
-    "manual_folds": [{ "start": 50, "end": 55 }],
-    "timestamp": "2025-12-20T10:00:00Z"
-  }
-}
-```
+### 4. Fold Summaries
 
-**Restore logic:**
-
-1. Load fold state on file open
-2. Match collapsed lines to current fold regions
-3. Apply collapsed state
-4. Save on file close or explicit save
-
-### 5. Manual Folds
-
-Create fold from selection:
-
-```rust
-pub fn create_manual_fold(&mut self, start_line: usize, end_line: usize) {
-    if end_line > start_line {
-        self.regions.push(FoldRegion {
-            start_line,
-            end_line,
-            level: 0,
-            collapsed: true,
-            source: FoldSource::Manual,
-        });
-        self.regions.sort_by_key(|r| r.start_line);
-    }
-}
-```
+Optional `summary` text on collapsed headers (e.g. `fn main()`), most useful for
+syntax regions where the provider already knows the node.
 
 ---
 
-## Data Structure Extensions
-
-```rust
-/// Extended FoldRegion with source tracking
-#[derive(Debug, Clone)]
-pub struct FoldRegion {
-    pub start_line: usize,
-    pub end_line: usize,
-    pub level: usize,
-    pub collapsed: bool,
-    pub source: FoldSource,          // NEW
-    pub summary: Option<String>,     // NEW: e.g., "fn main()"
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FoldSource {
-    Indentation,
-    Syntax,
-    RegionMarker,
-    Manual,
-}
-```
-
----
-
-## Keybindings
+## Keybindings (proposed)
 
 | Action         | Mac           | Windows/Linux   | Command         |
 | -------------- | ------------- | --------------- | --------------- |
@@ -187,20 +108,13 @@ pub enum FoldSource {
 | Fold Level 3   | `Cmd+K Cmd+3` | `Ctrl+K Ctrl+3` | `FoldLevel(3)`  |
 | Fold Selection | `Cmd+K Cmd+[` | `Ctrl+K Ctrl+[` | `FoldSelection` |
 
+None of these commands exist yet; see `src/keymap/command.rs` for the shipped set.
+
 ---
 
 ## Implementation Plan
 
-### Phase 1: Syntax-Based Detection
-
-**Effort:** M (3-4 days)
-
-- [ ] Add `FoldSource` enum to `FoldRegion`
-- [ ] Implement `detect_syntax_folds()` for each language
-- [ ] Hook into syntax worker to compute folds after parse
-- [ ] Merge syntax folds with indentation folds (prefer syntax)
-
-### Phase 2: Region Markers
+### Phase 1: Region Markers
 
 **Effort:** S (1-2 days)
 
@@ -208,7 +122,7 @@ pub enum FoldSource {
 - [ ] Support C-style, HTML, and Python/Ruby comment markers
 - [ ] Add to fold detection pipeline
 
-### Phase 3: Fold Level Commands
+### Phase 2: Fold Level Commands
 
 **Effort:** S (1 day)
 
@@ -216,29 +130,26 @@ pub enum FoldSource {
 - [ ] Add `FoldLevel(n)` command and keybindings
 - [ ] Add to command palette
 
-### Phase 4: Fold Persistence
-
-**Effort:** M (2-3 days)
-
-- [ ] Design fold state JSON schema
-- [ ] Implement save/load functions
-- [ ] Save fold state on file close
-- [ ] Restore fold state on file open
-- [ ] Handle stale state (file changed)
-
-### Phase 5: Manual Folds
+### Phase 3: Manual Folds
 
 **Effort:** S (1 day)
 
 - [ ] Implement `create_manual_fold()` from selection
 - [ ] Add `FoldSelection` command
-- [ ] Persist manual folds separately
+- [ ] Persist manual folds with the session fold state
+
+### Phase 4: Fold Summaries
+
+**Effort:** S (1 day)
+
+- [ ] Add optional summary text to `FoldRegion`
+- [ ] Render it on collapsed headers
 
 ---
 
 ## Dependencies
 
-- Requires [folding-basic.md](folding-basic.md) to be complete
+- Builds on the shipped folding in `src/folding/` and `src/syntax/folding.rs`
 - Reuses existing tree-sitter infrastructure from syntax highlighting
 
 ---
@@ -247,4 +158,5 @@ pub enum FoldSource {
 
 - [VS Code Folding Regions](https://code.visualstudio.com/docs/editor/codebasics#_folding)
 - [JetBrains Custom Folding](https://www.jetbrains.com/help/idea/working-with-source-code.html#folding_comments)
-- [folding-basic.md](folding-basic.md) - Prerequisite document
+- [file-policy-and-folding-plan.md](../archived/file-policy-and-folding-plan.md) - Shipped folding design
+- [folding-basic.md](../archived/folding-basic.md) - Historical prerequisite document

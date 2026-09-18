@@ -133,7 +133,7 @@ entries stay removed after reloading.
 
 ### Auto-save
 
-Auto-save is off by default. The **Editor** category offers focus-loss, idle,
+Auto-save is off by default. The **Files & Session → Saving** group offers focus-loss, idle,
 and combined modes, along with delay presets. **Formatting** has the independent
 **Format on auto-save** switch:
 
@@ -178,7 +178,7 @@ This confirmation is independent of auto-save; it is not crash recovery.
 
 ### Session restore
 
-The **Session** category controls two independent options, both enabled by default:
+The **Files & Session → Session** group controls two independent options, both enabled by default:
 
 ```yaml
 session:
@@ -230,7 +230,7 @@ still opens and focuses the explorer when automatic reveal is disabled.
 ### External file changes
 
 `auto_reload: true` (the default) reloads open, unmodified text files when they
-change outside Token. Turn off **Editor → Reload external changes** to ask before
+change outside Token. Turn off **Files & Session → Reload external changes** to ask before
 reloading even clean buffers. Checks run on filesystem notifications and window
 refocus, including files outside the workspace and ignored files.
 

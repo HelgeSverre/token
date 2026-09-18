@@ -5,7 +5,7 @@
 > 2026-09-07 follow-up: Mermaid fences now render through a pinned, on-demand
 > renderer with theme colors and readable source fallback. This requires CDN
 > access; see [the sample](../../samples/mermaid.md) and
-> [verification notes](../dev/refactoring-audit-2026-09-06.md#markdown-diagrams-and-popup-hover--2026-09-07).
+> [verification notes](refactoring-audit-2026-09-06.md#markdown-diagrams-and-popup-hover--2026-09-07).
 
 Live preview pane for Markdown files with synchronized scrolling
 

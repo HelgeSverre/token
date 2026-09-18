@@ -17,8 +17,11 @@ scope/rainbow proposal below. `src/view/editor_text.rs` uses its existing
 row-decoration pass for full and cursor-only redraws. Leading spaces/tabs use
 the shared four-column tab geometry, while guide spacing follows common
 indentation increases in a bounded sample of the first 200 lines (four-column
-fallback). This fixes two-space Lisp/YAML being drawn on a four-column grid.
-Guides are viewport-clipped, underneath selections and glyphs, and omitted on
+fallback); an explicit `indent_size` or `indent_style` (EditorConfig or user
+text settings) takes precedence over the sample. This fixes two-space Lisp/YAML
+being drawn on a four-column grid.
+Guides render only in plain text mode (not markdown preview or non-text tabs),
+are viewport-clipped, underneath selections and glyphs, and omitted on
 wrapped continuation rows. Whitespace-only
 rows use literal indentation; empty rows do not infer surrounding scope.
 
@@ -29,8 +32,9 @@ This supersedes the old no-custom-colors non-goal and avoids introducing the
 proposed standalone renderer/config framework or an unverified default shortcut.
 
 Still planned: active scope highlighting, Tree-sitter/per-language scope policy,
-blank-line scope continuation and alternative depth palettes. Do not archive the
-whole plan when only this first slice is verified.
+blank-line scope continuation, alternative depth palettes and an optional
+toggle shortcut. Do not archive the whole plan when only this first slice is
+verified.
 
 ## Table of Contents
 
@@ -54,7 +58,8 @@ The editor currently:
 - Relies on syntax highlighting for scope detection
 - Difficult to track deep nesting, especially in Python/YAML
 
-Reconciled 2026-09-08: whitespace visualization and code folding remain planned.
+Reconciled 2026-09-17: whitespace visualization remains planned; code folding is
+implemented (see [Basic code folding](../archived/file-policy-and-folding-plan.md#basic-code-folding)).
 Coordinate the overlapping guide/marker scope with
 [Whitespace Rendering](../future/whitespace-rendering.md); reuse the shared
 visual-row traversal in `src/view/editor_text.rs`, including soft-wrap, rather
@@ -72,7 +77,7 @@ than implementing a separate logical-line rendering loop.
 ### Non-Goals
 
 - Rainbow brackets (separate feature)
-- Scope folding from guides (separate [planned folding feature](folding-basic.md))
+- Scope folding from guides (separate [folding feature](../archived/file-policy-and-folding-plan.md#basic-code-folding))
 - Custom user color configuration (first iteration)
 
 ---
@@ -116,6 +121,9 @@ Active:  Theme accent color (full opacity)
 ```
 
 ### Module Structure
+
+Proposed, not current: the shipped slice lives in `src/view/editor_text.rs`,
+`src/config.rs` and `src/theme.rs`; no `src/indent_guides/` directory exists.
 
 ```
 src/
@@ -492,7 +500,7 @@ fn guide_color(depth: usize, config: &IndentGuideConfig) -> Color {
 
 | Action | Mac | Windows/Linux | Message |
 |--------|-----|---------------|---------|
-| Toggle indent guides | Cmd+Shift+I | Ctrl+Shift+I | `EditorMsg::ToggleIndentGuides` |
+| Toggle indent guides | (via Settings → Appearance `indent_guides`) | (via Settings → Appearance `indent_guides`) | - |
 | Cycle color strategy | (via settings) | (via settings) | - |
 
 ---
@@ -663,7 +671,7 @@ fn main() {
 3. **Very deep nesting**: Cap at `max_depth`, ensure visibility
 4. **Cursor on blank line**: Show scope from nearest content line
 5. **Multiple cursors**: Highlight scope for primary cursor
-6. **Folded regions**: Skip guides for folded content
+6. **Folded regions**: Collapsed rows are not visible rows, so no special handling
 7. **Soft-wrapped lines**: Guides on first visual line only
 
 ---

@@ -129,8 +129,9 @@ The editor waits for the next stroke after a chord prefix. A single-stroke
 binding on that prefix takes precedence; an earlier complete chord can also
 make a longer chord unreachable. Such shadowed chords are not shown as hints.
 An unmatched next stroke clears the pending sequence. There is no chord timeout
-yet. Chords currently start in editor keymap routing; modals and docks retain
-their own key handling and single-stroke global shortcuts.
+yet. Chords for global commands also work from terminals, docks and dialogs;
+editor-only bindings are filtered out before matching in those contexts, so
+they cannot capture input or block an eligible global binding.
 
 Palette hints describe editor conditions after the palette closes; context-menu
 hints use the underlying menu target. Temporary popup/inline-suggestion states
@@ -188,7 +189,7 @@ Single characters: `a`, `b`, `c`, `1`, `2`, `3`, etc.
 
 ### Function Keys
 
-`f1`, `f2`, `f3`, `f4`, `f5`, `f6`, `f7`, `f8`, `f9`, `f10`, `f11`, `f12`
+`f1` through `f24`
 
 ### Numpad Keys
 
@@ -210,6 +211,13 @@ Bindings can be conditional using the `when` field:
 | `modal_inactive` | No modal dialog is open |
 | `editor_focused` | Focus is in the editor pane |
 | `sidebar_focused` | Focus is in the sidebar file tree |
+| `overlay_routes_keys` | An overlay (popup) is routing keys |
+| `inline_suggestion_visible` | Inline suggestion ghost text is visible |
+| `completion_menu_visible` | The completion menu is open |
+| `completion_session_pending` | A completion request is pending |
+
+Short aliases are also accepted (`modal`, `no_modal`, `editor`, `sidebar`,
+`overlay`, `inline_suggestion`, `completion_menu`); names are case-insensitive.
 
 Conditions on one binding are ANDed together. Chord prefixes use the same
 eligibility rules as completed bindings: an inactive branch cannot start or
@@ -383,7 +391,6 @@ All navigation commands have `*WithSelection` variants that extend the selection
 
 | Command | Description |
 |---------|-------------|
-| `ToggleSidebar` | Show/hide sidebar (legacy, use `ToggleFileExplorer`) |
 | `RevealInSidebar` | Show current file in tree |
 | `FileTreeSelectPrevious` | Select previous item in file tree |
 | `FileTreeSelectNext` | Select next item in file tree |
@@ -488,10 +495,12 @@ All navigation commands have `*WithSelection` variants that extend the selection
 
 When multiple bindings match a keystroke:
 
-1. **Context conditions** are evaluated (most specific wins)
-2. **Platform-specific** bindings take precedence on matching platforms
-3. **User bindings** override default bindings with same key + conditions
-4. **Later bindings** in the file override earlier ones with same key
+1. **Platform-specific** bindings for other platforms are dropped at load time
+2. **User bindings** replace default bindings with the same key + conditions at
+   merge time; otherwise they are added alongside the defaults
+3. **Conditional bindings** whose conditions are all active beat unconditional
+   ones for the same key
+4. Among equally eligible bindings, the **earlier** one wins
 
 ---
 
@@ -535,13 +544,10 @@ bindings:
 
 The default keymap is embedded in the binary. To see all defaults:
 
-```bash
-# View the source keymap.yaml
-cat $(dirname $(which token))/keymap.yaml
-
-# Or check the repository
-# https://github.com/helgesverre/token/blob/main/keymap.yaml
-```
+- Open Settings → Keymap, which lists the merged embedded/user bindings
+- See [KEYBINDINGS.md](../KEYBINDINGS.md)
+- Or check the repository source:
+  https://github.com/helgesverre/token/blob/main/keymap.yaml
 
 ### Resetting to Defaults
 

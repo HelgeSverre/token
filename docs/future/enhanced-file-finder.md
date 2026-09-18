@@ -1,6 +1,6 @@
 # Enhanced File Finder
 
-Enhance the existing File Finder (Cmd+Shift+O) with persistent file indexing and improved fuzzy matching for sub-100ms search in large workspaces.
+Enhance the existing file finder (Cmd+Shift+O, the Files tab of Search Everywhere) with persistent file indexing and improved fuzzy matching for sub-100ms search in large workspaces.
 
 > **Status:** Future Enhancement
 > **Priority:** P2
@@ -28,26 +28,26 @@ Enhance the existing File Finder (Cmd+Shift+O) with persistent file indexing and
 
 ### Current State
 
-The File Finder (`Cmd+Shift+O`) is **already implemented** with:
+The file finder (`Cmd+Shift+O`) is **already implemented** as the Files tab of Search Everywhere with:
 
 ✅ **Implemented:**
-- Modal UI with search input and result list
-- Fuzzy matching using `nucleo` matcher library
+- Search Everywhere overlay (`ModalState::CommandPalette`) opened on `SearchTab::Files`; the standalone File Finder modal is retired (`ModalId::FileFinder` / `ModalState::FileFinder` still exist but are not what `Cmd+Shift+O` opens)
+- Fuzzy matching using the `nucleo-matcher` crate
 - File icon display with path truncation
 - Keyboard navigation (Up/Down, Enter, Escape)
 - Opens selected file in new tab
-- Reads files from workspace file tree on modal open
-- Limits results to 50 items
+- Reads files from workspace file tree lazily on first activation of the Files (or All) tab
+- Limits results to 100 items for an empty query, 50 for a matched query
 
 **Current Implementation:**
 - **Files:** `src/model/ui.rs` (FileFinderState, FileMatch)
-- **Matching:** `src/update/ui.rs` (fuzzy_match_files function)
-- **Rendering:** `src/view/mod.rs` (render_modals - FileFinder case)
-- **Keybindings:** Arrow keys navigate, Enter opens, Escape closes
+- **Matching:** `src/update/ui.rs` (build_file_finder_state → seeded_file_finder_state → fuzzy_match_files)
+- **Rendering:** `src/view/modal.rs` (Files tab / FileFinderState rendering)
+- **Keybindings:** `Command::FuzzyFileFinder` in `src/keymap/command.rs`; Arrow keys navigate, Enter opens, Escape closes
 - **Messages:** `UiMsg::OpenFuzzyFileFinder`, `ModalMsg::Confirm`
 
 **Performance Characteristics:**
-- Re-scans file tree on every modal open
+- Re-scans file tree on every Files tab activation
 - Searches all files on every keystroke
 - Works well for small-to-medium workspaces (<5,000 files)
 - Can be slow for large monorepos (>10,000 files)
@@ -56,12 +56,12 @@ The File Finder (`Cmd+Shift+O`) is **already implemented** with:
 
 The current implementation has performance and scalability issues:
 
-1. **Full scan on open** - Reads all files from file tree every time modal opens
+1. **Full scan on open** - Reads all files from file tree every time the Files tab is activated
 2. **No persistence** - Can't cache results between invocations
-3. **Limited to 50 results** - Hard-coded limit regardless of query quality
+3. **Limited to 50 results** - Hard-coded limit (100 for empty query) regardless of query quality
 4. **Filename-only matching** - Doesn't search in file paths
-5. **No recent files priority** - No special handling for recently opened files
-6. **No file system watching** - Can't track changes after modal opens
+5. **No recent files priority** - `model.recent_files` (`RecentFiles`, the persistent Cmd+E list) exists but `fuzzy_match_files` doesn't consult it
+6. **No index refresh** - The `notify`-based workspace watcher (`src/fs_watcher.rs`) refreshes the file tree, but the file list is snapshotted per tab activation
 
 ### Goals
 
@@ -75,7 +75,7 @@ The current implementation has performance and scalability issues:
 ### Non-Goals
 
 - Full-text search within files (separate feature: find in files)
-- Go to symbol/definition (LSP feature)
+- Go to symbol/definition (Search Everywhere already has a Symbols tab via `src/runtime/workspace_symbols.rs`; the file index should slot into the same overlay)
 - Remote file systems or network shares
 - Changing the existing UI or UX (enhancement is backend-only)
 
@@ -83,40 +83,42 @@ The current implementation has performance and scalability issues:
 
 ## Current Implementation
 
-### File Finder Flow (v0.3.13)
+### File Finder Flow
 
 ```
 User presses Cmd+Shift+O
         ↓
-UiMsg::OpenFuzzyFileFinder
+UiMsg::OpenFuzzyFileFinder → reopened_palette(model, SearchTab::Files)
         ↓
-Get files from workspace.file_tree.get_all_file_paths()
+ModalState::CommandPalette opens on the Files tab
         ↓
-Create FileFinderState with Vec<PathBuf>
+build_file_finder_state(): workspace.file_tree.get_all_file_paths()
+        ↓
+seeded_file_finder_state() creates FileFinderState with Vec<PathBuf>
         ↓
 User types → fuzzy_match_files() on every keystroke
         ↓
-nucleo::Matcher scores each file against query
+nucleo_matcher::Matcher scores each filename against query
         ↓
-Sort by score, display top 50 results
+Sort by score, display top 50 results (100 when query is empty)
 ```
 
 ### Performance Bottlenecks
 
-1. **Modal open:** O(n) file tree traversal
+1. **Files tab activation:** O(n) file tree traversal
 2. **Every keystroke:** O(n) fuzzy matching across all files
 3. **No caching:** Metadata (size, modified date) recomputed every time
 4. **Filename-only:** Can't search by path components
 
 ### Code Locations
 
-| Component | File | Lines |
-|-----------|------|-------|
-| State | `src/model/ui.rs` | 278-312 |
-| Fuzzy matching | `src/update/ui.rs` | 1086-1130 |
-| Modal opening | `src/update/ui.rs` | 127-152 |
-| Rendering | `src/view/mod.rs` | 1873-1996 |
-| Key handling | `src/runtime/input.rs` | 194-245 |
+| Component | File | Symbol |
+|-----------|------|--------|
+| State | `src/model/ui.rs` | `FileFinderState`, `FileMatch` |
+| Fuzzy matching | `src/update/ui.rs` | `fuzzy_match_files`, `update_file_finder_results` |
+| Modal opening | `src/update/ui.rs` | `UiMsg::OpenFuzzyFileFinder`, `build_file_finder_state` |
+| Rendering | `src/view/modal.rs` | `FileFinderState` / `ModalState::FileFinder` cases |
+| Key handling | `src/keymap/command.rs` | `Command::FuzzyFileFinder` |
 
 ---
 
@@ -190,27 +192,9 @@ fn compute_score(match_quality: MatchQuality, file: &IndexedFile, recent: bool) 
 
 ### Enhancement 4: Recent Files Priority
 
-**Problem:** No special handling for recently opened files.
+**Problem:** No special handling for recently opened files in file-finder ranking.
 
-**Solution:** Track recent files in `AppModel`, boost their score.
-
-```rust
-// Add to AppModel
-pub struct AppModel {
-    // ... existing fields ...
-    
-    /// Recently opened files (most recent first)
-    pub recent_files: Vec<PathBuf>,  // Limit to 20
-}
-
-impl AppModel {
-    pub fn mark_file_opened(&mut self, path: PathBuf) {
-        self.recent_files.retain(|p| p != &path);
-        self.recent_files.insert(0, path);
-        self.recent_files.truncate(20);
-    }
-}
-```
+**Solution:** Use the existing `model.recent_files` (`RecentFiles`, `src/recent_files.rs` — the persistent, pinnable Cmd+E list) to boost scores. No new tracking is needed; `fuzzy_match_files` just needs the recent paths passed in.
 
 ### Enhancement 5: Incremental Index Updates
 
@@ -389,9 +373,8 @@ pub struct AppModel {
     
     /// File index for enhanced quick file finder (None if no workspace)
     pub file_index: Option<FileIndex>,
-    
-    /// Recently opened files (most recent first, limit 20)
-    pub recent_files: Vec<PathBuf>,
+
+    // `recent_files: RecentFiles` already exists — reuse it for the boost.
 }
 
 impl AppModel {
@@ -411,15 +394,6 @@ impl AppModel {
                 }
             }
         }
-    }
-    
-    pub fn mark_file_opened(&mut self, path: PathBuf) {
-        // Remove if already present
-        self.recent_files.retain(|p| p != &path);
-        // Add at front
-        self.recent_files.insert(0, path);
-        // Keep only 20 most recent
-        self.recent_files.truncate(20);
     }
 }
 ```
@@ -467,11 +441,9 @@ pub struct FileFinderState {
 **Modify:** `src/model/mod.rs`
 
 - [ ] Add `file_index: Option<FileIndex>` to AppModel
-- [ ] Add `recent_files: Vec<PathBuf>` to AppModel
 - [ ] Implement `rebuild_file_index()` method
 - [ ] Call `rebuild_file_index()` when workspace opens
-- [ ] Implement `mark_file_opened()` method
-- [ ] Call `mark_file_opened()` when file is opened
+- [ ] Reuse the existing `recent_files: RecentFiles` for ranking (already populated on every file open)
 
 **Test:** File index is built when workspace opens
 
@@ -479,10 +451,10 @@ pub struct FileFinderState {
 
 **Modify:** `src/update/ui.rs`
 
-- [ ] Update `fuzzy_match_files()` to use `FileIndex::search()` if available
-- [ ] Fall back to current implementation if no index
-- [ ] Pass recent files to search function
-- [ ] Increase result limit from 50 to 100
+- [ ] Update `build_file_finder_state()` / `fuzzy_match_files()` to use `FileIndex::search()` if available
+- [ ] Fall back to current `get_all_file_paths()` implementation if no index
+- [ ] Pass `model.recent_files` to search function
+- [ ] Increase matched-query result limit from 50 to 100
 - [ ] Add path matching support
 
 **Test:** Search returns results in < 10ms for 10k files
@@ -491,7 +463,7 @@ pub struct FileFinderState {
 
 **Modify:** `src/model/workspace.rs`, `src/update/workspace.rs`
 
-- [ ] When file is added to workspace, call `file_index.add_file()`
+- [ ] When file is added to workspace (via `src/fs_watcher.rs` events / file-tree refresh), call `file_index.add_file()`
 - [ ] When file is removed, call `file_index.remove_file()`
 - [ ] Handle file renames (remove old + add new)
 - [ ] Add integration tests
@@ -500,7 +472,7 @@ pub struct FileFinderState {
 
 ### Phase 5: UI Enhancements (1-2 hours)
 
-**Modify:** `src/view/mod.rs`
+**Modify:** `src/view/modal.rs` (Files tab rendering)
 
 - [ ] Show file path highlights for path matches
 - [ ] Add indicator for recent files (★ icon)
@@ -699,20 +671,20 @@ This allows testing the new implementation without breaking existing functionali
 
 Beyond this enhancement:
 
-- **File system watching:** Use `notify` crate to detect file changes automatically
-- **Symbol search:** Add "Go to Symbol" with LSP integration (separate feature)
+- **File system watching:** A `notify`-based workspace watcher (`src/fs_watcher.rs`) and per-document parent-dir watcher (`src/runtime/file_watch.rs`) already exist; wire their events into incremental index updates
+- **Symbol search:** Search Everywhere already has a Symbols tab (`src/runtime/workspace_symbols.rs`); extend rather than add
 - **Workspace-wide search:** Full-text search across all files
 - **Index persistence:** Save index to disk for instant startup
-- **Ignore file support:** Respect `.gitignore` patterns
+- **Ignore file support:** Workspace ignore patterns exist (`Workspace::should_ignore` in `src/model/workspace.rs`); extend to respect `.gitignore` patterns
 
 ---
 
 ## References
 
-- **Current Implementation:** `src/update/ui.rs:1086-1130` - `fuzzy_match_files()`
-- **Nucleo Matcher:** Using `nucleo::Matcher` from `nucleo` crate
+- **Current Implementation:** `src/update/ui.rs` - `fuzzy_match_files()`, `build_file_finder_state()`
+- **Nucleo Matcher:** Using `nucleo_matcher::Matcher` from the `nucleo-matcher` crate
 - **File Tree:** `src/model/workspace.rs` - `FileTree` and file traversal
-- **Modal System:** `src/model/ui.rs` - `FileFinderState` and modal rendering
+- **Modal System:** `src/model/ui.rs` - `FileFinderState`; rendering in `src/view/modal.rs`
 - **Similar Projects:** 
   - VS Code's Quick Open uses a persistent index
   - Sublime Text's fuzzy finder pre-computes file metadata

@@ -1,5 +1,23 @@
 # Refactoring audit and CPU profiling — 2026-09-06
 
+> **Status:** Archived 2026-09-17. Historical prepend-style verification
+> journal (2026-09-06 to 2026-09-09); code and tests are authoritative. All
+> eight ranked findings and the three "recommended next work" items from the
+> 2026-09-08 reconciliation (external-file change protection, session restore,
+> indent guides) shipped in [v0.7.0](../CHANGELOG.md) (2026-09-11), so the
+> "remain planned" wording below is a snapshot, not current state. `HANDOFF.md`,
+> which this journal says must stay, was removed on 2026-09-09 (`f27ad2c`). The
+> disposition-table row "ordinary-edit migration remains" (finding 1) was
+> closed by this journal's own follow-ups (indexed forward-edit positions and
+> lossless per-pane undo selections, 2026-09-07); the later
+> [completion-refactoring-plan](completion-refactoring-plan.md) (archived
+> 2026-09-17, Unreleased "Completion" changelog entry) reworked completion
+> acceptance on top of that shared transaction. Finding 2 (cold Find miss cost)
+> is closed at its first-stage optimization; no live tracker exists. Benchmark
+> evidence lives in [docs/benchmark](../benchmark/); user-facing behaviour is
+> documented in [docs/user](../user/). The `/tmp/token-*` logs cited below are
+> ephemeral and no longer exist. Nothing remains open.
+
 ## Session restore implementation and native restarts — 2026-09-08
 
 Implemented in `d3e4269`. The model captures versioned, text-free session
@@ -261,7 +279,7 @@ indent guides, gestures, advanced folding, macros, Sema and the web proposal.
 Important distinctions:
 
 - Settings keymap implementation is complete, but its cross-platform verification
-  gate remains open in `docs/future/settings-keymap.md`.
+  gate remains open in `docs/archived/settings-keymap.md`.
 - Autocomplete's completed menu/provider/projection work does not complete edit
   prediction or remaining live-provider/native checks. Snippet menu expansion
   also does not complete the separate interactive tabstop/mirror/user-snippet plan.
@@ -389,7 +407,7 @@ and overlay layout drive painting and pointer targets, including edge clamping.
 Existing layout/hover and keycap tests were extended instead of adding another
 fixture or rendering framework.
 
-Native macOS [menu capture](data/2026-09-08/context-menu-content-width.png)
+Native macOS [menu capture](../dev/data/2026-09-08/context-menu-content-width.png)
 shows all editor-menu labels untruncated, with compact centered shortcuts and
 the selected row aligned to the panel. It was captured from the task-owned
 debug app with isolated configuration and an unmodified temporary document;
@@ -462,11 +480,11 @@ isolated configuration and real shell PID 11664:
   file-explorer focus and an actively edited CSV cell.
 - A temporary `q w -> Copy` editor-only chord left `qword` intact in Settings
   search and a shell `printf` command. Captures:
-  [Settings input](data/2026-09-08/global-chords-settings-input.png),
-  [terminal input](data/2026-09-08/global-chords-terminal-input.png).
+  [Settings input](../dev/data/2026-09-08/global-chords-settings-input.png),
+  [terminal input](../dev/data/2026-09-08/global-chords-terminal-input.png).
 - CSV cell text `alphaqword` remained pending after opening/closing Settings;
   Escape then cancelled it, leaving the original `alpha,beta\none,two\n`
-  document unmodified. [Preserved cell edit](data/2026-09-08/global-chords-csv-preserved.png).
+  document unmodified. [Preserved cell edit](../dev/data/2026-09-08/global-chords-csv-preserved.png).
   Earlier setup attempts in plain-text mode were undone before entering CSV view.
 - The temporary chord was removed afterward. The shell was closed, Quit exited
   the editor with status 0, and the task container was stopped. Both synthetic
@@ -515,7 +533,7 @@ for that exact control path, `syspolicyd` recorded XProtect results at
 arrived at 17:59:31.611 (2.886 s later). A second copied control finished in
 0.153 s; its policy evaluation completed promptly too. The attempted sampler
 was not needed because that second process exited before the observation limit.
-[Policy log](data/2026-09-08/cold-launch-policy.txt).
+[Policy log](../dev/data/2026-09-08/cold-launch-policy.txt).
 
 This demonstrates a host execution-policy delay outside the test body and is
 consistent with [nextest's macOS guidance](https://nexte.st/docs/installation/macos/).
@@ -551,10 +569,10 @@ configuration, an unchanged text fixture and real `/bin/sh` sessions.
 
 - Creating the second tab with the native `+` control produced independent
   shell PIDs 205 and 241. Each displayed its own OSC title and output.
-  [Two-tab capture](data/2026-09-08/linux-terminal-tabs.png).
+  [Two-tab capture](../dev/data/2026-09-08/linux-terminal-tabs.png).
 - After printing 40 numbered lines and pressing Shift+PageUp, switching to the
   second tab and clicking the first restored lines 29–35 and the same `6/36`
-  history offset. [Retained-history capture](data/2026-09-08/linux-terminal-history.png).
+  history offset. [Retained-history capture](../dev/data/2026-09-08/linux-terminal-history.png).
 - Clicking `x` on the first tab removed PID 205 while PID 241 remained live.
   Closing the last tab later removed PID 241 as well.
 - A normal click on `http://127.0.0.1:53449/plain` made no HTTP request during
@@ -562,8 +580,8 @@ configuration, an unchanged text fixture and real `/bin/sh` sessions.
   opened it through `xdg-open` and the isolated desktop's default browser.
 - An OSC 8 label (`label link`) also underlined on Ctrl-hover and opened its
   distinct `/osc8` target, not the displayed text.
-  [Hover capture](data/2026-09-08/linux-terminal-osc8-hover.png) and
-  [browser capture](data/2026-09-08/linux-terminal-browser.png).
+  [Hover capture](../dev/data/2026-09-08/linux-terminal-osc8-hover.png) and
+  [browser capture](../dev/data/2026-09-08/linux-terminal-browser.png).
 
 The acceptance server bound only to container loopback. Its request output was:
 
@@ -607,8 +625,8 @@ Three logically separate commits address observed failures:
   `echo hello-from-pty\r\n# hello-from-pty\r\n# `: execution succeeded, but the
   startup prompt broke the exact-line assertion. Empty PS1/PS2 isolates output;
   the same assertion and five-second deadline remain. Diagnostic output is
-  printed only on failure. See the [reproduction](data/2026-09-08/linux-pty-prompt-failure.txt)
-  and [five passing repeats](data/2026-09-08/linux-pty-prompt-fixed.txt).
+  printed only on failure. See the [reproduction](../dev/data/2026-09-08/linux-pty-prompt-failure.txt)
+  and [five passing repeats](../dev/data/2026-09-08/linux-pty-prompt-fixed.txt).
 - `c104ed9`: copying dropped the last clipboard handle, losing X11 ownership
   without a clipboard manager. Copy/paste effects now share one persistent,
   ordered worker. The same commit fixes shortcut keys incorrectly allowing two
@@ -629,7 +647,7 @@ Native acceptance:
 - Reverse-drag terminal selection was visible before the clipboard fix, but
   external `xclip` retrieval failed with `target STRING not available`.
   Afterward Ctrl+Shift+C returned exactly `copy this text`, including a later
-  read after Settings checks. [Selection capture](data/2026-09-08/linux-terminal-selection.png).
+  read after Settings checks. [Selection capture](../dev/data/2026-09-08/linux-terminal-selection.png).
 - Settings displayed Ctrl chips and context hints. Cancelling capture created
   no keymap file; pointer Save wrote overrides and reported success.
 - A saved Ctrl+Alt+K Ctrl+Alt+S shortcut initially failed despite correct
@@ -682,7 +700,7 @@ An isolated native macOS editor (PID 52275, window 80689, scale 2) used an owned
 bound only to `127.0.0.1:53449` served the acceptance page:
 
 - A normal click on the printed URL produced no HTTP request.
-- Cmd-hover underlined the target: [capture](data/2026-09-08/terminal-link-hover.png).
+- Cmd-hover underlined the target: [capture](../dev/data/2026-09-08/terminal-link-hover.png).
 - Cmd-click opened Chrome; the server recorded `GET /` with status 200 at
   17:03:16 in the server log. Its incidental favicon request returned 404.
 - An OSC 8 label rendered in the same PTY. A follow-up native click was stopped
@@ -730,7 +748,7 @@ separate configuration, disabled LSP/completion and an unchanged text fixture.
 Native checks used guarded pointer events and PID-targeted keys:
 
 - Reverse drag selected `copy this text`, with a visible selection wash;
-  [capture](data/2026-09-08/terminal-selection.png). Cmd+C copied that exact text.
+  [capture](../dev/data/2026-09-08/terminal-selection.png). Cmd+C copied that exact text.
 - Double-click selected/copied `this`; triple-click selected/copied
   `copy this text\n`.
 - Creating another shell and returning to the first retained its line selection;
@@ -776,10 +794,10 @@ exposed window's owner and restored the pointer afterward.
 
 - **NewTerminal**, then native `+`, started independent shell PIDs 78164/78324
   in editor PID 78086. OSC titles became `first` and `second`.
-  [Two-tab capture](data/2026-09-08/terminal-tabs.png).
+  [Two-tab capture](../dev/data/2026-09-08/terminal-tabs.png).
 - After `seq 1 40` and Shift+PageUp in the first shell, switching to the second
   and clicking the first restored the same visible lines 29–35 and `6/35`
-  history indicator. [Retained-history capture](data/2026-09-08/terminal-tab-history.png).
+  history indicator. [Retained-history capture](../dev/data/2026-09-08/terminal-tab-history.png).
 - Native `x` on the first tab removed PID 78164 while PID 78324 remained live;
   closing the last tab removed that shell. Explicit Quit closed the unchanged
   editor. The earlier smoke run independently observed the same isolated-close
@@ -798,11 +816,11 @@ The first full run passed all 2,583 tests plus two doctests
 (`0aa32568-a8cd-473e-ba31-0d3afb20e666`). A post-paint-fix full run
 (`9a85df33-a923-429e-ae65-bdc8aa3dadae`) stopped after ten existing fake-LSP
 startup/handshake failures, with 454 tests not run;
-[complete output](data/2026-09-08/terminal-tabs-full-suite-failure.txt).
+[complete output](../dev/data/2026-09-08/terminal-tabs-full-suite-failure.txt).
 During its slow discovery, sampling owned PID 80661 about 25 seconds after
 launch found all 891 samples at `_dyld_start + 0`, with a 112 KiB footprint and
 no available binary-image description;
-[sample](data/2026-09-08/terminal-test-discovery.sample.txt). This establishes
+[sample](../dev/data/2026-09-08/terminal-test-discovery.sample.txt). This establishes
 pre-application startup delay in that observed process, not the cause of every
 handshake failure or the older nextest output-handle warning. No timeout was
 raised and no test was suppressed. An unchanged full repeat
@@ -867,11 +885,11 @@ unrelated window was changed. This is interaction evidence, not a benchmark.
 
 - Right-clicking the file opened its file-tree context menu.
 - Moving to **Refresh Tree** painted a distinct hover wash while **Open** remained
-  keyboard-selected (index 0). See the [native capture](data/2026-09-08/context-menu-hover.png).
+  keyboard-selected (index 0). See the [native capture](../dev/data/2026-09-08/context-menu-hover.png).
 - Moving onto a separator cleared hover without moving keyboard selection;
-  see the [separator capture](data/2026-09-08/context-menu-separator.png).
+  see the [separator capture](../dev/data/2026-09-08/context-menu-separator.png).
 - Clicking **Open** dismissed the popup and opened the exact unchanged fixture
-  text. The [state extract](data/2026-09-08/context-menu-state.txt) records both
+  text. The [state extract](../dev/data/2026-09-08/context-menu-state.txt) records both
   keyboard selection and acceptance. The owned editor exited normally afterward.
 
 The original artifacts and guarded pointer helper remain in
@@ -883,7 +901,7 @@ The context-menu plan was already archived; no other plan becomes eligible here.
 For the intermittent nextest warning, a bounded 100-iteration run of the two
 named tests passed all 200 executions without warnings, using nextest 0.9.118,
 default timeouts and `--status-level leak`. Run ID:
-`bd13969d-15c1-4f77-a1df-17809a767de0`; [command and summary](data/2026-09-08/exit-warning-focused-summary.txt).
+`bd13969d-15c1-4f77-a1df-17809a767de0`; [command and summary](../dev/data/2026-09-08/exit-warning-focused-summary.txt).
 [Nextest's detection](https://nexte.st/docs/features/leaky-tests/) concerns output
 handles remaining open after process exit, not heap memory. The Settings case
 constructs deterministic state/layout and has no subprocess launch; the named
@@ -894,15 +912,15 @@ Full-suite concurrency exposed separate startup failures:
 
 - `cdea2128-0dea-4c23-a722-3aebda515542`: the first of three requested iterations
   stopped with 2,580 passing tests and one managed-server failure after 1.032 s.
-  [Full output](data/2026-09-08/exit-warning-full-stress.txt).
+  [Full output](../dev/data/2026-09-08/exit-warning-full-stress.txt).
 - `03e94272-052c-4b14-8642-411cb7fc3695`: the diagnostic repeat stopped on eight
   fake-LSP initialization timeouts; 792 tests were not run. It did not reach the
-  managed-server case. [Full output](data/2026-09-08/exit-warning-diagnostic-stress.txt).
+  managed-server case. [Full output](../dev/data/2026-09-08/exit-warning-diagnostic-stress.txt).
 - `48d803b2-1364-471a-a910-d3a9f5c1eedb`: isolated managed-server execution
   reproduced an explicit **startup timed out** reply at its existing one-second
-  startup deadline. [Failure](data/2026-09-08/managed-startup-timeout.txt).
+  startup deadline. [Failure](../dev/data/2026-09-08/managed-startup-timeout.txt).
 - `ae0cd385-adf0-4190-82c1-0ca85cf20ccb`: ten later lifecycle executions passed
-  unchanged timeout/cleanup assertions. [Repeat](data/2026-09-08/managed-startup-repeat.txt).
+  unchanged timeout/cleanup assertions. [Repeat](../dev/data/2026-09-08/managed-startup-repeat.txt).
 
 The managed fixture's assertion (`aa27e5e`) now prints the actual reply and child-start
 marker on failure; no test was added, timeout increased, assertion weakened or
@@ -3286,8 +3304,8 @@ This verifies native macOS keyboard/persistence and live modal rendering, not
 physical mouse interaction, Windows/Linux GUI behavior or the separate real
 rust-analyzer completion dropdown report. The 20-frame debug presentation check
 is not release profiling and supports no speedup claim. Settings v1 is archived
-at [settings-page.md](../archived/settings-page.md), while its unimplemented Phase 4
-remains active in [Settings Keymap Tab](../future/settings-keymap.md). Earlier
+at [settings-page.md](settings-page.md), while its unimplemented Phase 4
+remains active in [Settings Keymap Tab](settings-keymap.md). Earlier
 Phase 2 limitations below describe that historical checkpoint, not current status.
 No cache, user config or unrelated file was deleted.
 

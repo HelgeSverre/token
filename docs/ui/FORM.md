@@ -7,7 +7,7 @@
 <!-- token-ui-mockup:end FORM -->
 
 This chapter documents the only open-ended form workflow currently implemented:
-the LSP and inline-provider editor in Settings. It is deliberately not a claim
+the formatter, LSP and inline-provider record editor in Settings. It is deliberately not a claim
 that Token has a general `Form` widget. Durable configuration stays in
 `AppModel.config`; the modal owns a typed, disposable draft; commands perform
 persistence and inspection. Typing a bad executable must not change process
@@ -33,7 +33,7 @@ variable row heights, scrolling, compact width, and a popup change it.
 
 ## Current representation and ownership
 
-**Current excerpt** — [forms.rs](../../src/settings/forms.rs#L180):
+**Current excerpt** — [forms.rs](../../src/settings/forms.rs#L208):
 
 ```rust
 pub(crate) struct FormField {
@@ -61,13 +61,15 @@ pub(crate) struct SettingsForm {
     pub open_select: Option<usize>,
     pub select_cursor: usize,
     pub preset: Option<usize>,
+    pub preset_id: Option<String>,
 }
 ```
 
-`FormKind` says which domain decoder/encoder is valid: a language server or
-an inline provider, optionally with the persisted record identity being edited.
+`FormKind` says which domain decoder/encoder is valid: a formatter
+(`FormKind::Formatter`), a language server or an inline provider, optionally
+with the persisted record identity being edited.
 `fields` carries _draft text_, including each `StringBuffer`, cursor,
-selection, and undo history. `choices.active`, `enabled`, and `preset` are
+selection, and undo history. `choices.active`, `enabled`, `preset`, and `preset_id` are
 also draft inputs. They are not views of `EditorConfig` once opened. This is
 separate from the Settings collection **master** toggle: that path changes the
 live configuration directly (and saves it) rather than changing `form.enabled`.
@@ -85,6 +87,11 @@ The durable change is a value, not a closure over the form:
 
 ```rust
 pub enum SettingsChange {
+    Formatter {
+        previous: Option<LanguageId>,
+        language: LanguageId,
+        value: FormatterConfig,
+    },
     LanguageServer {
         previous_id: Option<String>,
         id: String,
@@ -102,8 +109,8 @@ pub enum SettingsChange {
 
 `SettingsChange::apply(&mut EditorConfig)` applies a validated form change.
 The form's `change(&config)` validates and builds it first: ids, language
-conflicts, executable/argument restrictions, structured settings, and provider
-values. This makes validation pure and allows tests to prove a failed validation
+conflicts (including `FormError::DuplicateFormatter`), executable/argument
+restrictions, structured settings, and provider values. This makes validation pure and allows tests to prove a failed validation
 leaves configuration untouched. It is not the only persistence mutation in the
 Settings family: `ToggleMaster` delegates LSP master enablement or directly
 flips `model.config.completion.inline.enabled` and emits
@@ -147,7 +154,7 @@ server/provider setting, not renderer-wide disabled state.
 > **Current ordering gap:** SettingsMsg::FormApplied calls
 > SettingsChange::apply(&mut model.config) whenever result is Ok, then filters
 > the current form with Arc::ptr_eq for saving/status/form.applied work
-> ([update/settings.rs](../../src/update/settings.rs#L688)). Thus the session
+> ([update/settings.rs](../../src/update/settings.rs#L737)). Thus the session
 > token protects presentation state for that reply, but does **not** prevent a
 > stale successful apply reply from mutating durable config. This is documented
 > behavior/defect, not a claim that this documentation change fixes it. A
@@ -197,6 +204,11 @@ if row.w < round(400 * s):
 else:
     control = (row.x, row.y, row.w, round(32*s))
 ```
+
+Plain `SettingInput` rows and select anchors additionally switch to a
+horizontal label/control layout with a `124*s` inset once
+`row.w >= round(440*s)` (`settings_page.rs`), so the rule above is the control
+rect, not the whole row layout.
 
 The input surface expands input by `4*s`; `input_rect` reserves an adjacent
 Browse action. `TextFieldOptions::for_text_area` or `for_text_box` then
@@ -286,9 +298,12 @@ claim.
 
 ## Verification cases
 
-Existing catalog/rename/removal coverage is in
-[forms.rs tests](../../src/settings/forms.rs#L30); layout/hit agreement is in
-[settings-page tests](../../src/view/settings_page.rs#L1510). Add these update
+Existing catalog/rename/removal coverage is in the
+[formatter](../../src/settings/forms/formatter.rs#L157),
+[provider](../../src/settings/forms/provider.rs#L313) and
+[tooling](../../src/settings/forms/tooling.rs#L133) form tests plus
+[catalog.rs tests](../../src/settings/catalog.rs#L219); layout/hit agreement is in
+[settings-page tests](../../src/view/settings_page.rs#L1491). Add these update
 and runtime vectors:
 
 | Initial                        | Action                                   | Expected                                                                                       |

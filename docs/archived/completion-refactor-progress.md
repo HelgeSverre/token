@@ -1,5 +1,18 @@
 # Completion refactor progress
 
+> **Status:** Archived 2026-09-17 — execution record for the completion-sessions
+> refactor, merged to main as PR #12 (`1d30fe0`); the feature is in the
+> Unreleased section of `../CHANGELOG.md` (post-v0.7.0). Phases 0–6 and review
+> findings 1–3 all shipped; the source map below matches current `src/`. The
+> living contract is [`../feature/autocomplete.md`](../feature/autocomplete.md)
+> and the plan it executed is
+> [`completion-refactoring-plan.md`](completion-refactoring-plan.md).
+> The `refactor/completion-sessions` branch no longer exists locally, and the
+> `target/verification/*.txt` outputs in the verification record were ephemeral
+> build artifacts, not files in the repo. No open follow-ups; the deferred items
+> (snippet sessions, `inlineCompletion`, streaming, plugin registry) were out of
+> scope by design.
+
 ## Baseline
 
 - Branch: `refactor/completion-sessions`

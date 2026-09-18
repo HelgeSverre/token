@@ -25,7 +25,7 @@ external-change-since-exit warnings are deferred. Current disk contents always
 win at startup. Existing `--new` / `-n` skips restore; no additional
 `--no-session` flag or SessionManager facade is needed. Implementation `d3e4269`
 passed the full macOS suite, strict lint and native process restart checks.
-See the [verification record](../dev/refactoring-audit-2026-09-06.md#session-restore-implementation-and-native-restarts--2026-09-08).
+See the [verification record](refactoring-audit-2026-09-06.md#session-restore-implementation-and-native-restarts--2026-09-08).
 Unchecked items below describe the original proposal, not unfinished gates for
 the accepted saved-file slice.
 

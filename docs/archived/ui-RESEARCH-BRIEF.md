@@ -1,5 +1,15 @@
 # Token UI component research brief
 
+> **Status:** Archived 2026-09-17. Completed research charter, scoped 2026-09-12;
+> its deliverables (36 component chapters, README consolidation, FOUNDATIONS,
+> IMPLEMENTATION-ROADMAP, INTELLIJ-CROSSWALK) shipped in commits 699c114 and
+> ece9c51, with TECHNICAL-STANDARD following in 1f7828e (all unreleased, after
+> v0.7.0). Living documentation is the `docs/ui/` catalog, starting at
+> `docs/ui/README.md`; open implementation slices are tracked in
+> `docs/ui/IMPLEMENTATION-ROADMAP.md`, not here. Kept for provenance of the
+> design questions and confidence conventions. Code and the `docs/ui` chapters
+> are authoritative over this brief.
+
 Research scope established 2026-09-12. This work specifies components; it does
 not authorize replacing Settings or implementing a new widget framework.
 

@@ -1,5 +1,19 @@
 # Code Folding - Basic (Indentation-Based)
 
+> **Status:** Archived 2026-09-17. Code folding shipped in v0.7.0 (2026-09-11)
+> via the coordinated plan in [file-policy-and-folding-plan.md](file-policy-and-folding-plan.md),
+> with syntax-based detection, indentation fallback, gutter chevrons, per-pane
+> fold state and fold persistence. Living documentation: [docs/user/folding.md](../user/folding.md);
+> further scope is tracked in [folding-advanced.md](../feature/folding-advanced.md).
+> Corrections to the sketch below: the implemented API is `src/folding/mod.rs`
+> (`FoldRegion`, `FoldAction`, `FoldCandidates`, `FoldProjection`, `FoldState`,
+> `indentation()`), `src/folding/persistence.rs` and `src/syntax/folding.rs`, not
+> `src/folding/{region,indent,gutter}.rs` with `FoldingState`/`FoldMsg`; the
+> commands are `ToggleFold`/`CollapseFold`/`ExpandFold`/`CollapseAllFolds`/`ExpandAllFolds`
+> with no default keybindings (command palette, gutter chevrons, or user-bound keys), not the keybinding table
+> below; and the "non-goals" of syntax detection and persistence both shipped.
+> No open follow-ups from this document. Kept for design history only.
+
 > **Implementation plan updated 2026-09-09:** Use the
 > [coordinated save, EditorConfig, and folding plan](file-policy-and-folding-plan.md#basic-code-folding).
 > The historical sketch below is superseded. Folding must compose with the
@@ -13,7 +27,7 @@ Collapse and expand code regions based on indentation levels
 > **Created:** 2025-12-20
 > **Milestone:** 4 - Hard Problems
 > **Feature ID:** F-150a
-> **Next Phase:** [folding-advanced.md](folding-advanced.md)
+> **Next Phase:** [folding-advanced.md](../feature/folding-advanced.md)
 
 ---
 
@@ -117,7 +131,7 @@ src/
     └── geometry.rs              # GutterLayout fold hit targets
 ```
 
-Basic folding should share the same future text viewport abstraction as soft wrap. Gutter chevrons and gutter click routing go through the shared decoration contract in [editor-decorations.md](../archived/editor-decorations.md) (`GutterLayout` fold lane, the `LineMarks` fold slot, lane-aware `EditorGutter` hit target with press/drag suppression) rather than the render-only sketches later in this document.
+Basic folding should share the same future text viewport abstraction as soft wrap. Gutter chevrons and gutter click routing go through the shared decoration contract in [editor-decorations.md](editor-decorations.md) (`GutterLayout` fold lane, the `LineMarks` fold slot, lane-aware `EditorGutter` hit target with press/drag suppression) rather than the render-only sketches later in this document.
 
 `FoldingState` owns fold regions and collapse state, but visual row iteration, gutter hit-testing, cursor reveal, and scroll capacity should eventually flow through shared viewport state rather than a separate render-only mapping.
 
@@ -665,4 +679,4 @@ fn test_visual_line_mapping() {
 ## References
 
 - [VS Code Folding](https://code.visualstudio.com/docs/editor/codebasics#_folding)
-- [folding-advanced.md](folding-advanced.md) - Next phase: syntax-based folding
+- [folding-advanced.md](../feature/folding-advanced.md) - Next phase: syntax-based folding

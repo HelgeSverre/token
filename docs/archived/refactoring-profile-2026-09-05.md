@@ -1,5 +1,22 @@
 # Refactoring and production-path profiling — 2026-09-05
 
+> **Status:** Archived 2026-09-17 — historical report of a completed pass; all
+> changes described below shipped in v0.7.0 (2026-09-11). Measurements are a
+> 2026-09-05 snapshot, not current baselines; current numbers live in
+> `../benchmark/` (see `../benchmark/2026-09-08-*.md`). Living profiling
+> documentation is `../PROFILING.md`. Corrections: `HANDOFF.md` was a temporary
+> session file and no longer exists (the soft-wrap work is documented in
+> `soft-wrap.md`); `profile-workloads` now also has `find-cold`,
+> `sample-find-cold` and `sample-find-worker` modes (see `just --list`); the
+> release-only unused `revision` warning in `src/update/syntax.rs` has since
+> been resolved. Remaining opportunity 1 is partially addressed (Find now runs
+> on an async worker, `src/runtime/find_worker.rs`, and overview marks were
+> optimized on 2026-09-08), but the result set is still rebuilt whole rather
+> than incrementally. Opportunities 2–5 remain open as of 2026-09-17: no
+> target-plus-selection-policy movement API, feature-owned undo/cursor
+> reconciliation, `fs::`/`read_dir` still in nine `src/update/*.rs` files, and
+> `benches/hot_paths.rs` still carries copied implementation comparisons.
+
 This pass preserves the uncommitted soft-wrap/inline/config work described in
 `HANDOFF.md`. Nothing was committed or published. The older feature roadmap is
 not part of this completion claim.

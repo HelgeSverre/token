@@ -10,8 +10,12 @@
 
 Token has a checkbox **mark painter**, not a semantic Checkbox widget.
 render_checkbox in [controls.rs:9](../../src/view/controls.rs#L9) draws a caller
-supplied square. Settings recognizes exactly labels ["Off", "On"] as a
-checkbox-like form accessory ([settings_page.rs:114](../../src/view/settings_page.rs#L114)).
+supplied square. Settings renders and hit-tests a checkbox when the row's
+Accessory::Choices carries presentation == ChoicePresentation::Checkbox
+([overlay_surface.rs:377](../../src/view/overlay_surface.rs#L377)), derived from
+RowKind by choice_presentation ([settings.rs:132](../../src/settings.rs#L132))
+and laid out by checkbox_rect ([settings_page.rs:121](../../src/view/settings_page.rs#L121)).
+The Off/On labels come from BOOL_LABELS but do not select the control kind.
 The gallery fixtures checkbox.off and checkbox.on are static paint samples.
 
 The actual Settings flow is:
@@ -74,8 +78,8 @@ merge their ownership.
 | Event                           | Preconditions                                                   | Current state/effect                                        |
 | ------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------- |
 | render checked                  | projected Accessory::Choices.active==Some(1), or master enabled | accent square + check                                       |
-| pointer inside box              | labels exactly Off/On                                           | OverlayHit::Choice with opposite index                      |
-| pointer elsewhere in Off/On row | same row                                                        | OverlayHit::Row, not toggle                                 |
+| pointer inside box              | presentation == Checkbox                                        | OverlayHit::Choice with opposite index                      |
+| pointer elsewhere in that row   | same row                                                        | OverlayHit::Row, not toggle                                 |
 | choice accepted                 | FormEnabled: choice 0/1                                         | enabled=choice==1; clear field focus; mark draft changed    |
 | choice accepted                 | FormChoice                                                      | validate choice<label count; set active; mark draft changed |
 | collection master click         | collection form                                                 | ToggleMaster; LSP/provider owner chooses command/effect     |
@@ -83,8 +87,8 @@ merge their ownership.
 | press/release/cancel/focus loss | no checkbox state exists                                        | no checkbox transition                                      |
 | disabled/read-only/mixed        | no representation                                               | no semantic behaviour                                       |
 
-The update path is [update/settings.rs:137](../../src/update/settings.rs#L137)
-for form choices/enabled and [update/settings.rs:544](../../src/update/settings.rs#L544)
+The update path is [update/settings.rs:121](../../src/update/settings.rs#L121)
+for form choices/enabled and [update/settings.rs:590](../../src/update/settings.rs#L590)
 for collection master. Existing visual fixtures do not establish keyboard or
 assistive semantics.
 
@@ -191,7 +195,7 @@ replacement also invalidates its raw active-index interpretation. No interaction
 cache or timing claim exists.
 
 Existing coverage is static gallery paint only
-([model/gallery.rs:304](../../src/model/gallery.rs#L304)). Add or preserve these
+([model/gallery.rs:400](../../src/model/gallery.rs#L400)). Add or preserve these
 tests at the owner level:
 
 | Initial condition             | Action                                       | Expected                                |

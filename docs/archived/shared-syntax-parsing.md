@@ -1,5 +1,15 @@
 # Shared syntax parsing: verification
 
+> **Status:** Archived 2026-09-17 — point-in-time verification report for the
+> shared document-tree parsing refactor, shipped in commit `4959cbc`
+> (2026-09-14, after v0.7.0; unreleased, no changelog entry as it is an internal
+> refactor). All figures and symbols below were re-checked against the tree on
+> archiving: `parse_document_tree` in `src/syntax/parser.rs` has four callers,
+> the `shared_parse_edits_match_fresh_highlighting` regression test and the
+> `alternating_document_edit` benchmark (`benches/syntax.rs`) remain. No
+> follow-up work is open. The code and tests are the living reference; this
+> document is kept for historical benchmark context only.
+
 The generic, Markdown, HTML, and Vue highlighting paths now share host-tree
 parsing and cache replacement. Each path retains its existing highlighting and
 injection behavior. The shared operation returns the previous edited tree and

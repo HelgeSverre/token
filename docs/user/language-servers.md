@@ -63,7 +63,7 @@ not a separate class of privileged servers or a runtime fallback.
 | Go                               | `gopls`                      | `gopls`                              | `go.work`, `go.mod` |
 | JavaScript, TypeScript, JSX, TSX | `typescript-language-server` | `typescript-language-server --stdio` | `package.json`      |
 | Python                           | `ty`                         | `ty server`         | `pyproject.toml`    |
-| PHP, Blade                       | `phpantom`                   | `phpantom_lsp`                       | `composer.json`     |
+| PHP                              | `phpantom`                   | `phpantom_lsp`                       | `composer.json`     |
 | Sema                             | `sema`                       | `sema lsp`                           | `sema.toml`         |
 
 Python uses [ty](https://docs.astral.sh/ty/editors/) for language services and
@@ -221,7 +221,7 @@ language servers; see [editor configuration](config-editor.md).
 
 ## Troubleshooting
 
-1. Check **Settings → LSP** for the master switch, server switch, executable,
+1. Check **Settings → Language servers** for the master switch, server switch, executable,
    and status. Installing a server alone does not override a disabled switch.
 2. Open the project's directory, not just an unrelated file, and allow indexing
    to finish. Verify the executable runs from your terminal.
@@ -239,9 +239,11 @@ See also [completion and documentation controls](config-editor.md#hover-document
 
 In Settings → Language Servers, choose Add language server and use **Start from**
 to select a preset or **Custom**. Presets fill the editable executable, arguments,
-languages, and root markers. The bundled choices are rust-analyzer, TypeScript
-Language Server, ty, gopls, PHPantom, and Sema. Settings → Formatting has the same
-workflow, initially offering Ruff for Python.
+languages, and root markers. The bundled choices are the six initial presets
+(rust-analyzer, TypeScript Language Server, ty, gopls, PHPantom, and Sema) plus
+clangd, HTML, CSS/SCSS, JSON, YAML, Marksman, Lua and Bash. Settings → Formatting
+has the same workflow, offering Ruff, Prettier, rustfmt, gofmt, clang-format and
+shfmt.
 
 The Installation section shows prerequisites, copyable commands where available,
 and links to upstream instructions. Run the copied command in your terminal, then

@@ -290,13 +290,16 @@ Type "hello" quickly → 1 undo entry ("hello")
 
 - Large paste operations are single entries
 - May cause memory pressure with huge undo stacks
-- Consider: undo stack size limit (not currently implemented)
+- `Document` stacks are unbounded; the shared editable-field history
+  (`src/editable/history.rs`) is trimmed to `max_size` (default 1000)
 
 ### External File Changes
 
 If file changes externally and user has undo history:
-- Current: undo history remains (may produce inconsistent states)
-- Future: consider clearing or marking undo stack
+- An external reload (auto-reload, or the Reload action in the conflict dialog)
+  replaces the buffer and clears both undo and redo stacks (`finish_load` in
+  `src/update/app.rs`)
+- A deferred conflict (Keep Editing) leaves the buffer and history untouched
 
 ---
 

@@ -43,10 +43,10 @@ separate future work; Windows/Linux GUI and physical-pointer checks remain.
 ## Current queue (in order)
 
 1. **Inline completion Phase 5+** — [autocomplete](../feature/autocomplete.md#phase-5-future): complete the remaining native IME/platform verification, then edit prediction, retrieval/provider and completion work. Multi-row/mid-line ghost projection has automated geometry/lifecycle/pixel coverage, isolated macOS keyboard/pointer/resize checks and release-stage profiling recorded in the audit. Phase 3's opt-in idle recency context, raw FIM formats/inference, partial acceptance, alternative cycling, bounded LRU reuse, conservative post-cache filters and cancelable transports are implemented. Recency-stage profiling identified the implemented token-index optimization. Live model/server validation and the full native language/platform matrix remain unverified.
-2. **Settings Keymap Tab** ([follow-up plan](../future/settings-keymap.md)) — merged binding list, conflict detection, chord capture/rebinding, override persistence and base-keymap choice remain future work.
+2. **Settings Keymap Tab** ([follow-up plan](settings-keymap.md)) — merged binding list, conflict detection, chord capture/rebinding, override persistence and base-keymap choice remain future work.
 3. LSP workspace-symbols → Search Everywhere Symbols tab; usages panel (popup shipped).
 
-The [refactoring audit](../dev/refactoring-audit-2026-09-06.md) tracks the parallel
+The [refactoring audit](refactoring-audit-2026-09-06.md) tracks the parallel
 consolidation/performance work and remaining file-effect boundary. Completed
 damage tracking and palette history plans are in the [documentation index](../README.md#completed-features);
 deferred history ideas remain in [command-history follow-ups](../future/command-history-followups.md).

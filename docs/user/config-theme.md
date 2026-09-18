@@ -39,9 +39,9 @@ Custom themes are stored in:
 |-------|-----|-------------|
 | Default Dark | `default-dark` | VS Code-inspired dark theme |
 | Study | `study` | Cool graphite with restrained teal accents, from the performance-panel study |
-| Fleet Dark | `fleet-dark` | JetBrains Fleet dark theme |
-| GitHub Dark | `github-dark` | GitHub dark theme |
-| GitHub Light | `github-light` | GitHub light theme |
+| Fleet Dark | `fleet-dark` | JetBrains Fleet-inspired dark theme |
+| GitHub Dark | `github-dark` | GitHub's dark theme |
+| GitHub Light | `github-light` | GitHub's light theme |
 | Dracula | `dracula` | The iconic dark theme with bold purples, pinks, and cyans |
 | Catppuccin Mocha | `mocha` | Soothing pastel theme with warm, cozy colors |
 | Nord | `nord` | Arctic, north-bluish color palette with dimmed pastels |
@@ -56,6 +56,8 @@ Custom themes are stored in:
 ---
 
 ## Theme File Format
+
+Only `editor` (`background`, `foreground`, `current_line_background`, `cursor_color`), `gutter` (`background`, `foreground`, `foreground_active`) and `status_bar` (`background`, `foreground`) are required. Every other section and key is optional and is derived from those colors when omitted. `themes/dark.yaml` in the repository is the canonical full example.
 
 ```yaml
 version: 1
@@ -82,6 +84,7 @@ ui:
   status_bar:
     background: "#007ACC"
     foreground: "#FFFFFF"
+    border: "#3C3C3C"  # optional
 
   sidebar:
     background: "#252526"
@@ -92,6 +95,9 @@ ui:
     folder_icon: "#DCDC8B"
     file_icon: "#9CDCFE"
     border: "#3C3C3C"
+
+  splitter:
+    background: "#252526"
 
   tab_bar:
     background: "#252526"
@@ -111,6 +117,37 @@ ui:
     highlight: "#80FF80"
     warning: "#FFFF80"
     error: "#FF8080"
+    # Optional overlay-surface palette; see themes/dark.yaml for the full list
+    # (accent, accent_bright, panel_background, panel_secondary, recessed_wash,
+    # hairline, selection_wash, match_on_selection, text_*, keycap_*, severity_*)
+
+  csv:
+    header_background: "#2D2D2D"
+    header_foreground: "#E0E0E0"
+    grid_line: "#404040"
+    selected_cell_background: "#264F7880"
+    selected_cell_border: "#007ACC"
+    number_foreground: "#B5CEA8"
+
+  button:
+    background: "#262C30"
+    background_hover: "#30373D"
+    background_pressed: "#34423E"
+    background_selected: "#34423E"
+    foreground: "#D4DFE3"
+    foreground_disabled: "#858F97"
+    border: "#32383C"
+    focus_ring: "#79D8BD"
+
+  image_preview:
+    checkerboard_light: "#333333"
+    checkerboard_dark: "#2A2A2A"
+    checkerboard_size: 8
+
+  scrollbar:
+    track: "#1E1E1E"
+    thumb: "#424242"
+    thumb_hover: "#5A5A5A"
 
   syntax:
     keyword: "#C586C0"
@@ -192,6 +229,7 @@ secondary_cursor_color: "#FFFFFF40"  # 25% opacity
 |----------|-------------|
 | `background` | Status bar background |
 | `foreground` | Status bar text |
+| `border` | Top border of status bar (optional) |
 
 ### Sidebar
 
@@ -205,6 +243,12 @@ secondary_cursor_color: "#FFFFFF40"  # 25% opacity
 | `folder_icon` | Folder icon color |
 | `file_icon` | File icon color |
 | `border` | Right border of sidebar |
+
+### Splitter
+
+| Property | Description |
+|----------|-------------|
+| `background` | Pane splitter bar color |
 
 ### Tab Bar
 
@@ -230,6 +274,51 @@ secondary_cursor_color: "#FFFFFF40"  # 25% opacity
 | `highlight` | Success/match highlight |
 | `warning` | Warning text |
 | `error` | Error text |
+| `accent`, `accent_bright` | Accent colors for overlay chrome |
+| `panel_background`, `panel_secondary`, `recessed_wash`, `hairline`, `selection_wash`, `match_on_selection` | Overlay surface palette |
+| `text_primary`, `text_bright`, `text_secondary`, `text_dim` | Overlay text tiers |
+| `keycap_bg`, `keycap_border`, `keycap_fg` | Keyboard hint keycaps |
+| `severity_error`, `severity_warning`, `severity_info`, `severity_hint` (+ `_text` variants) | Diagnostic severity colors |
+
+### CSV
+
+| Property | Description |
+|----------|-------------|
+| `header_background` | Header row background |
+| `header_foreground` | Header row text |
+| `grid_line` | Cell grid lines |
+| `selected_cell_background` | Selected cell background |
+| `selected_cell_border` | Selected cell border |
+| `number_foreground` | Numeric cell text |
+
+### Button
+
+| Property | Description |
+|----------|-------------|
+| `background` | Rest background |
+| `background_hover` | Hovered background |
+| `background_pressed` | Pressed background |
+| `background_selected` | Selected/toggled background |
+| `foreground` | Label text |
+| `foreground_disabled` | Disabled label text |
+| `border` | Button border |
+| `focus_ring` | Keyboard focus ring |
+
+### Image Preview
+
+| Property | Description |
+|----------|-------------|
+| `checkerboard_light` | Light checkerboard square |
+| `checkerboard_dark` | Dark checkerboard square |
+| `checkerboard_size` | Checkerboard square size in pixels (integer) |
+
+### Scrollbar
+
+| Property | Description |
+|----------|-------------|
+| `track` | Scrollbar track |
+| `thumb` | Scrollbar thumb |
+| `thumb_hover` | Hovered thumb |
 
 ---
 
@@ -297,7 +386,7 @@ ui:
 
 ### Step 3: Select Theme
 
-In-app: Use the Theme Picker (Cmd+Shift+T)
+In-app: open the Theme Picker from the Command Palette (Cmd+Shift+A, "Switch Theme...") or Settings > Appearance > Theme
 
 Or edit config directly:
 
@@ -310,7 +399,7 @@ theme: "my-theme"
 
 ## Theme Inheritance (Future)
 
-Currently themes must define all properties. Future versions may support:
+Themes cannot yet extend another theme (omitted keys fall back to derived colors instead). Future versions may support:
 
 ```yaml
 extends: "default-dark"
@@ -353,12 +442,16 @@ Use a contrast checker tool for accessibility.
 
 1. Open Command Palette (Cmd+Shift+A)
 2. Type "theme"
-3. Select "Change Theme"
+3. Select "Switch Theme..."
 4. Choose from list
+
+### Via Settings
+
+Settings > Appearance > Theme
 
 ### Via Keyboard
 
-Default: Cmd+Shift+T (if configured)
+No keyboard shortcut. The theme picker is only reachable from the Command Palette or Settings; it is not a bindable `keymap.yaml` command (see [config-keymap.md](config-keymap.md) for the commands that are).
 
 ---
 
@@ -375,7 +468,7 @@ Default: Cmd+Shift+T (if configured)
 
 1. Restart the editor after theme changes
 2. Verify property names match exactly
-3. Check for missing required properties
+3. Check the required properties are present (`editor`, `gutter`, `status_bar` basics)
 
 ### Reverting to Default
 

@@ -13,7 +13,7 @@ Follow-on verification (2026-09-08): tabs, selection/copy and modifier-click
 web links have native macOS and Linux X11 evidence. Linux checks include
 independent shell closure, retained scrollback, persistent clipboard ownership,
 normal-click suppression and browser opening for plain and OSC 8 links.
-See the [Linux acceptance record](../dev/refactoring-audit-2026-09-06.md#linux-terminal-tabs-and-browser-links--2026-09-08).
+See the [Linux acceptance record](refactoring-audit-2026-09-06.md#linux-terminal-tabs-and-browser-links--2026-09-08).
 Windows/Wayland verification remains tracked in HANDOFF; the historical MVP
 checklist below is not a claim of complete cross-platform certification.
 
@@ -381,7 +381,7 @@ Added 2026-09-08, after the initial MVP:
    running-command discovery/shell integration is not implemented.
 5. [x] Close the active terminal without affecting other sessions.
 
-See [live verification](../dev/refactoring-audit-2026-09-06.md#terminal-tabs--2026-09-08).
+See [live verification](refactoring-audit-2026-09-06.md#terminal-tabs--2026-09-08).
 
 ### Post-MVP: Selection and Copy
 
@@ -389,7 +389,7 @@ Added 2026-09-08: drag selection, double-click words, triple-click lines and
 copy using Cmd+C (macOS) or Ctrl+Shift+C (other platforms). Plain Ctrl+C still
 reaches the shell. Selections stay with their session; the existing terminal
 engine handles wrapped lines, Unicode and scrollback during extraction.
-See [verification](../dev/refactoring-audit-2026-09-06.md#terminal-selection-and-copy--2026-09-08).
+See [verification](refactoring-audit-2026-09-06.md#terminal-selection-and-copy--2026-09-08).
 
 ### Post-MVP: Modifier-Click Web Links
 
@@ -399,7 +399,7 @@ and rendering. Hover underlines the target and shows a pointer cursor; normal
 clicks remain selection. External navigation shares the preview browser launcher
 and only accepts web schemes. Plain URL detection skips logical lines exceeding
 4,096 cells to bound regex work during pointer interaction.
-See [verification and platform scope](../dev/refactoring-audit-2026-09-06.md#terminal-modifier-click-links--2026-09-08).
+See [verification and platform scope](refactoring-audit-2026-09-06.md#terminal-modifier-click-links--2026-09-08).
 
 ---
 

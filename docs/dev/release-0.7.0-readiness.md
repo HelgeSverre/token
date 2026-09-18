@@ -26,8 +26,18 @@ reports remain in Git history.
 - Completion acceptance refreshes bracket decoration after final caret placement,
   including other plain-text panes showing the same document. The reported
   selected-letter effect was stale bracket paint, not a real selection.
+- Since the 2026-09-11 snapshot (recorded under `## Unreleased` in
+  `docs/CHANGELOG.md`): rebindable completion-menu keys and stricter
+  language-server edit acceptance, system-editor registration on Windows and
+  Linux, `token --completions <shell>`, move lines with Alt+Shift+Up/Down,
+  editable language-server/formatter presets with availability checks, and the
+  native UI gallery.
 
 ## Local verification
+
+Historical snapshot of the 2026-09-11 candidate (`6e48db0`). Roughly fifty
+commits have landed since, so the counts, run ids and report paths below do not
+describe the current tree; re-run the checks in the last section to refresh them.
 
 - Before the bracket fix, the final two-pane Settings implementation passed
   **2,726 tests**, seven skipped; two doctests passed, six ignored; strict Clippy
@@ -61,8 +71,9 @@ use the production renderer, not OS file dialogs or physical pointer delivery.
    [standard CI](https://github.com/HelgeSverre/token/actions/runs/34491028145)
    was `235093e`; [four-target packaging](https://github.com/HelgeSverre/token/actions/runs/34491767089)
    was `531a854`. These excluded the local 0.7.0 bump and subsequent Settings,
-   offline-preview, unsaved-close and automation changes. Verify the final
-   revision before publishing.
+   offline-preview, unsaved-close and automation changes, plus everything now
+   listed under `## Unreleased` in the changelog. Verify the final revision
+   before publishing.
 2. **Native interaction smoke.** Check final packaged Settings forms, executable
    browsing, trackpad behavior and real OS focus loss. Launch Linux, Windows and
    Intel macOS packages on those systems. Bridge input does not verify physical
@@ -75,14 +86,16 @@ use the production renderer, not OS file dialogs or physical pointer delivery.
    attach it. Decide whether MSI is a 0.7.0 release download and connect that
    workflow if so.
 4. **Final release metadata.** Cargo manifests already use 0.7.0. The changelog
-   is consolidated under `v0.7.0 - 2026-09-11`, including later feature work.
-   Refresh its date if publication is later and include subsequent application
-   changes. Keep release preparation local until publication is authorized.
+   has a `v0.7.0 - 2026-09-11` section, but work since then sits under
+   `## Unreleased` above it. Fold those entries into v0.7.0 (or decide on a
+   0.7.x/0.8.0 split) and refresh the date before tagging. Keep release
+   preparation local until publication is authorized.
 
 ## Separate or optional work
 
-- UI component gallery/theme changes are at inventory/discussion stage; see
-  [UI inventory](ui-component-inventory.md). No showcase is implemented.
+- A native UI gallery is implemented (`just ui-gallery`); see
+  [UI gallery](ui-gallery.md) and the [UI inventory](ui-component-inventory.md).
+  Theme changes remain at discussion stage.
 - AI connection-test UI, font-family pickers and crash recovery are optional
   future work. Saved-file sessions do not recover unsaved buffers after a crash;
   confirmation and auto-save do not claim otherwise.

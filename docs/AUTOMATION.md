@@ -28,7 +28,16 @@ target/debug/token automate scroll 10
 target/debug/token automate profile 120
 target/debug/token automate syntax-profile " "
 target/debug/token automate open src/main.rs:42:7 README.md
+target/debug/token automate input '[{"kind":"focus","focused":false}]'
+target/debug/token automate overlay-input "save"
 ```
+
+`input` dispatches window-local focus, pointer, wheel or close events through
+Token's native handler; the event format is documented in
+[window-local automation input](dev/automation-input.md). `overlay-input`
+types into the active overlay (the command palette, for example) and errors
+when no overlay is open; the `state` response's `overlay` field reports the
+filtered rows and selection.
 
 `open` is the request the `token` command itself uses: paths are made
 absolute in the client, `file:line[:column]` suffixes are 1-indexed, an
@@ -63,7 +72,7 @@ target/debug/token mcp
 
 It provides `list_instances`, `get_state`, `get_document`, `list_actions`, `open_paths`,
 `insert_text`, `set_cursor`, `set_selection`, `execute_action`, `scroll`,
-`profile_frames`, and `profile_syntax`. The bridge connects to an already-running Token window.
+`input`, `set_overlay_input`, `profile_frames`, and `profile_syntax`. The bridge connects to an already-running Token window.
 Document reads are bounded to 3 MiB; larger documents return a descriptive
 error instead of producing an oversized IPC/MCP response.
 

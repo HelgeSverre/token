@@ -60,8 +60,10 @@ States describe what exists today. Missing states are called out afterward.
 
 The tables and limitations below record the pre-gallery baseline. Since then,
 checkbox/select-anchor/field-surface painters and Settings choice/select geometry
-have been extracted for shared use, and buttons have gained separate selected and
-disabled states and theme overrides.
+have been extracted for shared use, buttons have gained separate selected and
+disabled states with matching `background_selected` / `foreground_disabled`
+theme fields, and Settings choices now carry an explicit `ChoicePresentation`
+(checkbox, select, disclosure or button), which resolves limitation 2 below.
 
 ### Controls and content
 
@@ -70,8 +72,8 @@ disabled states and theme overrides.
 | `button`        | Text action; normal, hovered, pressed, independent focus ring; optional text size       | Shared `ButtonState` / `ButtonStyle`, `view/button.rs`                          |
 | `icon-button`   | Close, arrows, expand, Find options; normal/hovered, some toggled                       | Usually glyph labels passed to Button; no separate icon-button type             |
 | `choice-group`  | Settings presets; selected/unselected, hovered, wrapped narrow layout, off-preset value | Composed in `view/settings_page.rs` from `Accessory::Choices` and buttons       |
-| `checkbox`      | Boolean preference, checked/unchecked                                                   | Local `draw_checkbox` in Settings; not a shared widget                          |
-| `select`        | Closed/open dropdown trigger, current value, option rows                                | Local `select_button` / `select_options`; shares computed option hit rectangles |
+| `checkbox`      | Boolean preference, checked/unchecked                                                   | Was Settings-local; now shared `render_checkbox` in `view/controls.rs`          |
+| `select`        | Closed/open dropdown trigger, current value, option rows                                | `select_options` plus shared `render_field_surface`; shares option hit rects    |
 | `disclosure`    | Advanced section expanded/collapsed                                                     | Settings interprets Show/Hide choices; not a named disclosure component         |
 | `text-field`    | Empty/content, caret/blink, selection, horizontal scrolling, focus                      | Shared text renderer/editable state; caller paints field chrome                 |
 | `text-area`     | Multiline editing, selection, visible line window, focus                                | Same renderer via `for_text_area`; not a second editing engine                  |
@@ -159,7 +161,7 @@ resolved defaults. Preserve that compatibility if the schema grows.
 
 | Existing group          | Configurable coverage                                                                                                                            | Missing general-purpose distinction                                                       |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `ui.button`             | background, background_hover, background_pressed, foreground, border, focus_ring                                                                 | selected vs pressed, disabled, primary/quiet/destructive roles                            |
+| `ui.button`             | background, background_hover, background_pressed, foreground, border, focus_ring                                                                 | primary/quiet/destructive roles (selected/disabled fields added since)                    |
 | `ui.overlay`            | accent, panel/secondary/recessed surfaces, hairline, selection wash, several text levels, keycaps, severity fills/text, legacy input/list colors | Roles exist but are named/owned as overlays, even when Settings and other UI consume them |
 | `ui.scrollbar`          | track, thumb, thumb_hover                                                                                                                        | separate dragging/pressed appearance                                                      |
 | `ui.sidebar`            | background/foreground, selected colors, hover, file/folder icons, border                                                                         | Not a reusable row-state palette outside sidebar                                          |
@@ -203,8 +205,9 @@ proof none exists elsewhere. Sources:
 
 ## Initial recommendation and implementation status
 
-The first native development slice is now implemented on `feat/ui-gallery`.
-See [UI Gallery](ui-gallery.md) for its 46 specimens, launch/screenshot commands,
+The first native development slice is now implemented on `main` behind the
+`ui-gallery` cargo feature (`just ui-gallery`).
+See [UI Gallery](ui-gallery.md) for its 56 specimens, launch/screenshot commands,
 shared production painters, and explicit remaining scope. The broader proposal
 below remains a direction, not a claim that every inventoried component is covered.
 

@@ -10,7 +10,7 @@ The YAML file accepts values beyond the UI's presets.
 > category sidebar/compact navigation, switches and right-aligned controls.
 > Settings scrolling is pixel-based, with clipped partial rows.
 
-> **Status:** Settings v1 (Phases 1–3) implemented and archived 2026-09-06. Full tests, strict lint, headless rendering and isolated macOS native keyboard/persistence checks passed. Future Phase 4 is tracked in [Settings Keymap Tab](../future/settings-keymap.md); archival does not mark it complete or imply a release.
+> **Status:** Settings v1 (Phases 1–3) implemented and archived 2026-09-06. Full tests, strict lint, headless rendering and isolated macOS native keyboard/persistence checks passed. Future Phase 4 is tracked in [Settings Keymap Tab](settings-keymap.md); archival does not mark it complete or imply a release.
 > **Priority:** P3
 > **Effort:** M
 > **Created:** 2026-08-13
@@ -194,7 +194,7 @@ truncate their labels; their shared rectangles remain distinct click targets.
 Cursor blink Off restores a steady caret and uses a positive runtime maintenance
 interval, preventing zero-delay event-loop wakeups. The full suite passed 2,293
 tests plus two doctests, strict lint passed, and 1100 px / 360 px headless renders
-were inspected. See the [current audit](../dev/refactoring-audit-2026-09-06.md)
+were inspected. See the [current audit](refactoring-audit-2026-09-06.md)
 for exact evidence and limitations. Phase 3 and subsequent native validation
 are recorded below.
 
@@ -227,7 +227,7 @@ this fake-server fixture is not the separate real rust-analyzer completion repro
 **Effort:** M
 
 This historical checklist is preserved for context. The active owner is
-[Settings Keymap Tab](../future/settings-keymap.md); none of these items is
+[Settings Keymap Tab](settings-keymap.md); none of these items is
 included in the completed v1 scope.
 
 - [ ] A Keymap tab alongside Settings' categories: merged binding list (embedded + user keymap.yaml, via the existing `merge_bindings`), rendered with `binding_chips`, same fuzzy search as the rest of Settings.

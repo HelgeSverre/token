@@ -74,10 +74,16 @@ The painter's state mapping is precise:
 `Selected` means only “paint this persistent choice as selected.” It does not
 make a toggle, add a boolean, or change activation behavior. Likewise,
 `Disabled` is visual only: an owner that emits an action for a disabled visual
-button has a real bug. The two current consumers make this division visible:
+button has a real bug. Two representative consumers make this division visible:
 Settings passes hover-derived styles to [its form action painter](../../src/view/settings_page.rs), while terminal chrome derives its hover from
 `TerminalState::hovered_tab` before calling the same painter in
-[src/panels/terminal.rs](../../src/panels/terminal.rs).
+[src/panels/terminal.rs](../../src/panels/terminal.rs). The other callers
+follow the same shape: the [find bar](../../src/view/find_bar.rs) paints its
+active control as `Selected`, the
+[segmented control](../../src/view/segmented_control.rs) wraps the painter per
+segment, the [binary-placeholder button](../../src/view/editor_special_tabs.rs)
+derives hover from `HoverRegion::Button`, and the
+[gallery](../../src/view/gallery.rs) samples are visual fixtures only.
 
 ### Existing geometry and its invariants
 
@@ -110,7 +116,9 @@ x = saturating_sub(center_x, floor(w / 2))
 ```
 
 It is safe only where the supplied average width intentionally represents the
-font. Do not use it for proportional UI text, emoji, or non-ASCII labels;
+font; the binary-placeholder layout in
+[src/view/geometry.rs](../../src/view/geometry.rs) is its one legitimate
+`char_width` caller today. Do not use it for proportional UI text, emoji, or non-ASCII labels;
 measure through `TextPainter` once and use that measurement for both visual
 placement and hit geometry.
 
@@ -232,7 +240,8 @@ into that index.
 
 **Consumer assembly sketch.** A Settings-like owner would calculate
 `save_rect` via measured UI text, use it in both its `HitTarget::SettingsAction`
-construction and `render_button`, send `SettingsMsg::Save`, and have Update
+construction and `render_button`, send its own save message (illustrative, as is
+`can_save`; the real top-level message is `Msg::SaveFile`), and have Update
 recheck `can_save` before returning its command. The shared painter remains
 below that reducer; it must not call `Cmd` or inspect Settings state.
 

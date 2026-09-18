@@ -18,7 +18,7 @@ for overlays. The `damage-debug` feature visualizes damaged regions.
 Command damage/merge tests live in `src/commands.rs`; runtime diagnostic damage
 regressions live in `src/runtime/app_tests.rs`. The latest full suite passed
 (2,202 tests plus two doctests). See the
-[profiling audit](../dev/refactoring-audit-2026-09-06.md) for current measurements
+[profiling audit](refactoring-audit-2026-09-06.md) for current measurements
 and limitations. This archival check did not repeat the native GUI checklist
 below or establish a new before/after speedup.
 

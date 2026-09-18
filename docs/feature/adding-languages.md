@@ -26,7 +26,7 @@ when each relevant concern is covered by its descriptor.
    a declaration/expression case to
    `extended_languages_provide_structural_candidates`.
 7. Add an explicit outline implementation for declaration-bearing grammars.
-   Languages without meaningful document symbols compose `NoOutline`; node
+   Languages without meaningful document symbols compose `NO_OUTLINE`; node
    kinds and name extraction are never guessed globally.
 8. If the format embeds other languages, implement document-relative
    included-range discovery in its `InjectionBehavior` and test the resulting
@@ -128,7 +128,7 @@ Each declaration-bearing language owns an outline extractor or an explicit
 query/rule implementation. Shared traversal, range construction, and
 containment nesting are reusable components, but node-kind and name semantics
 belong to the language implementation. Formats without meaningful declarations
-compose `NoOutline` explicitly.
+compose `NO_OUTLINE` explicitly.
 
 Outline tests assert symbol kind and name, and include nesting when the language
 supports members.

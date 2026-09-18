@@ -28,7 +28,8 @@ Token ships with fifteen built-in themes:
 
 The same themes are shown in the website theme gallery
 (`website/src/data/themes.ts`, generated from `themes/*.yaml` by
-`scripts/generate-themes.mjs`).
+`website/scripts/generate-themes.mjs`, run from `website/` or automatically
+via the `prebuild` hook of `npm run build`).
 
 ---
 
@@ -89,6 +90,8 @@ Colors use hexadecimal format:
 | `cursor_color`           | Primary cursor color                 |
 | `selection_background`   | Selected text background             |
 | `secondary_cursor_color` | Multi-cursor secondary cursor color  |
+| `bracket_match_background` | Matching-bracket highlight background (optional) |
+| `ghost_text`             | Inline suggestion (ghost text) color (optional; derived from foreground/background when absent) |
 | `indent_guide`           | Indentation guide line color         |
 
 #### `gutter` - Line Numbers Area

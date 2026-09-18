@@ -2,7 +2,7 @@
 
 Indent guides, tab markers, space markers, EOL markers, and trailing whitespace highlighting.
 
-> **Status:** Planned
+> **Status:** Partially implemented (indent guides shipped in v0.7.0; markers and trailing highlight still planned)
 > **Priority:** P2
 > **Effort:** M
 > **Created:** 2025-12-19
@@ -28,13 +28,19 @@ Indent guides, tab markers, space markers, EOL markers, and trailing whitespace 
 
 The editor renders text with basic whitespace handling:
 - Tabs expanded to spaces for display
-- No visual indicators for whitespace characters
-- No indent guides
-- No trailing whitespace highlighting
+- **Indent guides shipped in v0.7.0** (`config.indent_guides` toggle, default on, in
+  Settings > Appearance > Editor chrome; theme key `ui.editor.indent_guide`; rendered
+  in `src/view/editor_text.rs`). Guide spacing is inferred from the document's
+  indentation steps (2- and 4-space both work) rather than derived from `tab_size`.
+  Guides render only in plain text view mode, are not extended through blank
+  lines, and there is no active-guide highlight at the cursor level.
+- No visual indicators for whitespace characters (tab/space/EOL markers)
+- No trailing whitespace highlighting (only save-time `trim_trailing_whitespace`
+  in `src/model/text_settings.rs`)
 
 ### Goals
 
-1. **Indent guides** - Vertical lines showing indentation levels
+1. **Indent guides** - Vertical lines showing indentation levels *(done, v0.7.0)*
 2. **Tab markers** - Visual indicator for tab characters
 3. **Space markers** - Optional dots for space characters
 4. **EOL markers** - Optional newline/CR/CRLF indicators
@@ -134,18 +140,19 @@ The editor renders text with basic whitespace handling:
 
 ### Whitespace Configuration
 
+> Indent guides already ship as a flat `indent_guides: bool` on the main config
+> (`src/config.rs`, settings entry in `src/settings/catalog.rs`). Tab width comes
+> from `text_settings`, and guide spacing is inferred, so the struct below only
+> proposes the *new* keys for markers and trailing highlight.
+
 ```rust
 // src/config.rs or src/model/mod.rs
 
 use serde::{Deserialize, Serialize};
 
-/// Configuration for whitespace rendering
+/// Configuration for whitespace markers and trailing highlight
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WhitespaceConfig {
-    /// Render vertical indent guides
-    #[serde(default = "default_true")]
-    pub indent_guides: bool,
-
     /// Render tab markers (arrows)
     #[serde(default)]
     pub tab_markers: bool,
@@ -161,14 +168,6 @@ pub struct WhitespaceConfig {
     /// Highlight trailing whitespace
     #[serde(default = "default_true")]
     pub trailing_whitespace: bool,
-
-    /// Tab size for indent guide calculation
-    #[serde(default = "default_tab_size")]
-    pub tab_size: usize,
-
-    /// Use spaces or tabs for indentation detection
-    #[serde(default)]
-    pub indent_style: IndentStyle,
 }
 
 /// When to show space markers
@@ -185,24 +184,8 @@ pub enum WhitespaceVisibility {
     All,
 }
 
-/// Indentation style for guides
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub enum IndentStyle {
-    /// Detect from file content
-    #[default]
-    Auto,
-    /// Use spaces (width from tab_size)
-    Spaces,
-    /// Use tabs
-    Tabs,
-}
-
 fn default_true() -> bool {
     true
-}
-
-fn default_tab_size() -> usize {
-    4
 }
 
 impl Default for WhitespaceConfig {
@@ -213,8 +196,6 @@ impl Default for WhitespaceConfig {
             space_markers: WhitespaceVisibility::None,
             eol_markers: false,
             trailing_whitespace: true,
-            tab_size: 4,
-            indent_style: IndentStyle::Auto,
         }
     }
 }
@@ -222,16 +203,18 @@ impl Default for WhitespaceConfig {
 
 ### Theme Extensions
 
+> `indent_guide` already exists as a plain field on the editor theme
+> (`src/theme.rs`, YAML key `ui.editor.indent_guide`, see `docs/THEMES.md`), with a
+> foreground/background-derived fallback for older custom themes. Only the keys
+> below are new. `indent_guide_active` was not shipped; decide whether the
+> active-guide highlight is still wanted before adding it.
+
 ```rust
 // Add to src/theme.rs
 
 /// Colors for whitespace rendering
 #[derive(Debug, Clone)]
 pub struct WhitespaceTheme {
-    /// Color for indent guide lines
-    pub indent_guide: Color,
-    /// Color for active indent guide (at cursor level)
-    pub indent_guide_active: Color,
     /// Color for tab markers
     pub tab_marker: Color,
     /// Color for space markers
@@ -245,8 +228,6 @@ pub struct WhitespaceTheme {
 impl Default for WhitespaceTheme {
     fn default() -> Self {
         Self {
-            indent_guide: Color::rgba(0x40, 0x40, 0x40, 0x80),
-            indent_guide_active: Color::rgba(0x60, 0x60, 0x60, 0xC0),
             tab_marker: Color::rgba(0x60, 0x60, 0x60, 0x80),
             space_marker: Color::rgba(0x60, 0x60, 0x60, 0x60),
             eol_marker: Color::rgba(0x60, 0x60, 0x60, 0x60),
@@ -258,73 +239,12 @@ impl Default for WhitespaceTheme {
 
 ### Indent Guide Calculation
 
-```rust
-// src/view/whitespace.rs
-
-/// Calculate indent guides for a line
-pub struct IndentGuides {
-    /// Indentation level (0-based)
-    pub level: usize,
-    /// Whether this line is blank (affects guide drawing)
-    pub is_blank: bool,
-    /// Character column positions for each guide
-    pub guide_columns: Vec<usize>,
-}
-
-impl IndentGuides {
-    /// Calculate indent guides for a line
-    pub fn for_line(line: &str, tab_size: usize) -> Self {
-        let mut column = 0;
-        let mut guide_columns = Vec::new();
-
-        // Count leading whitespace
-        for c in line.chars() {
-            match c {
-                ' ' => {
-                    column += 1;
-                    if column % tab_size == 0 {
-                        guide_columns.push(column);
-                    }
-                }
-                '\t' => {
-                    // Tabs align to next tab stop
-                    let next_tab = ((column / tab_size) + 1) * tab_size;
-                    column = next_tab;
-                    guide_columns.push(column);
-                }
-                '\n' | '\r' => {
-                    // Blank line - keep guides from context
-                    return Self {
-                        level: guide_columns.len(),
-                        is_blank: true,
-                        guide_columns,
-                    };
-                }
-                _ => {
-                    // Non-whitespace - stop counting
-                    break;
-                }
-            }
-        }
-
-        Self {
-            level: guide_columns.len(),
-            is_blank: false,
-            guide_columns,
-        }
-    }
-
-    /// Get the active guide level for cursor position
-    pub fn active_level(&self, cursor_column: usize, tab_size: usize) -> Option<usize> {
-        let cursor_level = cursor_column / tab_size;
-        if cursor_level < self.level {
-            Some(cursor_level)
-        } else {
-            Some(self.level.saturating_sub(1))
-        }
-    }
-}
-```
+Shipped in v0.7.0 with a different design than originally proposed here: there
+is no `IndentGuides` type or `src/view/whitespace.rs`. Guide columns are computed
+in `src/view/editor_text.rs` (`indentation_columns`) from the document's observed
+indentation steps, using the existing text-column geometry for spaces and tabs,
+with horizontal clipping and no guides on soft-wrap continuation rows. See the
+`indent_guides_*` tests in that file for the inference behavior.
 
 ### Whitespace Markers
 
@@ -458,7 +378,7 @@ impl WhitespaceMarkers {
 ### Rendering Integration
 
 ```rust
-// src/view/editor.rs (additions)
+// src/view/editor_text.rs (additions)
 
 impl Renderer {
     /// Render whitespace indicators for a line
@@ -519,59 +439,6 @@ impl Renderer {
             }
         }
     }
-
-    /// Render indent guides for visible lines
-    pub fn render_indent_guides(
-        &mut self,
-        lines: &[&str],
-        start_line: usize,
-        cursor_line: usize,
-        cursor_column: usize,
-        text_start_x: f32,
-        char_width: f32,
-        line_height: f32,
-        config: &WhitespaceConfig,
-        theme: &WhitespaceTheme,
-    ) {
-        if !config.indent_guides {
-            return;
-        }
-
-        let tab_size = config.tab_size;
-
-        // Calculate guides for each line
-        let guides: Vec<IndentGuides> = lines
-            .iter()
-            .map(|line| IndentGuides::for_line(line, tab_size))
-            .collect();
-
-        // Determine active guide level at cursor
-        let active_level = if cursor_line >= start_line && cursor_line < start_line + lines.len() {
-            let idx = cursor_line - start_line;
-            guides[idx].active_level(cursor_column, tab_size)
-        } else {
-            None
-        };
-
-        // Render guides
-        for (idx, indent) in guides.iter().enumerate() {
-            let y = idx as f32 * line_height;
-
-            for (level, &col) in indent.guide_columns.iter().enumerate() {
-                let x = text_start_x + (col - tab_size) as f32 * char_width + char_width / 2.0;
-
-                let is_active = active_level == Some(level);
-                let color = if is_active {
-                    theme.indent_guide_active
-                } else {
-                    theme.indent_guide
-                };
-
-                // Draw vertical line
-                self.draw_vertical_line(x, y, y + line_height, color);
-            }
-        }
-    }
 }
 ```
 
@@ -585,7 +452,7 @@ impl Renderer {
 | Toggle Whitespace | - | - | Via command palette |
 | Toggle Trailing WS | - | - | Via command palette |
 
-Note: These are typically configured in settings rather than keyboard shortcuts. The command palette provides quick toggles.
+Note: These are typically configured in settings rather than keyboard shortcuts. Today the indent-guides toggle exists only in Settings (Appearance > Editor chrome); no toggle commands exist in `src/keymap/command.rs` yet (see Phase 8).
 
 ---
 
@@ -595,9 +462,9 @@ Note: These are typically configured in settings rather than keyboard shortcuts.
 
 **Files:** `src/config.rs`
 
-- [ ] Add `WhitespaceConfig` struct
+- [x] `indent_guides` toggle (flat bool on main config, settings catalog entry) - v0.7.0
+- [ ] Add `WhitespaceConfig` struct (markers + trailing highlight)
 - [ ] Add `WhitespaceVisibility` enum
-- [ ] Add `IndentStyle` enum
 - [ ] Serialize/deserialize in config file
 - [ ] Add defaults
 
@@ -607,8 +474,9 @@ Note: These are typically configured in settings rather than keyboard shortcuts.
 
 **Files:** `src/theme.rs`, themes/*.yaml
 
+- [x] `ui.editor.indent_guide` in all bundled themes, with fallback - v0.7.0
 - [ ] Add `WhitespaceTheme` struct
-- [ ] Add colors for all whitespace elements
+- [ ] Add colors for marker/trailing elements
 - [ ] Update theme files with whitespace section
 - [ ] Add defaults for themes without whitespace
 
@@ -616,14 +484,13 @@ Note: These are typically configured in settings rather than keyboard shortcuts.
 
 ### Phase 3: Indent Guides
 
-**Files:** `src/view/whitespace.rs`
+**Files:** `src/view/editor_text.rs`
 
-- [ ] Create `IndentGuides` struct
-- [ ] Implement `for_line()` calculation
-- [ ] Handle tabs and spaces correctly
-- [ ] Handle blank lines (extend guides)
+- [x] Guide column calculation (inferred indent steps, not `IndentGuides::for_line`) - v0.7.0
+- [x] Handle tabs and spaces correctly - v0.7.0
+- [ ] Handle blank lines (extend guides) - not shipped; guides come only from a line's own leading whitespace
 
-**Test:** `IndentGuides::for_line("    text", 4)` returns level 1.
+**Test:** `indent_guides_*` tests in `src/view/editor_text.rs`.
 
 ### Phase 4: Whitespace Markers
 
@@ -638,7 +505,7 @@ Note: These are typically configured in settings rather than keyboard shortcuts.
 
 ### Phase 5: Rendering - Trailing
 
-**Files:** `src/view/editor.rs`
+**Files:** `src/view/editor_text.rs`
 
 - [ ] Render trailing whitespace background
 - [ ] Apply theme color
@@ -648,7 +515,7 @@ Note: These are typically configured in settings rather than keyboard shortcuts.
 
 ### Phase 6: Rendering - Markers
 
-**Files:** `src/view/editor.rs`
+**Files:** `src/view/editor_text.rs`
 
 - [ ] Render tab arrows
 - [ ] Render space dots
@@ -659,12 +526,12 @@ Note: These are typically configured in settings rather than keyboard shortcuts.
 
 ### Phase 7: Rendering - Guides
 
-**Files:** `src/view/editor.rs`
+**Files:** `src/view/editor_text.rs`
 
-- [ ] Render vertical indent lines
-- [ ] Highlight active guide at cursor level
-- [ ] Handle blank lines properly
-- [ ] Smooth scrolling support
+- [x] Render vertical indent lines - v0.7.0
+- [ ] Highlight active guide at cursor level (optional, not shipped)
+- [ ] Handle blank lines properly (extend guides through blank lines)
+- [x] Smooth scrolling support - v0.7.0
 
 **Test:** Indent guides align with code blocks.
 
@@ -682,7 +549,8 @@ Note: These are typically configured in settings rather than keyboard shortcuts.
 
 **Files:** `src/config.rs`
 
-- [ ] Save whitespace preferences
+- [x] `indent_guides` persists via config - v0.7.0
+- [ ] Save marker/trailing preferences
 - [ ] Load on startup
 - [ ] Per-language overrides (optional)
 
@@ -698,33 +566,6 @@ Note: These are typically configured in settings rather than keyboard shortcuts.
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_indent_guides_spaces() {
-        let guides = IndentGuides::for_line("        text", 4);
-        assert_eq!(guides.level, 2);
-        assert_eq!(guides.guide_columns, vec![4, 8]);
-    }
-
-    #[test]
-    fn test_indent_guides_tabs() {
-        let guides = IndentGuides::for_line("\t\ttext", 4);
-        assert_eq!(guides.level, 2);
-        assert_eq!(guides.guide_columns, vec![4, 8]);
-    }
-
-    #[test]
-    fn test_indent_guides_mixed() {
-        let guides = IndentGuides::for_line("\t  text", 4);
-        assert_eq!(guides.level, 1); // Tab gives level 1, 2 spaces don't complete another level
-    }
-
-    #[test]
-    fn test_indent_guides_blank() {
-        let guides = IndentGuides::for_line("    \n", 4);
-        assert!(guides.is_blank);
-        assert_eq!(guides.level, 1);
-    }
 
     #[test]
     fn test_whitespace_trailing() {
@@ -778,9 +619,8 @@ fn test_render_trailing_whitespace() {
 
 #[test]
 fn test_indent_guides_consistency() {
-    // Render multi-line indented code
-    // Verify guides align across lines
-    // Verify active guide follows cursor
+    // Covered by indent_guides_* tests in src/view/editor_text.rs
+    // Active-guide-follows-cursor only if Phase 7 highlight is picked up
 }
 
 #[test]
@@ -797,8 +637,9 @@ fn test_config_toggle() {
 ## References
 
 - **Theme system:** `src/theme.rs` - Color definitions
-- **Rendering:** `src/view/editor.rs` - Text rendering
-- **Config:** `src/config.rs` - Editor configuration
+- **Rendering:** `src/view/editor_text.rs` - Text rendering and indent guides
+- **Config:** `src/config.rs` - Editor configuration (`indent_guides`); `src/settings/catalog.rs` - Settings entry
+- **Shipped design:** [indent-guides.md](../feature/indent-guides.md), `docs/CHANGELOG.md` v0.7.0
 - **VS Code:** Whitespace rendering settings
 - **Sublime Text:** Draw white space setting
 - **Unicode:** Whitespace marker characters

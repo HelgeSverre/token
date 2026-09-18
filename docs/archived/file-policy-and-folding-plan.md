@@ -1,16 +1,28 @@
 # Auto-save, EditorConfig, and code folding
 
-> **Status:** Implemented and reviewed; repository and native automation checks passed, with manual GUI gaps recorded below.
+> **Status:** Archived 2026-09-17. All nine slices (S1–S2, E1–E3, F1–F4)
+> merged to `main` and shipped in v0.7.0 (2026-09-11); see
+> [CHANGELOG](../CHANGELOG.md). Living documentation is
+> [user/editorconfig.md](../user/editorconfig.md),
+> [user/folding.md](../user/folding.md), and the auto-save section of
+> [user/config-editor.md](../user/config-editor.md). No follow-ups remain from
+> this plan; the deferred ideas listed under "follow-ups" below are out of
+> scope by design. The `plan/autosave-editorconfig-folding` branch and its
+> worktree no longer exist, and the test count recorded in the review is a
+> point-in-time figure as of `a842c74`. Retained as a historical record; code
+> and tests are the source of truth.
+>
+> **Original status:** Implemented and reviewed; repository and native automation checks passed, with manual GUI gaps recorded below.
 > **Baseline investigated:** 2026-09-09 at `6948f3f`.
 > **Integration reviewed:** 2026-09-09 with `a842c74` (`main`), including the docked Find and hover changes.
-> **Branch:** `plan/autosave-editorconfig-folding`.
-> **Worktree:** `/Users/helge/code/token-editor-feature-plan`.
+> **Branch:** `plan/autosave-editorconfig-folding` (deleted).
+> **Worktree:** `/Users/helge/code/token-editor-feature-plan` (removed).
 
 This is the implementation plan for auto-save on window focus loss or an idle
 delay, per-file EditorConfig rules, and code folding progressing from indentation
 to syntax detection and saved state. It supersedes the implementation sketches
 in [auto-save](auto-save.md), [EditorConfig](editorconfig.md),
-[basic folding](folding-basic.md), and [advanced folding](folding-advanced.md).
+[basic folding](folding-basic.md), and [advanced folding](../feature/folding-advanced.md).
 Those documents retain historical ideas; their pseudocode is not the build plan.
 
 The recommended order is a document-targeted save pipeline, auto-save,

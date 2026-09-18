@@ -93,7 +93,7 @@ These distinctions align with the official [IntelliJ component catalog](https://
 and [UI overview](https://plugins.jetbrains.com/docs/intellij/ui-overview.html).
 The [full crosswalk](INTELLIJ-CROSSWALK.md) accounts for every entry in that
 component index and relevant application surfaces, including intentionally
-deferred variants. The [research brief](RESEARCH-BRIEF.md) records the questions,
+deferred variants. The archived [research brief](../archived/ui-RESEARCH-BRIEF.md) is the historical charter recording the questions,
 sources, confidence rules and division of work.
 
 The research brief records the user-supplied local research snapshot's provenance;

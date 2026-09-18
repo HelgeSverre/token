@@ -2,6 +2,21 @@
 
 Automatic document saving with configurable triggers and modes
 
+> **Status (2026-09-17):** Archived. Auto-save shipped in v0.7.0 (2026-09-11)
+> under the [coordinated save, EditorConfig, and folding plan](file-policy-and-folding-plan.md#auto-save),
+> with a different design from the sketch below. Living documentation is
+> [`docs/user/config-editor.md`](../user/config-editor.md) (`auto_save` section).
+> Corrections to the sketch: the close prompt for unsaved changes is
+> implemented (v0.7.0); modules are `src/update/auto_save.rs` and
+> `src/runtime/auto_save.rs` (no `src/auto_save.rs`, `AutoSaveMsg`, or
+> `AppMsg::WindowFocusLost`; the message is `AppMsg::AutoSave(AutoSaveRequest)`);
+> `AutoSaveMode` serializes as snake_case (`on_focus_loss`, `after_delay`,
+> `on_focus_loss_and_delay`); `AutoSaveConfig` has `mode`, `delay_ms`,
+> `format_on_save` only; the Implementation Plan checkboxes below were never
+> ticked but the work is done. Still open (untracked, not in `src/`):
+> `exclude_patterns`, per-document auto-save toggle, command-palette entry to
+> switch mode.
+
 > **Implementation plan updated 2026-09-09:** Use the
 > [coordinated save, EditorConfig, and folding plan](file-policy-and-folding-plan.md#auto-save).
 > The historical sketch below predates the ordered file worker and existing

@@ -72,7 +72,7 @@ pub struct TreeRow<'a, T> {
 `node.is_dir && expanded.contains(&node.path)`. `render_tree` accepts that
 predicate and a `RowListView`; it counts all preceding visible ancestors but
 only calls its row painter for `drawn_range()`
-(`src/view/tree_view.rs:17-87`).
+(`src/view/tree_view.rs:17-95`).
 
 | State                           | Owner                               | Invariant and repair authority                                                                                                  |
 | ------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -146,12 +146,12 @@ selection. `ToggleFolder`/`CollapseFolder` do clamp sidebar scroll; a raw
 For `h=24`, viewport height `60`, scroll `1`, the list renders indices `1..4`.
 `render_tree` still visits root index 0 without painting it and correctly paints
 the remaining depth values. Existing tests verify a nested row remains
-reachable after skipped ancestors (`src/view/tree_view.rs:89-192`).
+reachable after skipped ancestors (`src/view/tree_view.rs:97-208`).
 
 ## 3. Current update and consumer flow
 
 ```text
-pointer/key → WorkspaceMsg::{SelectFile, ToggleFolder, OpenFile, Scroll,
+pointer/key → WorkspaceMsg::{SelectItem, ToggleFolder, OpenFile, Scroll,
                               FileSystemChange}
  → update::workspace mutates selected path/expanded set/tree/scroll
  → chrome solves sidebar RowListView; only relevant current actions clamp/reveal
@@ -160,12 +160,12 @@ pointer/key → WorkspaceMsg::{SelectFile, ToggleFolder, OpenFile, Scroll,
 ```
 
 A tree press selects; double click toggles a directory or opens a file and
-focuses the left dock (`src/runtime/mouse.rs:2176-2213`). Focused-dock keys
+focuses the left dock (`src/runtime/mouse.rs:2172-2213`). Focused-dock keys
 route before editor input; Right expands a collapsed folder or moves onward
-(`src/runtime/input.rs:1155-1219`). `clamp_sidebar_scroll` uses the solved
+(`src/runtime/input.rs:1134-1150`). `clamp_sidebar_scroll` uses the solved
 sidebar view and deliberately preserves hidden-sidebar scroll until reveal;
 Outline resets an invisible panel's offset to zero
-(`src/update/workspace.rs:237-330`, `src/update/outline.rs:43-58`). These are
+(`src/update/workspace.rs:254-262`, `src/update/outline.rs:57-62`). These are
 owner policies, not a generic tree state machine.
 
 ## 4. Proposed stable-ID repair and input machine

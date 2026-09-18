@@ -2,11 +2,11 @@
 
 Tools for visualizing, converting, and cleaning up whitespace in documents.
 
-> **Status:** 📋 Planned
+> **Status:** 🚧 Partial — trim-on-save, indent style/size settings and smart Home shipped via the EditorConfig/text-settings work; visualization and conversion commands are not implemented
 > **Priority:** P3 (Nice-to-have)
 > **Effort:** M (3-5 days)
 > **Created:** 2025-12-19
-> **Updated:** 2025-12-19
+> **Updated:** 2026-09-17
 > **Milestone:** 2 - Search & Editing
 
 ---
@@ -23,32 +23,7 @@ Whitespace management provides tools to visualize invisible characters, convert 
 
 Show invisible characters (spaces, tabs, newlines) with visible markers.
 
-#### Display Modes
-
-| Mode | Description |
-|------|-------------|
-| None | No whitespace visualization (default) |
-| Selection | Show whitespace only in selected text |
-| Trailing | Show only trailing whitespace |
-| All | Show all whitespace characters |
-
-#### Visual Markers
-
-| Character | Symbol | Description |
-|-----------|--------|-------------|
-| Space | `·` (U+00B7) | Middle dot |
-| Tab | `→` (U+2192) | Right arrow |
-| Newline | `↵` (U+21B5) | Carriage return symbol |
-| NBSP | `°` (U+00B0) | Degree symbol |
-
-#### Theme Integration
-
-```yaml
-# themes/dark.yaml
-whitespace:
-  marker: "#4a4a4a"        # Subdued color for markers
-  trailing_bg: "#3a2020"   # Background for trailing whitespace
-```
+Display modes, marker glyphs, trailing highlighting and theme keys are specified in [whitespace-rendering.md](whitespace-rendering.md), which is the single home for marker rendering. Not implemented yet; `themes/*.yaml` have no whitespace keys.
 
 ### 2. Tab/Space Conversion
 
@@ -102,9 +77,9 @@ Handle whitespace at the end of lines.
 
 | Command | Binding | Description |
 |---------|---------|-------------|
-| Trim Trailing Whitespace | - | Remove trailing spaces/tabs from all lines |
-| Trim Trailing on Save | Setting | Auto-trim when saving |
-| Highlight Trailing | Setting | Show trailing whitespace with background color |
+| Trim Trailing Whitespace | - | Remove trailing spaces/tabs from all lines (on-demand command; not implemented) |
+| Trim Trailing on Save | Setting | ✅ Implemented: EditorConfig `trim_trailing_whitespace` / `DocumentTextSettings.trim_trailing_whitespace`, applied as undoable save cleanup in `src/update/save_cleanup.rs` |
+| Highlight Trailing | Setting | Show trailing whitespace with background color (not implemented) |
 
 #### Algorithm: Trim Trailing
 
@@ -139,10 +114,10 @@ Intelligent whitespace handling during editing.
 
 | Feature | Description |
 |---------|-------------|
-| Auto-trim on line change | Remove trailing whitespace when leaving a line |
+| Auto-trim on line change | Remove trailing whitespace when leaving a line (not implemented) |
 | Preserve indent on empty lines | Keep indentation when adding blank lines |
-| Smart backspace | Delete to previous indent level |
-| Smart home | Toggle between line start and first non-space |
+| Smart backspace | Delete to previous indent level (not implemented) |
+| Smart home | ✅ Implemented as `LineStartSmart` in `src/editable/messages.rs` |
 
 ---
 
@@ -150,8 +125,10 @@ Intelligent whitespace handling during editing.
 
 ### Configuration
 
+Indent style, indent size, tab width and trim-on-save already live in `DocumentTextSettings` (`src/model/text_settings.rs`, `IndentStyle::{Tab, Space}`), fed by EditorConfig and the `text.*` settings. The remaining proposed additions (types below do not exist yet):
+
 ```rust
-// src/config.rs
+// proposed, src/model/text_settings.rs or src/config.rs
 
 #[derive(Debug, Clone, Default)]
 pub struct WhitespaceConfig {
@@ -160,9 +137,6 @@ pub struct WhitespaceConfig {
 
     /// Highlight trailing whitespace
     pub highlight_trailing: bool,
-
-    /// Trim trailing whitespace on save
-    pub trim_on_save: bool,
 
     /// Auto-trim when leaving a line
     pub auto_trim: bool,
@@ -181,7 +155,7 @@ pub enum WhitespaceRenderMode {
 ### Theme Extension
 
 ```rust
-// src/theme.rs
+// proposed, src/theme.rs
 
 #[derive(Debug, Clone)]
 pub struct WhitespaceTheme {
@@ -198,7 +172,7 @@ pub struct WhitespaceTheme {
 ## Messages
 
 ```rust
-// src/messages.rs
+// proposed; none of these variants exist yet
 
 pub enum EditorMsg {
     /// Toggle whitespace visualization mode
@@ -228,7 +202,7 @@ pub enum DocumentMsg {
 ### Whitespace Markers
 
 ```rust
-// src/view.rs
+// proposed, src/view/editor_text.rs
 
 fn render_text_with_whitespace(
     frame: &mut Frame,
@@ -308,6 +282,10 @@ fn visual_width(text: &str, tab_size: usize) -> usize {
 
 ### Editor Config
 
+Existing (implemented): indentation and trim settings come from EditorConfig (`indent_style`, `indent_size`, `tab_width`, `trim_trailing_whitespace`) with `text.indent_style`, `text.indent_size` and `text.tab_width` in the settings catalog (`src/settings/catalog.rs`) as fallbacks when no EditorConfig rule applies. Conversion commands should read these rather than a separate `tab_size`/`use_tabs` pair.
+
+Proposed additions for visualization:
+
 ```yaml
 # ~/.config/token-editor/config.yaml
 whitespace:
@@ -316,20 +294,11 @@ whitespace:
 
   # Highlight trailing whitespace
   highlight_trailing: true
-
-  # Trim on save
-  trim_on_save: true
-
-  # Tab size for conversion
-  tab_size: 4
-
-  # Use tabs vs spaces for indentation
-  use_tabs: false
 ```
 
 ### Per-File Detection
 
-Detect indentation style from file content:
+Detect indentation style from file content when no EditorConfig rule applies. A tabs-vs-spaces heuristic already exists for completion insertions (`infer_style` in `src/completion/postprocess.rs`); the editor's `DocumentTextSettings` does not use it yet.
 
 ```rust
 fn detect_indentation(doc: &Document) -> IndentStyle {
@@ -387,7 +356,7 @@ fn test_visual_width_with_tabs() {
 - [ ] Tab → spaces conversion preserves alignment
 - [ ] Spaces → tabs conversion uses correct tab stops
 - [ ] Trim trailing removes all trailing whitespace
-- [ ] Trim on save works when enabled
+- [x] Trim on save works when enabled
 - [ ] Per-file indentation detection works
 
 ---
@@ -396,11 +365,7 @@ fn test_visual_width_with_tabs() {
 
 ### Phase 1: Whitespace Visualization (3 days)
 
-1. Add `WhitespaceConfig` and `WhitespaceRenderMode`
-2. Extend theme with whitespace colors
-3. Modify renderer to draw whitespace markers
-4. Add toggle command to palette
-5. Tests
+See [whitespace-rendering.md](whitespace-rendering.md); not started.
 
 ### Phase 2: Conversion Commands (2 days)
 
@@ -412,17 +377,18 @@ fn test_visual_width_with_tabs() {
 
 ### Phase 3: Trailing Whitespace (2 days)
 
-1. Implement `TrimTrailingWhitespace`
-2. Add `trim_on_save` setting
+1. Implement `TrimTrailingWhitespace` as an on-demand palette command
+2. ~~Add `trim_on_save` setting~~ ✅ Done (`trim_trailing_whitespace` in `DocumentTextSettings`, `src/update/save_cleanup.rs`)
 3. Add trailing whitespace highlighting
 4. Tests
 
 ### Phase 4: Smart Features (2 days)
 
-1. Indentation detection
+1. Per-file indentation detection for the editor (indent style/size settings ✅ exist; heuristic only in completion)
 2. Smart backspace
 3. Auto-trim on line change
 4. Tests
+5. ~~Smart home~~ ✅ Done (`LineStartSmart`)
 
 ---
 

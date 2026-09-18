@@ -403,7 +403,7 @@ Mockups for the picker contexts: [B1 recent-grouped](assets/palette-b1.png), [B2
   Dark/Light, Dracula, Mocha, Nord, Tokyo Night and Gruvbox Dark now provide every
   palette key explicitly, with theme-specific text ramps, selection grounds,
   keycaps and diagnostics. Compact Settings and command palettes were visually
-  inspected for each; see the [tuning audit](../dev/refactoring-audit-2026-09-06.md#bundled-overlay-theme-tuning--2026-09-08).
+  inspected for each; see the [tuning audit](refactoring-audit-2026-09-06.md#bundled-overlay-theme-tuning--2026-09-08).
   Custom themes and the five subsequently added built-ins retain their existing
   fallback behavior; this closes the original nine-theme scope, not an unrun
   all-context/native-platform acceptance matrix.

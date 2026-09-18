@@ -2,7 +2,7 @@
 
 Column support and enhanced position navigation with `:line:column` format.
 
-> **Status:** Planned
+> **Status:** Partially implemented (line:col shipped; preview, validation, percentage, cancel-restore still open)
 > **Priority:** P2
 > **Effort:** S
 > **Created:** 2025-12-19
@@ -34,11 +34,12 @@ pub struct GotoLineState {
 }
 ```
 
-It uses `EditConstraints::goto_line()` which allows numeric input. Current behavior:
-- Accepts line number only (e.g., "123")
-- Jumps to start of specified line
-- No column support
-- No preview while typing
+It uses `EditConstraints::goto_line()` (`src/editable/constraints.rs`), which allows digits and `:`. The confirm handler in `src/update/ui.rs` (`ModalState::GotoLine` branch) parses the input inline. Current behavior:
+- Accepts "123" (jumps to start of line) and "123:45" (line and column, both clamped to the document)
+- Parsing is inline in the confirm handler; no `GotoTarget` type
+- Leading colon not supported: ":123" splits on the first `:` and falls back to line 1
+- No percentage jumps ("50%")
+- No preview while typing, no validation feedback, no cancel-restore of original position
 
 ### Goals
 
@@ -277,6 +278,12 @@ impl GotoValidation {
 
 impl GotoLineState {
     /// Create new state, storing current position for restore
+    ///
+    /// Note: today `GotoLineState` is constructed via `Default` at seven call sites
+    /// (`src/update/ui.rs` x2, `src/update/context_menu.rs`, `src/main.rs`,
+    /// `src/automation.rs`, `src/bin/screenshot.rs`, `src/view/caret.rs`).
+    /// Either update them all, or keep `Default` and populate the original
+    /// position in the `ModalMsg::OpenGotoLine` handler.
     pub fn new(current_position: Position, viewport_top: usize) -> Self {
         Self {
             editable: EditableState::new(StringBuffer::new(), EditConstraints::goto_line_enhanced()),
@@ -348,7 +355,8 @@ impl GotoLineState {
 ### EditConstraints Extension
 
 ```rust
-// Add to src/editable/mod.rs or appropriate location
+// src/editable/constraints.rs — extend the existing goto_line() char_filter,
+// or add a sibling constructor:
 
 impl EditConstraints {
     /// Constraints for enhanced goto line input
@@ -356,10 +364,12 @@ impl EditConstraints {
     /// Allows: digits, colon, percent sign
     pub fn goto_line_enhanced() -> Self {
         Self {
+            allow_multiline: false,
+            allow_multi_cursor: false,
+            allow_selection: true,
+            enable_undo: true,
             max_length: Some(20),
-            single_line: true,
-            allowed_chars: Some(Box::new(|c| c.is_ascii_digit() || c == ':' || c == '%')),
-            numeric_only: false, // We handle validation ourselves
+            char_filter: Some(|c| c.is_ascii_digit() || c == ':' || c == '%'),
         }
     }
 }
@@ -371,7 +381,7 @@ impl EditConstraints {
 
 | Action | Mac | Windows/Linux | Notes |
 |--------|-----|---------------|-------|
-| Open Go to Line | Cmd+L | Ctrl+G | Main shortcut |
+| Open Go to Line | Cmd+L | Ctrl+L | Main shortcut (`cmd+l` in `keymap.yaml`; Ctrl+G proposed, see Phase 6) |
 | Confirm jump | Enter | Enter | Jump to position |
 | Cancel | Escape | Escape | Restore original position |
 
@@ -383,9 +393,9 @@ impl EditConstraints {
 
 **Files:** `src/model/ui.rs`
 
-- [ ] Add `GotoTarget` enum with parse method
-- [ ] Support line-only format ("123", ":123")
-- [ ] Support line:column format (":123:45", "123:45")
+- [ ] Add `GotoTarget` enum with parse method (parsing is currently inline in `src/update/ui.rs`)
+- [x] Support line-only format ("123") — [ ] leading-colon form (":123")
+- [x] Support line:column format ("123:45") — [ ] leading-colon form (":123:45")
 - [ ] Support percentage format ("50%")
 - [ ] Add comprehensive parsing tests
 
@@ -404,17 +414,17 @@ impl EditConstraints {
 
 ### Phase 3: Edit Constraints
 
-**Files:** `src/editable/mod.rs`
+**Files:** `src/editable/constraints.rs`
 
-- [ ] Add `EditConstraints::goto_line_enhanced()`
-- [ ] Allow digits, colons, and percent sign
+- [ ] Add `EditConstraints::goto_line_enhanced()` (or extend `goto_line()`)
+- [x] Allow digits and colons — [ ] percent sign
 - [ ] Update `GotoLineState` to use new constraints
 
 **Test:** Input "abc" is rejected, ":123:45" is accepted.
 
 ### Phase 4: Preview Integration
 
-**Files:** `src/update/modal.rs`
+**Files:** `src/update/ui.rs`
 
 - [ ] On input change, parse and validate target
 - [ ] Temporarily move viewport to preview position
@@ -567,4 +577,4 @@ fn test_goto_line_percentage() {
 - **Editable system:** `src/editable/` - Input constraints
 - **VS Code:** "Go to Line" (Ctrl+G) with `:line:column` support
 - **Sublime Text:** Goto Anything with `:line` syntax
-- **Modal patterns:** `src/update/modal.rs` - Modal message handling
+- **Modal patterns:** `src/update/ui.rs` - Modal message handling (`ModalMsg::OpenGotoLine`, `ModalState::GotoLine` confirm)

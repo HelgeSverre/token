@@ -64,7 +64,7 @@ which does not establish the cause of historical intermittent warnings.
 - [Before output](data/2026-09-08/completion-response-before.txt)
 - [After output](data/2026-09-08/completion-response-after.txt)
 - [Independent repeat](data/2026-09-08/completion-response-repeat.txt)
-- [Implementation and review](../dev/refactoring-audit-2026-09-06.md#completion-response-ownership--2026-09-08)
+- [Implementation and review](../archived/refactoring-audit-2026-09-06.md#completion-response-ownership--2026-09-08)
 
 SHA-256 of the unchanged fixture: `2782405196c49da97209ff35db99a99f50b628fe0301efd79989476f32e74bed`.
 After-conversion source `src/completion/lsp.rs`:

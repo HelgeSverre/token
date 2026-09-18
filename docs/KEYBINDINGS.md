@@ -11,7 +11,8 @@ Token uses a YAML-based keymapping system with platform-aware modifiers.
 ### Config Location
 
 - **Default bindings**: Embedded at compile time from `keymap.yaml`
-- **User overrides**: `~/.config/token-editor/keymap.yaml` (create to customize)
+- **User overrides**: `~/.config/token-editor/keymap.yaml` (Token creates a default file if none exists; it never replaces an existing one)
+- **In-app**: Settings → Keymap lists the merged bindings and lets you edit them. Manual edits to the file take effect after reopening Settings → Keymap or restarting.
 
 ### Modifier Keys
 
@@ -39,6 +40,8 @@ The `cmd` modifier is the recommended cross-platform modifier. It maps to Comman
 | Go to File      | Cmd+Shift+O       | `FuzzyFileFinder` |
 | New Tab         | Cmd+Shift+N       | `NewTab`        |
 | Close Tab       | Cmd+W             | `CloseTab`      |
+| Recent Files    | Cmd+E             | `OpenRecentFiles` |
+| Settings        | Cmd+,             | `OpenSettings`  |
 
 ### Undo/Redo
 
@@ -70,9 +73,15 @@ The `cmd` modifier is the recommended cross-platform modifier. It maps to Comman
 | Action | Shortcut | Command |
 | ------ | -------- | ------- |
 | Trigger completion menu | Ctrl+Space | `TriggerCompletionMenu` |
+| Accept menu item | Tab / Enter (`completion_menu_visible`) | `AcceptMenuCompletion` |
+| Previous / next menu item | Up / Down (`completion_menu_visible`) | `PreviousMenuCompletion` / `NextMenuCompletion` |
+| Previous / next menu page | Page Up / Page Down (`completion_menu_visible`) | `PreviousMenuCompletionPage` / `NextMenuCompletionPage` |
+| Dismiss menu | Escape (`completion_menu_visible` or `completion_session_pending`) | `DismissMenuCompletion` |
 | Trigger inline suggestion | Option+\\ | `TriggerInlineSuggestion` |
-| Accept inline suggestion | Tab (while ghost text shows) | `AcceptInlineSuggestion` |
-| Dismiss inline suggestion | Escape (while ghost text shows) | `DismissInlineSuggestion` |
+| Accept inline suggestion | Tab (`inline_suggestion_visible`) | `AcceptInlineSuggestion` |
+| Accept next word of suggestion | Cmd+Right (`inline_suggestion_visible`) | `AcceptInlineWord` |
+| Next / previous suggestion | Alt+] / Alt+[ (`inline_suggestion_visible`) | `NextInlineSuggestion` / `PrevInlineSuggestion` |
+| Dismiss inline suggestion | Escape (`inline_suggestion_visible`) | `DismissInlineSuggestion` |
 
 ### Search and dialogs
 
@@ -97,7 +106,9 @@ inputs when expanded; in Find-only mode it returns focus to the editor.
 |----------------------|---------------|----------------------|
 | Toggle File Explorer | Cmd+1         | `ToggleFileExplorer` |
 | Toggle Terminal      | Cmd+2         | `ToggleTerminal`     |
+| Toggle Problems      | Cmd+4         | `ToggleProblems`     |
 | Toggle Outline       | Cmd+7         | `ToggleOutline`      |
+| Toggle Soft Wrap     | Alt+Z         | `ToggleSoftWrap`     |
 
 ### Workspace
 
@@ -230,6 +241,40 @@ Most keys go straight to the shell. These are translated:
 | Scroll Back / Forward | Shift+PageUp/Down|                   |
 | Focus Editor          | Escape           |                   |
 
+The Cmd rows above use the physical Command/Win (logo) key, not the platform
+`cmd` modifier. On Windows/Linux, copy is Ctrl+Shift+C; plain Ctrl+C interrupts
+the shell.
+
+### Code Navigation and LSP
+
+| Action                  | Shortcut        | Command             |
+|-------------------------|-----------------|---------------------|
+| Go to Definition        | Cmd+B           | `GotoDefinition`    |
+| Navigate Back / Forward | Cmd+[ / Cmd+]   | `NavigateBack` / `NavigateForward` |
+| Next / Prev Diagnostic  | F2 / Shift+F2   | `NextDiagnostic` / `PrevDiagnostic` |
+| Show Hover              | Cmd+Shift+D     | `ShowHover`         |
+| Signature Help          | Cmd+P           | `ShowSignatureHelp` |
+| Rename Symbol           | Shift+F6        | `RenameSymbol`      |
+| Code Actions            | Alt+Enter       | `ShowCodeActions`   |
+| Format Document         | Cmd+Alt+L       | `FormatDocument`    |
+| Find Usages             | Alt+F7          | `FindUsages`        |
+| Show Usages             | Cmd+Alt+F7      | `ShowUsages`        |
+
+### Context Menu
+
+| Action            | Shortcut   | Command           |
+|-------------------|------------|-------------------|
+| Show Context Menu | Shift+F10  | `ShowContextMenu` |
+
+### Image Viewer
+
+| Action        | Shortcut     | Command            |
+|---------------|--------------|--------------------|
+| Zoom In       | Cmd+=        | `ImageZoomIn`      |
+| Zoom Out      | Cmd+-        | `ImageZoomOut`     |
+| Fit to Window | Cmd+0        | `ImageFitToWindow` |
+| Actual Size   | Cmd+Shift+0  | `ImageActualSize`  |
+
 ### Markdown Preview
 
 | Action                  | Shortcut      | Command                  |
@@ -262,6 +307,10 @@ Some bindings only activate in specific contexts. Use the `when` field to specif
 | `modal_inactive`       | No modal dialog is open                  |
 | `editor_focused`       | The editor pane has focus                |
 | `sidebar_focused`      | The sidebar file tree has focus          |
+| `overlay_routes_keys`  | An overlay (popup) is routing keys       |
+| `inline_suggestion_visible` | Inline suggestion ghost text is showing |
+| `completion_menu_visible` | The completion menu is open           |
+| `completion_session_pending` | A completion menu session exists but is not yet visible |
 
 Example:
 ```yaml
@@ -294,6 +343,25 @@ bindings:
 
 User bindings are merged with defaults. User bindings take precedence over defaults when keys match.
 
+An optional top-level `base` key selects the preset the overrides merge onto:
+
+```yaml
+base: conventional  # default: token
+bindings: []
+```
+
+`conventional` rebinds `cmd+p` to `FuzzyFileFinder`, `cmd+shift+p` to `ToggleCommandPalette` and `cmd+d` to `SelectNextOccurrence`; user bindings still win.
+
+### Chord sequences
+
+Space-separate keystrokes to bind a chord:
+
+```yaml
+bindings:
+  - key: "ctrl+k ctrl+c"
+    command: Copy
+```
+
 ---
 
 ## Disabling Default Bindings
@@ -317,6 +385,8 @@ bindings:
 ### Named Keys
 `enter`, `escape`, `tab`, `backspace`, `delete`, `space`, `insert`
 
+`plus` binds the `+` character and `literal_space` the space character, since `+` and space are otherwise separators.
+
 ### Arrow Keys
 `up`, `down`, `left`, `right`
 
@@ -324,7 +394,7 @@ bindings:
 `home`, `end`, `pageup`, `pagedown`
 
 ### Function Keys
-`f1` through `f12`
+`f1` through `f24`
 
 ### Numpad Keys
 `numpad0` through `numpad9`, `numpad_add`, `numpad_subtract`, `numpad_multiply`, `numpad_divide`, `numpad_decimal`, `numpad_enter`

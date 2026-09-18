@@ -16,7 +16,7 @@ For example, in `docs/ui/COMBOBOX.md`, this image and link retain their ordinary
 browser-relative meaning:
 
 ```markdown
-[![ComboBox](mockups/renders/COMBOBOX.png)](mockups/COMBOBOX.html)
+[![ComboBox](../ui/mockups/renders/COMBOBOX.png)](../ui/mockups/COMBOBOX.html)
 ```
 
 Local links open existing files in the preview's attached editor group, using

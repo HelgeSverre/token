@@ -32,7 +32,7 @@ Record and replay sequences of editor actions for repetitive tasks
 The editor currently has:
 
 - Configurable keybindings via YAML
-- Comprehensive command system (`Command` enum with 70+ commands)
+- Comprehensive command system (`Command` enum with ~150 commands)
 - Message-based architecture (`Msg` → `update()` → `Cmd`)
 - Multi-cursor support for parallel edits
 - Undo/redo with atomic operations
@@ -67,7 +67,7 @@ However, there is no way to record a sequence of actions and replay them later.
 │                                                                              │
 │  ┌──────────────────┐                                                        │
 │  │  User presses    │                                                        │
-│  │  Cmd+Shift+R     │    START RECORDING                                     │
+│  │  Cmd+Alt+R       │    START RECORDING                                     │
 │  └────────┬─────────┘                                                        │
 │           │                                                                  │
 │           ▼                                                                  │
@@ -78,7 +78,7 @@ However, there is no way to record a sequence of actions and replay them later.
 │  │  - Appends recordable commands to buffer                              │   │
 │  └────────────────────────────────────────────────────────────────────┬─┘   │
 │           │                                                           │      │
-│           │  User presses Cmd+Shift+R again                          │      │
+│           │  User presses Cmd+Alt+R again                            │      │
 │           ▼                                                           ▼      │
 │  ┌──────────────────┐                                    ┌──────────────────┐│
 │  │  STOP RECORDING  │                                    │  Command logged  ││
@@ -93,7 +93,7 @@ However, there is no way to record a sequence of actions and replay them later.
 │  │  - Persistence to ~/.config/token-editor/macros.yaml                 │   │
 │  └────────────────────────────────────────────────────────────────────┬─┘   │
 │                                                                        │     │
-│           User presses Cmd+Shift+E (or Cmd+1..9)                      │     │
+│           User presses Cmd+Shift+E (or Cmd+Ctrl+1..9)                 │     │
 │           │                                                            │     │
 │           ▼                                                            ▼     │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
@@ -173,7 +173,7 @@ pub enum MacroAction {
 }
 
 impl MacroAction {
-    /// Create from a command, batching consecutive InsertChar
+    /// Create from a command (text insertion is batched separately, see MacroRecorder)
     pub fn from_command(cmd: Command) -> Self {
         MacroAction::Command(cmd)
     }
@@ -198,7 +198,7 @@ pub struct Macro {
     pub actions: Vec<MacroAction>,
 
     /// When this macro was recorded
-    pub recorded_at: chrono::DateTime<chrono::Utc>,
+    pub recorded_at: std::time::SystemTime,
 
     /// Number of times this macro has been played
     pub play_count: u32,
@@ -221,7 +221,7 @@ impl Macro {
             id,
             name: None,
             actions,
-            recorded_at: chrono::Utc::now(),
+            recorded_at: std::time::SystemTime::now(),
             play_count: 0,
         }
     }
@@ -304,18 +304,19 @@ impl MacroRecorder {
         }
     }
 
+    /// Record a typed character. Text insertion is not a `Command`; it arrives
+    /// as `Msg::Document(DocumentMsg::InsertChar(c))`, so the recorder hooks
+    /// that message and batches consecutive characters into one `InsertText`.
+    pub fn record_char(&mut self, c: char) {
+        self.text_buffer.push(c);
+        self.action_count += 1;
+    }
+
     /// Record a command (returns true if recorded, false if filtered)
     pub fn record(&mut self, command: &Command) -> bool {
         // Filter non-recordable commands
         if !is_recordable(command) {
             return false;
-        }
-
-        // Batch consecutive text insertions
-        if let Command::InsertChar(c) = command {
-            self.text_buffer.push(*c);
-            self.action_count += 1;
-            return true;
         }
 
         // Flush text buffer before recording other commands
@@ -351,13 +352,13 @@ fn is_recordable(command: &Command) -> bool {
         StopMacro | SaveMacroToSlot(_) => false,
 
         // File dialogs are not recordable (user interaction)
-        OpenFile | SaveFileAs | OpenFolder => false,
+        OpenFile | SaveFileAs => false,
 
         // Window management not recordable
-        Quit | ForceQuit => false,
+        Quit => false,
 
-        // Theme/config changes not recordable
-        OpenThemePicker | OpenCommandPalette => false,
+        // Modal/config UI not recordable
+        ToggleCommandPalette => false,
 
         // Everything else is recordable
         _ => true,
@@ -804,11 +805,11 @@ fn play_macro_repeat(model: &mut AppModel, slot: MacroId, count: u32) -> Cmd {
 
 | Action | Mac | Windows/Linux | Context |
 |--------|-----|---------------|---------|
-| Toggle record | `Cmd+Shift+R` | `Ctrl+Shift+R` | always |
+| Toggle record | `Cmd+Alt+R` | `Ctrl+Alt+R` | always |
 | Play last macro | `Cmd+Shift+E` | `Ctrl+Shift+E` | always |
 | Play macro N times | `Cmd+Shift+E, N` | `Ctrl+Shift+E, N` | always |
 | Play from slot 1-9 | `Cmd+Ctrl+1-9` | `Ctrl+Alt+1-9` | always |
-| Save to slot 1-9 | `Cmd+Shift+1-9` | `Ctrl+Shift+1-9` | always |
+| Save to slot 1-9 | `Cmd+Alt+1-9` | `Ctrl+Shift+1-9` | always |
 | Cancel playback | `Escape` | `Escape` | macro_playing |
 
 ### Keymap Configuration
@@ -816,7 +817,7 @@ fn play_macro_repeat(model: &mut AppModel, slot: MacroId, count: u32) -> Cmd {
 ```yaml
 # keymap.yaml additions
 
-- key: "cmd+shift+r"
+- key: "cmd+alt+r"
   command: RecordMacro
   when: ["in_editor"]
 
@@ -831,7 +832,7 @@ fn play_macro_repeat(model: &mut AppModel, slot: MacroId, count: u32) -> Cmd {
 
 # ... slots 2-9 ...
 
-- key: "cmd+shift+1"
+- key: "cmd+alt+1"
   command: SaveMacroToSlot
   args: { slot: 1 }
   when: ["in_editor"]
@@ -879,7 +880,7 @@ fn macro_status_segment(macro_state: &MacroState) -> Option<StatusSegment> {
 - [ ] Add `MacroState` to `AppModel`
 - [ ] Add `MacroMsg` to `messages.rs`
 - [ ] Implement start/stop recording in `update/macros.rs`
-- [ ] Wire up `Cmd+Shift+R` keybinding
+- [ ] Wire up `Cmd+Alt+R` keybinding
 - [ ] Add "● REC" indicator to status bar
 
 **Test:** Record typing + cursor movements, verify actions captured.
@@ -960,7 +961,7 @@ fn test_recorder_filters_macro_commands() {
 
     // Regular commands are recorded
     assert!(recorder.record(&Command::MoveCursorUp));
-    assert!(recorder.record(&Command::InsertChar('a')));
+    recorder.record_char('a');
 
     // Macro commands are filtered
     assert!(!recorder.record(&Command::RecordMacro));
@@ -973,11 +974,11 @@ fn test_recorder_filters_macro_commands() {
 fn test_recorder_batches_text() {
     let mut recorder = MacroRecorder::new(MacroId::Last);
 
-    recorder.record(&Command::InsertChar('h'));
-    recorder.record(&Command::InsertChar('e'));
-    recorder.record(&Command::InsertChar('l'));
-    recorder.record(&Command::InsertChar('l'));
-    recorder.record(&Command::InsertChar('o'));
+    recorder.record_char('h');
+    recorder.record_char('e');
+    recorder.record_char('l');
+    recorder.record_char('l');
+    recorder.record_char('o');
 
     let macro_data = recorder.finalize();
 
@@ -993,10 +994,10 @@ fn test_recorder_batches_text() {
 fn test_recorder_flushes_on_non_text() {
     let mut recorder = MacroRecorder::new(MacroId::Last);
 
-    recorder.record(&Command::InsertChar('a'));
-    recorder.record(&Command::InsertChar('b'));
+    recorder.record_char('a');
+    recorder.record_char('b');
     recorder.record(&Command::MoveCursorDown);
-    recorder.record(&Command::InsertChar('c'));
+    recorder.record_char('c');
 
     let macro_data = recorder.finalize();
 

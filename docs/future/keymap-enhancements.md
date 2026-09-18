@@ -18,16 +18,16 @@ The configurable keymapping system is complete and working. This document tracks
 Automatically reload keymap when the configuration file changes:
 
 - Watch `~/.config/token-editor/keymap.yaml` for modifications
-- Watch project-local `keymap.yaml` if present
+- Watch project-local `keymap.yaml` if present (new feature: only `~/.config/token-editor/keymap.yaml` is loaded today)
 - Reload and re-merge bindings without restart
 - Show status bar notification on reload
 
 **Dependencies:**
-- `notify` crate for file system watching (already planned for workspace feature)
+- `notify` crate for file system watching (already a dependency; extend the existing watcher in `src/runtime/file_watch.rs` / `src/fs_watcher.rs`)
 
 **Implementation notes:**
 - Add file watcher to `App` struct
-- On change event, call `load_default_keymap()` and rebuild `Keymap`
+- On change event, re-run `load_keymap_file` + `merge_bindings` (mirroring `KeymapSnapshot::parse` in `src/keymap/preferences.rs`, the Settings→Keymap reload path fed by `src/runtime/keymap_settings.rs`) and rebuild `Keymap`
 - Handle parse errors gracefully (keep old keymap, show error)
 
 ---
@@ -44,9 +44,9 @@ feedback below remain future work; this does not make every editor command a
 global action.
 
 **Priority:** Low  
-**Effort:** Low (infrastructure exists)
+**Effort:** Medium (chord infrastructure exists, but none of the commands below do yet)
 
-Define default multi-key chord sequences:
+Define default multi-key chord sequences (all four commands must be added to `src/keymap/command.rs` first; none exist today):
 
 | Chord | Command | Description |
 |-------|---------|-------------|
@@ -58,7 +58,7 @@ Define default multi-key chord sequences:
 **Implementation notes:**
 - Infrastructure already exists: `KeyAction::AwaitMore`, `pending_chord_display()`
 - Add chord timeout (e.g., 1.5s) to abandon incomplete sequences
-- Show pending chord in status bar
+- Show pending chord in status bar (`pending_chord_display()` exists but is not called by the view yet)
 - Add the proposed default sequences to `keymap.yaml`
 
 **YAML syntax example:**
@@ -92,11 +92,11 @@ Handle abandoned chord sequences gracefully:
 **Priority:** Low  
 **Effort:** Medium
 
-Move selection-clearing logic from `input.rs` into editor movement handlers:
+Move selection-clearing logic from `src/runtime/input.rs` into editor movement handlers:
 
 **Current state:**
-- Navigation commands (Home, End, PageUp/Down, etc.) clear selection in `input.rs` before dispatching the movement message
-- This creates a split between keymap (binding) and input.rs (behavior)
+- Navigation commands (Home, End, PageUp/Down, etc.) clear selection in `src/runtime/input.rs` before dispatching the movement message
+- This creates a split between keymap (binding) and `src/runtime/input.rs` (behavior)
 
 **Proposed:**
 - Add `clear_selection` flag to movement `EditorMsg` variants, OR
@@ -121,7 +121,7 @@ Move selection-clearing logic from `input.rs` into editor movement handlers:
 
 ### Keymap Editor UI
 
-Tracked in [Settings Keymap Tab](settings-keymap.md): merged binding search,
+Tracked in [Settings Keymap Tab](../archived/settings-keymap.md): merged binding search,
 chord capture/rebinding, conflict detection, override persistence and base-keymap
 selection. That plan remains active after Settings v1 archival.
 
@@ -134,4 +134,5 @@ selection. That plan remains active after Settings v1 archival.
 ## See Also
 
 - [Configurable Keymapping (archived)](../archived/KEYMAPPING_IMPLEMENTATION_PLAN.md) - Original implementation plan
-- [KEYMAPPING.md](../archived/KEYMAPPING.md) - User-facing keymapping documentation (if exists)
+- [KEYBINDINGS.md](../KEYBINDINGS.md) - Current user-facing keybinding reference
+- [KEYMAPPING.md](../archived/KEYMAPPING.md) - Original user-facing keymapping documentation

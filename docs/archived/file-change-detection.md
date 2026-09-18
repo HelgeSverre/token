@@ -42,7 +42,7 @@ deleted buffers, CSV edits, explicit overwrite preconditions, and alias retarget
 Live application checks now also pass watcher-to-UI clean reload, dirty conflicts,
 Keep Editing, native-keyboard Reload/Overwrite/Recreate, native Save As with both
 versions retained, refocus, and disabling auto reload through Settings. See the
-[native verification record](../dev/refactoring-audit-2026-09-06.md#external-file-protection-native-macos-verification--2026-09-08).
+[native verification record](refactoring-audit-2026-09-06.md#external-file-protection-native-macos-verification--2026-09-08).
 
 This closes the initial protective slice accepted in the plan reconciliation.
 The remainder of this file is the historical proposal, not a description of
@@ -775,4 +775,4 @@ file_change_detection:
 - notify crate: https://docs.rs/notify/latest/notify/
 - notify-debouncer-mini: https://docs.rs/notify-debouncer-mini/latest/notify_debouncer_mini/
 - Existing workspace watcher: `src/fs_watcher.rs`
-- Auto-save integration: `docs/feature/auto-save.md` (F-100)
+- Auto-save integration: `docs/archived/auto-save.md` (F-100)

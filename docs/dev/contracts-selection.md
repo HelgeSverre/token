@@ -41,14 +41,19 @@ pub struct Selection {
 
 ### Cursor
 
-Extends Selection with vertical navigation state:
+A position plus vertical navigation state:
 
 ```rust
 pub struct Cursor {
-    pub selection: Selection,
-    pub desired_column: usize, // Preserved during vertical movement
+    pub line: usize,
+    pub column: usize,
+    pub desired_column: Option<usize>, // Preserved during vertical movement
 }
 ```
+
+`EditorState` keeps `cursors: Vec<Cursor>` and `selections: Vec<Selection>` as
+parallel Vecs, with `cursors[i].to_position() == selections[i].head`, plus an
+`active_cursor_index` into both.
 
 ---
 
@@ -76,14 +81,17 @@ Backward selections (head before anchor) are valid and must be handled correctly
 
 ## Multi-Cursor Invariants
 
-### INV-MC-01: Primary Cursor
+### INV-MC-01: Primary vs Active Cursor
 
-> Index 0 is always the "primary" cursor.
+> Index 0 is the top-most cursor (`primary_cursor()`); `active_cursor_index` is the user's focus.
 
-The primary cursor:
+Cursors are stored sorted by position, so index 0 is simply the first one in
+document order. The active cursor (`active_cursor_index`, valid range
+`0..cursors.len()`):
 - Determines scroll position
-- Is used for single-cursor fallback operations
+- Drives `ShrinkSelection` history and line highlighting
 - Is highlighted differently (solid vs semi-transparent)
+- Becomes the newly added cursor after `ToggleCursorAtPosition`
 
 ### INV-MC-02: No Overlapping Selections
 
@@ -215,9 +223,9 @@ AddCursorAbove → Add at line 4 (above line 5)
 AddCursorBelow → Add at line 9 (below line 8)
 ```
 
-### Cmd+Click
+### Option+Click (Alt+Click)
 
-Toggle cursor at clicked position:
+Toggle cursor at clicked position (Cmd+Click is go-to-definition, not cursor toggling):
 - If no cursor exists: add cursor
 - If cursor exists at position: remove it
 - If removing would leave 0 cursors: keep it
@@ -258,10 +266,13 @@ Multi-cursor edits are batched into single undo operation:
 ```rust
 EditOperation::Batch {
     operations: Vec<EditOperation>,
-    cursors_before: Vec<Cursor>,
-    cursors_after: Vec<Cursor>,
+    editors_before: Vec<EditorEditState>,
+    editors_after: Vec<EditorEditState>,
 }
 ```
+
+`EditorEditState` captures every pane's cursors, selections, and
+`active_cursor_index` losslessly, so undo/redo restores multi-cursor state exactly.
 
 ---
 
@@ -274,7 +285,7 @@ Called after operations that may cause overlap:
 1. Sort cursors by start position
 2. Merge if `cursor[i].end >= cursor[i+1].start`
 3. Merged selection uses combined range
-4. Primary cursor (index 0) status is preserved
+4. `active_cursor_index` is remapped to the merged range containing the original active cursor
 
 ### Merge Examples
 
@@ -335,7 +346,12 @@ Every selection operation must have tests for:
 
 ## References
 
-- `src/model/editor.rs` - Position, Selection, Cursor definitions
+- `src/editable/cursor.rs` - Position and Cursor definitions
+- `src/editable/selection.rs` - Selection definition
+- `src/model/editor.rs` - EditorState (cursors/selections/active_cursor_index), merge and dedup
+- `src/model/document.rs` - `EditOperation::Batch` and `EditorEditState`
 - `src/update/editor.rs` - Movement and selection operations
 - `tests/selection.rs` - Selection test suite
 - `tests/multi_cursor.rs` - Multi-cursor test suite
+- `tests/expand_shrink_selection.rs` - Expand/shrink selection test suite
+- `tests/cursor_movement.rs`, `tests/cursor_clamping.rs` - Movement and INV-SEL-01 clamping

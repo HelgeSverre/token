@@ -36,8 +36,10 @@ The editor currently has:
 - Language detection from file extension
 - Tab/indent handling
 - Undo/redo with atomic multi-cursor operations
+- A static, flattened snippet table served as a completion-menu source (`snippet_table()` / `collect_snippets()` in `src/completion/sources.rs`: Rust `fn`/`println`/`derive`/`test`, JS/TS `function`/`log`/`arrow`, Python `def`/`class`/`main`) — a stopgap until this plan lands
+- LSP snippet bodies flattened to plain text on insert (`strip_snippet` in `src/completion/lsp.rs`; caret lands at `$0`)
 
-However, there is no snippet system for expanding trigger words into templates with placeholders.
+However, there is no snippet system for expanding trigger words into templates with placeholders: no tabstops, no mirrors, no user-defined snippets. Nothing under `src/snippets/` exists yet, and `config_paths::snippets_dir()` referenced below is a new helper to add in Phase 1.
 
 ### Goals
 
@@ -1123,6 +1125,7 @@ pub enum Condition {
 - [ ] Add JavaScript snippets (function, arrow, class, etc.)
 - [ ] Add global snippets (todo, fixme, etc.)
 - [ ] Load builtins on startup
+- [ ] Replace or feed the static `snippet_table()` in `src/completion/sources.rs` so the completion menu and expansion share one source (see [Autocomplete](../feature/autocomplete.md))
 
 **Test:** Built-in "fn" snippet available for Rust files.
 
@@ -1183,6 +1186,7 @@ pub enum Condition {
 - [ ] Escape to cancel snippet mode
 - [ ] Handle edge cases (empty file, multi-cursor)
 - [ ] Performance optimization
+- [ ] Drop the LSP `strip_snippet` flattening in `src/completion/lsp.rs` and advertise `snippetSupport` once expansion handles LSP snippet bodies
 
 **Test:** Command palette shows available snippets filtered by language.
 

@@ -1,7 +1,19 @@
 # Settings Keymap Tab
 
-> **Status:** Implementation committed 2026-09-08; cross-platform validation remains.
-> **Extracted:** 2026-09-06 from Phase 4 of the [archived Settings v1 plan](../archived/settings-page.md).
+> **Status:** Archived 2026-09-17. Every scope item below shipped in v0.7.0
+> (2026-09-11; see `docs/CHANGELOG.md`, Keymap category, preferences layer and
+> override persistence). Living documentation: `docs/user/config-keymap.md`,
+> `docs/KEYBINDINGS.md` and the code in `src/settings/keymap.rs` and
+> `src/keymap/preferences.rs`; further routing work is in
+> [keymap-enhancements.md](../future/keymap-enhancements.md).
+> Still open (QA gates, not feature scope): native Windows verification of the
+> Keymap tab (keycaps, chord capture/cancel, pointer Save, override persistence
+> after restart, 400px layout), and completing the Wayland run beyond the
+> [partial 2026-09-08 check](refactoring-audit-2026-09-06.md#partial-wayland-verification--2026-09-08)
+> (pointer checks incomplete). The "uncommitted Settings v1" wording below is
+> historical; that work landed in `c2a1ee5` and `ac362d4`.
+> **Original status:** Implementation committed 2026-09-08; cross-platform validation remains.
+> **Extracted:** 2026-09-06 from Phase 4 of the [archived Settings v1 plan](settings-page.md).
 > **Priority:** P3 · **Effort:** M · **Milestone:** 6 - Productivity
 
 Settings v1 provides searchable preset controls and LSP state. Archiving that
@@ -70,7 +82,7 @@ checks are complete. The dependency-ordered source
 grouping was closed by `ab96495`–`2bdbcca` on 2026-09-08; UI/override code is
 in `c2a1ee5`, with shared runtime wiring in `ac362d4`.
 
-The related [keymap enhancements](keymap-enhancements.md) plan owns timeout,
+The related [keymap enhancements](../future/keymap-enhancements.md) plan owns timeout,
 pending-chord feedback, hot reload and broader routing work. Coordinate those
 changes instead of creating a second keymap engine.
 
@@ -82,7 +94,7 @@ layout. Native checks exposed Alt-containing chords being mistaken for a bare
 Alt double-tap; `c104ed9` fixes that without changing the gesture timing.
 The saved Ctrl+Alt+K Ctrl+Alt+S sequence opened Settings from the editor both
 immediately and after restart. Final Linux/macOS full tests and strict lint passed.
-See the [native record](../dev/refactoring-audit-2026-09-06.md#linux-native-verification-and-portability-fixes--2026-09-08).
+See the [native record](refactoring-audit-2026-09-06.md#linux-native-verification-and-portability-fixes--2026-09-08).
 This does not verify every focus context, Wayland or Windows. Keep the plan active.
 
 The follow-up context check exposed global chords being discarded outside the
@@ -91,5 +103,5 @@ one filtered keymap resolver. Native Linux X11 checks now cover opening Settings
 from terminal, command palette, file explorer and CSV cell editing; a temporary
 editor-only text chord did not swallow ordinary field/terminal input. Full
 macOS/Linux tests and strict lint passed. See the
-[context record](../dev/refactoring-audit-2026-09-06.md#global-shortcuts-across-input-contexts--2026-09-08).
+[context record](refactoring-audit-2026-09-06.md#global-shortcuts-across-input-contexts--2026-09-08).
 This plan still awaits the remaining platform/context verification.

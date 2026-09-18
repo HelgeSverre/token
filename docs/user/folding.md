@@ -31,6 +31,7 @@ overview marks include hidden text.
 | Rust                             | Functions, impls, traits, structs, enums, modules, blocks, collections, block comments and raw strings              |
 | JavaScript, TypeScript, JSX, TSX | Functions, methods, classes, interfaces, blocks, collections, multiline comments, template strings and JSX elements |
 | Python                           | Functions, classes, control-flow statements, collections and multiline strings                                      |
+| Sema                             | Lists, short lambdas, vectors, hash maps, byte vectors, block comments and strings                                  |
 | JSON and YAML                    | Collections and multiline values                                                                                    |
 | HTML and CSS                     | Elements, rules, blocks and multiline comments                                                                      |
 | Markdown                         | Heading sections, fenced/indented code, lists, block quotes and HTML blocks                                         |

@@ -40,9 +40,8 @@ Configuration and usage guides for end users.
 
 Architecture, contracts, and implementation guides.
 
-Recent analysis: [Refactoring and production-path profiling, 2026-09-05](dev/refactoring-profile-2026-09-05.md).
-Implementation and verification follow-ups, including completion profiling:
-[Refactoring audit, 2026-09-06](dev/refactoring-audit-2026-09-06.md).
+Shipped plans and past analyses (refactoring audits, profiling reports, the
+completion refactoring plan) live in [`archived/`](archived/).
 Language integration guide: [Adding Tree-sitter languages](feature/adding-languages.md)
 (maintained reference, not an unfinished feature plan).
 
@@ -51,14 +50,10 @@ Language integration guide: [Adding Tree-sitter languages](feature/adding-langua
 | [automation-input.md](dev/automation-input.md)                   | Window-local pointer/wheel/focus injection and the native smoke check |
 | [contracts-selection.md](dev/contracts-selection.md)             | Selection semantics and multi-cursor rules (behavior contract)      |
 | [contracts-undo.md](dev/contracts-undo.md)                       | Undo/redo behavior and edit grouping (behavior contract)            |
-| [shared-syntax-parsing.md](dev/shared-syntax-parsing.md)         | Verification of shared host-tree parsing across highlight paths      |
 | [lsp-tools-overview.md](dev/lsp-tools-overview.md)               | Catalog of LSP servers and formatters, with Token rollout status    |
 | [ui-gallery.md](dev/ui-gallery.md)                               | Native UI gallery (`just ui-gallery`) for component specimens       |
 | [ui-component-inventory.md](dev/ui-component-inventory.md)       | UI component inventory and design discussion (2026-09-11)           |
-| [completion-refactoring-plan.md](dev/completion-refactoring-plan.md) | Completion refactoring handoff plan (2026-09-15)                 |
 | [release-0.7.0-readiness.md](dev/release-0.7.0-readiness.md)      | 0.7.0 release preparation checklist                                 |
-| [refactoring-profile-2026-09-05.md](dev/refactoring-profile-2026-09-05.md) | Refactoring and production-path profiling                   |
-| [refactoring-audit-2026-09-06.md](dev/refactoring-audit-2026-09-06.md) | Implementation and verification follow-ups                   |
 | [agent-archive.md](dev/agent-archive.md)                         | Private agent-session archive tooling                                |
 | [agent-viewer.md](dev/agent-viewer.md)                           | Website agent-viewer design fixtures                                 |
 | [agent-transcript-research.md](dev/agent-transcript-research.md)  | Agent transcript viewer research (2026-09-16)                        |
@@ -71,14 +66,6 @@ The native UI component manuals live in [ui/](ui/README.md), following the
 [IMPLEMENTATION-ROADMAP.md](ui/IMPLEMENTATION-ROADMAP.md), with an
 IntelliJ-feature crosswalk in [INTELLIJ-CROSSWALK.md](ui/INTELLIJ-CROSSWALK.md).
 
-### Templates
-
-| Template                                     | Use for                      |
-| -------------------------------------------- | ---------------------------- |
-| [FEATURE_SPEC.md](templates/FEATURE_SPEC.md) | New feature design documents  |
-
----
-
 ## Feature Design Documents
 
 Active specifications live in `docs/feature/` and `docs/future/`. Implemented or
@@ -87,10 +74,10 @@ scope from deferred ideas and manual verification. Archival is not a release.
 
 Plan sweeps: the initial external-file protection slice was implemented and
 verified on native macOS (2026-09-08), and the coordinated
-[auto-save, EditorConfig, and code folding plan](feature/file-policy-and-folding-plan.md)
+[auto-save, EditorConfig, and code folding plan](archived/file-policy-and-folding-plan.md)
 was implemented and reviewed on 2026-09-09. Earlier completed Settings v1,
 terminal, context-menu, Find, soft-wrap and LSP plans are already archived. See
-the [reconciliation record](dev/refactoring-audit-2026-09-06.md#plan-reconciliation--2026-09-08)
+the [reconciliation record](archived/refactoring-audit-2026-09-06.md#plan-reconciliation--2026-09-08)
 for partial implementations and suggested next work.
 
 ### Completed Features
@@ -122,12 +109,14 @@ for partial implementations and suggested next work.
 | Soft Wrap                               | ✅ Implemented, unreleased                                           | [soft-wrap.md](archived/soft-wrap.md)                                         |
 | Settings v1 (presets + LSP)             | ✅ Implemented, unreleased                                           | [settings-page.md](archived/settings-page.md)                                 |
 | Pixel Scrolling                         | ✅ v0.7.0; native macOS verified                                     | [pixel-scrolling.md](archived/pixel-scrolling.md)                             |
-| Auto-Save                               | ✅ Implemented (2026-09-09), unreleased                              | [file-policy-and-folding-plan.md](feature/file-policy-and-folding-plan.md)   |
-| EditorConfig Integration                | ✅ Implemented (2026-09-09), unreleased                              | [file-policy-and-folding-plan.md](feature/file-policy-and-folding-plan.md)   |
-| Code Folding                            | ✅ Implemented (2026-09-09), unreleased                              | [file-policy-and-folding-plan.md](feature/file-policy-and-folding-plan.md)   |
+| Auto-Save                               | ✅ Implemented (2026-09-09), unreleased                              | [file-policy-and-folding-plan.md](archived/file-policy-and-folding-plan.md)   |
+| EditorConfig Integration                | ✅ Implemented (2026-09-09), unreleased                              | [file-policy-and-folding-plan.md](archived/file-policy-and-folding-plan.md)   |
+| Code Folding                            | ✅ Implemented (2026-09-09), unreleased                              | [file-policy-and-folding-plan.md](archived/file-policy-and-folding-plan.md)   |
 | Find Usages panel                       | ✅ v0.7.0                                                            | [lsp-integration.md](archived/lsp-integration.md)                             |
 | Search Everywhere workspace symbols    | ✅ v0.7.0                                                            | [overlay-surface.md](archived/overlay-surface.md)                             |
-| Settings Keymap Tab                     | ✅ Implemented; cross-platform validation open                       | [settings-keymap.md](future/settings-keymap.md)                               |
+| Settings Keymap Tab                     | ✅ Implemented; cross-platform validation open                       | [settings-keymap.md](archived/settings-keymap.md)                             |
+| Shared Syntax Parsing                   | ✅ Verified host-tree parsing across highlight paths                 | [shared-syntax-parsing.md](archived/shared-syntax-parsing.md)                 |
+| Completion Refactoring                  | ✅ Handoff plan and progress log shipped (2026-09-15)                | [completion-refactoring-plan.md](archived/completion-refactoring-plan.md)     |
 
 ### Active and Planned Features
 
@@ -144,11 +133,11 @@ for partial implementations and suggested next work.
 | Folding follow-ups (basic and syntax folding implemented via the coordinated plan; deferred ideas remain) | Deferred scope | [folding-advanced.md](feature/folding-advanced.md) |
 | Configurable Double-Tap Gestures                              | 3 - Keybinding Enhancements | [gesture-bindings.md](feature/gesture-bindings.md)                     |
 | Diff Gutter                                                   | 5 - Insight Tools           | [diff-gutter.md](feature/diff-gutter.md)                               |
-| Snippets                                                      | 6 - Productivity            | [snippets.md](feature/snippets.md)                                     |
+| Snippets                                                      | 6 - Productivity            | [snippets.md](future/snippets.md)                                     |
 | Autocomplete (inline / FIM)                                   | 6 - Productivity — phases 1, 2, 4 and most of 3/5 shipped; IME/platform verification open | [autocomplete.md](feature/autocomplete.md) |
-| Macros                                                        | 7 - Productivity            | [macros.md](feature/macros.md)                                         |
+| Macros                                                        | 7 - Productivity            | [macros.md](future/macros.md)                                         |
 | Keymap Enhancements (chords partly implemented)               | Future follow-ups           | [keymap-enhancements.md](future/keymap-enhancements.md)                |
-| Sema Scripting Integration                                    | Future extensibility        | [sema-scripting-integration.md](feature/sema-scripting-integration.md) |
+| Sema Scripting Integration                                    | Future extensibility        | [sema-scripting-integration.md](future/sema-scripting-integration.md) |
 | WASM / Web Target                                             | Feasibility proposal        | [wasm-web-target.md](future/wasm-web-target.md)                        |
 | Performance Panel                                             | Planned                     | [performance-panel.md](feature/performance-panel.md)                   |
 | Editor Visual Polish                                          | Plan only                   | [editor-visual-polish.md](feature/editor-visual-polish.md)              |
@@ -240,7 +229,7 @@ src/
 
 ### Creating a Feature Doc
 
-1. Copy [templates/FEATURE_SPEC.md](templates/FEATURE_SPEC.md)
+1. Create the design doc under `docs/feature/` (or `docs/future/` for deferred ideas), modelled on an existing spec there
 2. Fill in all sections
 3. Submit for review before implementation
 

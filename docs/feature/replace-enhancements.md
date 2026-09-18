@@ -25,11 +25,12 @@ Preserve case, selection scope, and regex capture group references.
 
 ## Overview
 
-### Already Implemented (v0.3.11)
+### Already Implemented
 
-- Replace single occurrence at cursor
+- Replace single occurrence at cursor (Replace & Find Next)
 - Replace All with single undo operation
-- Case sensitivity (from find bar)
+- Case sensitivity, whole word and regex matching (from find bar)
+- Selection-only scope
 
 ### Remaining Goals
 
@@ -45,7 +46,7 @@ Selection-scoped replacement is implemented in `src/update/ui.rs`, using
 covers scope growth/shrinkage, zero-width boundaries, deletion and Undo/Redo,
 alongside Unicode and split-editor position mapping. These tests were included
 in the latest macOS full-suite pass recorded in the
-[refactoring audit](../dev/refactoring-audit-2026-09-06.md#code-quality-and-abstraction-cleanup-sweep--2026-09-08).
+[refactoring audit](../archived/refactoring-audit-2026-09-06.md#code-quality-and-abstraction-cleanup-sweep--2026-09-08).
 Regex **matching** is implemented, but replacement text is still literal;
 matching support does not complete capture-group expansion.
 
@@ -56,7 +57,7 @@ requirement to add `src/replace.rs` or duplicate the existing message/edit paths
 
 - Multi-file replace (workspace-wide search/replace)
 - Replace with clipboard contents (can add as option)
-- Interactive replace review (VS Code style)
+- Interactive per-match replace review (VS Code style); the confirmation below is a count-based dialog
 
 ---
 
@@ -548,12 +549,11 @@ impl FindReplaceState {
 
 | Action | Mac | Windows/Linux | Notes |
 |--------|-----|---------------|-------|
-| Open Find/Replace | Cmd+H | Ctrl+H | Open with replace field |
-| Replace | Cmd+Shift+1 | Ctrl+Shift+1 | Replace current match |
-| Replace & Find Next | Enter (in replace field) | Enter | Replace and move to next |
-| Replace All | Cmd+Shift+Enter | Ctrl+Shift+Enter | Replace all matches |
-| Toggle Preserve Case | Option+Cmd+P | Alt+P | Toggle case preservation |
-| Skip (Find Next) | Cmd+G | F3 | Skip to next match |
+| Open Find/Replace | Cmd+R | Ctrl+R | Open with replace field |
+| Replace & Find Next | Enter (in replace field) | Enter | Replace current match and move to next |
+| Replace All | Cmd+Enter | Ctrl+Enter | Replace all matches |
+| Toggle Preserve Case | _unassigned (proposed)_ | _unassigned (proposed)_ | Toggle case preservation |
+| Skip (Find Next / Previous) | Enter / Shift+Enter (in find field), F3 / Shift+F3 | Enter / Shift+Enter, F3 / Shift+F3 | Skip to next / previous match |
 
 ---
 
@@ -609,22 +609,23 @@ impl FindReplaceState {
 
 ### Phase 5: Message Handling
 
-**Files:** `src/messages.rs`, `src/update/modal.rs`
+**Files:** `src/messages.rs`, `src/update/ui.rs`
 
-- [ ] Add `ModalMsg::Replace` message
-- [ ] Add `ModalMsg::ReplaceAll` message
+- [x] Add `ModalMsg::ReplaceAndFindNext` message
+- [x] Add `ModalMsg::ReplaceAll` message
 - [ ] Add `ModalMsg::TogglePreserveCase` message
-- [ ] Handle replace with single undo group
-- [ ] Refresh search results after replace
+- [x] Handle replace with single undo group
+- [x] Refresh search results after replace
 
 **Test:** Replace All can be undone in one step.
 
 ### Phase 6: Rendering
 
-**Files:** `src/view/modal.rs`
+**Files:** `src/view/find_bar.rs`
 
-- [ ] Add Replace button
-- [ ] Add Replace All button with count
+- [x] Add Replace button
+- [x] Add Replace All button
+- [ ] Show match count on Replace All button
 - [ ] Add preserve case toggle (AB icon)
 - [ ] Show replacement preview on hover/focus
 - [ ] Show confirmation dialog for large replacements
@@ -778,7 +779,7 @@ fn test_replace_in_selection() {
 
 ## References
 
-- **Find Enhancements:** F-050 for search infrastructure
+- **Find Enhancements:** [find-enhancements.md](../archived/find-enhancements.md) for search infrastructure
 - **Existing code:** `src/model/ui.rs` - `FindReplaceState`
 - **Undo system:** `src/model/document.rs` - `EditOperation`
 - **VS Code:** Replace with preserve case option

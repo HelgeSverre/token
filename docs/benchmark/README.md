@@ -31,7 +31,7 @@ This document describes how to run benchmarks and profile the Token editor.
   and a separately identified later dropdown-keystroke refresh.
 - [2026-08-11: historical baseline](2026-08-11-baseline.md) — preserved startup,
   search and syntax experiments; includes debug measurements and older fixtures.
-- [September refactoring audit](../dev/refactoring-audit-2026-09-06.md) — detailed
+- [September refactoring audit](../archived/refactoring-audit-2026-09-06.md) — detailed
   investigations, controlled before/after comparisons and native-check limits.
 
 Keep future dated reports and their data in this directory. Update this index;
@@ -118,7 +118,7 @@ setup asserts the anchor, all ghost rows and following source line are visible
 after font/viewport refresh. Plain and ghost frames contain different text, so
 their timing difference is not a measure of incremental ghost-rendering overhead.
 Each case uses 100 samples and the existing allocation profiler. See the
-[native checks and profiling record](../dev/refactoring-audit-2026-09-06.md#ghost-native-checks-and-release-profiling--2026-09-07)
+[native checks and profiling record](../archived/refactoring-audit-2026-09-06.md#ghost-native-checks-and-release-profiling--2026-09-07)
 for results and remaining verification limits.
 
 ### rope_operations
@@ -173,7 +173,7 @@ These are unsaved scratch-buffer fixtures, not loaded-file fixtures; comparing
 an undone buffer with equal saved content is not part of these measurements.
 This complements the existing `just profile-workloads insertions` probe, whose
 single-line insertion fixture uses 500 samples; their values are not interchangeable.
-The [indexed forward-map comparison](../dev/refactoring-audit-2026-09-06.md#controlled-release-comparison)
+The [indexed forward-map comparison](../archived/refactoring-audit-2026-09-06.md#controlled-release-comparison)
 records a controlled before/after run, including small-cursor overhead and the
 remaining high-cursor cost.
 

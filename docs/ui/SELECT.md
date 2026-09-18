@@ -16,7 +16,7 @@ component framework. There are two independent implementations:
 | Component Gallery theme control | GalleryState.selected_theme        | GalleryState.theme_select                  | view/select.rs Select |
 | Settings collection form choice | SettingsForm.choices[index].active | SettingsForm.open_select and select_cursor | view/settings_page.rs |
 
-The shared anchor painter, render_select in [controls.rs:48](../../src/view/controls.rs#L48),
+The shared anchor painter, render_select in [controls.rs:47](../../src/view/controls.rs#L47),
 receives a physical rectangle, label, open flag, scale, theme, and painters. It
 does not own labels, validate selection, hit-test, capture a pointer, mutate a
 value, or paint a popup. The gallery Select view is the only reusable select
@@ -69,8 +69,8 @@ pub struct GalleryState {
 }
 ```
 
-This is the current structure in [gallery.rs:437](../../src/model/gallery.rs#L437).
-Select in [select.rs:23](../../src/view/select.rs#L23) borrows labels and state
+This is the current structure in [gallery.rs:527](../../src/model/gallery.rs#L527).
+Select in [select.rs:26](../../src/view/select.rs#L26) borrows labels and state
 for one rendering call. It owns no cache. Its anchor Rect has f32 physical-pixel
 coordinates; render_anchor truncates them to usize WidgetRect coordinates.
 scale is physical pixels per logical pixel, f64. focused is a borrowed visual
@@ -78,13 +78,13 @@ fact from GalleryFocus, not SelectState.
 
 ### Settings state
 
-**Current excerpt** — [forms.rs:211](../../src/settings/forms.rs#L211) and
-[forms.rs:238](../../src/settings/forms.rs#L238).
+**Current excerpt** — [forms.rs:239](../../src/settings/forms.rs#L239) and
+[forms.rs:268](../../src/settings/forms.rs#L268).
 
 ```rust
 pub(crate) struct SettingsForm {
     pub session: Arc<()>,           // identity for async replies
-    pub kind: FormKind,             // LanguageServer | InlineProvider
+    pub kind: FormKind,             // Formatter | LanguageServer | InlineProvider, each Option<String>
     pub fields: Vec<FormField>,     // owned text/browse form inputs
     pub choices: Vec<FormChoice>,   // schema-order choices
     pub enabled: bool,
@@ -100,6 +100,7 @@ pub(crate) struct SettingsForm {
     pub open_select: Option<usize>, // filtered visible Settings-row index
     pub select_cursor: usize,       // preview option index
     pub preset: Option<usize>,      // language-server preset option index
+    pub preset_id: Option<String>,  // stable id of the applied preset
 }
 pub(crate) struct FormChoice {
     pub label: &'static str,
@@ -115,13 +116,13 @@ filtering. select_cursor identifies an option within that row. Confusing these
 two raw-index spaces selects the wrong field after a filter change. session
 makes late asynchronous replies attributable to the form that initiated them.
 saving blocks collection action mutation in
-[update/settings.rs:520](../../src/update/settings.rs#L520).
+[update/settings.rs:568](../../src/update/settings.rs#L568).
 
 The other fields delimit the select boundary: fields/focused belong to text
 editing; dragging is modal movement; status/executable_status are feedback
 (the latter can be async); remove_pending controls deletion; records_scroll is
 a physical-pixel record-list offset; advanced changes which rows exist; and
-preset is a distinct LanguageServer option. Select navigation must not reset
+preset/preset_id are a distinct LanguageServer option. Select navigation must not reset
 those unrelated fields.
 
 ### Present invariants and repair
@@ -214,7 +215,7 @@ content.
 ### Settings geometry
 
 Settings uses a different anchor, from
-[settings_page.rs:132](../../src/view/settings_page.rs#L132):
+[settings_page.rs:131](../../src/view/settings_page.rs#L131):
 
 ```
 inset    = row.w >= round(440*scale) ? round(124*scale) : 0
@@ -346,9 +347,9 @@ form.
 Existing tests cover SelectState clamping
 ([model/select.rs:33](../../src/model/select.rs#L33)) and gallery last-row
 mapping/shared segment hit geometry
-([gallery.rs:973](../../src/view/gallery.rs#L973)). Static gallery specimens are
+([gallery.rs:1567](../../src/view/gallery.rs#L1567)). Static gallery specimens are
 select.closed, select.open-anchor, and select.open-options
-([model/gallery.rs:323](../../src/model/gallery.rs#L323)); they do not test an
+([model/gallery.rs:414](../../src/model/gallery.rs#L414)); they do not test an
 input reducer.
 
 | Initial state                              | Action                                   | Expected output                                                                                          |

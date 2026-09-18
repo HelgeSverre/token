@@ -1,5 +1,15 @@
 # EditorConfig Integration
 
+> **Status (2026-09-17):** Archived. Superseded on 2026-09-09 by the
+> [coordinated save, EditorConfig, and folding plan](file-policy-and-folding-plan.md#editorconfig-and-document-text-policy)
+> and shipped in v0.7.0 ("Text settings and EditorConfig" in
+> [CHANGELOG](../CHANGELOG.md)). Living documentation: [user guide](../user/editorconfig.md).
+> The implementation is an `ec4rs` adapter in `src/editorconfig.rs` with
+> `DocumentTextSettings` in `src/model/text_settings.rs`; the custom
+> `src/editorconfig/{parser,resolver,matcher,cache}` module, `globset` dependency,
+> `FileConfig`/`ConfigResolver` types and non-UTF-8 charset variants sketched
+> below were never built, and the unchecked phases are done. No open follow-ups.
+
 Automatic editor settings from `.editorconfig` files
 
 > **Implementation plan updated 2026-09-09:** Use the

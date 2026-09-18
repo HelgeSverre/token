@@ -1,5 +1,20 @@
 # Token completion refactoring: coding-agent handoff
 
+> **Status:** Archived 2026-09-17. Executed in full: Phases 0–6 plus three
+> review follow-ups landed on `main` (Unreleased, after v0.7.0; see the
+> "Completion" entry in [CHANGELOG](../CHANGELOG.md)). The execution record and
+> final source map are in [completion-refactor-progress](completion-refactor-progress.md);
+> the current contract is [autocomplete](../feature/autocomplete.md).
+> Corrections to the text below: the work *has* been performed; the contract
+> sketch's `CompletionOrigin`, `RequestStamp` and `PrepareAcceptance` were not
+> adopted verbatim, the implemented equivalents live in `src/completion/session.rs`,
+> `src/completion/interaction.rs` and `src/update/completion/accept.rs`; and
+> `inline_in_flight` (Phase 2) was kept as owned state on `CompletionState`
+> rather than removed. Open, optional follow-ups: derive `inline_in_flight`
+> instead of storing it, a same-machine pre-refactor benchmark comparison
+> (the Section 11 <10% gate was never quantified), and running the native
+> `just smoke-input` scenarios on a display-backed machine.
+
 Prepared 15 September 2026. Repository: https://github.com/HelgeSverre/token
 
 Audited baseline: `4e8d9952b044b7a9941dd792b4fa23d6c51eeec2`.
@@ -35,7 +50,7 @@ The code may have changed since this audit. Before editing:
 4. Check for already-landed session, keymap, snippet, or acceptance changes. Adapt the plan to those changes rather than replacing them with an older design.
 5. Read the known source files listed below. Use repository-prescribed semantic discovery only if their new locations are unknown. In the audited instructions, `jbcontext search` is preferred for unfamiliar semantic discovery; exact file/symbol reads are appropriate once locations are known.
 6. Run relevant existing tests and record pre-existing failures separately from failures introduced by this work. Do not delete, ignore, weaken, or repeatedly retry failing tests merely to obtain a green result.
-7. Maintain a short execution record at `docs/plans/completion-refactor-progress.md`: current SHA, phase, decisions, tests, and next step. Reuse a matching existing record if one exists.
+7. Maintain a short execution record at `docs/archived/completion-refactor-progress.md`: current SHA, phase, decisions, tests, and next step. Reuse a matching existing record if one exists.
 
 The audit inspected all three GitHub-visible branches and eight historical PR heads. Neither extra remote branch supplied an alternate completion implementation. That is historical context, not a reason to merge old branches. Main had v0.7.0 preparation/history but the latest verified published tag was v0.6.0; release status is irrelevant to choosing the current coding baseline.
 

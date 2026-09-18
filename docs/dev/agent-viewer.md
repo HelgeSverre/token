@@ -1,5 +1,13 @@
 # Agent session archive
 
+> **Status:** the website viewer described here is implemented on the unmerged
+> branch `feature/website-agent-transcripts`, not on `main`. On `main` only the
+> importer (`scripts/agent-archive/`) and the source exports
+> (`docs/ampcode-threads/`) exist; every `website/` path, the `dev:archive` npm
+> script, the website tests, and the icon set named below are branch-only until
+> that branch is merged (`npm run build --prefix website` works on both). Replay and
+> attachment retrieval are not implemented on either.
+
 `/agent` is a chronological browser; `/agent/<id>` renders a recorded session.
 The normal static build uses the 171 already-public Amp Markdown exports imported
 from `docs/ampcode-threads/`. Regenerate them manually with:
@@ -8,7 +16,8 @@ from `docs/ampcode-threads/`. Regenerate them manually with:
 python3 scripts/agent-archive/import_amp_markdown.py
 ```
 
-Generated files live in `website/src/data/agent-sessions/T-*.json`. Original
+Generated files live in `website/src/data/agent-sessions/T-*.json` (not checked
+in on `main`; produced by the importer, present on the branch). Original
 source IDs, file hashes, visible content, and recorded dates are retained.
 Unknown dates stay unknown. Files touched come only from explicit tool-input
 paths, with links to the message containing that evidence. A missing tool result
@@ -82,9 +91,9 @@ in `prototypes/agent-showcase.html`.
 ## Verification
 
 ```sh
-node --test website/scripts/tests/*.test.mjs
+node --test website/scripts/tests/*.test.mjs                                     # branch only
 python3 -m unittest discover -s scripts/agent-archive -p 'test_*.py'
-python3 -m unittest discover -s website/.agents/skills/annotate-session/tests -v
+python3 -m unittest discover -s website/.agents/skills/annotate-session/tests -v # branch only
 npm run build --prefix website
 ```
 

@@ -10,14 +10,15 @@
 
 Token has no radio-circle painter, radio-group model, radio messages, or radio
 keyboard/accessibility contract. Do not rebrand the existing Settings choice
-buttons as radios. The nearest visual overlap is:
+buttons or the FormChoice select dropdown as radios. The nearest visual overlap
+is:
 
-| Existing item                 | Current fact                            | Missing radio property                                    |
-| ----------------------------- | --------------------------------------- | --------------------------------------------------------- |
-| SegmentedControl              | equal-width selected buttons            | IDs, group label, roving focus, input reducer, radio mark |
-| Settings FormChoice           | labels plus active raw index            | radio layout/role and group semantics                     |
-| choice_group_rects            | shared Settings/gallery button geometry | state and event ownership                                 |
-| choice-group.selected fixture | static selected button sample           | interaction coverage                                      |
+| Existing item                 | Current fact                              | Missing radio property                                    |
+| ----------------------------- | ----------------------------------------- | --------------------------------------------------------- |
+| SegmentedControl              | equal-width selected buttons              | IDs, group label, roving focus, input reducer, radio mark |
+| Settings FormChoice           | labels plus active raw index; select      | radio layout/role and group semantics                     |
+| choice_group_rects            | shared Preset-row/gallery button geometry | state and event ownership                                 |
+| choice-group.selected fixture | static selected button sample             | interaction coverage                                      |
 
 This document is therefore both an accurate exclusion and a design contract for
 a future implementation.
@@ -37,9 +38,14 @@ pub(crate) struct FormChoice {
 
 The raw active index is valid only relative to its static label slice. The
 form/update owner validates selection before writing it
-([update/settings.rs:137](../../src/update/settings.rs#L137)); no radio renderer
-borrows it today. A choice group instead derives button rectangles from
-choice_group_rects in [controls.rs:119](../../src/view/controls.rs#L119).
+([update/settings.rs:151](../../src/update/settings.rs#L151)); no radio renderer
+borrows it today. FormChoice rows themselves now render as a compact select
+dropdown (`ChoicePresentation::Select`, [settings.rs:139](../../src/settings.rs#L139);
+open_select/select_cursor in [settings/forms.rs:254](../../src/settings/forms.rs#L254),
+reducer in [update/settings.rs:286](../../src/update/settings.rs#L286)). Preset
+rows with Choice/Picker controls and the gallery fixture instead derive button
+rectangles from choice_group_rects in
+[controls.rs:119](../../src/view/controls.rs#L119).
 
 Given row physical rectangle and scale, control is row itself with h=32*scale on
 wide rows; narrow rows use x=row.x, y=row.y+26*scale, w=row.w, h=22*scale.
@@ -55,7 +61,7 @@ estimated widths 79,30,37; total=79+4+30+4+37=154; budget=400; control
 (0,0,600,32); x starts 446 and y=5. Rectangles are (446,5,79,22),
 (529,5,30,22), (563,5,37,22). At row width 200, budget=200 and control
 (0,26,200,22); a larger total wraps at x=0, y=26 then y+=26. The helper returns
-the same rectangles to Settings painting and hit testing, which is its only
+the same rectangles to Preset-row painting and hit testing, which is its only
 current interaction guarantee.
 
 ## Current state × event behaviour
@@ -64,7 +70,8 @@ There is no radio state machine.
 
 | Event                                       | Current related behaviour                          |
 | ------------------------------------------- | -------------------------------------------------- |
-| pointer on a fitting Settings choice button | emits OverlayHit::Choice(row, raw option index)    |
+| pointer on a Settings FormChoice row        | ToggleSelect opens the dropdown; an option hit emits OverlayHit::Choice { row, choice } |
+| pointer on a fitting Preset choice button   | emits OverlayHit::Choice { row, choice }           |
 | reducer receives valid FormChoice index     | writes active, marks draft changed, refreshes rows |
 | invalid option index                        | reducer returns None; active is preserved          |
 | label collection changes                    | no ID-based repair; owner must rebuild/validate    |
