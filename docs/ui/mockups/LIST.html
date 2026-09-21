@@ -10,10 +10,11 @@
     .list-window { min-height: 0; display: grid; grid-template-rows: 42px 1fr 28px; }
     .list-title { display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid var(--line); font-size:12px; }
     .list-count { color:var(--faint); font-size:11px; }
-    .row-viewport { min-height:0; position:relative; overflow:hidden; padding:5px 17px 5px 6px; }
-    .list-row { height:34px; display:grid; grid-template-columns:23px minmax(0,1fr) auto; align-items:center; gap:7px; padding:0 8px; border-radius:4px; color:var(--text); font-size:12px; }
+    .row-viewport { min-height:0; position:relative; overflow:hidden; padding:0 17px 0 0; }
+    .list-row { height:22px; display:grid; grid-template-columns:18px minmax(0,1fr) auto; align-items:center; gap:6px; padding:0 8px; color:var(--text); font-size:11px; overflow:hidden; }
     .list-row .row-icon { color:var(--file-icon); display:grid; place-items:center; }
-    .list-row .row-detail { color:var(--faint); font:11px/1 var(--font-mono); }
+    .list-row .row-label { overflow:hidden; white-space:nowrap; text-overflow:clip; }
+    .list-row .row-detail { color:var(--faint); font:10px/1 var(--font-mono); flex:none; }
     .list-row.selected { background:var(--control-selected); color:var(--control-selected-fg); }
     .list-row.selected .row-detail, .list-row.selected .row-icon { color:var(--control-selected-fg); }
     .list-row.focused { outline:1px solid var(--focus); outline-offset:-1px; }
@@ -43,7 +44,7 @@
         ['file', 'src/view/editor_text.rs', '1,842 matches'],
         ['file', 'src/view/panels.rs', '468 matches'],
         ['file', 'src/layout/snapshot.rs', '237 matches'],
-        ['file', 'src/update/outline.rs', '86 matches'],
+        ['file', 'src/update/render_selected_specimen_with_a_long_name.rs', '86 matches'],
         ['file', 'docs/ui/LIST.md', 'Open document'],
         ['file', 'tests/layout.rs', '149 matches'],
         ['file', 'src/model/editor_area.rs', '312 matches'],
@@ -51,7 +52,7 @@
       ];
       const row = ([glyph, label, detail], index) => `
         <div class="list-row ${index === 2 ? 'selected focused' : ''}" role="option" aria-selected="${index === 2}">
-          <span class="row-icon">${icon(glyph)}</span><span>${label}</span><span class="row-detail">${detail}</span>
+          <span class="row-icon">${icon(glyph)}</span><span class="row-label">${label}</span><span class="row-detail">${detail}</span>
         </div>`;
       Mockup.mount({
         id: 'LIST', title: 'List', status: 'Proposed component',

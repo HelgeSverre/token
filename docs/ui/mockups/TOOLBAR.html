@@ -30,6 +30,8 @@
     .terminal-session { display: flex; align-items: center; gap: 7px; padding-inline: 12px; font-size: 11px; border-inline-start: 1px solid var(--line); }
     .terminal-session.active { color: var(--tab-active-fg); background: var(--tab-active-bg); box-shadow: inset 0 -2px var(--control-selected-border); }
     .toolbar-states { grid-template-columns: 1fr 1.5fr; }
+    .ide-scene { position: relative; }
+    .proposed-flag { position: absolute; top: 6px; right: 6px; z-index: 5; padding: 2px 7px; border: 1px dashed var(--line); border-radius: 3px; background: var(--panel); color: var(--faint); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
   </style>
 </head>
 <body>
@@ -63,7 +65,8 @@
       description:'Compact action groups in a Token tool window, with a selected toggle, ordered overflow, and terminal action cells.',
       content:`<div class="ide-study ide-context">
         <div class="ide-scene">
-          <section class="ide-window" aria-label="Token editor with Outline actions">
+          <span class="proposed-flag">Proposed — not implemented; see the real terminal chrome below</span>
+          <section class="ide-window" aria-label="Proposed Outline actions, not implemented">
             <div class="toolbar-workspace">
               <div class="toolbar-source">${Mockup.editor({title:'chrome.rs',tabs:['chrome.rs','snapshot.rs'],lines:source})}</div>
               <aside class="toolbar-outline" aria-label="Outline tool window">
@@ -91,8 +94,8 @@
           </aside>
         </div>
         <div class="ide-states toolbar-states">
-          <section class="ide-state"><div class="state-label">Selected toggle · keyboard focus · unavailable action</div><div class="toolbar-state-row"><button class="btn quiet selected" type="button" aria-pressed="true">${icon('eye')} Follow</button><button class="btn icon-btn quiet focused" type="button" aria-label="Focused refresh action">${icon('refresh')}</button>${action('refresh','Refresh unavailable while outline is loading','disabled')}</div></section>
-          <section class="ide-state"><div class="state-label">Existing terminal chrome · navigation and session actions</div><div class="terminal-chrome">${action('arrow-left','Previous terminal')}${action('arrow-right','Next terminal')}<div class="terminal-session active">${icon('terminal')} zsh</div><div class="terminal-session">${icon('terminal')} cargo check</div><span class="grow"></span>${action('plus','New terminal')}${action('close','Close terminal')}</div><p class="ide-state-caption">Previous / Next and New / Close remain outside the session viewport.</p></section>
+          <section class="ide-state"><div class="state-label">Proposed: selected toggle · keyboard focus · unavailable action</div><div class="toolbar-state-row"><button class="btn quiet selected" type="button" aria-pressed="true">${icon('eye')} Follow</button><button class="btn icon-btn quiet focused" type="button" aria-label="Focused refresh action">${icon('refresh')}</button>${action('refresh','Refresh unavailable while outline is loading','disabled')}</div></section>
+          <section class="ide-state terminal-chrome-lead"><div class="state-label">Existing terminal chrome · Token's only shipped toolbar-shaped surface</div><div class="terminal-chrome">${action('arrow-left','Previous terminal')}${action('arrow-right','Next terminal')}<div class="terminal-session active">${icon('terminal')} zsh</div><div class="terminal-session">${icon('terminal')} cargo check</div><span class="grow"></span>${action('plus','New terminal')}${action('close','Close terminal')}</div><p class="ide-state-caption">Previous / Next and New / Close remain outside the session viewport.</p></section>
         </div>
       </div>`
     });

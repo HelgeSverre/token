@@ -50,8 +50,8 @@ window.TOKEN_MOCKUP_SUBJECTS = Object.freeze({
     description: 'Feature-owned empty-message projections and their scoped variants.'
   },
   'FORM': {
-    selectors: ['.form-modal'],
-    description: 'The typed settings form with its labels, draft fields, validation, and commit controls; the flow notes are explanatory context.'
+    selectors: ['.field-pane', '.record-list'],
+    description: 'The typed settings form with its record list, labels, draft fields, validation, and commit controls; the flow notes are explanatory context.'
   },
   'FOUNDATIONS': {
     selectors: ['.type-board', '.token-list', '.space-board', '.foundation-states'],

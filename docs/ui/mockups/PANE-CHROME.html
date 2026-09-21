@@ -6,8 +6,15 @@
   <link rel="stylesheet" href="shared.css">
   <script src="../../../prototypes/debug-performance-themes.js"></script><script src="shared.js"></script>
   <style>
-    .pane-study { display:grid; grid-template-columns:minmax(0,1fr) 288px; gap:18px; min-height:0; height:100%; }
+    .pane-study { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) 250px; gap:16px; min-height:0; height:100%; }
     .pane-window { display:grid; grid-template-rows:42px minmax(0,1fr) 30px; min-height:0; border:1px solid var(--window-border,#3c3c3c); background:var(--panel,#252526); }
+    .pane-col { display:flex; flex-direction:column; min-height:0; gap:6px; }
+    .pane-col-label { color:var(--faint,#8d9198); font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
+    .docked-window { display:grid; grid-template-rows:33px minmax(0,1fr) 30px; min-height:0; border:1px solid var(--window-border,#3c3c3c); background:var(--panel,#252526); }
+    .docked-tabs { display:flex; align-items:end; padding:0 8px; gap:2px; background:var(--tabs-bg,#252526); border-bottom:1px solid var(--line,#3c3c3c); }
+    .docked-tab { height:33px; display:flex; align-items:center; padding:0 9px; color:var(--tab-inactive-fg,#808080); font-size:10px; white-space:nowrap; }
+    .docked-tab.active { color:var(--bright,#fff); border-bottom:2px solid var(--control-selected-border,#007acc); }
+    .docked-head { height:33px; display:flex; align-items:center; gap:3px; margin-left:auto; }
     .pane-header { display:flex; align-items:center; gap:10px; padding:0 12px; border-bottom:1px solid var(--line,#3c3c3c); background:var(--panel,#252526); }
     .pane-title { color:var(--bright,#fff); font-size:13px; letter-spacing:.01em; }
     .pane-actions { display:flex; align-items:center; gap:3px; margin-left:auto; }
@@ -38,12 +45,19 @@
   <script>
     (() => {
       const i = (n) => Mockup.icon(n, 15);
+      const body = `<div class="pane-body"><div class="performance-topline"><span>Frame timing</span><span class="mono">120 samples</span></div><div class="metric-row"><div class="metric"><div class="label">Frame time</div><div class="value">8.42 ms</div></div><div class="metric"><div class="label">p95</div><div class="value">11.6</div></div><div class="metric"><div class="label">FPS</div><div class="value">119</div></div></div><div class="chart" aria-label="Static frame time history"><span class="bar" style="height:33%"></span><span class="bar" style="height:52%"></span><span class="bar" style="height:42%"></span><span class="bar warn" style="height:75%"></span><span class="bar" style="height:47%"></span><span class="bar" style="height:62%"></span><span class="bar" style="height:38%"></span><span class="bar" style="height:48%"></span><span class="bar" style="height:55%"></span><span class="bar" style="height:41%"></span><span class="bar" style="height:60%"></span><span class="bar" style="height:44%"></span></div><div class="stage-list"><div class="stage"><span>Layout</span><span>1.24 ms</span></div><div class="stage"><span>Text</span><span>2.08 ms</span></div><div class="stage"><span>Raster</span><span>3.51 ms</span></div></div></div>
+        <footer class="pane-footer"><span class="run-state"><i class="run-dot"></i>Renderer · default-dark</span><span class="mono">seed 418</span></footer>`;
       const content = `<div class="pane-study">
+        <div class="pane-col"><div class="pane-col-label">Floating presentation</div>
         <section class="pane-window" aria-label="Performance pane with header, body and footer">
           <header class="pane-header"><span class="pane-title">Performance</span><div class="pane-actions"><button class="chrome-action" aria-label="Float panel">${i('float')}</button><button class="chrome-action focused" aria-label="Close panel">${i('close')}</button></div></header>
-          <div class="pane-body"><div class="performance-topline"><span>Frame timing</span><span class="mono">120 samples</span></div><div class="metric-row"><div class="metric"><div class="label">Frame time</div><div class="value">8.42 ms</div></div><div class="metric"><div class="label">p95</div><div class="value">11.6</div></div><div class="metric"><div class="label">FPS</div><div class="value">119</div></div></div><div class="chart" aria-label="Static frame time history"><span class="bar" style="height:33%"></span><span class="bar" style="height:52%"></span><span class="bar" style="height:42%"></span><span class="bar warn" style="height:75%"></span><span class="bar" style="height:47%"></span><span class="bar" style="height:62%"></span><span class="bar" style="height:38%"></span><span class="bar" style="height:48%"></span><span class="bar" style="height:55%"></span><span class="bar" style="height:41%"></span><span class="bar" style="height:60%"></span><span class="bar" style="height:44%"></span></div><div class="stage-list"><div class="stage"><span>Layout</span><span>1.24 ms</span></div><div class="stage"><span>Text</span><span>2.08 ms</span></div><div class="stage"><span>Raster</span><span>3.51 ms</span></div></div></div>
-          <footer class="pane-footer"><span class="run-state"><i class="run-dot"></i>Renderer · default-dark</span><span class="mono">seed 418</span></footer>
-        </section>
+          ${body}
+        </section></div>
+        <div class="pane-col"><div class="pane-col-label">Docked presentation</div>
+        <section class="docked-window" aria-label="Performance pane docked, composed from the existing tab strip">
+          <nav class="docked-tabs" aria-label="Bottom panel tabs"><span class="docked-tab">Terminal</span><span class="docked-tab active">Performance</span><span class="docked-head"><button class="chrome-action" aria-label="Float panel">${i('float')}</button></span></nav>
+          ${body}
+        </section></div>
         <aside class="variants" aria-label="Pane chrome states"><div class="variant"><div class="variant-label">Title only</div><div class="mini-header">Outline</div></div><div class="variant"><div class="variant-label">Optional actions</div><div class="mini-header">Terminal <div class="mini-actions">${i('split')}${i('more')}</div></div></div><div class="variant"><div class="variant-label">Local footer</div><div class="footer-spec"><div class="pane-footer"><span class="run-state"><i class="run-dot"></i>Connected</span><span>main</span></div></div></div><div class="rule-note">A title appears once. Actions belong to this pane; compact footer context remains local and never substitutes for the global status bar.</div></aside>
       </div>`;
       Mockup.mount({ id:'PANE-CHROME', title:'Pane chrome', description:'Proposed header and optional footer slots for docked and floating pane content.', status:'Proposed component', content });

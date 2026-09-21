@@ -6,7 +6,7 @@
     <title>Menu visual reference</title>
     <link rel="stylesheet" href="shared.css">
     <style>
-      .menu-stage { height: 410px; display: grid; grid-template-columns: minmax(0, 1fr) 278px; gap: 18px; }
+      .menu-stage { height: 392px; display: grid; grid-template-columns: minmax(0, 1fr) 278px; gap: 18px; }
       .menu-editor { min-height: 0; position: relative; overflow: hidden; }
       .menu-anchor { position: absolute; top: 106px; left: 298px; width: 252px; z-index: 3; }
       .menu-anchor::before { content: ""; position: absolute; left: -10px; top: -9px; width: 8px; height: 8px; border-left: 1px solid var(--focus); border-top: 1px solid var(--focus); opacity: .8; }
@@ -27,7 +27,6 @@
       .menu-states { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
       .menu-states .state-card { padding: 10px; }
       .compact-menu .menu-row { min-height: 26px; font-size: 12px; }
-      .submenu-cue { color: var(--faint); margin-left: auto; display: inline-flex; }
     </style>
   </head>
   <body>
@@ -81,14 +80,16 @@
             <div class="state-label">File tree target</div>
             <nav class="menu compact-menu" aria-label="File tree menu">
               <button class="menu-row" type="button"><span>Open</span><span class="keycap">↵</span></button>
-              <button class="menu-row" type="button"><span>Open in Split</span><span class="submenu-cue">›</span></button>
+              <button class="menu-row" type="button"><span>Reveal in Finder</span></button>
+              <button class="menu-row" type="button" aria-disabled="true" disabled><span>Rename</span><span class="keycap">Enter</span></button>
             </nav>
           </div>
           <div class="state-card">
-            <div class="state-label">Submenu affordance</div>
+            <div class="state-label">Tab menu · no submenu bridge</div>
             <nav class="menu compact-menu" aria-label="Tab menu">
               <button class="menu-row" type="button"><span>Close</span><span class="keycap">⌘W</span></button>
-              <button class="menu-row" type="button"><span>Move to Group</span><span class="submenu-cue">›</span></button>
+              <button class="menu-row" type="button"><span>Close Others</span></button>
+              <button class="menu-row" type="button"><span>Close Saved</span></button>
             </nav>
           </div>
         </div>`;

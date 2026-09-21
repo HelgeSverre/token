@@ -6,7 +6,7 @@
   <title>Editor surface · Token UI reference</title>
   <link rel="stylesheet" href="shared.css">
   <style>
-    .editor-study { height:100%; display:grid; grid-template-columns:minmax(0,1fr) 266px; gap:16px; }
+    .editor-study { height:402px; display:grid; grid-template-columns:minmax(0,1fr) 266px; gap:16px; }
     .editor-main { min-height:0; display:grid; grid-template-rows:1fr; overflow:hidden; }
     .editor-main .editor-context { height:100%; }
     .editor-side { min-height:0; display:grid; grid-template-rows:1fr 154px; gap:12px; }
@@ -17,6 +17,15 @@
     .coordinate { padding:9px 12px; display:grid; gap:5px; align-content:start; font-size:11px; }
     .coordinate .formula { color:var(--code-fg); background:var(--input-background); border:1px solid var(--line); border-radius:4px; padding:5px 7px; font:10px/1.32 var(--font-mono); }
     .selection-note { color:var(--faint); font-size:10px; line-height:1.32; }
+    .load-study { margin-top:6px; }
+    .load-lines { padding:6px 0 6px 8px; font:11px/18px "JetBrains Mono",monospace; }
+    .load-line { display:grid; grid-template-columns:34px 16px minmax(0,1fr); gap:6px; }
+    .load-line .gutter-n { color:var(--faint,#8d9198); text-align:right; }
+    .load-line .fold-chevron { color:var(--faint,#8d9198); font-size:10px; }
+    .load-line .src { color:var(--code-fg,#d4d4d4); white-space:pre; }
+    .load-line.diagnostic .src { text-decoration:underline wavy var(--severity-error,#ff8080); text-decoration-skip-ink:none; }
+    .load-line .inlay { color:var(--ghost-fg,var(--faint,#8d9198)); opacity:.75; }
+    .load-line.folded .src { color:var(--faint,#8d9198); }
   </style>
 </head>
 <body>
@@ -60,7 +69,17 @@
             </div></section>
             <section class="surface coordinate"><span class="section-title">Projection boundary</span><div class="formula">window → content clip<br>→ viewport map<br>→ source position</div><span class="selection-note">The bright row illustrates the current projected line. This is not a generic multiline input.</span></section>
           </aside>
-        </div>`
+        </div>
+        <section class="window load-study" aria-label="Editor surface under real projection load: folds, diagnostics, inlays">
+          <div class="surface-header"><span class="section-title">Same surface, real projection load</span><span class="badge">current</span></div>
+          <div class="load-lines">
+            <div class="load-line"><span class="gutter-n">40</span><span class="fold-chevron">▾</span><span class="src">impl Inventory {</span></div>
+            <div class="load-line folded"><span class="gutter-n">41</span><span class="fold-chevron">▸</span><span class="src">    fn new(capacity<span class="inlay">: usize</span>) -&gt; Self { … }</span></div>
+            <div class="load-line diagnostic"><span class="gutter-n">45</span><span class="fold-chevron"></span><span class="src">    let entry = self.items.get(name)<span class="inlay">: &amp;mut u32</span></span></div>
+            <div class="load-line"><span class="gutter-n">46</span><span class="fold-chevron"></span><span class="src">    entry += count;</span></div>
+          </div>
+          <p class="selection-note" style="padding:0 12px 8px">Fold, inlay hints and a diagnostic squiggle project through the same pipeline as the calm case above.</p>
+        </section>`
       });
     })();
   </script>

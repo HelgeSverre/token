@@ -6,7 +6,7 @@
     <title>Dialog visual reference</title>
     <link rel="stylesheet" href="shared.css">
     <style>
-      .dialog-stage { height: 416px; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--editor); }
+      .dialog-stage { height: 403px; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--editor); }
       .dialog-background { height: 100%; opacity: .44; filter: saturate(.72); pointer-events: none; }
       .dialog-background .window { height: 100%; }
       .dialog-shade { position: absolute; inset: 0; background: #00000046; z-index: 2; }
@@ -17,12 +17,16 @@
       .dialog-actions { padding: 12px 14px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--soft-line); background: var(--chrome); }
       .dialog-actions .btn { min-width: 76px; }
       .dialog-actions .btn.primary { background: var(--focus); border-color: var(--focus); color: var(--bright); }
-      .dialog-notes { position: absolute; z-index: 4; bottom: 16px; left: 16px; right: 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .dialog-notes { position: absolute; z-index: 4; bottom: 40px; left: 16px; right: 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
       .dialog-note { padding: 8px 10px; border: 1px solid #ffffff1c; border-radius: 4px; background: #1e1e1ed9; color: var(--faint); font-size: 11px; }
       .dialog-note b { display: block; color: var(--muted); font-weight: 400; margin-bottom: 2px; }
-      .dialog-states { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-      .dialog-states .state-card { min-height: 72px; padding: 10px; }
+      .dialog-states { margin-top: 2px; display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 12px; }
+      .dialog-states .state-card { min-height: 50px; padding: 6px 9px; }
       .dialog-state-row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; color: var(--muted); font-size: 12px; }
+      .mini-palette { margin-top: 7px; border: 1px solid var(--soft-line); border-radius: 4px; background: var(--tooltip-bg); padding: 5px; font-size: 11px; color: var(--muted); }
+      .mini-palette .mini-section { margin: 3px -1px 1px; padding: 0 5px; color: var(--faint); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
+      .mini-palette .mini-row { height: 18px; display: flex; align-items: center; gap: 6px; }
+      .mini-palette .mini-row.selected { padding: 0 5px; margin: 0 -1px; border-radius: 2px; background: var(--control-selected); color: var(--bright); }
     </style>
   </head>
   <body>
@@ -59,8 +63,9 @@
           </div>
         </section>
         <div class="dialog-states" aria-label="Dialog decision variants">
-          <div class="state-card"><div class="state-label">Destructive confirmation</div><div class="dialog-state-row"><span>Discard 3 pending edits?</span><button class="btn" type="button">Discard</button></div></div>
-          <div class="state-card"><div class="state-label">Validation remains local</div><div class="dialog-state-row"><span class="muted">Name is required</span><button class="btn primary" type="button">Create</button></div></div>
+          <div class="state-card"><div class="state-label">ModalState::FileConflict</div><div class="dialog-state-row"><span>File changed on disk. Reload?</span><button class="btn" type="button">Reload</button></div></div>
+          <div class="state-card"><div class="state-label">ModalState::RenameSymbol</div><div class="dialog-state-row"><span class="muted">render_frame</span><button class="btn primary" type="button">Rename</button></div></div>
+          <div class="state-card"><div class="state-label">ModalState::CommandPalette · sectioned list</div><div class="mini-palette"><div class="mini-section">Recent</div><div class="mini-row selected">Go to File…</div><div class="mini-section">All · Files</div><div class="mini-row">overlay_surface.rs</div><div class="mini-row">panels.rs</div></div></div>
         </div>`;
       Mockup.mount({
         id: 'DIALOG',

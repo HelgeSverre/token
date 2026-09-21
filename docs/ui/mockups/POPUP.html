@@ -6,7 +6,7 @@
     <title>Cursor popup visual reference</title>
     <link rel="stylesheet" href="shared.css">
     <style>
-      .popup-stage { height: 410px; display: grid; grid-template-columns: minmax(0, 1fr) 292px; gap: 18px; }
+      .popup-stage { height: 380px; display: grid; grid-template-columns: minmax(0, 1fr) 292px; gap: 18px; }
       .popup-editor { position: relative; min-height: 0; overflow: hidden; }
       .completion { position: absolute; z-index: 4; top: 181px; left: 305px; width: 278px; border: 1px solid var(--tooltip-border); border-radius: 5px; background: var(--tooltip-bg); box-shadow: 0 13px 30px #00000057; padding: 4px; }
       .completion-head { color: var(--faint); font-size: 11px; padding: 5px 8px 6px; border-bottom: 1px solid var(--soft-line); }
@@ -21,11 +21,13 @@
       .popup-flow { display: grid; gap: 9px; padding-top: 12px; border-top: 1px solid var(--soft-line); color: var(--faint); font-size: 11px; }
       .popup-flow span { display: flex; align-items: center; gap: 7px; }
       .popup-flow i { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--focus); }
-      .popup-states { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px; }
+      .popup-states { display: grid; grid-template-columns: 1fr 1fr 1fr 1.3fr; gap: 12px; margin-top: 12px; }
       .popup-states .state-card { min-height: 80px; padding: 10px; }
       .mini-popup { margin-top: 7px; border: 1px solid var(--soft-line); border-radius: 4px; background: var(--tooltip-bg); padding: 5px; font-size: 11px; color: var(--muted); }
       .mini-row { height: 19px; display: flex; align-items: center; gap: 7px; }
       .mini-row.selected { padding: 0 5px; margin: 0 -1px; border-radius: 2px; background: var(--control-selected); color: var(--bright); }
+      .mini-section { margin: 4px -1px 1px; padding: 0 5px; color: var(--faint); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+      .mini-row .detail { margin-left: auto; color: var(--faint); font-size: 10px; }
     </style>
   </head>
   <body>
@@ -70,6 +72,7 @@
           <div class="state-card"><div class="state-label">Code actions</div><div class="mini-popup"><div class="mini-row selected">Quick fix…</div><div class="mini-row">Source action…</div></div></div>
           <div class="state-card"><div class="state-label">References</div><div class="mini-popup"><div class="mini-row selected">src/view/frame.rs:84</div><div class="mini-row">src/view/modal.rs:211</div></div></div>
           <div class="state-card"><div class="state-label">Hover</div><div class="mini-popup"><div class="mini-row">OverlaySpec</div><div class="mini-row muted">Render projection</div></div></div>
+          <div class="state-card"><div class="state-label">Sectioned (Search Everywhere)</div><div class="mini-popup"><div class="mini-section">Commands</div><div class="mini-row selected">Go to File…<span class="detail">⇧⌘O</span></div><div class="mini-section">Files</div><div class="mini-row">overlay_surface.rs<span class="detail">view/</span></div><div class="mini-row">panels.rs<span class="detail">view/</span></div></div></div>
         </div>`;
       Mockup.mount({
         id: 'POPUP',

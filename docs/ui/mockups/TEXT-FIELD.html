@@ -23,9 +23,11 @@
     .selection { background:var(--control-selected); color:var(--control-selected-fg); margin:0 -1px; padding:1px; }
     .error { margin-top:5px; color:var(--severity-error-text, var(--red)); font-size:11px; }
     .field-help { margin-top:5px; color:var(--faint); font-size:11px; }
-    .state-strip { width:816px; max-width:100%; margin:18px auto 0; display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    .state-strip { width:816px; max-width:100%; margin:18px auto 0; display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
     .compact-sample { padding:11px 12px; }
     .compact-sample .field-sample { margin-top:7px; }
+    .field-sample.multiline { position:relative; align-items:flex-start; display:block; height:64px; padding:7px 8px; overflow:hidden; white-space:pre; font-size:11px; line-height:14px; }
+    .field-sample.multiline .caret { display:inline-block; vertical-align:text-bottom; }
   </style>
 </head>
 <body>
@@ -52,6 +54,10 @@
         <div class="state-card compact-sample"><div class="state-label">Read-only</div><div class="field-sample" role="textbox" aria-label="Workspace path" aria-readonly="true">~/code/token-editor</div></div>
         <div class="state-card compact-sample"><div class="state-label">Invalid</div><div class="field-sample invalid" role="textbox" aria-label="Port" aria-readonly="true">not-a-port</div><div class="error">Enter a port from 1 to 65535.</div></div>
         <div class="state-card compact-sample"><div class="state-label">Disabled</div><div class="field-sample disabled" aria-label="Disabled proxy field">Inherited from workspace</div></div>
+        <div class="state-card compact-sample"><div class="state-label">Multiline</div><div class="field-sample multiline focused" role="textbox" aria-multiline="true" aria-label="Initialization options JSON" data-clip-demo>{<span class="caret" aria-hidden="true"></span>
+  "check": true,
+  "command": "clippy"
+}</div></div>
       </section>`
   });
 </script>
