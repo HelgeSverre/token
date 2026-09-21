@@ -69,7 +69,7 @@
       const visible = viewport.clientHeight - parseFloat(viewportStyle.paddingTop) - parseFloat(viewportStyle.paddingBottom);
       const maxScroll = total - visible;
       const track = document.querySelector('.scroll-track').clientHeight;
-      const thumb = Math.max(16, track * visible / total);
+      const thumb = Math.max(20, track * visible / total);
       Object.assign(document.querySelector('.scroll-thumb').style, {
         height: `${thumb}px`, top: `${fixture.position / maxScroll * (track - thumb)}px`,
       });

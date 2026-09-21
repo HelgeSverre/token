@@ -172,6 +172,13 @@ pending.
 
 ## Find-bar geometry and hit agreement
 
+The bar docks at the **top** of the editor content, directly below the tab
+strip, not at the pane's bottom edge: `GroupLayout::from_rect`
+([view/geometry.rs](../../src/view/geometry.rs#L410)) places `find_bar_rect.y`
+at `group_rect.y + tab_bar_height`, then starts `content_rect` at the find
+bar's bottom edge. Opening Find therefore pushes the document down by the
+bar's height; it never overlays or sits beneath the visible text.
+
 FindBarLayout is the source of truth for draw, hit, field options, and pointer
 column conversion. It derives from focused GroupLayout and ScaleMetrics:
 

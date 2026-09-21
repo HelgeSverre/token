@@ -123,6 +123,12 @@ spacing experiments can run alongside it. Breadcrumb navigation is a separate
 editor integration because it changes viewport origin and needs document/symbol
 identity. Activity rails do not block either track.
 
+"Pane header/footer" names one proposed primitive family, not one atomic slice:
+[editor-visual-polish.md](../feature/editor-visual-polish.md) ships `PaneFooter`
+in Phase 4 (with breadcrumbs) and `PaneHeader` in Phase 5 (with the dockable
+panel), since a footer has no docked-vs-floating title-composition rule to
+resolve first.
+
 ## Gallery and verification
 
 The [native gallery](../dev/ui-gallery.md) remains the place to compare named

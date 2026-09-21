@@ -25,6 +25,27 @@ to add a right rail now.
 
 ## Proposed representation and ownership
 
+**Current excerpt** — [panel/dock.rs](../../src/panel/dock.rs#L9):
+
+```rust
+pub enum DockPosition {
+    Left,
+    Right,
+    Bottom,
+}
+
+pub enum PanelId {
+    FileExplorer,
+    Outline,
+    Terminal,
+    TaskRunner,
+    AiChat,
+    TodoList,
+    Problems,
+    Usages,
+}
+```
+
 The panel host is the source of placement and visible/focused state. In current
 Token that host is `DockLayout`; after [Dockable panel](DOCKABLE-PANEL.md), it
 must query both docked and floating placement. The rail owns only transient
@@ -89,6 +110,35 @@ and `n` visible entries, the no-overflow requirement is
 prefix/trailing policy deterministically, and expose omitted **named** entries
 through [Menu](MENU.md). Do not rely on an offscreen scrolling icon column that
 hides discoverability. Cells and hit targets use half-open snapped rectangles.
+
+**Algorithm sketch:**
+
+```text
+fn layout(rail: Rect, entries: &[PanelId], P, G, C) -> ActivityRailLayout {
+    H = rail.height
+    n = entries.len()
+    fits = 2*P + n*C + max(n - 1, 0)*G <= H
+    if fits {
+        visible = entries; overflow = None
+    } else {
+        // Largest k that still fits alongside one reserved overflow cell.
+        k = max(k such that 2*P + (k+1)*C + k*G <= H, 0)
+        visible = entries[..k]; overflow = entries[k..]  // named, not hidden
+    }
+    y = rail.y + P
+    rects = []
+    for panel_id in visible {
+        rects.push((panel_id, Rect::new(rail.x, y, rail.width, C)))
+        y += C + G
+    }
+    overflow_rect = fits ? None : Some(Rect::new(rail.x, y, rail.width, C))
+    ActivityRailLayout { rail, entries: rects, overflow: overflow_rect }
+}
+```
+
+Cell `i`'s rect therefore has `y = rail.y + P + i*(C+G)`; `hit(point)` is the
+first cell (or the overflow cell) whose half-open rect contains `point`, else
+`None`. This is the same fit test the two worked traces below evaluate.
 
 Pointer press captures `(pointer, PanelId)` only on enabled visible entries;
 matching release inside emits `RevealOrFocusPanel(PanelId)` to the panel-host

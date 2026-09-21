@@ -315,7 +315,11 @@ trial bounds.
 ### Phase 4 — Adopt pane context and lower-pane chrome
 
 After the component docs and gallery specimens are accepted, implement the
-optional pane surfaces rather than inventing feature-local strips:
+optional pane surfaces rather than inventing feature-local strips. This phase
+ships `PaneFooter` only; [`PaneHeader`](../ui/PANE-CHROME.md) is not adopted
+until Phase 5 alongside the dockable panel, so "pane header/footer" in
+[PROTOTYPE-COMPONENTS.md](../ui/PROTOTYPE-COMPONENTS.md#work-tracks-and-dependency-order)
+is one proposed primitive family, not one atomic implementation slice.
 
 - a breadcrumb/context bar above a compatible text editor, with a thin bottom
   border and optional leading icon;

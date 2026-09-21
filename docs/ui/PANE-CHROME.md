@@ -126,7 +126,13 @@ these produce `action_height = 44 px` and
 use the 44 px minimum. The header centres these controls vertically and omits
 their hit targets if their full height cannot fit. The 74 px header in the
 trace below is an example of proposed 37 logical-pixel chrome, not the current
-dock-header default. The content rectangle is:
+dock-header default, and it is not the same figure as the mockup's rendered
+42 logical-px header / 30 logical-px footer
+([mockups/PANE-CHROME.html](mockups/PANE-CHROME.html)): the mockup is a hand-set
+illustrative size chosen for visual comfort, the trace demonstrates this
+section's derivation formula with example numbers, and neither is binding
+until Phase 1 of the [visual-polish plan](../feature/editor-visual-polish.md)
+picks trial metrics from real measurement. The content rectangle is:
 
 ```text
 header_rect  = [pane.x, pane.y, pane.width, H]

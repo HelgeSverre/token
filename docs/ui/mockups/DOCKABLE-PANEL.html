@@ -25,7 +25,9 @@
     .dock-comparison { display:grid; grid-template-rows:auto minmax(0,1fr) auto; min-height:0; border:1px solid var(--line,#3c3c3c); background:var(--panel,#252526); }
     .comparison-title { padding:11px 12px 8px; border-bottom:1px solid var(--line,#3c3c3c); color:var(--muted,#c9cbcf); font-size:11px; }
     .docked-panel { margin:11px; border:1px solid var(--soft-line,#313438); background:var(--editor,#1e1e1e); }
-    .docked-head { height:34px; display:flex; align-items:center; padding:0 9px; border-bottom:1px solid var(--line,#3c3c3c); color:var(--bright,#fff); font-size:11px; }
+    .docked-tabs { display:flex; align-items:end; padding:0 8px; gap:2px; background:var(--tabs-bg,#252526); border-bottom:1px solid var(--line,#3c3c3c); }
+    .docked-tab { height:33px; display:flex; align-items:center; padding:0 9px; color:var(--tab-inactive-fg,#808080); font-size:10px; white-space:nowrap; } .docked-tab.active { color:var(--bright,#fff); border-bottom:2px solid var(--control-selected-border,#007acc); }
+    .docked-head { height:33px; display:flex; align-items:center; padding:0 9px; color:var(--bright,#fff); font-size:11px; margin-left:auto; }
     .state-line { display:flex; align-items:center; gap:7px; margin-top:7px; color:var(--faint,#8d9198); font-size:10px; } .state-line i { width:6px; height:6px; border:1px solid var(--focus,#4daaff); border-radius:50%; }
     .comparison-footer { padding:0 12px 12px; color:var(--faint,#8d9198); font-size:10px; line-height:14px; }
   </style>
@@ -49,7 +51,7 @@
         </section>
         <aside class="dock-comparison" aria-label="Docked comparison">
           <div class="comparison-title">Same panel · docked presentation</div>
-          <section class="docked-panel"><header class="docked-head">Performance <span style="margin-left:auto;color:var(--muted,#c9cbcf)">${i('float')}</span></header>${performanceContent}</section>
+          <section class="docked-panel"><nav class="docked-tabs" aria-label="Bottom panel tabs"><span class="docked-tab">Terminal</span><span class="docked-tab active">Performance</span><span class="docked-head">${i('float')}</span></nav>${performanceContent}</section>
           <div class="comparison-footer">Close remembers the current presentation. Reopen restores this float or its dock return slot.</div>
         </aside>
       </div>`;
