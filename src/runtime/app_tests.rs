@@ -6516,3 +6516,24 @@ fn external_formatting_reply_identity_rejects_superseded_and_duplicate_results()
         .is_empty());
     assert!(app.formatters.is_empty());
 }
+
+/// Regression test for `ensure_isolated_test_config_home`: every
+/// `App::new()`-based test must see the `CompletionConfig` default, never
+/// whatever a developer happens to have saved in their real
+/// `~/.config/token-editor/config.yaml`. Guards against reintroducing a
+/// leak from the real config directory into the test suite.
+#[test]
+fn app_new_never_reads_the_real_developer_config_directory() {
+    let app = App::new(800, 600, empty_startup_config(), None, None, None);
+    assert!(
+        app.model.config.completion.enabled,
+        "a real ~/.config/token-editor/config.yaml leaked into App::new(); \
+         prepare_app must isolate XDG_CONFIG_HOME for tests"
+    );
+    let config_dir = token::config_paths::config_dir().unwrap();
+    assert_ne!(
+        config_dir,
+        dirs::home_dir().unwrap().join(".config/token-editor"),
+        "test run resolved the real config directory instead of the isolated one"
+    );
+}

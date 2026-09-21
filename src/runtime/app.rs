@@ -169,11 +169,44 @@ impl AppPreparation {
     }
 }
 
+/// Redirect config/theme/recent-files/command-history loading to a temp
+/// directory for the lifetime of the test binary, so `App::new()`-based
+/// tests never read the developer's real `~/.config/token-editor/`. Without
+/// this, a local `config.yaml` (e.g. `completion.enabled: false`, saved from
+/// actually using the app) silently changes what hundreds of tests observe.
+///
+/// `OnceLock::get_or_init` runs the closure for exactly one caller; every
+/// other thread calling `prepare_app` concurrently blocks until it returns,
+/// so no test ever races a real or default config directory into view — the
+/// var is set before any test's `EditorConfig::load()` can run. CI already
+/// has no such file, which is why this never surfaced there.
+#[cfg(test)]
+fn ensure_isolated_test_config_home() {
+    use std::sync::OnceLock;
+    static ISOLATED_CONFIG_HOME: OnceLock<tempfile::TempDir> = OnceLock::new();
+    ISOLATED_CONFIG_HOME.get_or_init(|| {
+        let dir = tempfile::tempdir().expect("create isolated test config directory");
+        // SAFETY: test-only; set exactly once (see `OnceLock` above) before
+        // any test's config load can observe a partial or real value.
+        #[cfg(target_os = "windows")]
+        unsafe {
+            std::env::set_var("APPDATA", dir.path());
+        }
+        #[cfg(not(target_os = "windows"))]
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", dir.path());
+        }
+        dir
+    });
+}
+
 fn prepare_app(
     window_width: u32,
     window_height: u32,
     startup_config: StartupConfig,
 ) -> PreparedApp {
+    #[cfg(test)]
+    ensure_isolated_test_config_home();
     let keymap = Keymap::with_bindings(load_default_keymap());
 
     let restore = startup_config.restore_session;
