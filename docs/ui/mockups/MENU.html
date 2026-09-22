@@ -14,6 +14,8 @@
       .menu .menu-row { width: 100%; min-height: 28px; border: 0; background: transparent; color: inherit; text-align: left; }
       .menu .menu-row.selected { background: var(--control-selected); }
       .menu-row .keycap { margin-left: auto; transform: scale(.88); transform-origin: right center; }
+      .menu-row .chips { margin-left: auto; display: flex; gap: 4px; }
+      .menu-row .chips .keycap { margin-left: 0; }
       .menu-row[aria-disabled="true"] { color: var(--faint); }
       .menu-row.selected { color: var(--control-selected-fg); background: var(--control-selected); }
       .menu-side { padding: 14px 14px 10px; }
@@ -50,6 +52,7 @@
           <button class="menu-row selected" type="button" aria-current="true" aria-label="Copy"><span>Copy</span><span class="keycap">⌘C</span></button>
           <button class="menu-row" type="button" aria-label="Paste"><span>Paste</span><span class="keycap">⌘V</span></button>
           <div class="separator" role="separator"></div>
+          <button class="menu-row" type="button" aria-label="Format document"><span>Format Document</span><span class="chips"><span class="keycap">⌘K</span><span class="keycap">⌘C</span></span></button>
           <button class="menu-row" type="button" aria-label="Go to definition"><span>Go to Definition</span><span class="keycap">F12</span></button>
           <button class="menu-row" type="button" aria-label="Find references"><span>Find References</span><span class="keycap">⇧F12</span></button>
           <div class="separator" role="separator"></div>

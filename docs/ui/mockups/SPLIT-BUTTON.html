@@ -20,9 +20,14 @@
       .split-popup button[aria-disabled="true"] { color: var(--faint); }
       .split-popup .keycap { transform: scale(.82); transform-origin: right center; }
       .split-notes { padding-block-start: 2px; }
-      .split-states { --state-count: 3; }
+      .split-states { --state-count: 6; }
       .split-mini { display: inline-flex; }
       .split-mini.disabled { opacity: .45; }
+      .split-mini.narrow .split-main { padding-inline: 0; inline-size: 0; overflow: hidden; }
+      .split-mini.destructive .split-action { gap: 2px; background: transparent; border: 0; }
+      .split-mini.destructive .split-main,
+      .split-mini.destructive .split-disclosure { border: 1px solid var(--severity-error, var(--red)); border-radius: 3px; color: var(--severity-error-text, var(--red)); background: transparent; }
+      .split-mini.destructive .split-disclosure { border-inline-start: 1px solid var(--severity-error, var(--red)) !important; }
     </style>
   </head>
   <body>
@@ -39,9 +44,9 @@
         { number: 133, text: '' },
         { number: 134, text: '// Selected build task: targeted layout test' }
       ];
-      const split = (label, { focused = false, disabled = false } = {}) => `
+      const split = (label, { focused = false, disabled = false, icon = null } = {}) => `
         <div class="split-action" role="group" aria-label="${label} action">
-          <button class="split-main" type="button"${disabled ? ' disabled' : ''}>${label}</button>
+          <button class="split-main" type="button"${disabled ? ' disabled' : ''}>${icon ? Mockup.icon(icon, 13) : label}</button>
           <button class="split-disclosure${focused ? ' focused' : ''}" type="button" aria-label="${label} alternatives"${disabled ? ' disabled' : ''}>${Mockup.icon('chevron-down', 13)}</button>
         </div>`;
       const content = `
@@ -72,6 +77,9 @@
             <section class="ide-state"><div class="state-label">Joined control</div><div class="split-mini">${split('Run')}</div></section>
             <section class="ide-state"><div class="state-label">Disclosure focus</div><div class="split-mini">${split('Run', { focused: true })}</div></section>
             <section class="ide-state"><div class="state-label">Unavailable</div><div class="split-mini disabled">${split('Run', { disabled: true })}</div></section>
+            <section class="ide-state"><div class="state-label">Icon presentation</div><div class="split-mini">${split('Run', { icon: 'play' })}</div></section>
+            <section class="ide-state"><div class="state-label">Zero-width main (W&lt;D)</div><div class="split-mini narrow">${split('Run with arguments')}</div></section>
+            <section class="ide-state"><div class="state-label">Destructive, separated</div><div class="split-mini destructive">${split('Delete')}</div></section>
           </div>
         </div>`;
       Mockup.mount({ id: 'SPLIT-BUTTON', title: 'Split button', description: 'A proposed desktop action: the main half runs the current target; disclosure opens alternatives.', status: 'Proposed component', content });

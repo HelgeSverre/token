@@ -14,6 +14,7 @@
     .label-sample { min-block-size:28px; display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text); }
     .label-sample.validation { color:var(--severity-error-text, var(--red)); }
     .label-sample .quiet { color:var(--faint); font-size:11px; }
+    .label-sample.truncated { inline-size:128px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
     .metadata-mini { border-block-start:1px solid var(--line); padding-block-start:10px; }
     .metadata-mini h3 { color:var(--text); font-size:12px; line-height:19px; margin-block-end:6px; }
   </style>
@@ -41,11 +42,12 @@
             <div class="ide-note"><h3>Metadata</h3><p>Row detail is secondary text, not a second primary caption.</p></div>
           </aside>
         </div>
-        <section class="ide-states" style="--state-count:4" aria-label="Label roles">
+        <section class="ide-states" style="--state-count:5" aria-label="Label roles">
           <div class="ide-state"><span class="state-label">Control caption</span><div class="label-sample">Code font size <span class="quiet">14 px</span></div></div>
           <div class="ide-state"><span class="state-label">Description</span><div class="label-sample quiet">Applies to new editor tabs.</div></div>
           <div class="ide-state"><span class="state-label">Validation</span><div class="label-sample validation">Choose a value from 6 to 48 px.</div></div>
           <div class="ide-state"><span class="state-label">Metadata</span><div class="label-sample">editor_text.rs <span class="quiet">src/view</span></div></div>
+          <div class="ide-state"><span class="state-label">Truncated (128px)</span><div class="label-sample truncated" title="src/view/settings_page/overlay_surface_layout.rs">src/view/settings_page/overlay_surface_layout.rs</div></div>
         </section>
       </div>`
   });

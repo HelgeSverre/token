@@ -6,7 +6,7 @@
   <title>Splitter · Token UI reference</title>
   <link rel="stylesheet" href="shared.css">
   <style>
-    .split-study { height:100%; display:grid; grid-template-columns:minmax(0,1fr) 290px; gap:16px; }
+    .split-study { height:336px; display:grid; grid-template-columns:minmax(0,1fr) 290px; gap:16px; }
     .split-window { min-height:0; display:grid; grid-template-rows:37px 1fr; }
     .split-tabs { display:flex; align-items:end; gap:0; border-bottom:1px solid var(--line); background:var(--tabs-bg); }
     .split-tab { height:36px; padding:0 12px; display:flex; align-items:center; gap:7px; color:var(--tab-inactive-fg); font-size:12px; border-right:1px solid var(--line); }
@@ -19,13 +19,21 @@
     .mini-line.active span { background:var(--current-line); }
     .split-bar { position:relative; background:var(--splitter, var(--line)); cursor:col-resize; }
     .split-bar::before { content:''; position:absolute; inset:0 2px; background:color-mix(in srgb, var(--bright) 10%, transparent); opacity:.42; }
-    .split-side { min-height:0; display:grid; grid-template-rows:1fr 161px; gap:12px; }
+    .split-side { min-height:0; display:grid; grid-template-rows:1fr 140px; gap:10px; }
     .split-details { padding:10px 12px; display:grid; gap:8px; align-content:start; font-size:11px; line-height:1.35; }
     .metric { display:flex; justify-content:space-between; gap:12px; color:var(--muted); }
     .metric span:last-child { color:var(--code-fg); font-family:var(--font-mono); }
     .hit-demo { margin:0 12px 12px; height:38px; display:grid; grid-template-columns:1fr 8px 1fr; border:1px solid var(--line); border-radius:4px; overflow:hidden; }
     .hit-demo i { background:var(--panel); }
     .hit-demo b { background:var(--focus); font:10px/38px var(--font-mono); text-align:center; color:white; font-weight:400; }
+    .nested-panes { height:98px; display:grid; grid-template-columns:1fr 8px 1.4fr; background:var(--editor); border:1px solid var(--line); }
+    .nested-inner { display:grid; grid-template-rows:1fr 8px 1fr; min-width:0; }
+    .nested-pane { min-width:0; min-height:0; padding:8px; font:10px/1.4 var(--font-mono); color:var(--muted); overflow:hidden; }
+    .nested-pane b { color:var(--code-fg); font-weight:400; }
+    .h-bar { background:var(--splitter, var(--line)); position:relative; cursor:col-resize; }
+    .h-bar::before { content:''; position:absolute; inset:2px 0; background:color-mix(in srgb, var(--bright) 10%, transparent); opacity:.42; }
+    .v-bar { background:var(--splitter, var(--line)); position:relative; cursor:row-resize; }
+    .v-bar::before { content:''; position:absolute; inset:0 2px; background:color-mix(in srgb, var(--bright) 10%, transparent); opacity:.42; }
   </style>
 </head>
 <body>
@@ -45,7 +53,20 @@
             <section class="surface"><div class="surface-header"><span class="section-title">Horizontal split</span><span class="badge">pointer drag</span></div><div class="split-details"><div class="metric"><span>Boundary</span><span>616 px</span></div><div class="metric"><span>Target width</span><span>8 px</span></div><div class="metric"><span>Press threshold</span><span>4 px</span></div><div class="separator"></div><div class="muted">The full bar is hit geometry. Children keep their complete solved extent below it.</div></div></section>
             <section class="surface"><div class="state-label">Hit target · illustrative</div><div class="hit-demo" aria-hidden="true"><i></i><b>↔</b><i></i></div><p class="split-details muted" style="padding-top:0">Pointer drag is current. Keyboard resizing and normalized min-size solving remain proposed work.</p></section>
           </aside>
-        </div>`
+        </div>
+        <section class="surface" style="margin-top:10px" aria-label="Root split with a nested split in its first child, used by the traversal-mismatch discussion">
+          <div class="surface-header"><span class="section-title">Nested split (traversal-mismatch reference)</span><span class="badge">current index gap</span></div>
+          <div class="nested-panes">
+            <div class="nested-inner">
+              <div class="nested-pane"><b>editor_area.rs</b><br>nested boundary</div>
+              <div class="v-bar" role="separator" aria-orientation="horizontal" aria-label="Nested splitter (root boundary 0's subtree)"></div>
+              <div class="nested-pane"><b>layout.rs</b></div>
+            </div>
+            <div class="h-bar" role="separator" aria-orientation="vertical" aria-label="Root splitter, boundary 1"></div>
+            <div class="nested-pane"><b>ui.rs</b><br>root sibling C</div>
+          </div>
+          <p class="split-details muted" style="padding-top:6px">Emission order: root boundary&nbsp;0 → nested boundary → root boundary&nbsp;1. Lookup reserves both root boundaries as one contiguous range before descending, so a drag on the nested bar can resolve/mutate the root container.</p>
+        </section>`
       });
     })();
   </script>

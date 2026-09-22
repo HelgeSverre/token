@@ -12,9 +12,11 @@
       .combo-open-row { min-block-size: 34px; }
       .combo-anchor { inline-size: 260px; min-block-size: 28px; }
       .combo-input { inline-size: 100%; block-size: 28px; display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: center; border: 1px solid var(--focus); border-radius: 3px 3px 0 0; background: var(--input-background); box-shadow: 0 0 0 1px var(--focus); }
-      .combo-input input { min-inline-size: 0; padding-inline: 8px; border: 0; outline: 0; background: transparent; color: var(--text); font: 12px var(--font-mono); }
+      .combo-input input, .combo-input .combo-draft { min-inline-size: 0; padding-inline: 8px; border: 0; outline: 0; background: transparent; color: var(--text); font: 12px var(--font-mono); }
+      .combo-input .combo-draft { display: flex; align-items: center; overflow: hidden; white-space: nowrap; }
       .combo-input button { block-size: 26px; border: 0; border-inline-start: 1px solid var(--line); background: var(--control-bg); color: var(--muted); }
-      .combo-popup { position: absolute; z-index: 3; inset-inline-start: 348px; inset-block-start: 146px; inline-size: 260px; padding: 3px; border: 1px solid var(--focus); border-radius: 0 0 3px 3px; background: var(--tooltip-bg); box-shadow: 0 8px 16px #00000055; }
+      .combo-popup { position: absolute; z-index: 3; inset-inline-start: 348px; inset-block-start: 146px; inline-size: 260px; max-block-size: 190px; overflow-y: scroll; padding: 3px; border: 1px solid var(--focus); border-radius: 0 0 3px 3px; background: var(--tooltip-bg); box-shadow: 0 8px 16px #00000055; }
+      .combo-input .caret { display: inline-block; width: 1px; height: 15px; margin-inline-start: 1px; background: var(--bright); vertical-align: text-bottom; }
       .combo-option { inline-size: 100%; min-block-size: 27px; display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: center; gap: 5px; padding-inline: 6px; border: 0; border-radius: 2px; background: transparent; color: var(--text); font: 12px var(--font-mono); text-align: left; }
       .combo-option.active { color: var(--control-selected-fg); background: var(--control-selected); }
       .combo-option[aria-disabled="true"] { color: var(--faint); }
@@ -48,7 +50,7 @@
                   <div class="ide-form-row combo-open-row"><label for="provider">Provider</label>
                     <div class="combo-anchor">
                       <div class="combo-input" role="combobox" aria-expanded="true" aria-controls="provider-options" aria-label="Provider">
-                        <input id="provider" value="local-runner" readonly><button type="button" aria-label="Show provider options">${Mockup.icon('chevron-down', 14)}</button>
+                        <div id="provider" class="combo-draft" role="textbox" aria-label="Provider" aria-readonly="false">local-runner<span class="caret" aria-hidden="true"></span></div><button type="button" aria-label="Show provider options">${Mockup.icon('chevron-down', 14)}</button>
                       </div>
                     </div>
                   </div>
@@ -56,7 +58,7 @@
                 </section>`
             })}
             <div class="combo-popup" id="provider-options" role="listbox" aria-label="Provider options">
-              ${option('local-runner', { active: true })}${option('ollama')}${option('openai-compatible')}${option('remote-session', { disabled: true })}
+              ${option('local-runner', { active: true })}${option('ollama')}${option('openai-compatible')}${option('remote-session', { disabled: true })}${option('docker-runner')}${option('ssh-tunnel')}${option('custom-endpoint')}${option('cloud-proxy')}${option('staging-mirror')}${option('legacy-adapter')}
             </div></div>
             <aside class="ide-notes" aria-label="Editable ComboBox study notes">
               <section class="ide-note"><h3>Draft</h3><p>The field holds editable draft text while the list supplies source-owned options.</p></section>

@@ -19,7 +19,9 @@
       .select-option.selected { background: var(--control-selected); color: var(--control-selected-fg); }
       .select-option[aria-disabled="true"] { color: var(--faint); }
       .select-check { display: flex; justify-content: center; color: var(--bright); }
-      .select-states { --state-count: 4; }
+      .select-states { --state-count: 5; padding-block-start: 6px; } .select-states .state-label { margin-block-end: 5px; }
+      .select-overflow-list { position: relative; inline-size: 100%; block-size: 66px; overflow: hidden; padding: 2px; padding-inline-end: 12px; border: 1px solid var(--line); border-radius: 3px; background: var(--tooltip-bg); }
+      .select-overflow-list .select-option { min-block-size: 21px; }
       .select-mini { inline-size: min(100%, 176px); min-block-size: 28px; display: flex; align-items: center; justify-content: space-between; gap: 7px; padding-inline: 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--input-background); color: var(--text); font-size: 12px; }
       .select-mini.focus { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
       .select-mini.disabled { color: var(--faint); opacity: .48; }
@@ -66,6 +68,7 @@
             <section class="ide-state"><div class="state-label">Focused</div><div class="select-mini focus"><span>4 spaces</span>${Mockup.icon('chevron-down', 14)}</div></section>
             <section class="ide-state"><div class="state-label">No options</div><div class="select-mini disabled"><span>No options</span>${Mockup.icon('chevron-down', 14)}</div></section>
             <section class="ide-state"><div class="state-label">Unavailable</div><div class="select-mini disabled"><span>Workspace default</span>${Mockup.icon('chevron-down', 14)}</div></section>
+            <section class="ide-state"><div class="state-label">Overflow (12 presets)</div><div class="select-overflow-list" role="listbox" aria-label="Language server preset options">${option('gopls')}${option('pyright', { selected: true })}${option('clangd')}${option('HTML')}<div class="static-scrollbar"></div></div></section>
           </div>
         </div>`;
       Mockup.mount({ id: 'SELECT', title: 'Select', description: 'A non-editable Settings value picker with its options attached to the source field.', status: 'Established surface · visual study', content });

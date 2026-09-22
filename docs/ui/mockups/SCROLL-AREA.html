@@ -20,7 +20,7 @@
     .scroll-thumb { position:absolute; width:8px; border-radius:6px; background:var(--scrollbar); }
     .scroll-thumb.hover { box-shadow:0 0 0 1px color-mix(in srgb,var(--bright) 12%,transparent); background:var(--scrollbar-hover); }
     .scroll-end { position:absolute; right:6px; bottom:7px; width:12px; height:12px; color:var(--faint); display:grid; place-items:center; font:10px/1 var(--font-mono); }
-    .axis-states { min-height:0; display:grid; grid-template-rows:1fr 1fr; gap:12px; }
+    .axis-states { min-height:0; display:grid; grid-template-rows:1fr 1fr auto; gap:12px; }
     .axis-card { min-height:0; padding:0; overflow:hidden; }
     .axis-card .state-label { margin:0; padding:8px 10px; border-bottom:1px solid var(--line); }
     .horizontal-demo { position:relative; margin:10px; height:45px; overflow:hidden; background:var(--input-background); border:1px solid var(--line); border-radius:4px; }
@@ -39,8 +39,9 @@
   <script>
     (async () => {
       // Fixed source data; geometry below is measured from the rendered viewport.
-      const fixture = { projectedRows:96, rowHeight:22, position:528 };
+      const fixture = { projectedRows:96, rowHeight:22, position:541 };
       fixture.firstRow = 1 + Math.floor(fixture.position / fixture.rowHeight);
+      fixture.rowOffset = fixture.position - Math.floor(fixture.position / fixture.rowHeight) * fixture.rowHeight;
       const total = fixture.projectedRows * fixture.rowHeight;
       const rows = Array.from({length:24}, (_,i) => {
         const n=fixture.firstRow+i; const cls=i===7?'current':i===4?'mark':'';
@@ -54,12 +55,13 @@
           <section class="window scroll-window" aria-label="Editor projection with vertical scrollbar">
             <header class="scroll-window-head"><span class="row">${Mockup.icon('file')} <span class="mono">editor_scrollbars.rs</span></span><span class="muted">${fixture.projectedRows} projected rows · y ${fixture.position} px</span></header>
             <div class="scroll-viewport" data-clip-demo aria-label="Clipped projected rows ${fixture.firstRow} through ${fixture.firstRow + 23}">
-              <div class="scroll-rows">${rows}</div><div class="scroll-track" aria-hidden="true"><span class="scroll-thumb hover"></span></div><span class="scroll-end" aria-hidden="true">⌄</span>
+              <div class="scroll-rows" style="transform:translateY(-${fixture.rowOffset}px)">${rows}</div><div class="scroll-track" aria-hidden="true"><span class="scroll-thumb hover"></span></div><span class="scroll-end" aria-hidden="true">⌄</span>
             </div>
           </section>
           <aside class="axis-states" aria-label="Scrollbar state comparisons">
             <section class="surface axis-card"><div class="state-label">Horizontal comparison · unwrapped</div><div class="horizontal-demo" data-clip-demo><span class="horizontal-code">viewport_map.row_count × line_height − content_extent</span><span class="h-track"><i class="h-thumb"></i></span></div><p class="axis-copy">The same pure axis applies here. Soft wrap suppresses horizontal editor scrolling.</p></section>
             <section class="surface axis-card"><div class="state-label">Vertical axis · logical pixels</div><div class="axis-copy stack" style="padding-top:9px;gap:4px"><div class="row"><span class="muted">total</span><span class="mono grow" style="text-align:right">${total.toLocaleString('en-US')} px</span></div><div class="row"><span class="muted">visible</span><span class="mono grow visible-extent" style="text-align:right"></span></div><div class="row"><span class="muted">position</span><span class="mono grow" style="text-align:right">${fixture.position} px</span></div></div><div class="end-range"><span class="end-track" aria-hidden="true"><i></i></span><span><span class="mono end-position"></span> is the end-of-range position; the thumb pins to the track end.</span></div></section>
+            <section class="surface axis-card"><div class="state-label">No thumb · content fits</div><div class="end-range" style="margin-top:9px"><span class="end-track" aria-hidden="true"></span><span>Track paints with no thumb when <span class="mono">total ≤ visible</span> (<span class="mono">needed=false</span>); no division-by-zero geometry is calculated.</span></div></section>
           </aside>
         </div>`
       });

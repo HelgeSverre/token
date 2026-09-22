@@ -22,10 +22,17 @@
     .space-row { display:grid; grid-template-columns:42px 1fr 29px; gap:8px; align-items:center; font-size:11px; }
     .space-rule { height:8px; background:var(--focus); border-radius:3px; opacity:.85; min-width:2px; }
     .space-row code { color:var(--faint); font:10px/1 var(--font-mono); }
-    .flow { grid-column:span 2; }
-    .flow-board { height:calc(100% - 36px); display:flex; align-items:center; padding:0 14px; gap:8px; overflow:hidden; }
+    .flow-board { height:calc(100% - 36px); display:flex; align-items:center; padding:0 10px; gap:6px; overflow:hidden; }
     .flow-node { min-width:0; flex:1; min-height:42px; padding:8px; border:1px solid var(--line); background:var(--input-background); border-radius:4px; color:var(--text); font-size:11px; display:grid; align-content:center; gap:3px; }
-    .flow-node small { color:var(--faint); font-size:10px; }.flow-arrow { color:var(--faint); font-size:16px; }.flow-node.active { border-color:var(--focus); background:color-mix(in srgb,var(--focus) 13%,var(--input-background)); }
+    .flow-node small { color:var(--faint); font-size:10px; }.flow-arrow { color:var(--faint); font-size:14px; line-height:20px; display:inline-block; }.flow-node.active { border-color:var(--focus); background:color-mix(in srgb,var(--focus) 13%,var(--input-background)); }
+    .ownership-board { padding:10px 12px; display:grid; gap:7px; }
+    .rect-demo { display:flex; height:30px; }
+    .rect-demo span { flex:1; display:flex; align-items:center; justify-content:center; font:10px/1 var(--font-mono); color:var(--text); border:1px solid var(--focus); }
+    .rect-demo span.rect-a { border-right:none; background:color-mix(in srgb,var(--focus) 13%,var(--input-background)); }
+    .rect-demo span.rect-b { background:var(--input-background); }
+    .gesture-trace { display:flex; align-items:center; gap:6px; font:10px/1 var(--font-mono); color:var(--muted); }
+    .gesture-trace .flow-arrow { font-size:11px; line-height:16px; }
+    .gesture-trace .cancel { color:var(--faint); }
     .foundation-states { grid-column:3; grid-row:2; }
     .state-board { padding:10px 12px; display:grid; gap:8px; }
     .state-sample { min-height:29px; display:flex; align-items:center; gap:8px; padding:5px 8px; border:1px solid var(--line); border-radius:4px; color:var(--text); font-size:11px; }
@@ -49,6 +56,7 @@
           <section class="surface foundation-card"><header class="foundation-head"><span class="section-title">Semantic roles</span><span class="muted mono">dark.yaml</span></header><div class="token-list">${swatches.map(([name,color])=>`<div class="token"><i class="swatch" style="background:${color}"></i><span>${name}</span></div>`).join('')}</div></section>
           <section class="surface foundation-card"><header class="foundation-head"><span class="section-title">Spacing scale</span><span class="muted">actual logical lengths</span></header><div class="space-board">${spaces.map(n=>`<div class="space-row"><code>${n}</code><i class="space-rule" style="width:${n}px"></i><code>${n}px</code></div>`).join('')}<div class="support-sample">These rules are actual CSS lengths. One conversion at the display-scale boundary preserves adjacency.</div></div></section>
           <section class="surface foundation-card flow"><header class="foundation-head"><span class="section-title">Four representations</span><span class="muted">solve once, consume in three places</span></header><div class="flow-board"><div class="flow-node"><span>Domain model</span><small>IDs, values, revisions</small></div><span class="flow-arrow">→</span><div class="flow-node"><span>Presentation</span><small>borrowed labels and roles</small></div><span class="flow-arrow">→</span><div class="flow-node active"><span>Layout</span><small>rects, clips, visible indices</small></div><span class="flow-arrow">→</span><div class="flow-node"><span>Paint + hit</span><small>same solved geometry</small></div></div></section>
+          <section class="surface foundation-card"><header class="foundation-head"><span class="section-title">Ownership and events</span><span class="muted">containment · capture</span></header><div class="ownership-board"><div class="rect-demo"><span class="rect-a">[10, 30)</span><span class="rect-b">[30, 50)</span></div><div class="support-sample">Half-open containment: x=30 belongs to the right rect only, so adjacent rects never double-hit.</div><div class="gesture-trace"><span>press A</span><span class="flow-arrow">→</span><span>move outside A</span><span class="flow-arrow">→</span><span>release</span><span class="flow-arrow">→</span><span class="cancel">capture cleared, no activation</span></div></div></section>
           <section class="surface foundation-card foundation-states"><header class="foundation-head"><span class="section-title">State expression</span><span class="muted">not a widget kit</span></header><div class="state-board"><div class="state-sample focus-ring">${Mockup.icon('code',14)} Editor group <span class="state-name">focused</span></div><div class="state-sample selection">${Mockup.icon('file',14)} layout/snapshot.rs <span class="state-name">selected</span></div><div class="state-sample">${Mockup.icon('warning',14)} 2 diagnostics <span class="state-name">semantic status</span></div></div></section>
         </div>`
       });

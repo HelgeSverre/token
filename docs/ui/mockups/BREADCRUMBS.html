@@ -35,6 +35,12 @@
     .narrow-crumb { height:28px; min-width:0; display:flex; align-items:center; gap:6px; padding:0 8px; border-bottom:1px solid var(--line,#3c3c3c); overflow:hidden; white-space:nowrap; font-size:10px; }
     .overflow-trigger { width:20px; height:20px; display:inline-grid; place-items:center; border:1px solid var(--line,#3c3c3c); padding:0; border-radius:3px; color:var(--bright,#fff); background:var(--control-bg,#35373c); flex:0 0 auto; }
     .truncate { min-width:0; overflow:hidden; text-overflow:ellipsis; color:var(--syntax-fn,#dcdcaa); }
+    .crumb-hover { background:var(--hover,rgba(255,255,255,.08)); border-radius:3px; padding:1px 4px; margin:-1px -4px; }
+    .crumb-kbfocus { font:inherit; color:inherit; background:none; border:1px solid transparent; outline:1px solid var(--focus,#007acc); outline-offset:1px; border-radius:2px; padding:0; cursor:pointer; }
+    .overflow-trigger.open { background:var(--control-selected-bg,#04395e); border-color:var(--focus,#007acc); }
+    .overflow-menu { display:grid; margin-top:6px; border:1px solid var(--line,#3c3c3c); background:var(--panel,#252526); font-size:11px; }
+    .overflow-item { padding:5px 9px; display:flex; align-items:center; gap:6px; color:var(--muted,#c9cbcf); }
+    .overflow-item:first-child { background:var(--list-hover,#2a2d2e); color:var(--bright,#fff); }
     .anatomy { display:grid; gap:8px; padding:12px; border-left:2px solid var(--control-selected-border,#007acc); background:rgba(255,255,255,.025); color:var(--muted,#c9cbcf); font-size:11px; line-height:16px; }
     .anatomy strong { color:var(--bright,#fff); font-size:12px; font-weight:400; }
     .anatomy .tiny-rule { height:1px; background:var(--line,#3c3c3c); }
@@ -68,7 +74,20 @@
               <div class="narrow-title"><span>Narrow group</span><span class="mono muted">224 px</span></div>
               <div class="narrow-shell" data-clip-demo>
                 <div class="narrow-tabs"><span>chrome.rs</span></div>
-                <div class="narrow-crumb"><button class="overflow-trigger" aria-label="Show hidden path segments">${icon('more', 12)}</button><span class="crumb-sep">›</span>${icon('file', 12)}<span class="truncate" style="color:var(--text,#ccc)">chrome.rs</span><span class="crumb-sep">›</span><span class="truncate">solve_chrome</span></div>
+                <div class="narrow-crumb"><button class="overflow-trigger" aria-label="Show hidden path segments">${icon('more', 12)}</button><span class="crumb-sep">›</span><span class="truncate">solve_chrome</span></div>
+              </div>
+            </div>
+            <div class="narrow-card">
+              <div class="narrow-title"><span>Item states</span><span class="mono muted">not exhaustive</span></div>
+              <div class="crumbbar" style="border-bottom:0; padding:0;">
+                <span class="crumb crumb-hover">${icon('folder')} src</span><span class="crumb-sep">›</span>
+                <button class="crumb crumb-kbfocus" type="button">layout</button><span class="crumb-sep">›</span>
+                <span class="crumb current" aria-current="true"><span class="crumb-file">${icon('file')}</span>chrome.rs</span><span class="crumb-sep">›</span>
+                <button class="overflow-trigger open" aria-expanded="true" aria-label="Hidden path segments">${icon('more', 12)}</button>
+              </div>
+              <div class="overflow-menu" role="menu" aria-label="Hidden path segments">
+                <div class="overflow-item" role="menuitem">${icon('folder', 12)} src</div>
+                <div class="overflow-item" role="menuitem">${icon('folder', 12)} layout</div>
               </div>
             </div>
             <div class="anatomy">

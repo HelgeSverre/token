@@ -6,7 +6,7 @@
     <title>Documentation card visual reference</title>
     <link rel="stylesheet" href="shared.css">
     <style>
-      .docs-stage { height: 422px; position: relative; }
+      .docs-stage { height: 371px; position: relative; }
       .docs-editor { height: 100%; position: relative; min-height: 0; overflow: hidden; }
       .docs-completion { position: absolute; z-index: 3; left: 300px; top: 171px; width: 252px; padding: 4px; border: 1px solid var(--tooltip-border); border-radius: 5px; background: var(--tooltip-bg); box-shadow: 0 12px 26px #00000055; }
       .docs-completion-head { padding: 5px 7px; color: var(--faint); font-size: 10px; border-bottom: 1px solid var(--soft-line); }
@@ -26,9 +26,17 @@
       .docs-scroll { position: absolute; inset: 10px 10px 10px auto; width: 8px; border-radius: 4px; background: var(--scrollbar-track); }
       .docs-thumb { position: absolute; left: 1px; right: 1px; top: 26.19%; height: 26.19%; border-radius: 3px; background: var(--scrollbar); }
       .docs-scroll-label { color: var(--faint); font-size: 10px; line-height: 14px; }
-      .docs-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
-      .docs-bottom .state-card { min-height: 70px; padding: 10px; }
+      .docs-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+      .docs-bottom .state-card { min-height: 60px; padding: 8px; }
       .docs-bottom p { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 15px; }
+      .hover-zones { border: 1px solid var(--tooltip-border); border-radius: 5px; background: var(--tooltip-bg); overflow: hidden; width: 280px; }
+      .hover-banner { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--soft-line); background: color-mix(in srgb, var(--severity-info, #3794ff) 14%, transparent); color: var(--severity-info-text, var(--severity-info, #3794ff)); font-size: 10px; }
+      .hover-banner .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--severity-info, #3794ff); flex: none; }
+      .hover-banner .src { margin-left: auto; color: var(--faint); }
+      .hover-zones .docs-code { margin: 5px 9px 0; padding: 5px 7px; font-size: 10px; }
+      .hover-zones .docs-prose { padding: 4px 9px 7px; }
+      .hover-anchor { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--faint); font-size: 10px; }
+      .hover-anchor .caret { width: 1px; height: 12px; background: var(--focus); }
     </style>
   </head>
   <body>
@@ -70,7 +78,15 @@
         </div>
         <div class="docs-bottom" aria-label="Documentation card relationships">
           <div class="state-card"><div class="state-label">Completion side card · lines 12–22 of 42</div><p>Follows the selected filtered completion item and resets its reading position when selection changes.</p></div>
-          <div class="state-card"><div class="state-label">Hover reading surface</div><p>Uses the hover owner’s live text-cell anchor; it is not a global fetchable card.</p></div>
+          <div class="state-card" aria-label="Hover reading surface, Body::Zones layout">
+            <div class="state-label">Hover reading surface · Body::Zones</div>
+            <div class="hover-zones">
+              <div class="hover-banner"><span class="dot"></span>Production renderer<span class="src">Token</span></div>
+              <div class="docs-code">render(frame: &mut Frame, theme: &Theme)</div>
+              <div class="docs-prose"><p>Uses shared layout and painter paths. Inline code and prose retain their font roles.</p></div>
+            </div>
+            <div class="hover-anchor"><span class="caret" aria-hidden="true"></span>anchored at stored text-cell (line, column), not the panel</div>
+          </div>
         </div>`;
       Mockup.mount({
         id: 'DOCUMENTATION-CARD',

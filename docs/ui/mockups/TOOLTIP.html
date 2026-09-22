@@ -6,7 +6,7 @@
     <title>Tooltip visual reference</title>
     <link rel="stylesheet" href="shared.css">
     <style>
-      .tooltip-stage { height: 420px; display: grid; grid-template-columns: 202px minmax(0, 1fr); gap: 18px; }
+      .tooltip-stage { height: 350px; display: grid; grid-template-columns: 202px minmax(0, 1fr); gap: 18px; }
       .tooltip-toolbar { position: relative; padding: 14px; }
       .tooltip-toolbar .section-title { margin-bottom: 10px; }
       .tool-row { position: relative; display: flex; align-items: center; gap: 6px; padding: 6px; border: 1px solid var(--soft-line); border-radius: 5px; background: var(--editor); }
@@ -16,12 +16,18 @@
       .tooltip-bubble b { color: var(--bright); font-weight: 400; }
       .tooltip-bubble .keycap { float: right; margin-left: 8px; transform: scale(.82); transform-origin: right center; }
       .tooltip-toolbar > .tooltip-bubble { left: 14px; top: 63px; width: 170px; }
-      .tooltip-copy { margin: 14px 0 0; color: var(--faint); font-size: 11px; line-height: 16px; }
+      .tooltip-copy { margin: 60px 0 0; color: var(--faint); font-size: 11px; line-height: 16px; }
       .tooltip-editor { position: relative; min-height: 0; overflow: hidden; }
       .tooltip-editor .cursor-tooltip { position: absolute; z-index: 3; top: 135px; left: 302px; width: 228px; }
       .tooltip-editor .cursor-tooltip::before { left: 25px; }
       .tooltip-states { margin-top: 12px; display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 12px; }
       .tooltip-states .state-card { min-height: 76px; padding: 10px; }
+      .tooltip-edge-states { margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .tooltip-edge-states .state-card { position: relative; min-height: 0; padding: 7px 8px; }
+      .edge-window { position: relative; margin-top: 5px; height: 70px; border: 1px dashed var(--soft-line); border-radius: 4px; }
+      .edge-window .tooltip-bubble { position: absolute; }
+      .edge-target { position: absolute; width: 20px; height: 20px; border: 1px solid var(--soft-line); border-radius: 3px; background: var(--editor); }
+      .tooltip-bubble.flip-above::before { top: auto; bottom: -5px; border-top: none; border-left: none; border-bottom: 1px solid var(--tooltip-border); border-right: 1px solid var(--tooltip-border); }
       .delay-track { display: flex; align-items: center; gap: 7px; margin-top: 10px; color: var(--faint); font-size: 11px; }
       .delay-line { height: 7px; flex: 1; border-top: 1px solid var(--soft-line); position: relative; }
       .delay-line::before { content: ""; position: absolute; left: 42%; top: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--focus); transform: translateY(-50%); }
@@ -63,6 +69,22 @@
           <div class="state-card"><div class="state-label">Delayed appearance</div><div class="delay-track"><span>pointer enters</span><div class="delay-line"></div><span>700 ms</span></div></div>
           <div class="state-card"><div class="state-label">Disabled control</div><div class="state-message dim">No tooltip is scheduled</div></div>
           <div class="state-card"><div class="state-label">Dismissed</div><div class="state-message">Escape · pointer leave · resize</div></div>
+        </div>
+        <div class="tooltip-edge-states" aria-label="Tooltip placement edge cases">
+          <div class="state-card">
+            <div class="state-label">Flips above near a bottom edge</div>
+            <div class="edge-window">
+              <div class="edge-target" style="right: 10px; bottom: 4px;"></div>
+              <div class="tooltip-bubble flip-above" style="width: 168px; right: 4px; bottom: 26px; left: auto;" data-clip-demo><b>Rename Symbol</b></div>
+            </div>
+          </div>
+          <div class="state-card">
+            <div class="state-label">Long text wraps at 320px max width</div>
+            <div class="edge-window">
+              <div class="edge-target" style="left: 12px; top: 6px;"></div>
+              <div class="tooltip-bubble" style="width: 260px; left: 4px; top: 4px;">Applies the configured formatter to every open document in the workspace, including unsaved files.</div>
+            </div>
+          </div>
         </div>`;
       Mockup.mount({
         id: 'TOOLTIP',
