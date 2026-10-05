@@ -29,8 +29,8 @@ All notable changes to Token are documented in this file.
 - Stream eligible literal Find queries over rope chunks instead of copying the
   whole document. Regex and Unicode case-insensitive searches retain full semantics.
 
-- Skip unnecessary rope allocation and fingerprinting when a document exceeds
-  the folding scan budget.
+- Raise the folding scan budget from 32 MiB to 256 MiB. Skip unnecessary rope
+  allocation and fingerprinting when a document exceeds that budget.
 
 - Reuse syntax-worker document snapshots across parsing, incremental caches and
   injection queries instead of making redundant whole-document copies.

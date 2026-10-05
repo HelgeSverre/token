@@ -4,7 +4,7 @@ use super::{LanguageId, SyntaxTreeSnapshot};
 use crate::folding::{self, FoldCandidates, FoldRegion, FoldStamp};
 use crate::util::text::TabStops;
 
-pub const MAX_FOLD_SCAN_SIZE: crate::util::ByteSize = crate::util::ByteSize::mebibytes(32);
+pub const MAX_FOLD_SCAN_SIZE: crate::util::ByteSize = crate::util::ByteSize::mebibytes(256);
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FoldingProfile(&'static [&'static str]);
