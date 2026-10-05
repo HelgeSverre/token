@@ -22,6 +22,9 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Skip unnecessary rope allocation and fingerprinting when a document exceeds
+  the folding scan budget.
+
 - Reuse syntax-worker document snapshots across parsing, incremental caches and
   injection queries instead of making redundant whole-document copies.
 
