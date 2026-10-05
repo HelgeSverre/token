@@ -55,6 +55,7 @@ tempfile = "3"
 winit = "0.30.12"
 softbuffer = "0.4"
 ropey = "1.6"
+memchr = "2"
 unicode-ident = "1"
 
 # For font rendering

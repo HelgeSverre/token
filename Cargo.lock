@@ -5001,6 +5001,7 @@ dependencies = [
  "image",
  "libc",
  "lsp-types",
+ "memchr",
  "notify",
  "notify-debouncer-mini",
  "nucleo-matcher",

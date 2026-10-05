@@ -22,6 +22,9 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Speed up line-ending detection when opening text files by searching rope
+  chunks for newlines without scanning ordinary text byte by byte.
+
 - Reduce CSV grid parsing allocations by reading directly from the document rope
   and building row storage without intermediate per-cell strings. Remove the
   arbitrary 50 MiB text-opening and external-change limits; load text into ropes
