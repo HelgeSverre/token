@@ -435,13 +435,9 @@ impl FindSearchRequest {
             self.options.1,
             self.options.2,
         );
-        let matches = if query.is_valid() {
-            query.find_all_rope_in(&self.buffer, self.scope)
-        } else {
-            Vec::new()
-        };
+        let matches = query.find_all_rope_compact(&self.buffer, self.scope);
         Arc::new(FindResults {
-            matches: matches.into(),
+            matches: Arc::new(matches),
             source: Arc::clone(self),
             lines: OnceLock::new(),
             error: query.error,
@@ -451,7 +447,7 @@ impl FindSearchRequest {
 
 /// Shared search output, including the document-wide scrollbar projection.
 pub struct FindResults {
-    pub(crate) matches: Arc<[crate::search::Match]>,
+    pub(crate) matches: Arc<crate::search::MatchList>,
     source: Arc<FindSearchRequest>,
     lines: OnceLock<Vec<usize>>,
     error: Option<String>,
@@ -572,7 +568,7 @@ impl Default for FindReplaceState {
 impl FindReplaceState {
     /// Every match the current query and scope produce — the one list
     /// navigation, replace, highlighting, and the status label all share.
-    pub fn matches(&self, document: &crate::model::Document) -> Arc<[crate::search::Match]> {
+    pub fn matches(&self, document: &crate::model::Document) -> Arc<crate::search::MatchList> {
         Arc::clone(&self.results(document).matches)
     }
 

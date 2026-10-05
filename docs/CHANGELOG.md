@@ -22,6 +22,10 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Halve Find match-offset storage on 64-bit systems for documents fitting
+  32-bit character offsets; larger documents retain full-width offsets without
+  truncation. Navigation, replacement and rendering share compact results.
+
 - Reuse immutable document ropes for folding detection instead of rebuilding
   them from contiguous syntax text; preserve fold fingerprints and injections.
 

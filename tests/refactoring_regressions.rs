@@ -333,7 +333,10 @@ fn find_cache_reuses_results_and_invalidates_all_search_inputs() {
     // Reload/direct mutation may leave the revision unchanged.
     doc.buffer = ropey::Rope::from_str("féo");
     let reloaded = state.matches(&doc);
-    assert_eq!(reloaded[0], token::search::Match { start: 0, end: 3 });
+    assert_eq!(
+        reloaded.get(0),
+        Some(token::search::Match { start: 0, end: 3 })
+    );
     doc.revision += 1;
     assert!(!Arc::ptr_eq(&reloaded, &state.matches(&doc)));
     doc.buffer.remove(0..3);
