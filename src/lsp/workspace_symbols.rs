@@ -6,7 +6,7 @@ use lsp_types::{Location, OneOf, SymbolKind, WorkspaceSymbol};
 
 use super::LspServerId;
 
-pub const MAX_SYMBOLS: usize = 2_000;
+pub const MAX_SYMBOLS: usize = 20_000;
 pub const MAX_QUERY_CHARS: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -238,6 +238,16 @@ mod tests {
             results.items[0].location.uri.as_str(),
             "file:///workspace/caf%C3%A9.rs"
         );
+    }
+
+    #[test]
+    fn workspace_symbols_retain_matches_beyond_old_limit_through_ranking() {
+        let rows: Vec<_> = (0..3_000).map(|i| row(&format!("symbol{i:04}"))).collect();
+        let mut results = parse_response(&json!({"result": rows}), provider("a")).unwrap();
+        finish_results("symbol2999", &mut results);
+        assert_eq!(results.items.len(), 3_000);
+        assert_eq!(results.items[0].name, "symbol2999");
+        assert!(!results.truncated);
     }
 
     #[test]

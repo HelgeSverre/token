@@ -22,6 +22,9 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Raise workspace-symbol results from 2,000 to 20,000 while preserving ranking,
+  duplicate removal and the truncation indicator.
+
 - Raise the Sema semantic-token, inlay-hint and code-lens document budget from
   8 MiB to 64 MiB, retaining request cancellation and stale-response checks.
 
