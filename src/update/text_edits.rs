@@ -452,6 +452,7 @@ pub(crate) fn apply_planned_edits(
                 position: edit.start,
                 deleted_text: edit.deleted.clone(),
                 inserted_text: edit.inserted.clone(),
+                csv_cell: None,
                 cursor_before: anchor,
                 cursor_after: anchor,
             }

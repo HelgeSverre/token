@@ -22,6 +22,9 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Refresh indexed CSV cells directly during undo/redo, retaining full reparsing
+  for arbitrary text edits, incompatible delimiters and stale views.
+
 - Make CSV cell commits undoable document transactions that map peer-pane
   cursors and refresh other CSV views. Update record offsets logarithmically
   instead of walking every following record. Preserve empty single-field records

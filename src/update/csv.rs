@@ -505,35 +505,34 @@ pub(super) fn commit_edit(model: &mut AppModel, editor_id: crate::model::EditorI
             std::slice::from_ref(&planned),
             EditCarets::Preserve,
         );
-        let source = &model.editor_area.documents[&doc_id].buffer;
-        for (id, editor) in &mut model.editor_area.editors {
-            if editor.document_id != Some(doc_id) {
-                continue;
-            }
-            let Some(csv) = editor.view_mode.as_csv_mut() else {
-                continue;
-            };
-            if csv.delimiter != delimiter
-                || !csv.data.matches_source(&before)
-                || (*id != editor_id && csv.editing.is_some())
+        if let Some(crate::model::EditOperation::Batch { operations, .. }) = model
+            .editor_area
+            .documents
+            .get_mut(&doc_id)?
+            .undo_stack
+            .last_mut()
+        {
+            if let [crate::model::EditOperation::Replace { csv_cell, .. }] =
+                operations.as_mut_slice()
             {
-                continue;
-            }
-            csv.data.record_edited(
-                cell_edit.position.row,
-                planned.deleted.len(),
-                planned.inserted.len(),
-                source,
-            );
-            csv.data.set(
-                cell_edit.position.row,
-                cell_edit.position.col,
-                &cell_edit.new_value,
-            );
-            if *id == editor_id {
-                csv.editing = None;
+                *csv_cell = Some((delimiter, cell_edit.clone()));
             }
         }
+        model
+            .editor_area
+            .editors
+            .get_mut(&editor_id)?
+            .view_mode
+            .as_csv_mut()?
+            .editing = None;
+        refresh_cell_views(
+            model,
+            doc_id,
+            &before,
+            delimiter,
+            &cell_edit,
+            (planned.deleted.len(), planned.inserted.len()),
+        );
         return command;
     }
     model
@@ -544,6 +543,38 @@ pub(super) fn commit_edit(model: &mut AppModel, editor_id: crate::model::EditorI
         .as_csv_mut()?
         .confirm_edit();
     Some(Cmd::redraw_editor())
+}
+
+/// Commit and history share the same record-local update. Unknown text edits,
+/// incompatible delimiters and pending cell drafts retain the full-parse fallback.
+pub(super) fn refresh_cell_views(
+    model: &mut AppModel,
+    doc_id: crate::model::DocumentId,
+    before: &ropey::Rope,
+    delimiter: Delimiter,
+    edit: &CellEdit,
+    bytes: (usize, usize),
+) {
+    let source = &model.editor_area.documents[&doc_id].buffer;
+    for editor in model.editor_area.editors.values_mut() {
+        if editor.document_id != Some(doc_id) {
+            continue;
+        }
+        let Some(csv) = editor.view_mode.as_csv_mut() else {
+            continue;
+        };
+        if csv.delimiter != delimiter
+            || csv.editing.is_some()
+            || !csv.data.matches_source(before)
+            || csv.data.get(edit.position.row, edit.position.col) != edit.old_value
+        {
+            continue;
+        }
+        csv.data
+            .record_edited(edit.position.row, bytes.0, bytes.1, source);
+        csv.data
+            .set(edit.position.row, edit.position.col, &edit.new_value);
+    }
 }
 
 /// Cancel edit and discard changes
@@ -816,7 +847,15 @@ mod tests {
             model.editor_area.editors[&peer].cursors[0],
             Cursor::at(1, 9)
         );
-        update(&mut model, Msg::Document(DocumentMsg::Undo));
+        // Bypass global reconciliation to prove history updates the grid itself.
+        crate::update::document::update_document(&mut model, DocumentMsg::Undo);
+        assert!(model
+            .editor()
+            .view_mode
+            .as_csv()
+            .unwrap()
+            .data
+            .matches_source(&model.document().buffer));
         assert_eq!(
             model.document().buffer.to_string(),
             "\"æ\nx\",b\nlast,tail\n"
@@ -829,7 +868,14 @@ mod tests {
             model.editor_area.editors[&peer].cursors[0],
             Cursor::at(2, 9)
         );
-        update(&mut model, Msg::Document(DocumentMsg::Redo));
+        crate::update::document::update_document(&mut model, DocumentMsg::Redo);
+        assert!(model
+            .editor()
+            .view_mode
+            .as_csv()
+            .unwrap()
+            .data
+            .matches_source(&model.document().buffer));
         assert_eq!(
             model.editor().view_mode.as_csv().unwrap().data.get(0, 0),
             "z"
@@ -837,6 +883,42 @@ mod tests {
         assert_eq!(
             model.editor_area.editors[&peer].cursors[0],
             Cursor::at(1, 9)
+        );
+    }
+
+    #[test]
+    fn csv_history_falls_back_for_changed_delimiters() {
+        use crate::messages::{DocumentMsg, Msg};
+        use crate::update::update;
+        let mut model = AppModel::new(800, 600, 1.0);
+        model.document_mut().buffer = ropey::Rope::from_str("a,b\r\nlast,tail\r\n");
+        update(&mut model, Msg::Csv(CsvMsg::Toggle));
+        update(&mut model, Msg::Csv(CsvMsg::StartEditing));
+        update(&mut model, Msg::Csv(CsvMsg::EditInsertChar('ú')));
+        update(&mut model, Msg::Csv(CsvMsg::ConfirmEdit));
+        model.editor_mut().view_mode.as_csv_mut().unwrap().delimiter = Delimiter::Pipe;
+        crate::update::document::update_document(&mut model, DocumentMsg::Undo);
+        assert!(!model
+            .editor()
+            .view_mode
+            .as_csv()
+            .unwrap()
+            .data
+            .matches_source(&model.document().buffer));
+        reconcile(&mut model);
+        assert_eq!(
+            model.editor().view_mode.as_csv().unwrap().data.get(0, 0),
+            "a,b"
+        );
+        assert_eq!(
+            model
+                .editor()
+                .view_mode
+                .as_csv()
+                .unwrap()
+                .data
+                .column_count(),
+            1
         );
     }
 

@@ -27,6 +27,8 @@ pub enum EditOperation {
         position: usize,
         deleted_text: String,
         inserted_text: String,
+        /// Provenance for a record-local CSV grid refresh during history replay.
+        csv_cell: Option<(crate::csv::Delimiter, crate::csv::CellEdit)>,
         cursor_before: Cursor,
         cursor_after: Cursor,
     },
