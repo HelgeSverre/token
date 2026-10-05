@@ -217,7 +217,7 @@ pub struct FileWriteGuard {
     pub save_as: bool,
 }
 
-/// A bounded worker observation, distinct from the editor's saved snapshot.
+/// A worker observation, distinct from the editor's saved snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiskContent {
     Text(ropey::Rope),

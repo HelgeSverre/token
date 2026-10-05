@@ -1223,40 +1223,25 @@ impl App {
 
     /// Trigger syntax parsing for all documents loaded at startup
     fn trigger_initial_syntax_parsing(&mut self) {
-        // Collect document info first to avoid borrow issues
+        // Use the same snapshot policy as interactive opens, one document at a
+        // time. In particular, large plain-text files need no syntax snapshot.
         let docs_to_parse: Vec<_> = self
             .model
             .editor_area
             .documents
             .iter()
-            .map(|(&id, doc)| {
-                let source: Arc<str> = doc.buffer.to_string().into();
-                (
-                    id,
-                    doc.revision,
-                    source,
-                    doc.language,
-                    (doc.text_policy_generation, doc.text_settings.tabs),
-                )
-            })
+            .map(|(&id, doc)| (id, doc.revision))
             .collect();
 
-        // Send parse requests for each document
-        for (doc_id, revision, source, language, fold_policy) in docs_to_parse {
-            if let Err(e) = self
-                .syntax_tx
-                .send(SyntaxWorkerRequest::Parse(SyntaxParseRequest {
-                    document_id: doc_id,
-                    fold_policy,
+        for (document_id, revision) in docs_to_parse {
+            if let Some(cmd) = update(
+                &mut self.model,
+                Msg::Syntax(SyntaxMsg::ParseReady {
+                    document_id,
                     revision,
-                    source,
-                    language,
-                    snapshot_ms: 0.0,
-                    queued_at: Instant::now(),
-                    extract_outline: false,
-                }))
-            {
-                tracing::warn!("Failed to send initial syntax parse request: {}", e);
+                }),
+            ) {
+                self.process_cmd(cmd);
             }
         }
 

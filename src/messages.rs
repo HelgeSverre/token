@@ -562,7 +562,7 @@ pub enum AppMsg {
         target: crate::model::FileRequest,
         path: PathBuf,
         identity: Option<crate::util::FileIdentity>,
-        result: Result<String, String>,
+        result: Result<ropey::Rope, String>,
     },
     /// Quit the application
     Quit,

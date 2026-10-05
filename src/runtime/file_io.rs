@@ -2,7 +2,7 @@
 //! (including Save As) from leaving older bytes on disk after a newer save.
 
 use std::fs::File;
-use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc};
 
@@ -165,7 +165,10 @@ impl FileJob {
         match self {
             Self::Watch(paths) => Msg::App(AppMsg::FilesChanged(paths)),
             Self::Observe(target) => {
-                let observed = observe_file(target.source_path.as_deref());
+                let observed = observe_file(
+                    target.source_path.as_deref(),
+                    target.write_guard.saved.as_ref(),
+                );
                 Msg::App(AppMsg::FileObserved { target, observed })
             }
             Self::Keymap { session, save } => Msg::Ui(token::messages::UiMsg::Settings(
@@ -222,10 +225,10 @@ impl FileJob {
                 })
             }
             Self::Read { target, path } => {
-                let observed = observe_file(Some(&path));
+                let observed = observe_file(Some(&path), target.write_guard.saved.as_ref());
                 let identity = observed.identity;
                 let result = match observed.content {
-                    token::model::DiskContent::Text(text) => Ok(text.to_string()),
+                    token::model::DiskContent::Text(text) => Ok(text),
                     token::model::DiskContent::Missing => Err("File no longer exists".into()),
                     token::model::DiskContent::Unavailable(error) => Err(error),
                 };
@@ -291,7 +294,7 @@ impl FileJob {
     }
 }
 
-fn observe_file(path: Option<&Path>) -> token::model::ObservedFile {
+fn observe_file(path: Option<&Path>, saved: Option<&Rope>) -> token::model::ObservedFile {
     use token::model::{DiskContent, ObservedFile};
     let Some(path) = path else {
         return ObservedFile {
@@ -299,27 +302,32 @@ fn observe_file(path: Option<&Path>) -> token::model::ObservedFile {
             identity: None,
         };
     };
-    let result = (|| -> io::Result<String> {
-        let file = File::open(path)?;
-        let max = token::util::file_validation::MAX_FILE_SIZE;
+    let result = (|| -> io::Result<Rope> {
+        let mut file = File::open(path)?;
         let metadata = file.metadata()?;
-        if !metadata.is_file() || metadata.len() > max.as_u64() {
-            return Err(io::Error::other(format!(
-                "Not a text file within the {max} limit"
-            )));
+        if !metadata.is_file() {
+            return Err(io::Error::other("Not a regular text file"));
         }
-        let mut text = String::new();
-        file.take(max.as_u64() + 1).read_to_string(&mut text)?;
-        if text.len() > max.as_usize() || text.contains('\0') {
-            return Err(io::Error::other(
-                "File is binary or exceeds the text-file limit",
-            ));
+        // Watch installation and focus regain also observe unchanged files. An
+        // exact bounded comparison avoids keeping a second full rope alive.
+        let unchanged = match saved {
+            Some(saved) => file_matches(&mut file, saved)?,
+            None => false,
+        };
+        let text = if let Some(saved) = saved.filter(|_| unchanged) {
+            saved.clone()
+        } else {
+            file.seek(SeekFrom::Start(0))?;
+            Rope::from_reader(BufReader::new(file))?
+        };
+        if text.chunks().any(|chunk| chunk.contains('\0')) {
+            return Err(io::Error::other("File is binary"));
         }
         Ok(text)
     })();
     let (content, identity) = match result {
         Ok(text) => (
-            DiskContent::Text(text.into()),
+            DiskContent::Text(text),
             Some(token::util::FileIdentity::resolve(path.to_path_buf())),
         ),
         Err(error) if error.kind() == io::ErrorKind::NotFound => (DiskContent::Missing, None),
@@ -490,7 +498,7 @@ fn prepare_open(
     };
 
     let size_bytes = metadata.len();
-    let max = token::util::file_validation::MAX_FILE_SIZE;
+    let max = token::util::file_validation::MAX_IMAGE_FILE_SIZE;
 
     let mut document = if is_supported_image(path) {
         // Images require the full file to be loaded, so enforce size limit
@@ -517,15 +525,8 @@ fn prepare_open(
         doc.file_path = Some(path.clone());
         doc
     } else {
-        // Text files require the full file to be loaded, so enforce size limit
-        if ByteSize::bytes(size_bytes) > max {
-            anyhow::bail!(FileOpenError::TooLarge {
-                size: ByteSize::bytes(size_bytes)
-            }
-            .user_message(&filename_for_display(path)));
-        }
-        Document::from_loaded_text(
-            &std::fs::read_to_string(path)
+        Document::from_loaded_rope(
+            Rope::from_reader(BufReader::new(File::open(path)?))
                 .with_context(|| format!("Error opening {}", path.display()))?,
             identity.clone(),
         )
@@ -1018,25 +1019,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let invalid_utf8 = dir.path().join("invalid.txt");
         let broken_image = dir.path().join("broken.png");
-        let oversized_text = dir.path().join("oversized.txt");
+        let oversized_image = dir.path().join("oversized.png");
         std::fs::write(&invalid_utf8, [0xff, 0xfe]).unwrap();
         std::fs::write(&broken_image, "not an image").unwrap();
-        // Write actual text content (no nulls) to ensure it's classified as text, not binary
-        let large_text = "a".repeat(1024 * 100); // 100 KiB of text at start
-        std::fs::write(
-            &oversized_text,
-            format!(
-                "{}\n{}",
-                large_text,
-                "b".repeat(token::util::ByteSize::mebibytes(51).as_usize())
-            ),
-        )
-        .unwrap();
+        File::create(&oversized_image)
+            .unwrap()
+            .set_len(token::util::file_validation::MAX_IMAGE_FILE_SIZE.as_u64() + 1)
+            .unwrap();
         for path in [
             dir.path().to_path_buf(),
             invalid_utf8,
             broken_image,
-            oversized_text,
+            oversized_image,
         ] {
             assert!(prepare_open(&open_request(path), None).is_err());
         }
@@ -1050,10 +1044,66 @@ mod tests {
     }
 
     #[test]
+    fn large_text_open_observe_save_and_reload_have_no_50_mib_cap() {
+        use token::model::{DiskContent, LineEnding};
+        use token::util::ByteSize;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large.csv");
+        let row = "æ,one\r\n";
+        let text = row.repeat(ByteSize::mebibytes(51).as_usize() / row.len());
+        std::fs::write(&path, &text).unwrap();
+        let mut model = AppModel::new(800, 600, 1.0);
+        model.config.format_on_save = false;
+        prepare_startup_files(&mut model, vec![path.clone()]);
+        assert!(model.document().buffer == text);
+        assert_eq!(model.document().detected_line_ending, LineEnding::Crlf);
+        assert!(
+            matches!(observe_file(Some(&path), Some(&model.document().buffer)).content, DiskContent::Text(text) if text.is_instance(&model.document().buffer))
+        );
+        drop(text);
+
+        model
+            .document_mut()
+            .buffer
+            .append(Rope::from_str("last,å\r\n"));
+        let expected = model.document().buffer.clone();
+        let Cmd::SaveFile {
+            target,
+            path,
+            content,
+        } = update(&mut model, Msg::App(AppMsg::SaveFile)).unwrap()
+        else {
+            panic!("save command");
+        };
+        let reply = (FileJob::Write {
+            target,
+            path: path.clone(),
+            content,
+        })
+        .run(None);
+        assert!(matches!(
+            &reply,
+            Msg::App(AppMsg::SaveCompleted { result: Ok(()), .. })
+        ));
+        update(&mut model, reply);
+        let Cmd::LoadFile { target, path } =
+            update(&mut model, Msg::App(AppMsg::LoadFile(path))).unwrap()
+        else {
+            panic!("load command");
+        };
+        let Msg::App(AppMsg::FileLoaded { result, .. }) =
+            (FileJob::Read { target, path }).run(None)
+        else {
+            panic!("read reply");
+        };
+        assert!(result.unwrap() == expected);
+    }
+
+    #[test]
     fn file_open_worker_allows_oversized_binary_files_as_placeholder() {
         let dir = tempfile::tempdir().unwrap();
         let oversized_binary = dir.path().join("oversized.bin");
-        // Create a binary file larger than MAX_FILE_SIZE (50 MiB)
+        // Create a binary file larger than the image budget (50 MiB)
         // Start with SQLite header which contains a null byte early on
         let mut content = b"SQLite format 3\0".to_vec();
         content.extend(vec![0u8; token::util::ByteSize::mebibytes(60).as_usize()]);
@@ -1176,25 +1226,61 @@ mod tests {
     }
 
     #[test]
-    fn external_change_observation_bounds_reads_and_overwrite_rechecks_the_approved_version() {
+    fn observation_shares_unchanged_saved_rope_but_reads_same_length_changes_in_full() {
+        use token::model::DiskContent;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("observed.txt");
+        let original = "a".repeat(token::util::ByteSize::kibibytes(16).as_usize());
+        std::fs::write(&path, &original).unwrap();
+        let mut model = AppModel::new(800, 600, 1.0);
+        prepare_startup_files(&mut model, vec![path.clone()]);
+        let FileJob::Write { target, .. } = write_job(&mut model, path.clone(), "unsaved edit")
+        else {
+            panic!("write job");
+        };
+        let saved = target.write_guard.saved.as_ref().unwrap();
+        let Msg::App(AppMsg::FileObserved { observed, .. }) =
+            FileJob::Observe(target.clone()).run(None)
+        else {
+            panic!("observe reply");
+        };
+        assert!(matches!(observed.content, DiskContent::Text(text) if text.is_instance(saved)));
+        let mut changed = original;
+        // Mismatch in the second comparison block requires rewinding the handle.
+        changed.replace_range(10_000..10_001, "z");
+        std::fs::write(&path, &changed).unwrap();
+        let DiskContent::Text(text) = observe_file(Some(&path), Some(saved)).content else {
+            panic!("changed text");
+        };
+        assert!(!text.is_instance(saved));
+        assert!(text == changed);
+        std::fs::write(&path, "\0").unwrap();
+        assert!(matches!(
+            observe_file(Some(&path), Some(&Rope::from_str("\0"))).content,
+            DiskContent::Unavailable(_)
+        ));
+    }
+
+    #[test]
+    fn external_change_observation_rejects_binary_and_overwrite_rechecks_the_approved_version() {
         use token::model::DiskContent;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("observed.txt");
         assert!(matches!(
-            observe_file(Some(&path)).content,
+            observe_file(Some(&path), None).content,
             DiskContent::Missing
         ));
         std::fs::write(&path, [0xff, 0]).unwrap();
         assert!(matches!(
-            observe_file(Some(&path)).content,
+            observe_file(Some(&path), None).content,
             DiskContent::Unavailable(_)
         ));
         File::create(&path)
             .unwrap()
-            .set_len(token::util::file_validation::MAX_FILE_SIZE.as_u64() + 1)
+            .set_len(token::util::ByteSize::kibibytes(64).as_u64())
             .unwrap();
         assert!(matches!(
-            observe_file(Some(&path)).content,
+            observe_file(Some(&path), None).content,
             DiskContent::Unavailable(_)
         ));
 
@@ -1210,7 +1296,7 @@ mod tests {
             panic!("write")
         };
         std::fs::write(&path, "approved outside version").unwrap();
-        let DiskContent::Text(approved) = observe_file(Some(&path)).content else {
+        let DiskContent::Text(approved) = observe_file(Some(&path), None).content else {
             panic!("text")
         };
         target.write_guard.saved = Some(approved);

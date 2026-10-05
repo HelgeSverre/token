@@ -312,6 +312,21 @@ impl CsvData {
         Self { rows, column_count }
     }
 
+    /// Append directly from the parser's reusable record, without per-cell strings.
+    pub(super) fn push_record(&mut self, record: &csv::StringRecord) {
+        let mut row = String::with_capacity(
+            record.as_slice().len() + record.len().saturating_sub(1) * CELL_DELIMITER.len_utf8(),
+        );
+        for (index, cell) in record.iter().enumerate() {
+            if index > 0 {
+                row.push(CELL_DELIMITER);
+            }
+            row.push_str(cell);
+        }
+        self.column_count = self.column_count.max(record.len());
+        self.rows.push(row);
+    }
+
     /// Get number of rows
     pub fn row_count(&self) -> usize {
         self.rows.len()
@@ -394,6 +409,8 @@ pub struct CsvState {
     pub selected_cell: CellPosition,
     /// Viewport for visible region
     pub viewport: CsvViewport,
+    /// Available grid rectangle width and font advance, synchronized by layout.
+    pub(super) viewport_geometry: Option<(usize, f32)>,
     /// Original delimiter used in file
     pub delimiter: Delimiter,
     /// Whether first row is a header
@@ -413,6 +430,7 @@ impl CsvState {
             data,
             selected_cell: CellPosition::default(),
             viewport: CsvViewport::default(),
+            viewport_geometry: None,
             delimiter,
             has_header_row: true,
             column_widths,

@@ -1,6 +1,8 @@
 // Native release-build gate. See docs/dev/csv-performance-gate.md.
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { open, mkdir, stat, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -51,6 +53,8 @@ if (process.argv.includes('--check-fixture')) {
 }
 const binary = path.resolve(process.argv[2] ?? path.join(root, 'target/release/token'));
 await stat(binary); // Do not generate 1 GiB if the binary is missing.
+const binaryHash = createHash('sha256');
+for await (const chunk of createReadStream(binary)) binaryHash.update(chunk);
 const file = path.join(base, 'multiline-1gib.csv');
 await fixture(file, bytes);
 // Explicit warm-cache attempt, bounded scratch memory. No fixture work is timed.
@@ -65,14 +69,17 @@ const run = await startIsolatedToken({
 });
 const report = {
   schema: 1, binary, fixtureBytes: bytes, rows: bytes / 512, limits,
+  binarySha256: binaryHash.digest('hex'),
   platform: process.platform, arch: process.arch, cpu: os.cpus()[0]?.model,
   totalMemoryBytes: os.totalmem(), date: new Date().toISOString(),
   cache: 'sequential pre-read; OS residency not guaranteed',
   memoryMethod: 'process RSS sampled using ps every 100 ms; may miss short peaks',
   passed: false,
 };
-try { report.commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim(); }
-catch { report.commit = null; }
+try {
+  report.commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim();
+  report.worktreeDirty = Boolean((await exec('git', ['status', '--porcelain'], { cwd: root })).stdout.trim());
+} catch { report.commit = null; report.worktreeDirty = null; }
 let sampling = true;
 let peak = 0;
 let memoryError;
@@ -89,14 +96,18 @@ const sampler = (async () => {
 try {
   await run.waitForStartup();
   const start = performance.now();
-  await run.client.openPaths([{ path: file }]); // wait:true waits for CLOSE, not open.
+  // Give slow runs time to report a measured failure; the 2 s target is unchanged.
+  // wait:true would wait for CLOSE, not merely for the opening to finish.
+  await run.client.openPaths([{ path: file }], { timeoutMs: 60000 });
   await until(async () => {
     const state = await run.client.state();
     return state.document_name === path.basename(file) && state.line_count === report.rows * 2 + 1;
-  }, { label: 'full CSV text loaded (50 MiB rejection currently fails here)', timeoutMs: 15000, intervalMs: 20 });
+  }, { label: 'full CSV text loaded', timeoutMs: 15000, intervalMs: 20 });
   report.textLoadedMs = performance.now() - start;
+  console.error(`Text loaded: ${report.textLoadedMs.toFixed(0)} ms; sampled RSS: ${peak} bytes`);
   let state = await run.client.state();
   if (!state.csv) state = await run.client.action('CsvToggle');
+  console.error(`CSV parsed; sampled RSS: ${peak} bytes`);
   assert.equal(state.csv?.rows, report.rows, 'all CSV records parsed');
   assert.equal(state.csv?.columns, 8, 'quoted commas and multiline records preserved');
   // Completion arrives after a native rendered frame, not just command dispatch.

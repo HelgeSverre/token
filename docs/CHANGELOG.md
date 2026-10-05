@@ -22,6 +22,13 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Reduce CSV grid parsing allocations by reading directly from the document rope
+  and building row storage without intermediate per-cell strings. Remove the
+  arbitrary 50 MiB text-opening and external-change limits; load text into ropes
+  without a full-file string copy. Image, preview-resource and formatter budgets
+  remain separate. CSV navigation now uses rendered column widths to keep the
+  selected cell visible.
+
 - Keep pane dividers at a consistent width when focus changes or the cursor
   blinks, restoring them after partial text and scrollbar redraws.
 

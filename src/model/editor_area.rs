@@ -804,7 +804,7 @@ impl EditorArea {
                 }
                 if let Some(csv) = editor.view_mode.as_csv_mut() {
                     let rows = crate::csv::rows_for_content_height(content_height, line_height);
-                    csv.set_viewport_size(rows, csv.viewport.visible_cols);
+                    csv.set_viewport_geometry(rows, layout.rect_w(), char_width);
                 }
             }
         }

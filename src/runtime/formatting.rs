@@ -9,9 +9,10 @@ use token::config::FormatterConfig;
 use token::messages::{FormattingMsg, Msg};
 use token::model::{DocumentId, SaveIntent};
 use token::syntax::LanguageId;
-use token::util::file_validation::MAX_FILE_SIZE;
 use token::util::ByteSize;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+
+const MAX_FORMATTER_OUTPUT_SIZE: ByteSize = ByteSize::mebibytes(50);
 
 pub(super) struct Job {
     pub document_id: DocumentId,
@@ -120,7 +121,7 @@ async fn run(job: &Job, timeout: Duration) -> Result<String> {
             let wait = async { child.wait().await.map_err(anyhow::Error::from) };
             let (_, out, err, status) = tokio::try_join!(
                 writer,
-                read_bounded(stdout, MAX_FILE_SIZE),
+                read_bounded(stdout, MAX_FORMATTER_OUTPUT_SIZE),
                 read_bounded(stderr, ByteSize::kibibytes(64)),
                 wait
             )?;

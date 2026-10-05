@@ -4,6 +4,8 @@ use super::{LanguageId, SyntaxTreeSnapshot};
 use crate::folding::{self, FoldCandidates, FoldRegion, FoldStamp};
 use crate::util::text::TabStops;
 
+pub const MAX_FOLD_SCAN_SIZE: crate::util::ByteSize = crate::util::ByteSize::mebibytes(32);
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FoldingProfile(&'static [&'static str]);
 
@@ -100,7 +102,7 @@ pub fn detect(
     let buffer = ropey::Rope::from_str(source);
     let mut regions = Vec::new();
     // Bound initial full scans and derived state independently of rendering.
-    if source.len() <= crate::util::ByteSize::mebibytes(32).as_usize() {
+    if source.len() <= MAX_FOLD_SCAN_SIZE.as_usize() {
         let supported = !super::registry::language(stamp.language)
             .folding
             .0

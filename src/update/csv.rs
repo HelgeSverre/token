@@ -5,8 +5,8 @@
 use crate::commands::Cmd;
 use crate::csv::render::column_width_px;
 use crate::csv::{
-    detect_delimiter, escape_csv_value, parse_csv, CellEdit, CellEditState, CellPosition, CsvState,
-    Delimiter,
+    detect_delimiter, escape_csv_value, parse_csv_rope, CellEdit, CellEditState, CellPosition,
+    CsvState, Delimiter,
 };
 use crate::editable::MoveTarget;
 use crate::messages::CsvMsg;
@@ -117,7 +117,6 @@ fn toggle_csv_mode(model: &mut AppModel) -> Option<Cmd> {
     // Get document content to parse
     let doc_id = editor.document_id?;
     let doc = model.editor_area.documents.get(&doc_id)?;
-    let content = doc.buffer.to_string();
 
     // Detect delimiter from file extension or content
     let delimiter = doc
@@ -126,9 +125,22 @@ fn toggle_csv_mode(model: &mut AppModel) -> Option<Cmd> {
         .and_then(|p| p.extension())
         .and_then(|e| e.to_str())
         .map(Delimiter::from_extension)
-        .unwrap_or_else(|| detect_delimiter(&content));
+        .unwrap_or_else(|| {
+            // Match str::lines used by detection, not Ropey's additional Unicode
+            // line separators, and stop before materializing the whole document.
+            let mut newlines = 0;
+            let sample: String = doc
+                .buffer
+                .chars()
+                .take_while(|&ch| {
+                    newlines += usize::from(ch == '\n');
+                    newlines < 5
+                })
+                .collect();
+            detect_delimiter(&sample)
+        });
 
-    match parse_csv(&content, delimiter) {
+    match parse_csv_rope(&doc.buffer, delimiter) {
         Ok(data) => {
             if data.is_empty() || data.column_count() == 0 {
                 tracing::warn!("CSV parsing produced empty data");
@@ -693,6 +705,21 @@ fn find_field_byte_range(
 mod tests {
     use super::*;
     use crate::model::AppModel;
+
+    #[test]
+    fn csv_delimiter_detection_samples_five_lf_lines() {
+        for text in [
+            "a\u{2028}b\u{2028}c\u{2028}d\u{2028}e\u{2028}f|g",
+            "a|b\nc|d\ne|f\ng|h\ni|j\na,b,c,d,e,f,g,h,i,j\n",
+        ] {
+            let mut model = AppModel::new(800, 600, 1.0);
+            model.document_mut().buffer = ropey::Rope::from_str(text);
+            toggle_csv_mode(&mut model);
+            let csv = model.editor().view_mode.as_csv().unwrap();
+            assert_eq!(csv.delimiter, Delimiter::Pipe);
+            assert_eq!(csv.data.column_count(), 2);
+        }
+    }
 
     #[test]
     fn csv_visible_rows_follow_the_groups_own_content_height() {

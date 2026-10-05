@@ -2,7 +2,8 @@
 
 Current milestone: quickly open a 1 GiB CSV into a usable grid. Portable mode is
 deferred. These are provisional engineering targets, not measured performance
-claims. Current main rejects this fixture at the 50 MiB opening limit.
+claims. Text opening and external-change reads have no fixed size cap; available
+memory and processing time still limit usable document sizes.
 
 ## Targets
 
@@ -62,11 +63,11 @@ must never be described as measuring them.
 
 ## Implementation order
 
-1. Replace whole-file String loading with buffered rope construction and remove
-   the arbitrary text-open cap. Adjust the independent external-change cap too;
-   keep formatter/preview resource budgets separately named and enforced.
-2. Parse CSV on a cancellable worker without a full document String or temporary
-   Vec<Vec<String>>. Preserve quoted multiline records and UTF-8 correctness.
+1. Buffered rope loading and uncapped text opening/external-change reads are in
+   place. Image, formatter and preview-resource budgets remain separate.
+2. CSV parsing reads rope chunks and constructs final row storage directly,
+   preserving quoted multiline records and UTF-8. Moving parsing onto a
+   cancellable worker remains outstanding.
 3. Remove whole-document conversion from cell editing using record-position
    indexing. Ensure editing, save and external-change handling remain correct.
 4. Profile any remaining full-document work in the actual opening pipeline.

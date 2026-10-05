@@ -32,20 +32,29 @@ impl LineEnding {
 
     /// Most common ending, with first occurrence breaking ties. No normalization.
     pub fn detect(text: &str) -> Self {
+        Self::detect_bytes(text.bytes())
+    }
+
+    /// Detect without allocating a contiguous copy of the document.
+    pub fn detect_rope(text: &ropey::Rope) -> Self {
+        Self::detect_bytes(text.chunks().flat_map(str::bytes))
+    }
+
+    fn detect_bytes(bytes: impl Iterator<Item = u8>) -> Self {
         let mut counts = [
             (Self::Lf, 0, usize::MAX),
             (Self::Crlf, 0, usize::MAX),
             (Self::Cr, 0, usize::MAX),
         ];
-        let mut chars = text.char_indices().peekable();
+        let mut chars = bytes.enumerate().peekable();
         while let Some((offset, ch)) = chars.next() {
             let index = match ch {
-                '\r' if chars.peek().is_some_and(|&(_, next)| next == '\n') => {
+                b'\r' if chars.peek().is_some_and(|&(_, next)| next == b'\n') => {
                     chars.next();
                     1
                 }
-                '\r' => 2,
-                '\n' => 0,
+                b'\r' => 2,
+                b'\n' => 0,
                 _ => continue,
             };
             counts[index].1 += 1;
@@ -131,6 +140,33 @@ impl DocumentTextSettings {
             "\t".into()
         } else {
             " ".repeat(self.indent_size - column % self.indent_size)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LineEnding;
+
+    #[test]
+    fn line_ending_detection_preserves_majority_and_first_occurrence_across_chunks() {
+        for (text, expected) in [
+            ("æ\r\nø\n", LineEnding::Crlf),
+            ("æ\nø\r\n", LineEnding::Lf),
+            ("æ\rø\r\nå\r", LineEnding::Cr),
+            ("æ\rø\r\nå\r\n", LineEnding::Crlf),
+            ("æøå", LineEnding::Lf),
+        ] {
+            // One-byte chunks split CRLF and multi-byte Unicode sequences.
+            assert_eq!(
+                LineEnding::detect_bytes(text.as_bytes().chunks(1).flatten().copied()),
+                expected
+            );
+            assert_eq!(
+                LineEnding::detect_rope(&ropey::Rope::from_str(text)),
+                expected
+            );
+            assert_eq!(LineEnding::detect(text), expected);
         }
     }
 }

@@ -223,7 +223,7 @@ fn file_loaded_resets_view_mode_for_non_text_tab() {
     assert!(model.editor().view_mode.is_image());
 
     let path = std::path::PathBuf::from("/tmp/keymap.yaml");
-    let result: Result<String, String> = Ok("keymap: contents".to_string());
+    let result = Ok("keymap: contents".into());
     let Cmd::LoadFile { target, .. } =
         update(&mut model, Msg::App(AppMsg::LoadFile(path.clone()))).unwrap()
     else {

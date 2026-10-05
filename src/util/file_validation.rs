@@ -11,8 +11,8 @@ use std::path::Path;
 
 use super::ByteSize;
 
-/// Maximum file size (50 MiB).
-pub const MAX_FILE_SIZE: ByteSize = ByteSize::mebibytes(50);
+/// Encoded image budget; ordinary text opening has no size cap.
+pub const MAX_IMAGE_FILE_SIZE: ByteSize = ByteSize::mebibytes(50);
 
 /// Errors that can occur when validating a file for opening
 #[derive(Debug, Clone)]
@@ -40,7 +40,10 @@ impl FileOpenError {
             Self::IsDirectory => format!("Cannot open directory: {}", filename),
             Self::BinaryFile => format!("Cannot open binary file: {}", filename),
             Self::TooLarge { size } => {
-                format!("{} is too large ({size}, max {MAX_FILE_SIZE})", filename)
+                format!(
+                    "{} is too large ({size}, max {MAX_IMAGE_FILE_SIZE})",
+                    filename
+                )
             }
             Self::IoError(msg) => format!("Error opening {}: {}", filename, msg),
         }
@@ -69,8 +72,8 @@ impl std::error::Error for FileOpenError {}
 /// - Is not a directory
 /// - Has read permissions
 ///
-/// Does NOT check file size or binary content (size limit is applied later
-/// for file types that require full loading; binary files skip the size check)
+/// Does NOT check file size or binary content. Image budgets are applied later;
+/// ordinary text and binary placeholders have no opening size cap.
 pub fn validate_file_for_opening(path: &Path) -> Result<(), FileOpenError> {
     let metadata = fs::metadata(path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => FileOpenError::NotFound,
@@ -153,12 +156,11 @@ mod tests {
 
     #[test]
     fn test_validate_file_size_not_checked() {
-        // validate_file_for_opening no longer checks size — that's done by prepare_open
-        // based on whether the file is binary or text. Large files should still pass this check.
+        // Image budgets are checked by prepare_open, not general path validation.
         let oversized = NamedTempFile::new().unwrap();
         oversized
             .as_file()
-            .set_len(MAX_FILE_SIZE.as_u64() + 1)
+            .set_len(MAX_IMAGE_FILE_SIZE.as_u64() + 1)
             .unwrap();
         assert!(validate_file_for_opening(oversized.path()).is_ok());
     }
@@ -211,7 +213,7 @@ mod tests {
             "Cannot open binary file: image.png"
         );
         let error = FileOpenError::TooLarge {
-            size: ByteSize::bytes(MAX_FILE_SIZE.as_u64() + 1),
+            size: ByteSize::bytes(MAX_IMAGE_FILE_SIZE.as_u64() + 1),
         };
         assert_eq!(
             error.user_message("large.txt"),

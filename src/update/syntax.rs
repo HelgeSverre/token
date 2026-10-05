@@ -59,6 +59,23 @@ pub(super) fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd>
                 return None;
             }
 
+            // Plain text only uses this worker for indentation folding. Beyond
+            // that existing budget there is no analysis to do: avoid copying the
+            // entire document just to return empty highlights and fold regions.
+            if !doc.language.has_highlighting()
+                && doc.buffer.len_bytes() > crate::syntax::folding::MAX_FOLD_SCAN_SIZE.as_usize()
+            {
+                let doc = model.editor_area.documents.get_mut(&document_id)?;
+                doc.syntax_highlights = None;
+                doc.syntax_tree = None;
+                doc.outline = None;
+                doc.folds = None;
+                return Some(Cmd::Batch(vec![
+                    Cmd::ClearSyntaxState { document_id },
+                    Cmd::redraw_editor(),
+                ]));
+            }
+
             // Snapshot the document content for parsing
             let snapshot_started = Instant::now();
             let source: std::sync::Arc<str> = doc.buffer.to_string().into();
@@ -350,6 +367,35 @@ mod tests {
             matches!(cmd, Some(Cmd::DebouncedSyntaxParse { .. })),
             "Plain text still needs indentation folding"
         );
+    }
+
+    #[test]
+    fn large_plain_text_skips_snapshot_only_above_folding_budget() {
+        let mut model = AppModel::new(800, 600, 1.0);
+        let document_id = model.document().id.unwrap();
+        let limit = crate::syntax::folding::MAX_FOLD_SCAN_SIZE.as_usize();
+        model.document_mut().buffer = ropey::Rope::from_str(&"x".repeat(limit));
+        let request = || SyntaxMsg::ParseReady {
+            document_id,
+            revision: 0,
+        };
+        assert!(matches!(
+            update_syntax(&mut model, request()),
+            Some(Cmd::RunSyntaxParse { .. })
+        ));
+        model
+            .document_mut()
+            .buffer
+            .append(ropey::Rope::from_str("x"));
+        assert!(matches!(
+            update_syntax(&mut model, request()),
+            Some(Cmd::Batch(_))
+        ));
+        model.document_mut().language = LanguageId::Rust;
+        assert!(matches!(
+            update_syntax(&mut model, request()),
+            Some(Cmd::RunSyntaxParse { .. })
+        ));
     }
 
     #[test]

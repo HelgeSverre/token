@@ -628,7 +628,7 @@ fn async_reply_trace_names_exclude_source_payloads() {
         identity: None,
         target,
         path: "/fixture/a.txt".into(),
-        result: Ok(doc.buffer.to_string()),
+        result: Ok(doc.buffer),
     });
     for message in [save, load] {
         let name = msg_type_name(&message);

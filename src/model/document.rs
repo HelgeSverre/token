@@ -228,21 +228,29 @@ impl Document {
 
     /// Load a document from a file path
     pub fn from_file(path: PathBuf) -> Result<Self, std::io::Error> {
-        let content = std::fs::read_to_string(&path)?;
-        Ok(Self::from_loaded_text(
-            &content,
+        let content = Rope::from_reader(std::io::BufReader::new(std::fs::File::open(&path)?))?;
+        Ok(Self::from_loaded_rope(
+            content,
             crate::util::FileIdentity::resolve(path),
         ))
     }
 
     /// Install worker-read text with its resolved identity, without further I/O.
     pub fn from_loaded_text(content: &str, identity: crate::util::FileIdentity) -> Self {
+        Self::from_loaded_rope(Rope::from_str(content), identity)
+    }
+
+    /// Install a buffered worker read without another full-document allocation.
+    pub fn from_loaded_rope(buffer: Rope, identity: crate::util::FileIdentity) -> Self {
         Self {
             file_path: Some(identity.source().to_path_buf()),
             saved_path: Some(identity.source().to_path_buf()),
             language: LanguageId::from_path(identity.source()),
             file_identity: Some(identity),
-            ..Self::with_text(content)
+            saved_buffer: Some(buffer.clone()),
+            detected_line_ending: super::LineEnding::detect_rope(&buffer),
+            buffer,
+            ..Self::new()
         }
     }
 
