@@ -22,6 +22,9 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Raise the Sema semantic-token, inlay-hint and code-lens document budget from
+  8 MiB to 64 MiB, retaining request cancellation and stale-response checks.
+
 - Add bounded automation and MCP document-range reads for files of any size,
   including Unicode character offsets and revision metadata for paged reads.
 

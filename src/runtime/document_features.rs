@@ -240,6 +240,62 @@ mod tests {
     }
 
     #[test]
+    fn sema_annotations_allow_64_mib_but_not_larger_documents() {
+        let mut app = app();
+        let document_id = app.model.document().id.unwrap();
+        let root = std::env::temp_dir();
+        let server_id = LspServerId("sema".into());
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let handle = lsp::client::spawn_server(
+            "sh",
+            &["-c".into(), "exec cat >/dev/null".into()],
+            &root,
+            server_id.clone(),
+            tx,
+            None,
+            serde_json::Value::Null,
+            serde_json::Value::Null,
+        )
+        .unwrap();
+        *handle.capabilities.lock().unwrap() = Some(
+            serde_json::from_value(serde_json::json!({
+                "semanticTokensProvider": {"legend":{"tokenTypes":[],"tokenModifiers":[]},"full":true},
+                "inlayHintProvider": true,
+                "codeLensProvider": {}
+            }))
+            .unwrap(),
+        );
+        app.lsp.open_documents.insert(
+            document_id,
+            OpenDocState {
+                server_id: server_id.clone(),
+                root: root.clone(),
+                uri: lsp::path_to_uri(&root.join("budget.sema")),
+                synced_revision: 0,
+            },
+        );
+        app.lsp.servers.insert((server_id, root), handle);
+        app.model.document_mut().language = LanguageId::Sema;
+        // Short lines avoid conflating the byte gate with UTF-16 line conversion.
+        app.model.document_mut().buffer = ropey::Rope::from_str(
+            &";\n".repeat(token::util::ByteSize::mebibytes(64).as_usize() / 2),
+        );
+        app.request_document_features(document_id);
+        assert_eq!(app.lsp.document_features.len(), 3);
+        for feature in Feature::ALL {
+            assert!(app
+                .lsp
+                .document_features
+                .values()
+                .any(|p| p.feature == feature));
+        }
+        app.model.document_mut().buffer.insert(0, ";");
+        app.request_document_features(document_id);
+        assert!(app.lsp.document_features.is_empty());
+        app.teardown_all_lsp_servers();
+    }
+
+    #[test]
     fn sema_old_generation_reply_cannot_consume_new_request() {
         let mut app = app();
         let document_id = app.model.document().id.unwrap();
