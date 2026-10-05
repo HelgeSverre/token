@@ -33,13 +33,15 @@ pub fn parse_csv(content: &str, delimiter: Delimiter) -> Result<CsvData, ParseEr
 
 /// Parse a document without flattening its rope into another full-size string.
 pub fn parse_csv_rope(content: &ropey::Rope, delimiter: Delimiter) -> Result<CsvData, ParseError> {
-    parse_reader(
+    let mut data = parse_reader(
         RopeReader {
             chunks: content.chunks(),
             remaining: &[],
         },
         delimiter,
-    )
+    )?;
+    data.source = Some(content.clone());
+    Ok(data)
 }
 
 struct RopeReader<'a> {
@@ -70,7 +72,7 @@ fn parse_reader(input: impl Read, delimiter: Delimiter) -> Result<CsvData, Parse
     let mut record = csv::StringRecord::new();
     loop {
         match reader.read_record(&mut record) {
-            Ok(true) => data.push_record(&record),
+            Ok(true) => data.push_record(&record, reader.position().byte() as usize),
             Ok(false) => return Ok(data),
             Err(error) => {
                 return Err(ParseError {

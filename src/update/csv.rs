@@ -456,7 +456,7 @@ pub(super) fn commit_edit(model: &mut AppModel, editor_id: crate::model::EditorI
             new_value: edit.buffer(),
         };
         let doc = model.editor_area.documents.get_mut(&doc_id)?;
-        if !sync_cell_edit_to_document(doc, &cell_edit, csv.delimiter) {
+        if !sync_cell_edit_to_document(doc, &mut csv.data, &cell_edit, csv.delimiter) {
             model
                 .ui
                 .set_status("CSV cell no longer matches the document; its edit is retained");
@@ -603,18 +603,28 @@ pub(crate) fn edit_paste_text(model: &mut AppModel, text: String) -> Option<Cmd>
 use crate::model::Document;
 
 /// Sync a cell edit back to the document text buffer
-fn sync_cell_edit_to_document(doc: &mut Document, edit: &CellEdit, delimiter: Delimiter) -> bool {
-    let content = doc.buffer.to_string();
-
-    let row_range = match find_row_byte_range(&content, edit.position.row) {
+fn sync_cell_edit_to_document(
+    doc: &mut Document,
+    data: &mut crate::csv::CsvData,
+    edit: &CellEdit,
+    delimiter: Delimiter,
+) -> bool {
+    let row_range = match data.record_range(edit.position.row, &doc.buffer) {
         Some(r) => r,
-        None => {
-            tracing::warn!("Could not find row {} in document", edit.position.row);
-            return false;
-        }
+        None => return false,
     };
-
-    let row_content = &content[row_range.clone()];
+    if data.get(edit.position.row, edit.position.col) != edit.old_value {
+        return false;
+    }
+    let content = doc.buffer.byte_slice(row_range.clone()).to_string();
+    let row_content = if row_range.start == 0 {
+        content.strip_prefix('\u{feff}').unwrap_or(&content)
+    } else {
+        &content
+    };
+    let row_content = row_content.trim_start_matches(['\r', '\n']);
+    let row_start = row_range.start + content.len() - row_content.len();
+    let row_content = row_content.trim_end_matches(['\r', '\n']);
 
     let cell_range = match find_field_byte_range(row_content, edit.position.col, delimiter) {
         Some(r) => r,
@@ -628,14 +638,10 @@ fn sync_cell_edit_to_document(doc: &mut Document, edit: &CellEdit, delimiter: De
         }
     };
 
-    let abs_start_byte = row_range.start + cell_range.start;
-    let abs_end_byte = row_range.start + cell_range.end;
+    let abs_start_byte = row_start + cell_range.start;
+    let abs_end_byte = row_start + cell_range.end;
 
-    // `find_row_byte_range`/`find_field_byte_range` operate on `str::char_indices`,
-    // which yields byte offsets. `Rope::remove`/`Rope::insert` expect char offsets,
-    // so convert here before touching the rope. Without this, any multi-byte UTF-8
-    // content (accents, CJK, emoji) at or before the edited cell causes the wrong
-    // range to be mutated, or a panic when the byte offset exceeds `len_chars()`.
+    // Parser positions and field ranges are bytes; rope edits use characters.
     let abs_start = doc.buffer.byte_to_char(abs_start_byte);
     let abs_end = doc.buffer.byte_to_char(abs_end_byte);
 
@@ -643,32 +649,16 @@ fn sync_cell_edit_to_document(doc: &mut Document, edit: &CellEdit, delimiter: De
 
     doc.buffer.remove(abs_start..abs_end);
     doc.buffer.insert(abs_start, &escaped);
+    data.record_edited(
+        edit.position.row,
+        abs_end_byte - abs_start_byte,
+        escaped.len(),
+        &doc.buffer,
+    );
 
     doc.is_modified = true;
     doc.revision = doc.revision.wrapping_add(1);
     true
-}
-
-/// Find byte range of a row in the document (excluding newline)
-fn find_row_byte_range(content: &str, row_idx: usize) -> Option<std::ops::Range<usize>> {
-    let mut current_row = 0;
-    let mut row_start = 0;
-
-    for (i, ch) in content.char_indices() {
-        if ch == '\n' {
-            if current_row == row_idx {
-                return Some(row_start..i);
-            }
-            current_row += 1;
-            row_start = i + 1;
-        }
-    }
-
-    if current_row == row_idx {
-        return Some(row_start..content.len());
-    }
-
-    None
 }
 
 /// Find byte range of a field within a CSV row (handles quoted fields)
@@ -682,9 +672,16 @@ fn find_field_byte_range(
     let mut current_field = 0;
     let mut in_quotes = false;
 
-    for (i, ch) in row.char_indices() {
-        if ch == '"' {
-            in_quotes = !in_quotes;
+    let mut chars = row.char_indices().peekable();
+    while let Some((i, ch)) = chars.next() {
+        if ch == '"' && in_quotes {
+            if chars.peek().is_some_and(|(_, next)| *next == '"') {
+                chars.next();
+            } else {
+                in_quotes = false;
+            }
+        } else if ch == '"' && i == field_start {
+            in_quotes = true;
         } else if ch == delim && !in_quotes {
             if current_field == field_idx {
                 return Some(field_start..i);
@@ -928,13 +925,47 @@ mod tests {
     }
 
     #[test]
-    fn test_find_row_byte_range() {
-        let content = "a,b,c\n1,2,3\nx,y,z";
-
-        assert_eq!(find_row_byte_range(content, 0), Some(0..5));
-        assert_eq!(find_row_byte_range(content, 1), Some(6..11));
-        assert_eq!(find_row_byte_range(content, 2), Some(12..17));
-        assert_eq!(find_row_byte_range(content, 3), None);
+    fn indexed_edits_preserve_multiline_records_and_shift_following_ranges() {
+        let content = "\u{feff}\r\n\"æ\r\nx\",old\r\n\r\nlast,tail\r\n";
+        let mut doc = Document::with_text(content);
+        let mut data = parse_csv_rope(&doc.buffer, Delimiter::Comma).unwrap();
+        assert_eq!(data.row_count(), 2);
+        for (row, col, old, new) in [
+            (0, 1, "old", "long,\"quoted\""),
+            (1, 1, "tail", "å"),
+            (0, 0, "æ\r\nx", "z"),
+        ] {
+            let edit = CellEdit {
+                position: CellPosition::new(row, col),
+                old_value: old.into(),
+                new_value: new.into(),
+            };
+            assert!(sync_cell_edit_to_document(
+                &mut doc,
+                &mut data,
+                &edit,
+                Delimiter::Comma
+            ));
+            data.set(row, col, new);
+        }
+        assert_eq!(
+            doc.buffer.to_string(),
+            "\u{feff}\r\nz,\"long,\"\"quoted\"\"\"\r\n\r\nlast,å\r\n"
+        );
+        doc.buffer.insert(0, "outside edit");
+        let before = doc.buffer.clone();
+        let edit = CellEdit {
+            position: CellPosition::new(1, 1),
+            old_value: "å".into(),
+            new_value: "wrong".into(),
+        };
+        assert!(!sync_cell_edit_to_document(
+            &mut doc,
+            &mut data,
+            &edit,
+            Delimiter::Comma
+        ));
+        assert_eq!(doc.buffer, before);
     }
 
     #[test]
@@ -996,7 +1027,13 @@ mod tests {
             new_value: "26".to_string(),
         };
 
-        sync_cell_edit_to_document(&mut doc, &edit, Delimiter::Comma);
+        let mut data = parse_csv_rope(&doc.buffer, Delimiter::Comma).unwrap();
+        assert!(sync_cell_edit_to_document(
+            &mut doc,
+            &mut data,
+            &edit,
+            Delimiter::Comma
+        ));
 
         assert_eq!(doc.buffer.to_string(), "name,age\ncafé,30\nbob,26");
         assert!(doc.is_modified);
@@ -1016,7 +1053,13 @@ mod tests {
             new_value: "31".to_string(),
         };
 
-        sync_cell_edit_to_document(&mut doc, &edit, Delimiter::Comma);
+        let mut data = parse_csv_rope(&doc.buffer, Delimiter::Comma).unwrap();
+        assert!(sync_cell_edit_to_document(
+            &mut doc,
+            &mut data,
+            &edit,
+            Delimiter::Comma
+        ));
 
         assert_eq!(doc.buffer.to_string(), "name,age\ncafé,31\nbob,25");
         assert!(doc.is_modified);

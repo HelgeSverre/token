@@ -22,6 +22,9 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Index CSV records during parsing so cell edits copy only one record, preserve
+  quoted multiline records, and reject stale document snapshots.
+
 - Speed up line-ending detection when opening text files by searching rope
   chunks for newlines without scanning ordinary text byte by byte.
 

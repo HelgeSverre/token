@@ -292,6 +292,9 @@ pub struct CsvData {
     rows: Vec<String>,
     /// Number of columns (max across all rows)
     column_count: usize,
+    /// Parser record ranges, including terminators; never physical line numbers.
+    record_ranges: Vec<std::ops::Range<usize>>,
+    pub(super) source: Option<ropey::Rope>,
 }
 
 impl CsvData {
@@ -309,11 +312,15 @@ impl CsvData {
             .map(|row| row.join(&CELL_DELIMITER.to_string()))
             .collect();
 
-        Self { rows, column_count }
+        Self {
+            rows,
+            column_count,
+            ..Self::default()
+        }
     }
 
     /// Append directly from the parser's reusable record, without per-cell strings.
-    pub(super) fn push_record(&mut self, record: &csv::StringRecord) {
+    pub(super) fn push_record(&mut self, record: &csv::StringRecord, end: usize) {
         let mut row = String::with_capacity(
             record.as_slice().len() + record.len().saturating_sub(1) * CELL_DELIMITER.len_utf8(),
         );
@@ -325,6 +332,33 @@ impl CsvData {
         }
         self.column_count = self.column_count.max(record.len());
         self.rows.push(row);
+        self.record_ranges
+            .push(record.position().expect("parser record position").byte() as usize..end);
+    }
+
+    pub(crate) fn record_range(
+        &self,
+        row: usize,
+        source: &ropey::Rope,
+    ) -> Option<std::ops::Range<usize>> {
+        self.source.as_ref().filter(|old| old.is_instance(source))?;
+        self.record_ranges.get(row).cloned()
+    }
+
+    /// Adjust the compact index after a field replacement, without scanning text.
+    pub(crate) fn record_edited(
+        &mut self,
+        row: usize,
+        removed: usize,
+        inserted: usize,
+        source: &ropey::Rope,
+    ) {
+        self.record_ranges[row].end = self.record_ranges[row].end - removed + inserted;
+        for range in &mut self.record_ranges[row + 1..] {
+            range.start = range.start - removed + inserted;
+            range.end = range.end - removed + inserted;
+        }
+        self.source = Some(source.clone());
     }
 
     /// Get number of rows
