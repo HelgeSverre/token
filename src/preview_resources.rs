@@ -11,7 +11,7 @@ use cap_std::fs::{Dir, OpenOptions};
 
 use crate::util::{ByteSize, FileIdentity};
 
-const MAX_PREVIEW_RESOURCE_SIZE: ByteSize = ByteSize::mebibytes(50);
+const MAX_PREVIEW_RESOURCE_SIZE: ByteSize = ByteSize::mebibytes(256);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResourceError {
@@ -265,6 +265,17 @@ mod tests {
             assert!(scope.file(name.into()).is_err(), "{name}");
         }
         let large = std::fs::File::create(root.path().join("large")).unwrap();
+        large.set_len(ByteSize::mebibytes(51).as_u64()).unwrap();
+        assert_eq!(
+            scope
+                .file("large".into())
+                .unwrap()
+                .read()
+                .unwrap()
+                .bytes
+                .len(),
+            ByteSize::mebibytes(51).as_usize()
+        );
         large
             .set_len(MAX_PREVIEW_RESOURCE_SIZE.as_u64() + 1)
             .unwrap();

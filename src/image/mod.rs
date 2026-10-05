@@ -6,6 +6,21 @@
 
 pub mod render;
 
+const MAX_DECODED_IMAGE_SIZE: crate::util::ByteSize = crate::util::ByteSize::mebibytes(512);
+
+fn decode_limits() -> image::Limits {
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(MAX_DECODED_IMAGE_SIZE.as_u64());
+    limits
+}
+
+fn rgba_fits_budget(width: u32, height: u32) -> bool {
+    u64::from(width)
+        .checked_mul(u64::from(height))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .is_some_and(|bytes| bytes <= MAX_DECODED_IMAGE_SIZE.as_u64())
+}
+
 /// State for the image viewer mode
 #[derive(Debug, Clone)]
 pub struct ImageState {
@@ -115,9 +130,11 @@ pub fn load_image(
     viewport_height: u32,
 ) -> Option<ImageState> {
     let file_size = std::fs::metadata(path).ok()?.len();
+    let mut reader = image::ImageReader::open(path).ok()?;
+    reader.limits(decode_limits());
 
     image_state(
-        image::open(path).ok()?,
+        reader.decode().ok()?,
         path,
         file_size,
         viewport_width,
@@ -127,13 +144,11 @@ pub fn load_image(
 
 /// Decode bytes already read through an authorized file handle.
 pub fn load_image_bytes(bytes: &[u8], path: &std::path::Path) -> Option<ImageState> {
-    image_state(
-        image::load_from_memory(bytes).ok()?,
-        path,
-        bytes.len() as u64,
-        0,
-        0,
-    )
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?;
+    reader.limits(decode_limits());
+    image_state(reader.decode().ok()?, path, bytes.len() as u64, 0, 0)
 }
 
 fn image_state(
@@ -157,7 +172,11 @@ fn image_state(
         })
         .unwrap_or_else(|| "Unknown".to_string());
 
-    let rgba = img.to_rgba8();
+    // Decoder limits do not cover a subsequent RGB/grayscale -> RGBA conversion.
+    if !rgba_fits_budget(img.width(), img.height()) {
+        return None;
+    }
+    let rgba = img.into_rgba8();
     let (width, height) = rgba.dimensions();
     let pixels = rgba.into_raw();
 
@@ -170,4 +189,20 @@ fn image_state(
         viewport_width,
         viewport_height,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decoded_image_budget_checks_rgba_expansion_and_overflow() {
+        assert_eq!(
+            decode_limits().max_alloc,
+            Some(crate::util::ByteSize::mebibytes(512).as_u64())
+        );
+        assert!(rgba_fits_budget(16384, 8192));
+        assert!(!rgba_fits_budget(16384, 8193));
+        assert!(!rgba_fits_budget(u32::MAX, u32::MAX));
+    }
 }

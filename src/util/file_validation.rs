@@ -2,7 +2,6 @@
 //!
 //! Validates files before attempting to open them, checking for:
 //! - File existence and permissions
-//! - File size limits
 //! - Binary file detection
 
 use std::fs::{self, File};
@@ -10,9 +9,6 @@ use std::io::Read;
 use std::path::Path;
 
 use super::ByteSize;
-
-/// Encoded image budget; ordinary text opening has no size cap.
-pub const MAX_IMAGE_FILE_SIZE: ByteSize = ByteSize::mebibytes(50);
 
 /// Errors that can occur when validating a file for opening
 #[derive(Debug, Clone)]
@@ -25,8 +21,6 @@ pub enum FileOpenError {
     IsDirectory,
     /// File appears to be binary (contains null bytes)
     BinaryFile,
-    /// File exceeds size limit
-    TooLarge { size: ByteSize },
     /// Other I/O error
     IoError(String),
 }
@@ -39,12 +33,6 @@ impl FileOpenError {
             Self::PermissionDenied => format!("Permission denied: {}", filename),
             Self::IsDirectory => format!("Cannot open directory: {}", filename),
             Self::BinaryFile => format!("Cannot open binary file: {}", filename),
-            Self::TooLarge { size } => {
-                format!(
-                    "{} is too large ({size}, max {MAX_IMAGE_FILE_SIZE})",
-                    filename
-                )
-            }
             Self::IoError(msg) => format!("Error opening {}: {}", filename, msg),
         }
     }
@@ -57,7 +45,6 @@ impl std::fmt::Display for FileOpenError {
             Self::PermissionDenied => write!(f, "permission denied"),
             Self::IsDirectory => write!(f, "is a directory"),
             Self::BinaryFile => write!(f, "binary file"),
-            Self::TooLarge { size } => write!(f, "file too large ({size})"),
             Self::IoError(msg) => write!(f, "{}", msg),
         }
     }
@@ -156,11 +143,11 @@ mod tests {
 
     #[test]
     fn test_validate_file_size_not_checked() {
-        // Image budgets are checked by prepare_open, not general path validation.
+        // Decoded-image budgets do not restrict general path validation.
         let oversized = NamedTempFile::new().unwrap();
         oversized
             .as_file()
-            .set_len(MAX_IMAGE_FILE_SIZE.as_u64() + 1)
+            .set_len(ByteSize::gibibytes(1).as_u64())
             .unwrap();
         assert!(validate_file_for_opening(oversized.path()).is_ok());
     }
@@ -212,13 +199,5 @@ mod tests {
             FileOpenError::BinaryFile.user_message("image.png"),
             "Cannot open binary file: image.png"
         );
-        let error = FileOpenError::TooLarge {
-            size: ByteSize::bytes(MAX_IMAGE_FILE_SIZE.as_u64() + 1),
-        };
-        assert_eq!(
-            error.user_message("large.txt"),
-            "large.txt is too large (50.0 MiB, max 50.0 MiB)"
-        );
-        assert_eq!(error.to_string(), "file too large (50.0 MiB)");
     }
 }

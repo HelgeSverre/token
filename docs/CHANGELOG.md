@@ -22,6 +22,10 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Remove the encoded-image file-size cap; bound decoder allocations and final
+  RGBA buffers to 512 MiB instead. Raise the separate preview-resource read
+  budget to 256 MiB while retaining directory containment and revocation checks.
+
 - Allow formatter output up to four times the input size, with a 50 MiB minimum
   budget. Per-formatter `timeout_seconds` defaults to 30; zero disables the
   timeout. Cancellation and bounded error-output capture remain active.

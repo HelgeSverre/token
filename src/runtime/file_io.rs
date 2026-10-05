@@ -435,7 +435,7 @@ fn prepare_open(
     use anyhow::Context;
     use token::util::{
         filename_for_display, is_likely_binary, is_supported_image, validate_file_for_opening,
-        ByteSize, FileOpenError,
+        FileOpenError,
     };
 
     let resolved;
@@ -498,16 +498,9 @@ fn prepare_open(
     };
 
     let size_bytes = metadata.len();
-    let max = token::util::file_validation::MAX_IMAGE_FILE_SIZE;
 
     let mut document = if is_supported_image(path) {
-        // Images require the full file to be loaded, so enforce size limit
-        if ByteSize::bytes(size_bytes) > max {
-            anyhow::bail!(FileOpenError::TooLarge {
-                size: ByteSize::bytes(size_bytes)
-            }
-            .user_message(&filename_for_display(path)));
-        }
+        // Decoding enforces an allocation/RGBA budget, not an encoded-file cap.
         // Fit against the actual target pane when the reply is installed.
         let image = token::image::load_image(path, 0, 0)
             .with_context(|| format!("Error opening image: {}", filename_for_display(path)))?;
@@ -1015,6 +1008,30 @@ mod tests {
     }
 
     #[test]
+    fn file_open_worker_allows_large_encoded_images_with_small_decoded_buffers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large.png");
+        image::RgbaImage::from_pixel(1, 1, image::Rgba([12, 34, 56, 255]))
+            .save(&path)
+            .unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(token::util::ByteSize::mebibytes(51).as_u64())
+            .unwrap();
+        let PreparedFile::Loaded {
+            view_mode: ViewMode::Image(loaded),
+            ..
+        } = prepare_open(&open_request(path), None).unwrap()
+        else {
+            panic!("image should load regardless of encoded size");
+        };
+        assert_eq!((loaded.width, loaded.height), (1, 1));
+        assert_eq!(&*loaded.pixels, &[12, 34, 56, 255]);
+    }
+
+    #[test]
     fn file_open_worker_rejects_bad_files_and_workspace_edit_placeholders() {
         let dir = tempfile::tempdir().unwrap();
         let invalid_utf8 = dir.path().join("invalid.txt");
@@ -1024,7 +1041,7 @@ mod tests {
         std::fs::write(&broken_image, "not an image").unwrap();
         File::create(&oversized_image)
             .unwrap()
-            .set_len(token::util::file_validation::MAX_IMAGE_FILE_SIZE.as_u64() + 1)
+            .set_len(token::util::ByteSize::mebibytes(51).as_u64())
             .unwrap();
         for path in [
             dir.path().to_path_buf(),
@@ -1103,7 +1120,7 @@ mod tests {
     fn file_open_worker_allows_oversized_binary_files_as_placeholder() {
         let dir = tempfile::tempdir().unwrap();
         let oversized_binary = dir.path().join("oversized.bin");
-        // Create a binary file larger than the image budget (50 MiB)
+        // Create a binary file larger than the former encoded-image cap.
         // Start with SQLite header which contains a null byte early on
         let mut content = b"SQLite format 3\0".to_vec();
         content.extend(vec![0u8; token::util::ByteSize::mebibytes(60).as_usize()]);

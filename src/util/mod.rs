@@ -19,7 +19,7 @@ pub fn is_web_url(value: &str) -> bool {
 // Re-export file validation utilities
 pub use file_validation::{
     filename_for_display, is_likely_binary, is_supported_image, validate_file_for_opening,
-    FileOpenError, MAX_IMAGE_FILE_SIZE,
+    FileOpenError,
 };
 
 // Re-export tree traversal utilities
