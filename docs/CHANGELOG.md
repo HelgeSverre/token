@@ -22,6 +22,9 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Reuse immutable document ropes for folding detection instead of rebuilding
+  them from contiguous syntax text; preserve fold fingerprints and injections.
+
 - Refresh indexed CSV cells directly during undo/redo, retaining full reparsing
   for arbitrary text edits, incompatible delimiters and stale views.
 

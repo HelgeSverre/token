@@ -6803,7 +6803,7 @@ fn syntax_worker_loop(
             let syntax_tree = parser_state.syntax_tree_snapshot(req.document_id, req.revision);
 
             let folds = Some(Arc::new(token::syntax::folding::detect(
-                &source,
+                &req.source,
                 token::folding::FoldStamp {
                     revision: req.revision,
                     language: req.language,

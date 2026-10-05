@@ -2392,7 +2392,7 @@ mod tests {
                 doc.buffer = Rope::from_str(source);
                 doc.diagnostics.clear();
                 doc.folds = Some(std::sync::Arc::new(crate::syntax::folding::detect(
-                    source,
+                    &doc.buffer,
                     crate::folding::FoldStamp {
                         revision: doc.revision,
                         language: doc.language,

@@ -574,7 +574,7 @@ fn apply_syntax_highlighting(model: &mut AppModel) {
             token::outline::extract_outline(&snapshot.tree, &source, doc.language, doc.revision)
         });
         doc.folds = Some(std::sync::Arc::new(token::syntax::folding::detect(
-            &source,
+            &doc.buffer,
             token::folding::FoldStamp {
                 revision: doc.revision,
                 language: doc.language,

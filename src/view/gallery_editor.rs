@@ -79,7 +79,7 @@ pub(super) fn build_model(
             Some(parser.parse_and_highlight(&source, doc.language, *doc_id, doc.revision));
         doc.syntax_tree = parser.syntax_tree_snapshot(*doc_id, doc.revision);
         doc.folds = Some(Arc::new(crate::syntax::folding::detect(
-            &source,
+            &doc.buffer,
             FoldStamp {
                 revision: doc.revision,
                 language: doc.language,

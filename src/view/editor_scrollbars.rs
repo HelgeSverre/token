@@ -244,7 +244,7 @@ mod tests {
         let source = "one\n  body\ntwo\n  body\nend\n";
         let mut document = Document::with_text(source);
         document.folds = Some(Arc::new(crate::syntax::folding::detect(
-            source,
+            &document.buffer,
             crate::folding::FoldStamp {
                 revision: 0,
                 language: document.language,
