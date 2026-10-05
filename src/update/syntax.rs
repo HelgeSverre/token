@@ -78,7 +78,7 @@ pub(super) fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd>
 
             // Snapshot the document content for parsing
             let snapshot_started = Instant::now();
-            let source: std::sync::Arc<str> = doc.buffer.to_string().into();
+            let source = doc.buffer.clone();
             let snapshot_ms = snapshot_started.elapsed().as_secs_f64() * 1000.0;
             let language = doc.language;
 
@@ -88,7 +88,7 @@ pub(super) fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd>
                     SyntaxEventType::ParseStarted,
                     document_id.0,
                     revision,
-                    format!("ParseReady → RunParse ({} chars)", source.len()),
+                    format!("ParseReady → RunParse ({} chars)", source.len_chars()),
                 );
             }
 
@@ -96,6 +96,7 @@ pub(super) fn update_syntax(model: &mut AppModel, msg: SyntaxMsg) -> Option<Cmd>
                 document_id,
                 revision,
                 source,
+                shared_source: None,
                 language,
                 snapshot_ms,
                 fold_policy: (doc.text_policy_generation, doc.text_settings.tabs),
@@ -430,11 +431,33 @@ mod tests {
         {
             assert_eq!(document_id, doc_id);
             assert_eq!(revision, 5);
-            assert_eq!(&*source, "fn main() {}");
+            assert_eq!(source.to_string(), "fn main() {}");
             assert_eq!(language, LanguageId::Rust);
         } else {
             panic!("Expected RunSyntaxParse command");
         }
+    }
+
+    #[test]
+    fn parse_ready_snapshot_is_immutable_after_later_edits() {
+        let mut model = AppModel::new(800, 600, 1.0);
+        let document_id = model.document().id.unwrap();
+        model.document_mut().language = LanguageId::Rust;
+        model.document_mut().buffer = ropey::Rope::from_str("old");
+
+        let Some(Cmd::RunSyntaxParse { source, .. }) = update_syntax(
+            &mut model,
+            SyntaxMsg::ParseReady {
+                document_id,
+                revision: 0,
+            },
+        ) else {
+            panic!("expected syntax request");
+        };
+        model.document_mut().buffer.insert(3, " new");
+
+        assert_eq!(source.to_string(), "old");
+        assert_eq!(model.document().buffer.to_string(), "old new");
     }
 
     #[test]

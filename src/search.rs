@@ -21,9 +21,10 @@ pub struct Match {
 pub struct SearchQuery {
     pattern: String,
     compiled: Option<Regex>,
-    /// Optional acceleration for plain ASCII literals on ASCII-only text.
-    /// The regex remains authoritative for validation and Unicode case folding.
-    ascii_literal: Option<AhoCorasick>,
+    /// Optional acceleration for literals whose byte matching has regex-equivalent
+    /// semantics. This includes every case-sensitive literal and ASCII-only
+    /// case-insensitive literals; the regex remains authoritative otherwise.
+    literal: Option<AhoCorasick>,
     case_sensitive: bool,
     /// Error message if regex compilation failed (invalid regex, or an
     /// invalid literal pattern once escaped with word boundaries).
@@ -35,15 +36,15 @@ impl SearchQuery {
         let mut query = Self {
             pattern: pattern.to_string(),
             compiled: None,
-            ascii_literal: None,
+            literal: None,
             case_sensitive,
             error: None,
         };
         query.compile(case_sensitive, whole_word, is_regex);
-        if query.is_valid() && !whole_word && !is_regex && pattern.is_ascii() {
+        if query.is_valid() && !whole_word && !is_regex && (case_sensitive || pattern.is_ascii()) {
             // One fixed-length pattern has the same non-overlapping match order
             // as the regex. Construction failure simply keeps the regex path.
-            query.ascii_literal = AhoCorasick::builder()
+            query.literal = AhoCorasick::builder()
                 .ascii_case_insensitive(!case_sensitive)
                 .build([pattern])
                 .ok();
@@ -95,46 +96,64 @@ impl SearchQuery {
         self.error.is_some()
     }
 
-    /// Stream literal matches across rope chunks; regex and Unicode case folding
-    /// retain the contiguous engine so chunk boundaries never change semantics.
+    /// Stream safe literal matches across rope chunks; regex and Unicode case
+    /// folding retain the contiguous engine so chunk boundaries never change semantics.
     pub fn find_all_rope(&self, text: &ropey::Rope) -> Vec<Match> {
+        self.find_all_rope_in(text, None)
+    }
+
+    /// As `find_all_rope`, but only allocates matches fully contained in `scope`.
+    /// Searching remains document-wide so regex anchors and boundaries retain
+    /// their authoritative meaning.
+    pub(crate) fn find_all_rope_in(
+        &self,
+        text: &ropey::Rope,
+        scope: Option<(usize, usize)>,
+    ) -> Vec<Match> {
         if !self.is_valid() {
             return Vec::new();
         }
-        if let Some(literal) = &self.ascii_literal {
-            let ascii = text.chunks().all(str::is_ascii);
-            if ascii || self.case_sensitive {
+        if let Some(literal) = &self.literal {
+            // Every non-ASCII UTF-8 character occupies more than one byte.
+            // Rope stores both counts, so this proof does not scan the document.
+            let ascii = text.len_bytes() == text.len_chars();
+            if self.case_sensitive || ascii {
                 return literal
                     .stream_find_iter(crate::util::text::RopeReader::new(text))
                     .map(|result| {
                         let found = result.expect("in-memory rope reads cannot fail");
-                        if ascii {
-                            Match {
-                                start: found.start(),
-                                end: found.end(),
+                        let char_offset = |byte| {
+                            if ascii {
+                                byte
+                            } else {
+                                text.byte_to_char(byte)
                             }
-                        } else {
-                            Match {
-                                start: text.byte_to_char(found.start()),
-                                end: text.byte_to_char(found.end()),
-                            }
+                        };
+                        Match {
+                            start: char_offset(found.start()),
+                            end: char_offset(found.end()),
                         }
                     })
+                    .filter(|m| scope.is_none_or(|(start, end)| m.start >= start && m.end <= end))
                     .collect();
             }
         }
-        self.find_all(&text.to_string())
+        self.find_all_in(&text.to_string(), scope)
     }
 
     /// Find all matches in `text`, converting the regex crate's byte
     /// offsets to char offsets incrementally (one pass over the matched
     /// spans, not a re-scan of the whole text per match).
     pub fn find_all(&self, text: &str) -> Vec<Match> {
+        self.find_all_in(text, None)
+    }
+
+    fn find_all_in(&self, text: &str, scope: Option<(usize, usize)>) -> Vec<Match> {
         let Some(re) = &self.compiled else {
             return Vec::new();
         };
 
-        if let Some(literal) = self.ascii_literal.as_ref().filter(|_| text.is_ascii()) {
+        if let Some(literal) = self.literal.as_ref().filter(|_| text.is_ascii()) {
             // Byte and character offsets coincide only under this text gate.
             return literal
                 .find_iter(text)
@@ -142,6 +161,7 @@ impl SearchQuery {
                     start: m.start(),
                     end: m.end(),
                 })
+                .filter(|m| scope.is_none_or(|(start, end)| m.start >= start && m.end <= end))
                 .collect();
         }
 
@@ -154,7 +174,10 @@ impl SearchQuery {
             prev_char += text[m.start()..m.end()].chars().count();
             let end = prev_char;
             prev_byte = m.end();
-            matches.push(Match { start, end });
+            if scope.is_none_or(|(scope_start, scope_end)| start >= scope_start && end <= scope_end)
+            {
+                matches.push(Match { start, end });
+            }
         }
         matches
     }
@@ -228,10 +251,10 @@ mod tests {
             for case_sensitive in [false, true] {
                 let query = SearchQuery::new(pattern, case_sensitive, false, false);
                 let mut fallback = query.clone();
-                fallback.ascii_literal = None;
+                fallback.literal = None;
                 assert_eq!(
-                    query.ascii_literal.is_some(),
-                    !pattern.is_empty() && pattern.is_ascii()
+                    query.literal.is_some(),
+                    !pattern.is_empty() && (case_sensitive || pattern.is_ascii())
                 );
                 for text in [
                     "",
@@ -262,7 +285,7 @@ mod tests {
     #[test]
     fn whole_word_excludes_partial_matches() {
         let query = SearchQuery::new("the", false, true, false);
-        assert!(query.ascii_literal.is_none());
+        assert!(query.literal.is_none());
         let matches = query.find_all("the other there");
         assert_eq!(matches, vec![Match { start: 0, end: 3 }]);
     }
@@ -270,7 +293,7 @@ mod tests {
     #[test]
     fn regex_search_finds_digit_runs() {
         let query = SearchQuery::new(r"\d+", false, false, true);
-        assert!(query.ascii_literal.is_none());
+        assert!(query.literal.is_none());
         let matches = query.find_all("abc 123 def 456 ghi");
         assert_eq!(
             matches,
@@ -300,5 +323,45 @@ mod tests {
         let query = SearchQuery::new("world", false, false, false);
         let matches = query.find_all("café world");
         assert_eq!(matches, vec![Match { start: 5, end: 10 }]);
+    }
+
+    #[test]
+    fn rope_paths_match_authoritative_regex_across_adversarial_chunks() {
+        // The long, mixed-width padding forces many Rope chunks and puts
+        // candidates at different byte/char offsets and chunk boundaries.
+        let padding = "a猫🙂β_".repeat(2_000);
+        let text = format!("{padding}é🙂猫é foo foobar foo\nΣσς\n{padding}é🙂猫é");
+        let rope = ropey::Rope::from_str(&text);
+        assert!(rope.chunks().count() > 2);
+
+        for (pattern, sensitive, whole_word, is_regex) in [
+            ("é🙂猫é", true, false, false),
+            ("foo", true, false, false),
+            ("foo", true, true, false),
+            ("σ", false, false, false),
+            (r"(?m)^|$", true, false, true),
+            (r"é🙂猫é|foo\b", true, false, true),
+        ] {
+            let query = SearchQuery::new(pattern, sensitive, whole_word, is_regex);
+            let expected = query.find_all(&text);
+            assert_eq!(
+                query.find_all_rope(&rope),
+                expected,
+                "pattern={pattern:?}, sensitive={sensitive}, whole_word={whole_word}, regex={is_regex}"
+            );
+
+            for scope in [
+                (0, 0),
+                (padding.chars().count(), padding.chars().count() + 4),
+                (1, text.chars().count() - 1),
+            ] {
+                let scoped: Vec<_> = expected
+                    .iter()
+                    .copied()
+                    .filter(|m| m.start >= scope.0 && m.end <= scope.1)
+                    .collect();
+                assert_eq!(query.find_all_rope_in(&rope, Some(scope)), scoped);
+            }
+        }
     }
 }

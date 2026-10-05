@@ -435,14 +435,11 @@ impl FindSearchRequest {
             self.options.1,
             self.options.2,
         );
-        let mut matches = if query.is_valid() {
-            query.find_all_rope(&self.buffer)
+        let matches = if query.is_valid() {
+            query.find_all_rope_in(&self.buffer, self.scope)
         } else {
             Vec::new()
         };
-        if let Some((start, end)) = self.scope {
-            matches.retain(|m| m.start >= start && m.end <= end);
-        }
         Arc::new(FindResults {
             matches: matches.into(),
             source: Arc::clone(self),

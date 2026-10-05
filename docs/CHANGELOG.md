@@ -22,6 +22,15 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Make CSV cell commits undoable document transactions that map peer-pane
+  cursors and refresh other CSV views. Update record offsets logarithmically
+  instead of walking every following record. Preserve empty single-field records
+  and Unicode text containing the former internal `ú` separator.
+- Move syntax-only contiguous snapshots to the worker after coalescing pending
+  requests, retaining shared snapshots when LSP synchronization also needs text.
+- Stream case-sensitive Unicode literal Find queries and avoid retaining
+  out-of-selection matches in scoped searches.
+
 - Raise workspace-symbol results from 2,000 to 20,000 while preserving ranking,
   duplicate removal and the truncation indicator.
 
