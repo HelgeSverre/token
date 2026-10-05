@@ -4,7 +4,10 @@
 //! escaped quotes, and custom delimiters.
 
 use super::model::{CsvData, Delimiter};
-use std::io::{self, Read};
+use crate::util::text::RopeReader;
+#[cfg(test)]
+use std::io;
+use std::io::Read;
 
 /// Error type for CSV parsing
 #[derive(Debug, Clone)]
@@ -33,32 +36,9 @@ pub fn parse_csv(content: &str, delimiter: Delimiter) -> Result<CsvData, ParseEr
 
 /// Parse a document without flattening its rope into another full-size string.
 pub fn parse_csv_rope(content: &ropey::Rope, delimiter: Delimiter) -> Result<CsvData, ParseError> {
-    let mut data = parse_reader(
-        RopeReader {
-            chunks: content.chunks(),
-            remaining: &[],
-        },
-        delimiter,
-    )?;
+    let mut data = parse_reader(RopeReader::new(content), delimiter)?;
     data.source = Some(content.clone());
     Ok(data)
-}
-
-struct RopeReader<'a> {
-    chunks: ropey::iter::Chunks<'a>,
-    remaining: &'a [u8],
-}
-
-impl Read for RopeReader<'_> {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        while self.remaining.is_empty() {
-            match self.chunks.next() {
-                Some(chunk) => self.remaining = chunk.as_bytes(),
-                None => return Ok(0),
-            }
-        }
-        self.remaining.read(buffer)
-    }
 }
 
 fn parse_reader(input: impl Read, delimiter: Delimiter) -> Result<CsvData, ParseError> {

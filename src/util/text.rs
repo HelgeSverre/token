@@ -1,5 +1,32 @@
 //! Utility functions for text editing
 
+/// Read rope chunks without allocating a contiguous document snapshot.
+pub(crate) struct RopeReader<'a> {
+    chunks: ropey::iter::Chunks<'a>,
+    remaining: &'a [u8],
+}
+
+impl<'a> RopeReader<'a> {
+    pub(crate) fn new(rope: &'a ropey::Rope) -> Self {
+        Self {
+            chunks: rope.chunks(),
+            remaining: &[],
+        }
+    }
+}
+
+impl std::io::Read for RopeReader<'_> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        while self.remaining.is_empty() {
+            match self.chunks.next() {
+                Some(chunk) => self.remaining = chunk.as_bytes(),
+                None => return Ok(0),
+            }
+        }
+        std::io::Read::read(&mut self.remaining, buffer)
+    }
+}
+
 /// Borrowed lines retaining LF, CRLF, or CR endings without a trailing empty
 /// item. Unlike `str::lines`, this also recognizes CR-only documents.
 pub fn lines_with_endings(mut text: &str) -> impl Iterator<Item = &str> {

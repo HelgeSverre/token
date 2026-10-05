@@ -24,6 +24,7 @@ pub struct SearchQuery {
     /// Optional acceleration for plain ASCII literals on ASCII-only text.
     /// The regex remains authoritative for validation and Unicode case folding.
     ascii_literal: Option<AhoCorasick>,
+    case_sensitive: bool,
     /// Error message if regex compilation failed (invalid regex, or an
     /// invalid literal pattern once escaped with word boundaries).
     pub error: Option<String>,
@@ -35,6 +36,7 @@ impl SearchQuery {
             pattern: pattern.to_string(),
             compiled: None,
             ascii_literal: None,
+            case_sensitive,
             error: None,
         };
         query.compile(case_sensitive, whole_word, is_regex);
@@ -93,6 +95,37 @@ impl SearchQuery {
         self.error.is_some()
     }
 
+    /// Stream literal matches across rope chunks; regex and Unicode case folding
+    /// retain the contiguous engine so chunk boundaries never change semantics.
+    pub fn find_all_rope(&self, text: &ropey::Rope) -> Vec<Match> {
+        if !self.is_valid() {
+            return Vec::new();
+        }
+        if let Some(literal) = &self.ascii_literal {
+            let ascii = text.chunks().all(str::is_ascii);
+            if ascii || self.case_sensitive {
+                return literal
+                    .stream_find_iter(crate::util::text::RopeReader::new(text))
+                    .map(|result| {
+                        let found = result.expect("in-memory rope reads cannot fail");
+                        if ascii {
+                            Match {
+                                start: found.start(),
+                                end: found.end(),
+                            }
+                        } else {
+                            Match {
+                                start: text.byte_to_char(found.start()),
+                                end: text.byte_to_char(found.end()),
+                            }
+                        }
+                    })
+                    .collect();
+            }
+        }
+        self.find_all(&text.to_string())
+    }
+
     /// Find all matches in `text`, converting the regex crate's byte
     /// offsets to char offsets incrementally (one pass over the matched
     /// spans, not a re-scan of the whole text per match).
@@ -130,6 +163,56 @@ impl SearchQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rope_search_preserves_boundaries_offsets_and_unicode_case_folding() {
+        let pattern = "Ab".repeat(1024);
+        let rope = ropey::Rope::from_str(&format!("{}{pattern}z", "p".repeat(700)));
+        assert!(rope.chunks().all(|chunk| chunk.len() < pattern.len()));
+        let query = SearchQuery::new(&pattern.to_lowercase(), false, false, false);
+        assert_eq!(
+            query.find_all_rope(&rope),
+            vec![Match {
+                start: 700,
+                end: 2748
+            }]
+        );
+        for (text, pattern, sensitive, expected) in [
+            (
+                "aaaaa",
+                "aa",
+                true,
+                vec![Match { start: 0, end: 2 }, Match { start: 2, end: 4 }],
+            ),
+            (
+                "ætail🙂tail",
+                "tail",
+                true,
+                vec![Match { start: 1, end: 5 }, Match { start: 6, end: 10 }],
+            ),
+            (
+                "KkK",
+                "k",
+                false,
+                vec![
+                    Match { start: 0, end: 1 },
+                    Match { start: 1, end: 2 },
+                    Match { start: 2, end: 3 },
+                ],
+            ),
+        ] {
+            let query = SearchQuery::new(pattern, sensitive, false, false);
+            assert_eq!(query.find_all_rope(&ropey::Rope::from_str(text)), expected);
+        }
+        let text = ropey::Rope::from_str("one\ntwo");
+        assert_eq!(
+            SearchQuery::new("one\\ntwo", true, false, true).find_all_rope(&text),
+            vec![Match { start: 0, end: 7 }]
+        );
+        assert!(SearchQuery::new("", false, false, false)
+            .find_all_rope(&text)
+            .is_empty());
+    }
 
     #[test]
     fn literal_search_is_case_insensitive_by_default() {

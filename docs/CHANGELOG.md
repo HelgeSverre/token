@@ -22,6 +22,9 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Stream eligible literal Find queries over rope chunks instead of copying the
+  whole document. Regex and Unicode case-insensitive searches retain full semantics.
+
 - Skip unnecessary rope allocation and fingerprinting when a document exceeds
   the folding scan budget.
 

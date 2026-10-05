@@ -436,7 +436,7 @@ impl FindSearchRequest {
             self.options.2,
         );
         let mut matches = if query.is_valid() {
-            query.find_all(&self.buffer.to_string())
+            query.find_all_rope(&self.buffer)
         } else {
             Vec::new()
         };
