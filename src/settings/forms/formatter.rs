@@ -149,6 +149,12 @@ impl SettingsForm {
                 enabled: self.enabled,
                 command,
                 args,
+                timeout_seconds: previous
+                    .and_then(|language| config.formatters.get(&language))
+                    .map_or_else(
+                        || FormatterConfig::default().timeout_seconds,
+                        |value| value.timeout_seconds,
+                    ),
             },
         })
     }
@@ -161,6 +167,11 @@ mod tests {
     #[test]
     fn formatting_drafts_validate_rename_remove_and_round_trip() {
         let mut config = EditorConfig::default();
+        config
+            .formatters
+            .get_mut(&LanguageId::Python)
+            .unwrap()
+            .timeout_seconds = 120;
         let original = config.formatters.clone();
         let mut draft = SettingsForm::formatter(Some("Python"), &config);
         draft.fields[0]
@@ -183,6 +194,7 @@ mod tests {
         assert!(!config.formatters.contains_key(&LanguageId::Python));
         assert!(!config.formatters[&LanguageId::Rust].enabled);
         assert_eq!(config.formatters[&LanguageId::Rust].args[1], "{file}");
+        assert_eq!(config.formatters[&LanguageId::Rust].timeout_seconds, 120);
         let restored: EditorConfig =
             serde_yaml::from_str(&serde_yaml::to_string(&config).unwrap()).unwrap();
         assert_eq!(restored.formatters, config.formatters);

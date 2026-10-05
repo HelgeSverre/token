@@ -90,6 +90,7 @@ impl FormatterTemplate {
             enabled: true,
             command: self.command.into(),
             args: self.args.iter().map(|arg| (*arg).into()).collect(),
+            ..Default::default()
         }
     }
 }

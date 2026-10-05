@@ -22,6 +22,10 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Allow formatter output up to four times the input size, with a 50 MiB minimum
+  budget. Per-formatter `timeout_seconds` defaults to 30; zero disables the
+  timeout. Cancellation and bounded error-output capture remain active.
+
 - Stream eligible literal Find queries over rope chunks instead of copying the
   whole document. Regex and Unicode case-insensitive searches retain full semantics.
 
