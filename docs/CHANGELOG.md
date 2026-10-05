@@ -22,6 +22,10 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Search regex and Unicode case-insensitive queries directly over document
+  ropes instead of copying the entire document, retaining contiguous-engine
+  fallback for patterns unsupported by the rope backend.
+
 - Halve Find match-offset storage on 64-bit systems for documents fitting
   32-bit character offsets; larger documents retain full-width offsets without
   truncation. Navigation, replacement and rendering share compact results.

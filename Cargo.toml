@@ -117,6 +117,7 @@ ec4rs = { version = "1.2", features = ["track-source", "allow-empty-values"] }
 
 # For find/replace regex + whole-word search
 regex = "1"
+regex-cursor = "0.1.5"
 aho-corasick = "1.1"
 ignore = "0.4"
 
