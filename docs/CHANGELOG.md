@@ -22,6 +22,9 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Reuse syntax-worker document snapshots across parsing, incremental caches and
+  injection queries instead of making redundant whole-document copies.
+
 - Index CSV records during parsing so cell edits copy only one record, preserve
   quoted multiline records, and reject stale document snapshots.
 

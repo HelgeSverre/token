@@ -6739,8 +6739,8 @@ fn syntax_worker_loop(
             let worker_started = Instant::now();
             let queue_ms = req.queued_at.elapsed().as_secs_f64() * 1000.0;
             let parse_started = Instant::now();
-            let full_highlights = parser_state.parse_and_highlight(
-                &req.source,
+            let full_highlights = parser_state.parse_and_highlight_shared(
+                Arc::clone(&req.source),
                 req.language,
                 req.document_id,
                 req.revision,
