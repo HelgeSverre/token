@@ -219,6 +219,9 @@ pub(crate) struct EditorSnapshot {
     pub window_width: u32,
     pub window_height: u32,
     pub document_name: String,
+    /// CSV state without serializing the whole document for performance probes.
+    #[serde(default)]
+    pub csv: Option<CsvSnapshot>,
     pub revision: u64,
     pub modified: bool,
     pub line_count: usize,
@@ -273,6 +276,15 @@ pub(crate) struct EditorSnapshot {
     /// The context menu (context-menu.md), if open — `None` when
     /// `ui.cursor_overlay`'s kind isn't `ContextMenu`.
     pub context_menu: Option<ContextMenuSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CsvSnapshot {
+    pub rows: usize,
+    pub columns: usize,
+    pub selected_row: usize,
+    pub selected_column: usize,
+    pub selected_value: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -977,6 +989,18 @@ impl EditorSnapshot {
             window_width: model.window_size.0,
             window_height: model.window_size.1,
             document_name: document.display_name(),
+            csv: model.editor().view_mode.as_csv().map(|csv| CsvSnapshot {
+                rows: csv.data.row_count(),
+                columns: csv.data.column_count(),
+                selected_row: csv.selected_cell.row,
+                selected_column: csv.selected_cell.col,
+                selected_value: csv
+                    .data
+                    .get(csv.selected_cell.row, csv.selected_cell.col)
+                    .chars()
+                    .take(128)
+                    .collect(),
+            }),
             revision: document.revision,
             modified: document.is_modified,
             line_count: document.line_count(),
@@ -2065,6 +2089,21 @@ mod tests {
         assert!(open.path.is_absolute());
         assert!(open.path.ends_with("definitely/missing.rs"));
         assert_eq!((open.line, open.column), (Some(9), Some(4)));
+    }
+
+    #[test]
+    fn csv_snapshot_reports_logical_records_and_bounded_selected_value() {
+        let mut model = AppModel::new(800, 600, 1.0);
+        assert!(EditorSnapshot::from_model(&model).csv.is_none());
+        let text = format!("\"one\ntwo\",{}\n", "x".repeat(200));
+        let data = token::csv::parse_csv(&text, token::csv::Delimiter::Comma).unwrap();
+        let mut csv = token::csv::CsvState::new(data, token::csv::Delimiter::Comma);
+        csv.selected_cell.col = 1;
+        model.editor_mut().view_mode = token::model::ViewMode::Csv(Box::new(csv));
+        let snapshot = EditorSnapshot::from_model(&model).csv.unwrap();
+        assert_eq!((snapshot.rows, snapshot.columns), (1, 2));
+        assert_eq!((snapshot.selected_row, snapshot.selected_column), (0, 1));
+        assert_eq!(snapshot.selected_value, "x".repeat(128));
     }
 
     fn instance(id: u32, root: Option<&str>, focused_at_ms: u64) -> Instance {
