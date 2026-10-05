@@ -250,6 +250,12 @@ export function createTokenClient({
         "document",
         "document",
       ),
+    documentRange: async (start, end) =>
+      requireReplyPart(
+        await request({ type: "document_range", start, end }),
+        "document",
+        "document_range",
+      ),
     actions: async () =>
       requireReplyPart(
         await request({ type: "actions" }),

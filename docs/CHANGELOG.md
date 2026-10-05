@@ -22,6 +22,9 @@ All notable changes to Token are documented in this file.
 
 ### Editing
 
+- Add bounded automation and MCP document-range reads for files of any size,
+  including Unicode character offsets and revision metadata for paged reads.
+
 - Remove the encoded-image file-size cap; bound decoder allocations and final
   RGBA buffers to 512 MiB instead. Raise the separate preview-resource read
   budget to 256 MiB while retaining directory containment and revocation checks.

@@ -6183,6 +6183,21 @@ impl App {
                         };
                     let _ = envelope.response_tx.send(response);
                 }
+                AutomationRequest::DocumentRange { start, end } => {
+                    let response = match crate::automation::DocumentSnapshot::from_range(
+                        &self.model,
+                        start,
+                        end,
+                    ) {
+                        Ok(document) => {
+                            let mut response = self.automation_response("document range");
+                            response.document = Some(document);
+                            response
+                        }
+                        Err(error) => AutomationResponse::error(error),
+                    };
+                    let _ = envelope.response_tx.send(response);
+                }
                 AutomationRequest::Actions => {
                     let mut actions: Vec<_> = self
                         .model
