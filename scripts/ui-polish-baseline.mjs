@@ -10,7 +10,7 @@ const SCALES = [1, 1.5, 2];
 
 function usage(message) {
   if (message) console.error(message);
-  console.error("Usage: node scripts/ui-polish-baseline.mjs --binary PATH [--out-dir PATH] [--all-themes] [--ui-tabs]");
+  console.error("Usage: node scripts/ui-polish-baseline.mjs --binary PATH [--out-dir PATH] [--all-themes]");
   process.exit(message ? 2 : 0);
 }
 
@@ -18,12 +18,10 @@ const argv = process.argv.slice(2);
 let binary;
 let outDir = "target/verification/ui-polish-baseline";
 let allThemes = false;
-let uiTabs = false;
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--binary") binary = argv[++i];
   else if (argv[i] === "--out-dir") outDir = argv[++i];
   else if (argv[i] === "--all-themes") allThemes = true;
-  else if (argv[i] === "--ui-tabs") uiTabs = true;
   else if (argv[i] === "--help" || argv[i] === "-h") usage();
   else usage(`Unknown argument: ${argv[i]}`);
 }
@@ -58,7 +56,6 @@ for (const theme of themes) {
         "--scale", String(scale),
         "--out-dir", destination,
         "--metadata",
-        ...(uiTabs ? ["--ui-tabs"] : []),
       ], {
         stdio: "inherit",
         env: { ...process.env, XDG_CONFIG_HOME: configDir },

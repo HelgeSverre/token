@@ -20,19 +20,15 @@ use crate::model::{AppModel, ScaledMetrics};
 
 /// The intrinsic width of one editor tab in physical pixels.
 ///
-/// Clay owns placement and overflow, but the title-width policy is
+/// Clay owns placement and overflow, but the monospace title-width policy is
 /// also used by the tab-drag ghost, so it remains an explicit shared input.
 pub fn tab_width(model: &AppModel, tab: &Tab, char_width: f32) -> usize {
     let title = model.editor_area.tab_display_name(tab);
-    tab_width_for_title(&title, model, char_width)
+    tab_width_for_title(&title, char_width, model.metrics.padding_large)
 }
 
-fn tab_width_for_title(title: &str, model: &AppModel, char_width: f32) -> usize {
-    let width = model.ui.tab_text_metrics.as_ref().map_or_else(
-        || title.chars().count() as f32 * char_width,
-        |metrics| metrics.width(title),
-    );
-    width.round() as usize + model.metrics.padding_large * 2
+fn tab_width_for_title(title: &str, char_width: f32, horizontal_padding: usize) -> usize {
+    (title.chars().count() as f32 * char_width).round() as usize + horizontal_padding * 2
 }
 
 /// Solved Clay snapshot for one editor group's tab strip.
@@ -42,7 +38,6 @@ pub struct EditorTabBarLayout {
     last_tab_id: Option<TabId>,
     scroll_offset: usize,
     trailing_padding: usize,
-    title_height: Option<usize>,
 }
 
 impl EditorTabBarLayout {
@@ -98,9 +93,11 @@ impl EditorTabBarLayout {
                             tree.leaf(ElementDecl {
                                 key: Some(UiKey::EditorTab(group.id, tab.id)),
                                 sizing: SizingAxes::new(
-                                    Sizing::Fixed(
-                                        tab_width_for_title(&title, model, char_width) as f32
-                                    ),
+                                    Sizing::Fixed(tab_width_for_title(
+                                        &title,
+                                        char_width,
+                                        metrics.padding_large,
+                                    ) as f32),
                                     Sizing::GROW,
                                 ),
                                 padding: Padding::xy(
@@ -124,12 +121,7 @@ impl EditorTabBarLayout {
             char_width,
             line_height: model.line_height as f32,
         };
-        let mut ui_metrics = model.ui.tab_text_metrics.clone();
-        let measure: &mut dyn crate::layout::text::TextMeasure = match &mut ui_metrics {
-            Some(metrics) => metrics,
-            None => &mut measure,
-        };
-        let snapshot = tree.solve(root, metrics.scale_factor, measure);
+        let snapshot = tree.solve(root, metrics.scale_factor, &mut measure);
 
         Self {
             snapshot,
@@ -137,7 +129,6 @@ impl EditorTabBarLayout {
             last_tab_id,
             scroll_offset: group.tab_scroll,
             trailing_padding: metrics.padding_medium,
-            title_height: model.ui.tab_text_metrics.as_ref().map(|m| m.line_height),
         }
     }
 
@@ -176,16 +167,7 @@ impl EditorTabBarLayout {
             .content_rect(UiKey::EditorTab(self.group_id, tab_id))?;
         Some((
             rect.x.round().max(0.0) as usize,
-            if let Some(height) = self.title_height {
-                let tab = self
-                    .snapshot
-                    .rect(UiKey::EditorTab(self.group_id, tab_id))?;
-                (tab.y + (tab.height - height as f32).max(0.0) / 2.0)
-                    .round()
-                    .max(0.0) as usize
-            } else {
-                rect.y.round().max(0.0) as usize
-            },
+            rect.y.round().max(0.0) as usize,
         ))
     }
 

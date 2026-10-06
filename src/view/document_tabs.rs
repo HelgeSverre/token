@@ -9,12 +9,6 @@ pub(crate) fn render(
     group: &EditorGroup,
     layout: &crate::layout::editor::EditorTabBarLayout,
 ) {
-    let role = if model.ui.tab_text_metrics.is_some() {
-        super::FontRole::Ui
-    } else {
-        super::FontRole::Code
-    };
-    let mut painter = painter.with_font(role);
     let metrics = &model.metrics;
     let (bar_x, bar_y, bar_w, bar_h) = crate::layout::snapshot::snap(layout.bar_rect());
 

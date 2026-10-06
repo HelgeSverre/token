@@ -8,29 +8,6 @@ use fontdue::Font;
 
 use super::GlyphCache;
 
-/// Immutable font metrics for deterministic layout outside the renderer.
-/// Created at font/scale setup, never from individual tab titles. Clones share
-/// the font data, so renames and previously unseen Unicode need no cache fill.
-#[derive(Debug, Clone)]
-pub struct TextMetrics {
-    font: std::sync::Arc<Font>,
-    fallback: Option<std::sync::Arc<Font>>,
-    size: f32,
-    pub line_height: usize,
-}
-
-impl TextMetrics {
-    pub fn width(&self, text: &str) -> f32 {
-        text.chars()
-            .map(|ch| {
-                glyph_font(&self.font, self.fallback.as_deref(), ch)
-                    .metrics(ch, self.size)
-                    .advance_width
-            })
-            .sum()
-    }
-}
-
 /// Blend a foreground color onto a background color using alpha compositing.
 ///
 /// Both colors are in ARGB format (0xAARRGGBB). The alpha value from the
@@ -984,18 +961,6 @@ impl<'a> TextPainter<'a> {
     /// The role currently used for both measurement and drawing.
     pub fn font_role(&self) -> FontRole {
         self.font_role
-    }
-
-    /// Snapshot the current role and size without retaining raster caches.
-    pub fn snapshot_metrics(&self) -> TextMetrics {
-        TextMetrics {
-            font: std::sync::Arc::new(self.font.clone()),
-            fallback: self
-                .fallback_font
-                .map(|font| std::sync::Arc::new(font.clone())),
-            size: self.font_size,
-            line_height: self.line_height_for_size(self.font_size),
-        }
     }
 
     /// Borrow this painter in a font role, restoring the caller automatically.
@@ -2052,48 +2017,6 @@ mod tests {
             ui_cache.keys().all(|&(ch, _)| ch == '!'),
             "missing icons must use the supplied fallback"
         );
-    }
-
-    #[test]
-    fn immutable_text_metrics_match_proportional_painter_and_fallbacks() {
-        let code = Font::from_bytes(
-            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
-            fontdue::FontSettings::default(),
-        )
-        .unwrap();
-        let ui = Font::from_bytes(
-            include_bytes!("../../assets/Inter-Regular.ttf") as &[u8],
-            fontdue::FontSettings::default(),
-        )
-        .unwrap();
-        for size in [14.0, 21.0, 28.0] {
-            let mut code_cache = GlyphCache::default();
-            let mut ui_cache = GlyphCache::default();
-            let mut painter = TextPainter::new(&code, &mut code_cache, size, 11.0, 8.0, 19)
-                .with_ui_font(&ui, &mut ui_cache, FontRole::Ui);
-            let snapshot = painter.snapshot_metrics();
-            assert!(snapshot.width("iiii.rs") < snapshot.width("WWWW.rs"));
-            for text in [
-                "iiii.rs",
-                "WWWW.rs",
-                "cafe\u{301}-猫-🙂.rs !",
-                "\u{ea6c}",
-                "",
-            ] {
-                assert_eq!(
-                    snapshot.width(text),
-                    painter.measure_width(text),
-                    "{size}: {text}"
-                );
-            }
-            assert_eq!(snapshot.line_height, painter.line_height_for_size(size));
-            assert_eq!(
-                snapshot.width("\u{ea6c}"),
-                code.metrics('\u{ea6c}', size).advance_width
-            );
-            let clone = snapshot.clone();
-            assert!(std::sync::Arc::ptr_eq(&snapshot.font, &clone.font));
-        }
     }
 
     #[test]

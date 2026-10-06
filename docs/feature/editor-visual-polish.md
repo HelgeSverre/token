@@ -197,10 +197,8 @@ fonts and existing dock geometry. The second trial gives the global status bar
 a 22-logical-pixel minimum, retaining its configured text size. Bundled status
 and tab text now have a 4.5:1 palette contrast regression check; failing muted
 foregrounds are adjusted without changing backgrounds or custom themes.
-Phase 2 now has an opt-in `--ui-tabs` screenshot trial using shared measured
-document-tab geometry. It does not change application defaults; runtime
-font/scale integration, explorer/dock labels and live interaction verification
-remain pending. Other surface-contrast work and Phases 3–5 remain pending.
+Other surface-contrast work and Phases 2–5 below remain pending; these trials
+do not adopt new typography or pane chrome.
 
 ### Phase 0 — Baseline and evaluation harness
 

@@ -1952,12 +1952,7 @@ impl Renderer {
             return;
         };
 
-        let role = if model.ui.tab_text_metrics.is_some() {
-            FontRole::Ui
-        } else {
-            FontRole::Code
-        };
-        let mut painter = painter.with_font(role);
+        let mut painter = painter.with_font(FontRole::Code);
         let metrics = &model.metrics;
         let title = model.editor_area.tab_display_name(tab);
         let width = crate::layout::editor::tab_width(model, tab, painter.char_width());
@@ -1984,13 +1979,7 @@ impl Renderer {
         painter.draw(
             frame,
             x + metrics.padding_large,
-            y + model
-                .ui
-                .tab_text_metrics
-                .as_ref()
-                .map_or(metrics.padding_medium, |m| {
-                    height.saturating_sub(m.line_height) / 2
-                }),
+            y + metrics.padding_medium,
             &title,
             fg,
         );
