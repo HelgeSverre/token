@@ -82,7 +82,7 @@ fn row_extra(preview: Preview) -> f32 {
 
 /// Fixture constraints, not a control's stretch allocation. Heights describe
 /// the actual example; row spacing is derived from them separately.
-fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
+pub(super) fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
     let field_width = if compact { 130.0 } else { 220.0 };
     let popup_width = if compact { 260.0 } else { 400.0 };
     match preview {
@@ -139,6 +139,9 @@ fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
         ) => (popup_width, 240.0),
         Preview::Chrome(crate::model::gallery::ChromePreview::DocumentDrag) => (popup_width, 48.0),
         Preview::Chrome(_) => (popup_width, 32.0),
+        Preview::Editor(crate::model::gallery::EditorPreview::Diagnostics) => {
+            (if compact { 500.0 } else { 580.0 }, 260.0)
+        }
         Preview::Editor(_) => (if compact { 500.0 } else { 580.0 }, 240.0),
         Preview::OverlayTabs => (popup_width, 56.0),
         Preview::Scrollbar {

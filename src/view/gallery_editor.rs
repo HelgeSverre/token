@@ -202,7 +202,8 @@ fn apply_variant(model: &mut AppModel, kind: EditorPreview) {
             let editor = model.editor_mut();
             editor.cursors = vec![Cursor::at(LINE_IF, 8)];
             editor.selections = vec![Selection::new(Position::new(LINE_IF, 8))];
-            editor.viewport.top_line = 7;
+            // Keep all three severity rows inside the fixed-height preview.
+            editor.viewport.top_line = LINE_NEW_BODY;
         }
         EditorPreview::Inlays => {
             model.config.lsp.inlay_hints = true;
@@ -302,10 +303,17 @@ mod tests {
             char_width,
             (20.0 * scale) as usize,
         );
+        let (_, height) = super::super::gallery::specimen_size(
+            crate::model::gallery::Preview::Editor(kind),
+            width == 500,
+        );
         build_model(
             &Theme::default_dark(),
             &painter,
-            ((width as f64 * scale) as usize, (240.0 * scale) as usize),
+            (
+                (width as f64 * scale) as usize,
+                (height as f64 * scale) as usize,
+            ),
             scale,
             kind,
         )
@@ -360,6 +368,42 @@ mod tests {
                     (LINE_ENTRY, end)
                 );
                 assert_eq!(document.buffer.to_string(), SAMPLE);
+            }
+        }
+    }
+
+    #[test]
+    fn diagnostic_specimen_shows_every_severity_inside_the_viewport() {
+        use lsp_types::DiagnosticSeverity;
+        for scale in [1.0, 1.5, 2.0] {
+            for width in [500, 580] {
+                let model = painter_and_model_at(EditorPreview::Diagnostics, width, scale);
+                let editor = model.editor();
+                let document = model.document();
+                let map = editor.viewport_map(document);
+                let group = model.editor_area.focused_group().unwrap();
+                let layout =
+                    crate::view::geometry::GroupLayout::new(group, &model, model.char_width);
+                for severity in [
+                    DiagnosticSeverity::ERROR,
+                    DiagnosticSeverity::WARNING,
+                    DiagnosticSeverity::HINT,
+                ] {
+                    let diagnostic = document
+                        .diagnostics
+                        .iter()
+                        .find(|d| d.severity == Some(severity))
+                        .unwrap();
+                    let line = diagnostic.range.start.line as usize;
+                    let row = map
+                        .visible_row_for_position(line, 0)
+                        .expect("diagnostic row must be visible");
+                    let scrollbar = layout
+                        .h_scrollbar_rect(model.metrics.scrollbar_width)
+                        .unwrap();
+                    let row_bottom = layout.content_rect.y + ((row + 1) * model.line_height) as f32;
+                    assert!(row_bottom <= scrollbar.y, "severity {severity:?} row must clear scrollbar at width {width}, scale {scale}");
+                }
             }
         }
     }

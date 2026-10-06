@@ -105,6 +105,9 @@ are static visual examples; they do not provide editor or terminal interaction.
 Editor specimens likewise build an isolated `AppModel`, parse and highlight the
 sample synchronously, and paint through `Renderer::render_editor_group`; the
 240-pixel frame shows roughly ten rows, so some tagged lines sit below the fold.
+The diagnostics fixture uses a 260-pixel frame and starts at its first diagnostic
+so error, warning and hint rows all fit above the horizontal scrollbar at
+wide/narrow widths and tested scales.
 
 Unsupported styling is not invented: the document-tab fixture includes a dirty
 document, but the current production tab title has no distinct dirty marker.
