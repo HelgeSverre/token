@@ -1,0 +1,10 @@
+name: polish-right-outline
+width: 1440
+height: 900
+scale: 1
+outline: true
+files:
+  - path: samples/syntax/sample.rs
+    scroll_to: 6
+    cursor_line: 17
+    cursor_column: 11

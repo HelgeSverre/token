@@ -1,0 +1,13 @@
+name: polish-csv
+width: 1440
+height: 900
+scale: 1
+files:
+  - path: fixtures/inventory.csv
+    view_mode: csv
+    content: |
+      sku,name,price,stock
+      TOK-001,Mechanical Keyboard,129.95,42
+      TOK-002,Wireless Mouse,59.00,184
+      TOK-003,Display — 27″,449.50,8
+      TOK-004,USB-C Hub,89.99,73

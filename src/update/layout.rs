@@ -734,7 +734,8 @@ fn install_file_tab(
             image.width,
             image.height,
             group.rect.width as u32,
-            (group.rect.height as usize).saturating_sub(model.metrics.tab_bar_height) as u32,
+            (group.rect.height as usize).saturating_sub(model.metrics.document_tab_bar_height())
+                as u32,
         );
         image.offset_x = 0.0;
         image.offset_y = 0.0;

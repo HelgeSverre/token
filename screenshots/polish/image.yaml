@@ -1,0 +1,7 @@
+name: polish-image
+width: 1440
+height: 900
+scale: 1
+files:
+  - path: assets/icon.png
+    kind: image

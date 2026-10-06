@@ -1,0 +1,17 @@
+name: polish-tabs-overflow
+width: 900
+height: 650
+scale: 1
+active_tab: 7
+dirty_tab: 2
+files:
+  - path: fixtures/tabs/overview-and-project-notes.md
+    content: "# UI polish baseline\n"
+tabs:
+  - { path: fixtures/tabs/component-library-foundations.ts, content: "export const foundation = true;\n" }
+  - { path: fixtures/tabs/dirty-document-with-unsaved-changes.rs, content: "fn dirty_document() {}\n" }
+  - { path: fixtures/tabs/internationalization-settings-for-application.json, content: "{}\n" }
+  - { path: fixtures/tabs/keyboard-shortcuts-and-command-routing.rs, content: "fn shortcuts() {}\n" }
+  - { path: fixtures/tabs/rendering-performance-investigation.md, content: "# Rendering performance\n" }
+  - { path: fixtures/tabs/accessibility-audit-follow-up-notes.md, content: "# Accessibility\n" }
+  - { path: fixtures/tabs/final-active-tab-revealed-at-right-edge.ts, content: "export const revealed = true;\n" }

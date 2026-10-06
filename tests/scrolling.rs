@@ -1128,7 +1128,7 @@ fn test_sync_all_viewports_subtracts_tab_bar_height() {
     let mut model = test_model(&text, 0, 0);
 
     let line_height = model.line_height; // 20
-    let tab_bar_height = model.metrics.tab_bar_height; // 28 at scale 1.0
+    let tab_bar_height = model.metrics.document_tab_bar_height(); // 32 at scale 1.0
 
     // Set group rect to simulate a 600px-tall group (includes tab bar)
     let group_id = model.editor_area.focused_group_id;
@@ -1139,7 +1139,7 @@ fn test_sync_all_viewports_subtracts_tab_bar_height() {
         .editor_area
         .sync_all_viewports(line_height, model.char_width, &model.metrics, None);
 
-    // Expected: (600 - 28) / 20 = 572 / 20 = 28 lines
+    // Expected: (600 - 32) / 20 = 568 / 20 = 28 lines
     let expected_visible = (600 - tab_bar_height) / line_height;
     assert_eq!(
         model.editor().viewport.visible_lines,
@@ -1160,7 +1160,7 @@ fn test_new_editor_gets_correct_viewport_after_open() {
     // Set the group rect so sync_all_viewports can work
     let group_id = model.editor_area.focused_group_id;
     let line_height = model.line_height;
-    let tab_bar_height = model.metrics.tab_bar_height;
+    let tab_bar_height = model.metrics.document_tab_bar_height();
     let group_height = (40 * line_height + tab_bar_height) as f32;
     model.editor_area.groups.get_mut(&group_id).unwrap().rect =
         token::model::Rect::new(0.0, 0.0, 800.0, group_height);

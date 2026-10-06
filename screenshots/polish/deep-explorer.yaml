@@ -1,0 +1,32 @@
+name: polish-deep-explorer
+width: 1440
+height: 900
+scale: 1
+workspace:
+  root: .
+  sidebar_visible: true
+  sidebar_width: 280
+  expanded: [src, src/model, src/view, samples, samples/syntax]
+  selected: samples/syntax/sample.rs
+files:
+  - path: fixtures/a/very/long/workspace/path/with/deeply_nested_configuration.rs
+    cursor_line: 8
+    cursor_column: 24
+    content: |
+      fn deeply_nested() {
+          if let Some(project) = current_project() {
+              for package in project.packages() {
+                  match package.target() {
+                      Target::Native(platform) => {
+                          if platform.is_supported() {
+                              for artifact in package.artifacts() {
+                                  if artifact.should_publish() {
+                                      publish(artifact);
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+      }

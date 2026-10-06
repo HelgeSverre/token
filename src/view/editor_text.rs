@@ -1571,7 +1571,7 @@ mod tests {
     fn make_text_model() -> AppModel {
         let mut model = AppModel::new(220, 140, 1.0);
         let group_id = model.editor_area.focused_group_id;
-        let tab_bar_height = model.metrics.tab_bar_height as f32;
+        let tab_bar_height = model.metrics.document_tab_bar_height() as f32;
         model.editor_area.groups.get_mut(&group_id).unwrap().rect = Rect::new(
             0.0,
             0.0,

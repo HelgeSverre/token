@@ -1957,7 +1957,7 @@ impl Renderer {
         let title = model.editor_area.tab_display_name(tab);
         let width = crate::layout::editor::tab_width(model, tab, painter.char_width());
         let height = metrics
-            .tab_bar_height
+            .document_tab_bar_height()
             .saturating_sub(metrics.padding_medium);
 
         // Center the ghost on the cursor
@@ -2407,7 +2407,7 @@ impl Renderer {
             y,
             line_height,
             self.char_width,
-            model.metrics.tab_bar_height,
+            model.metrics.document_tab_bar_height(),
         )
     }
 }
@@ -2809,7 +2809,7 @@ mod cursor_fast_path_scrollbar_tests {
         model.theme.scrollbar.track = crate::theme::Color::rgb(0x40, 0x50, 0x60);
         model.theme.scrollbar.thumb = crate::theme::Color::rgb(0x70, 0x80, 0x90);
         let group_id = model.editor_area.focused_group_id;
-        let tab_bar_height = model.metrics.tab_bar_height as f32;
+        let tab_bar_height = model.metrics.document_tab_bar_height() as f32;
         model.editor_area.groups.get_mut(&group_id).unwrap().rect =
             ModelRect::new(0.0, 0.0, width as f32, height as f32 + tab_bar_height);
 

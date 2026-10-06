@@ -108,7 +108,7 @@ mod tests {
 
     fn make_image_model(content_width: u32, content_height: u32) -> AppModel {
         let mut model = AppModel::new(content_width, content_height, 1.0);
-        let tab_bar_height = model.metrics.tab_bar_height as f32;
+        let tab_bar_height = model.metrics.document_tab_bar_height() as f32;
         let group_id = model.editor_area.focused_group_id;
         model.editor_area.groups.get_mut(&group_id).unwrap().rect = Rect::new(
             0.0,
@@ -170,7 +170,7 @@ mod tests {
         let before = render_image_buffer(&model);
 
         let mouse_x = 40.0;
-        let mouse_y = model.metrics.tab_bar_height as f64 + 30.0;
+        let mouse_y = model.metrics.document_tab_bar_height() as f64 + 30.0;
         let cmd = update(
             &mut model,
             Msg::Image(ImageMsg::Zoom {
@@ -193,7 +193,7 @@ mod tests {
     fn image_tab_render_changes_when_panned() {
         let mut model = make_image_model(80, 60);
         let mouse_x = 40.0;
-        let mouse_y = model.metrics.tab_bar_height as f64 + 30.0;
+        let mouse_y = model.metrics.document_tab_bar_height() as f64 + 30.0;
         update(
             &mut model,
             Msg::Image(ImageMsg::Zoom {
@@ -252,7 +252,7 @@ mod tests {
 
         let mut model = AppModel::new(200, 120, 1.0);
         let group_id = model.editor_area.focused_group_id;
-        let tab_bar_height = model.metrics.tab_bar_height as f32;
+        let tab_bar_height = model.metrics.document_tab_bar_height() as f32;
         model.editor_area.groups.get_mut(&group_id).unwrap().rect =
             Rect::new(0.0, 0.0, 200.0, 120.0 + tab_bar_height);
 

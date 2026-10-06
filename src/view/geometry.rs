@@ -409,7 +409,7 @@ impl GroupLayout {
         find_height: usize,
         has_folds: bool,
     ) -> Self {
-        let tab_bar_height = metrics.tab_bar_height;
+        let tab_bar_height = metrics.document_tab_bar_height();
         let below_tabs = (group_rect.height - tab_bar_height as f32).max(0.0);
         let find_bar_rect = Rect::new(
             group_rect.x,

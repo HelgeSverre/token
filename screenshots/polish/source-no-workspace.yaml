@@ -1,0 +1,9 @@
+name: polish-source-no-workspace
+width: 1440
+height: 900
+scale: 1
+files:
+  - path: samples/syntax/sample.rs
+    scroll_to: 7
+    cursor_line: 18
+    cursor_column: 8

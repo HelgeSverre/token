@@ -6,6 +6,12 @@ All notable changes to Token are documented in this file.
 
 ## Unreleased
 
+### Interface
+
+- Give document tabs a 32-logical-pixel minimum height without increasing code
+  line spacing or dock, terminal and preview headers. Larger fonts retain the
+  space they need, including at fractional display scales.
+
 ### Completion
 
 - Make completion-menu navigation, acceptance and dismissal rebindable through

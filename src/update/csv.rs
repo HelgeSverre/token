@@ -1109,7 +1109,7 @@ mod tests {
             })
             .expect("group hosting the csv editor");
         let content_height =
-            (group.rect.height as usize).saturating_sub(model.metrics.tab_bar_height);
+            (group.rect.height as usize).saturating_sub(model.metrics.document_tab_bar_height());
         let expected = crate::csv::rows_for_content_height(content_height, model.line_height);
         assert_eq!(csv_editor.viewport.visible_rows, expected);
         assert!(csv_editor.viewport.visible_rows < full_height_rows);

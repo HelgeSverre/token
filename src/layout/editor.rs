@@ -46,7 +46,12 @@ impl EditorTabBarLayout {
         let group_x = group.rect.x.round();
         let group_y = group.rect.y.round();
         let group_width = group.rect.width.round().max(0.0);
-        let root = Rect::new(group_x, group_y, group_width, metrics.tab_bar_height as f32);
+        let root = Rect::new(
+            group_x,
+            group_y,
+            group_width,
+            metrics.document_tab_bar_height() as f32,
+        );
         let last_tab_id = group.tabs.last().map(|tab| tab.id);
 
         let mut tree = UiTree::new();
@@ -353,6 +358,24 @@ fn intersect(a: Rect, b: Rect) -> Option<Rect> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn document_strip_hit_bounds_and_content_origin_share_scaled_height() {
+        for (scale, height) in [(1.0, 32.0), (1.5, 48.0), (2.0, 64.0)] {
+            let mut model = AppModel::new(600, 400, scale);
+            let group_id = model.editor_area.focused_group_id;
+            model.editor_area.groups.get_mut(&group_id).unwrap().rect =
+                Rect::new(17.0, 23.0, 501.0, 301.0);
+            let group = &model.editor_area.groups[&group_id];
+            let tabs = EditorTabBarLayout::new(group, &model, 8.0);
+            let content = crate::view::geometry::GroupLayout::new(group, &model, 8.0);
+            assert_eq!(tabs.bar_rect().height, height);
+            assert!(tabs.contains(20.0, (23.0 + height - 0.5) as f64));
+            assert!(!tabs.contains(20.0, (23.0 + height + 0.5) as f64));
+            assert_eq!(content.content_rect.y, 23.0 + height);
+            assert_eq!(content.content_rect.height, 301.0 - height);
+        }
+    }
 
     #[test]
     fn tab_bar_hits_tabs_and_empty_space() {

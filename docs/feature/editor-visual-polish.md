@@ -190,6 +190,13 @@ not impose a persistent breadcrumb bar.
 Each phase is intentionally shippable only after its stated evidence is
 available. Later phases must not block the first typography/surface experiments.
 
+Implementation checkpoint: the [native baseline harness](../dev/ui-polish-baseline.md)
+now covers ten scenarios across themes and display scales. The first Phase 1
+trial gives document tabs a 32-logical-pixel minimum while preserving larger
+fonts and existing dock/status geometry. Other spacing/contrast experiments and
+Phases 2–5 below remain pending; the tab trial does not adopt new typography or
+pane chrome.
+
 ### Phase 0 — Baseline and evaluation harness
 
 Create a controlled visual matrix before changing native paint:
