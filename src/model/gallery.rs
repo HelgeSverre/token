@@ -78,7 +78,9 @@ pub enum Preview {
     CompletionDocumentation {
         scrolled: bool,
     },
-    HoverDocumentation,
+    HoverDocumentation {
+        near_bottom: bool,
+    },
     SignatureHelp,
     Checkbox(bool),
     Select {
@@ -178,10 +180,17 @@ pub const SPECIMENS: &[Specimen] = &[
     },
     Specimen {
         id: "hover.documentation",
-        preview: Preview::HoverDocumentation,
+        preview: Preview::HoverDocumentation { near_bottom: false },
         category: 5,
         source: "view/overlay_surface.rs · cursor Zones",
         tokens: "hover signature / prose / diagnostic banner",
+    },
+    Specimen {
+        id: "hover.documentation-bottom-edge",
+        preview: Preview::HoverDocumentation { near_bottom: true },
+        category: 5,
+        source: "view/overlay_surface.rs · cursor anchor placement",
+        tokens: "bottom-edge caret / flip above / signature and diagnostic banner",
     },
     Specimen {
         id: "signature-help.active-parameter",

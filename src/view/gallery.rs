@@ -119,7 +119,8 @@ pub(super) fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
             | crate::model::gallery::SearchCollectionPreview::Empty,
         ) => (if compact { 500.0 } else { 580.0 }, 220.0),
         Preview::CompletionDocumentation { .. } => (if compact { 500.0 } else { 580.0 }, 320.0),
-        Preview::HoverDocumentation | Preview::SignatureHelp => (popup_width, 150.0),
+        Preview::HoverDocumentation { near_bottom: true } => (popup_width, 220.0),
+        Preview::HoverDocumentation { .. } | Preview::SignatureHelp => (popup_width, 150.0),
         Preview::MenuRows { .. } => (popup_width, 168.0),
         Preview::Chrome(
             crate::model::gallery::ChromePreview::BottomPanel
@@ -1239,7 +1240,11 @@ fn paint_specimen(
             };
             render_overlay(frame, painter, masks, theme, &overlay, size, scale);
         }
-        Preview::HoverDocumentation | Preview::SignatureHelp => {
+        Preview::HoverDocumentation { .. } | Preview::SignatureHelp => {
+            let near_bottom = matches!(
+                spec.preview,
+                Preview::HoverDocumentation { near_bottom: true }
+            );
             let signature = if matches!(spec.preview, Preview::SignatureHelp) {
                 "render(frame: &mut Frame, theme: &Theme)"
             } else {
@@ -1251,7 +1256,7 @@ fn paint_specimen(
                 style: SpanStyle::Accent,
             }];
             let zones = Zones {
-                banner: matches!(spec.preview, Preview::HoverDocumentation).then_some((
+                banner: matches!(spec.preview, Preview::HoverDocumentation { .. }).then_some((
                     overlay_surface::Severity::Info,
                     "Production renderer",
                     "Token",
@@ -1265,11 +1270,25 @@ fn paint_specimen(
                 }),
                 ..Default::default()
             };
+            let anchor_y = if near_bottom {
+                (rect.y + rect.height - 18.0 * scale as f32) as usize
+            } else {
+                rect.y as usize
+            };
+            if near_bottom {
+                frame.fill_rect_px(
+                    rect.x as usize,
+                    anchor_y,
+                    (scale.round() as usize).max(1),
+                    (18.0 * scale) as usize,
+                    theme.editor.cursor_color.to_argb_u32(),
+                );
+            }
             let overlay = OverlaySpec {
                 tabs: None,
                 anchor: Anchor::Cursor {
                     x: rect.x as usize,
-                    y: rect.y as usize,
+                    y: anchor_y,
                     h: (18.0 * scale) as usize,
                     prefer_below: true,
                     width: WidthRule {
@@ -1551,6 +1570,46 @@ mod tests {
     use super::*;
 
     #[test]
+    fn bottom_edge_hover_leaves_its_anchor_uncovered() {
+        let mut renderer = GalleryRenderer::new().unwrap();
+        let theme = Theme::default_dark();
+        let panel_background = theme.overlay.panel_background.to_argb_u32() | 0xFF00_0000;
+        for scale in [1.0, 1.5, 2.0] {
+            for compact in [false, true] {
+                let mut state = GalleryState {
+                    compact,
+                    ..Default::default()
+                };
+                state.query.insert_text("hover.documentation-bottom-edge");
+                let size = ((1100.0 * scale) as usize, (780.0 * scale) as usize);
+                let mut pixels = vec![0; size.0 * size.1];
+                let layout = renderer.render(&mut pixels, size, scale, &state, &theme);
+                assert_eq!(layout.rows.len(), 1);
+                let width = layout.rows[0].preview.width as usize;
+                let height = layout.rows[0].preview.height as usize;
+                let anchor_x = (24.0 * scale) as usize;
+                // Canvas inset + specimen height - caret height: 24 + 220 - 18.
+                let anchor_y = (226.0 * scale) as usize;
+                let tile = &renderer.specimen_buffer;
+                // Sample the caret midpoint, beyond the panel's soft shadow.
+                assert_eq!(
+                    tile[(anchor_y + (9.0 * scale) as usize) * width + anchor_x],
+                    theme.editor.cursor_color.to_argb_u32()
+                );
+                assert!(
+                    (0..anchor_y).any(|y| tile[y * width + width / 2] == panel_background),
+                    "hover card must be painted above anchor"
+                );
+                // The production shadow may extend past the panel edge.
+                assert!(
+                    (anchor_y..height).all(|y| tile[y * width + width / 2] != panel_background),
+                    "hover card must not extend below anchor"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn documentation_scroll_changes_card_but_not_completion_rows() {
         let mut renderer = GalleryRenderer::new().unwrap();
         for scale in [1.0, 1.5, 2.0] {
@@ -1604,6 +1663,7 @@ mod tests {
                     Preview::Chrome(_)
                         | Preview::Editor(_)
                         | Preview::CompletionDocumentation { .. }
+                        | Preview::HoverDocumentation { .. }
                         | Preview::SettingsRecords(_)
                         | Preview::SearchCollection(_)
                         | Preview::OverlayTabs
