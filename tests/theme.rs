@@ -49,6 +49,41 @@ fn contrast_ratio(a: Color, b: Color) -> f64 {
 }
 
 #[test]
+fn bundled_status_and_tab_labels_remain_readable() {
+    for builtin in BUILTIN_THEMES {
+        let theme = Theme::from_yaml(builtin.yaml).unwrap();
+        for (role, foreground, background) in [
+            (
+                "status",
+                theme.status_bar.foreground,
+                theme.status_bar.background,
+            ),
+            (
+                "active tab",
+                theme.tab_bar.active_foreground,
+                theme.tab_bar.active_background,
+            ),
+            (
+                "inactive tab",
+                theme.tab_bar.inactive_foreground,
+                theme.tab_bar.inactive_background,
+            ),
+        ] {
+            // These bundled chrome pairs are opaque; custom-theme resolution
+            // and alpha compositing are deliberately outside this palette test.
+            assert_eq!(foreground.a, 255);
+            assert_eq!(background.a, 255);
+            let ratio = contrast_ratio(foreground, background);
+            assert!(
+                ratio >= 4.5,
+                "{} {role}: {ratio:.2}:1 is below 4.5:1",
+                builtin.id
+            );
+        }
+    }
+}
+
+#[test]
 fn test_color_from_hex_6() {
     let color = Color::from_hex("#1E1E1E").unwrap();
     assert_eq!(color.r, 0x1E);

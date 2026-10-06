@@ -194,9 +194,11 @@ Implementation checkpoint: the [native baseline harness](../dev/ui-polish-baseli
 now covers ten scenarios across themes and display scales. The first Phase 1
 trial gives document tabs a 32-logical-pixel minimum while preserving larger
 fonts and existing dock geometry. The second trial gives the global status bar
-a 22-logical-pixel minimum, retaining its configured text size. Contrast
-experiments and Phases 2–5 below remain pending; these spacing trials do not
-adopt new typography or pane chrome.
+a 22-logical-pixel minimum, retaining its configured text size. Bundled status
+and tab text now have a 4.5:1 palette contrast regression check; failing muted
+foregrounds are adjusted without changing backgrounds or custom themes.
+Other surface-contrast work and Phases 2–5 below remain pending; these trials
+do not adopt new typography or pane chrome.
 
 ### Phase 0 — Baseline and evaluation harness
 

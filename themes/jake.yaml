@@ -21,7 +21,7 @@ ui:
 
   status_bar:
     background: "#111111"
-    foreground: "#71717A"
+    foreground: "#80808A"
     border: "#27272A"
 
   sidebar:
@@ -42,7 +42,7 @@ ui:
     active_background: "#0A0A0A"
     active_foreground: "#FAFAFA"
     inactive_background: "#111111"
-    inactive_foreground: "#71717A"
+    inactive_foreground: "#80808A"
     border: "#27272A"
     modified_indicator: "#F43F5E"
 

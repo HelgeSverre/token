@@ -46,7 +46,7 @@ ui:
     active_background: "#05101A"
     active_foreground: "#EAECEF"
     inactive_background: "#030A11"
-    inactive_foreground: "#5A6874"
+    inactive_foreground: "#74818D"
     border: "#0F1B27"
     modified_indicator: "#23C1DA"
 

@@ -8,6 +8,10 @@ All notable changes to Token are documented in this file.
 
 ### Interface
 
+- Improve muted status and inactive-tab labels in bundled dark themes so
+  status and tab text meet a 4.5:1 palette contrast floor. Preserve custom theme
+  colors, existing backgrounds, syntax colors and active-tab accents.
+
 - Give the global status bar a 22-logical-pixel minimum height, keeping its
   existing text size and accommodating larger configured status fonts.
 
