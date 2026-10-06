@@ -71,3 +71,11 @@ height, code line pitch, fonts and theme colors remain unchanged. Compare the
 same fixtures before and after; the metadata reports both compact chrome and
 document-strip heights. This is the first Phase 1 slice, not completion of the
 broader typography, contrast or pane-chrome plans.
+
+## Second surface trial
+
+The global status bar has a 22-logical-pixel minimum, with larger configured
+status fonts still setting the required height. Its text size, colors and
+horizontal layout are unchanged. The shared shell reserves the extra space;
+editor and dock content become correspondingly shorter. The screenshot binary
+now calls the production status-height method instead of copying its formula.

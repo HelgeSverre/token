@@ -193,9 +193,10 @@ available. Later phases must not block the first typography/surface experiments.
 Implementation checkpoint: the [native baseline harness](../dev/ui-polish-baseline.md)
 now covers ten scenarios across themes and display scales. The first Phase 1
 trial gives document tabs a 32-logical-pixel minimum while preserving larger
-fonts and existing dock/status geometry. Other spacing/contrast experiments and
-Phases 2–5 below remain pending; the tab trial does not adopt new typography or
-pane chrome.
+fonts and existing dock geometry. The second trial gives the global status bar
+a 22-logical-pixel minimum, retaining its configured text size. Contrast
+experiments and Phases 2–5 below remain pending; these spacing trials do not
+adopt new typography or pane chrome.
 
 ### Phase 0 — Baseline and evaluation harness
 

@@ -389,8 +389,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
     let line_height = font.line_height;
     let char_width = font.char_width;
 
-    // Mirror AppModel::recompute_status_bar_height: status-bar text line
-    // height (at the configured size) + symmetric vertical padding.
+    // Measure the same UI font as production; the model owns chrome sizing.
     let metrics = ScaledMetrics::new(scale);
     let config = token::config::EditorConfig::default();
     let status_text_size = (config.status_bar_font_size_clamped() * scale as f32).round();
@@ -403,7 +402,6 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         .horizontal_line_metrics(status_text_size)
         .map(|m| m.new_line_size.ceil() as usize)
         .unwrap_or(line_height);
-    let status_bar_height = status_text_lh + metrics.padding_small * 2;
     // Load first file
     let first = scenario
         .files
@@ -429,7 +427,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         config,
         window_size: (scenario.width, scenario.height),
         line_height,
-        status_bar_height,
+        status_bar_height: 0,
         char_width,
         metrics,
         workspace: None,
@@ -447,6 +445,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         forward_history: Vec::new(),
     };
     model.recompute_tab_bar_height_from_line_height();
+    model.recompute_status_bar_height(status_text_lh);
     let mut scenario_editors = vec![model.editor().id.context("first scenario editor")?];
 
     // Add additional files as splits

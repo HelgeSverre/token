@@ -8,6 +8,9 @@ All notable changes to Token are documented in this file.
 
 ### Interface
 
+- Give the global status bar a 22-logical-pixel minimum height, keeping its
+  existing text size and accommodating larger configured status fonts.
+
 - Give document tabs a 32-logical-pixel minimum height without increasing code
   line spacing or dock, terminal and preview headers. Larger fonts retain the
   space they need, including at fractional display scales.
