@@ -7,7 +7,7 @@ Cargo feature. All build artifacts stay under `target/`.
 
 ## Current slice
 
-The catalog currently contains 68 labelled visual specimens:
+The catalog currently contains 69 labelled visual specimens:
 
 - Buttons: normal, hovered, pressed, focused, selected, disabled, long label.
 - Icon button: a glyph-label close action, using the standard button painter.
@@ -20,8 +20,10 @@ The catalog currently contains 68 labelled visual specimens:
   presentation; visible labels no longer determine the control kind.
 - Menus and rows: selected/hovered menu rows with shortcut keycaps and a
   separator; a selected completion row with a kind badge.
-- Contextual overlays: completion with documentation, hover documentation and
-  signature help with an accented active parameter.
+- Contextual overlays: completion with long documentation at the top and scrolled
+  down independently of the selected completion, hover documentation, and
+  signature help with an accented active parameter. These are static reading
+  states, not simulated loading/error cards that production does not provide.
 - Search Everywhere: grouped Commands and Files, workspace-symbol loading, and a
   non-selectable empty state rendered by the production modal.
 - Surface swatches: panel, secondary, recessed.
@@ -182,7 +184,7 @@ both production and the gallery will actually use it.
 ## Planned performance-study coverage
 
 The [prototype component decision record](../ui/PROTOTYPE-COMPONENTS.md) defines
-new proposed families. They are **not** part of the current 68 specimens and
+new proposed families. They are **not** part of the current 69 specimens and
 should only enter the gallery with production layout/painters:
 
 - `pane-header.*`: title-only, optional icon/actions, truncation and overflow.

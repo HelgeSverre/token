@@ -75,7 +75,9 @@ pub enum Preview {
     SettingsForm,
     SettingsRecords(SettingsRecordsPreview),
     SearchCollection(SearchCollectionPreview),
-    CompletionDocumentation,
+    CompletionDocumentation {
+        scrolled: bool,
+    },
     HoverDocumentation,
     SignatureHelp,
     Checkbox(bool),
@@ -162,10 +164,17 @@ pub const SPECIMENS: &[Specimen] = &[
     },
     Specimen {
         id: "completion.with-documentation",
-        preview: Preview::CompletionDocumentation,
+        preview: Preview::CompletionDocumentation { scrolled: false },
         category: 5,
         source: "view/overlay_surface.rs · list + Documentation",
         tokens: "completion selection / code and UI typography / docs scrollbar",
+    },
+    Specimen {
+        id: "completion.documentation-scrolled",
+        preview: Preview::CompletionDocumentation { scrolled: true },
+        category: 5,
+        source: "view/overlay_surface.rs · list + Documentation",
+        tokens: "independent documentation scroll / unchanged selected completion / clipped prose",
     },
     Specimen {
         id: "hover.documentation",

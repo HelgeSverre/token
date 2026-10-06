@@ -52,7 +52,7 @@ fn preview_pad_x(preview: Preview) -> f32 {
         Preview::SettingsForm
             | Preview::SettingsRecords(_)
             | Preview::SearchCollection(_)
-            | Preview::CompletionDocumentation
+            | Preview::CompletionDocumentation { .. }
             | Preview::Editor(_)
     ) {
         48.0
@@ -67,7 +67,7 @@ fn metadata_above(preview: Preview) -> bool {
         Preview::SettingsForm
             | Preview::SettingsRecords(_)
             | Preview::SearchCollection(_)
-            | Preview::CompletionDocumentation
+            | Preview::CompletionDocumentation { .. }
             | Preview::Editor(_)
     )
 }
@@ -118,7 +118,7 @@ pub(super) fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
             crate::model::gallery::SearchCollectionPreview::Loading
             | crate::model::gallery::SearchCollectionPreview::Empty,
         ) => (if compact { 500.0 } else { 580.0 }, 220.0),
-        Preview::CompletionDocumentation => (if compact { 500.0 } else { 580.0 }, 320.0),
+        Preview::CompletionDocumentation { .. } => (if compact { 500.0 } else { 580.0 }, 320.0),
         Preview::HoverDocumentation | Preview::SignatureHelp => (popup_width, 150.0),
         Preview::MenuRows { .. } => (popup_width, 168.0),
         Preview::Chrome(
@@ -1141,7 +1141,7 @@ fn paint_specimen(
             };
             render_overlay(frame, painter, masks, theme, &overlay, size, scale);
         }
-        Preview::CompletionDocumentation => {
+        Preview::CompletionDocumentation { scrolled } => {
             let rows = [
                 Row {
                     icon: RowIcon::KindBadge(MenuItemKind::Method),
@@ -1199,6 +1199,12 @@ fn paint_specimen(
             docs.push_str(
                 "The returned frame uses the same geometry for painting and hit testing.",
             );
+            docs.push_str(
+                "\n\nClipping\nContent stays within the supplied pane rectangle, including long labels and wrapped documentation.\n\n\
+                 Font roles\nCode signatures retain the configured code face. Explanatory prose uses the UI face.\n\n\
+                 Scrolling\nDocumentation scrolls independently of the completion list. Reading further does not select another item.\n\n\
+                 Theme changes\nColors come from the active resolved theme; no prototype palette is embedded in the renderer.",
+            );
             let logical_width = rect.width / scale as f32;
             let menu_width = if logical_width <= 500.0 { 180.0 } else { 210.0 };
             let overlay = OverlaySpec {
@@ -1223,7 +1229,13 @@ fn paint_specimen(
                 },
                 footer: None,
                 hover_row: None,
-                docs: Some(Documentation::from(&docs)),
+                docs: Some(Documentation {
+                    text: &docs,
+                    state: crate::model::ui::DocumentationState {
+                        scroll: if scrolled { 8 } else { 0 },
+                        expanded: false,
+                    },
+                }),
             };
             render_overlay(frame, painter, masks, theme, &overlay, size, scale);
         }
@@ -1539,6 +1551,49 @@ mod tests {
     use super::*;
 
     #[test]
+    fn documentation_scroll_changes_card_but_not_completion_rows() {
+        let mut renderer = GalleryRenderer::new().unwrap();
+        for scale in [1.0, 1.5, 2.0] {
+            for compact in [false, true] {
+                let mut captures = Vec::new();
+                for id in [
+                    "completion.with-documentation",
+                    "completion.documentation-scrolled",
+                ] {
+                    let mut state = GalleryState {
+                        compact,
+                        ..Default::default()
+                    };
+                    state.query.insert_text(id);
+                    let size = ((1100.0 * scale) as usize, (800.0 * scale) as usize);
+                    let mut pixels = vec![0; size.0 * size.1];
+                    let layout =
+                        renderer.render(&mut pixels, size, scale, &state, &Theme::default_dark());
+                    assert_eq!(layout.rows.len(), 1);
+                    let width = layout.rows[0].preview.width as usize;
+                    captures.push((width, renderer.specimen_buffer.clone()));
+                }
+                assert_eq!(captures[0].0, captures[1].0);
+                assert_ne!(captures[0].1, captures[1].1, "docs must visibly scroll");
+                // The card is on the left; the right third contains menu labels
+                // and selection, but no documentation. Ignore gallery metadata.
+                let width = captures[0].0;
+                for (top, scrolled) in captures[0]
+                    .1
+                    .chunks_exact(width)
+                    .zip(captures[1].1.chunks_exact(width))
+                {
+                    assert_eq!(
+                        &top[width * 2 / 3..],
+                        &scrolled[width * 2 / 3..],
+                        "documentation scrolling must not alter the menu"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn production_compositions_render_at_compact_width_and_hidpi() {
         let mut renderer = GalleryRenderer::new().unwrap();
         let theme = Theme::default_dark();
@@ -1548,6 +1603,7 @@ mod tests {
                     s.preview,
                     Preview::Chrome(_)
                         | Preview::Editor(_)
+                        | Preview::CompletionDocumentation { .. }
                         | Preview::SettingsRecords(_)
                         | Preview::SearchCollection(_)
                         | Preview::OverlayTabs
