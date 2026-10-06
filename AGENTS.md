@@ -55,6 +55,22 @@ feature docs can describe intent but may lag implementation.
   displayed sizes. Keep raw bytes at external boundaries, and do not use
   `ByteSize` for pixels, characters, rows, or other unrelated quantities.
 
+## Pull Request Visual Evidence
+
+- Include labelled before/after images in every PR where a meaningful visual
+  comparison is feasible, including each PR in a stack. Compare that PR's base
+  with its head, not unrelated stages of the stack.
+- Capture the actual application or production-rendered fixtures with matching
+  content, theme, font, scale, window geometry and state. Inspect both images
+  before attaching them; design mockups are not verification evidence.
+- Embed images in the PR description using durable URLs accessible to reviewers;
+  local paths and temporary orb URLs are not sufficient. Exclude secrets and
+  personal data from captures.
+- Backfill missing before/after images on earlier PRs when feasible. If a PR has
+  no meaningful visual change or a trustworthy baseline cannot be reproduced,
+  explain that in the PR and provide relevant test or benchmark evidence instead.
+  Screenshots do not establish performance improvements.
+
 ## Rendering and Performance
 
 - Keep Settings as its separate preferences page with category navigation and
