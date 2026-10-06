@@ -120,6 +120,7 @@ fn test_config_serialize_deserialize() {
         theme: "fleet-dark".to_string(),
         editor_font: "Menlo".into(),
         ui_font: "Inter".into(),
+        proportional_tabs: true,
         cursor_blink_ms: 600,
         auto_surround: true,
         bracket_matching: true,
@@ -141,6 +142,13 @@ fn test_config_serialize_deserialize() {
     assert_eq!(parsed.theme, "fleet-dark");
     assert_eq!(parsed.editor_font, "Menlo");
     assert_eq!(parsed.ui_font, "Inter");
+    assert!(parsed.proportional_tabs);
+    assert!(!EditorConfig::default().proportional_tabs);
+    assert!(
+        !serde_yaml::from_str::<EditorConfig>("{}")
+            .unwrap()
+            .proportional_tabs
+    );
     assert!(!parsed.indent_guides);
     assert!(!parsed.explorer_auto_reveal);
 }

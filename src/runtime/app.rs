@@ -142,6 +142,21 @@ fn open_in_default_app(path: &Path) -> Result<(), String> {
     }
 }
 
+/// Font snapshots belong to the renderer lifecycle, not to individual titles.
+fn sync_tab_text_metrics(model: &mut AppModel, renderer: &mut Renderer) {
+    let was_enabled = model.ui.tab_text_metrics.is_some();
+    model.ui.tab_text_metrics = model
+        .config
+        .proportional_tabs
+        .then(|| renderer.text_painter().snapshot_metrics());
+    if was_enabled || model.config.proportional_tabs {
+        let groups: Vec<_> = model.editor_area.groups.keys().copied().collect();
+        for group in groups {
+            token::update::ensure_active_tab_visible(model, group);
+        }
+    }
+}
+
 /// Application state prepared in parallel with the platform event loop.
 pub struct AppPreparation {
     handle: JoinHandle<PreparedApp>,
@@ -1329,6 +1344,7 @@ impl App {
         // Recompute viewport geometry with new metrics
         let size = window.inner_size();
         self.model.resize(size.width, size.height);
+        sync_tab_text_metrics(&mut self.model, &mut renderer);
 
         self.renderer = Some(renderer);
         Ok(())
@@ -1357,6 +1373,7 @@ impl App {
         // Recompute viewport geometry for new char_width/line_height
         let size = window.inner_size();
         self.model.resize(size.width, size.height);
+        sync_tab_text_metrics(&mut self.model, &mut renderer);
 
         self.renderer = Some(renderer);
         Ok(())
@@ -2633,6 +2650,7 @@ impl App {
                     self.model.recompute_status_bar_height(status_text_lh);
                     let (w, h) = self.model.window_size;
                     self.model.resize(w, h);
+                    sync_tab_text_metrics(&mut self.model, renderer);
                 }
             }
             Cmd::ReinitializeRenderer => {

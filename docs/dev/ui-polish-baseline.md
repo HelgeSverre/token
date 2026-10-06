@@ -96,7 +96,25 @@ An immutable font-metric snapshot supplies arbitrary title widths, including
 fallback glyphs, to layout, hit testing, reveal and drag-ghost sizing. No cache
 of previously seen filenames is required.
 
-This is not a new application default or a runtime setting. Before promoting
-it, wire snapshot replacement and active-tab reveal into runtime font/scale,
-title and group-width transitions, then exercise live dragging and configured
-font families. Screenshot/update tests do not prove those runtime transitions.
+For the native application, set `proportional_tabs: true` in `config.yaml`,
+then run Reload Configuration. The trial uses `ui_font` (Inter by default),
+refreshes its font snapshot on startup, config/font reload and display-scale
+changes, and reveals active tabs after metric or pane-width changes. Omit the
+setting or set it to false to return to code-font tabs. Unrelated layout updates
+preserve manual tab scrolling.
+
+The Linux native smoke check needs a dedicated empty Xvfb display and
+ImageMagick's `import` command (it captures that display's root window):
+
+```sh
+just release
+TOKEN_TEST_DISPLAY=:99 node scripts/smoke-proportional-tabs.mjs
+```
+
+It asserts click targets that differ between code and proportional geometry,
+Unicode tab selection, live trial/font reloads, unchanged editor geometry, and
+drag reordering. Captures stay under `target/verification/native-tabs-*.png`.
+
+This is not a new application default. Before promoting it, finish automatic
+reveal on title changes and native multi-display scale checks. Screenshot/update
+tests alone do not prove platform scale transitions.

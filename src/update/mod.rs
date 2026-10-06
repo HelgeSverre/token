@@ -58,6 +58,7 @@ use crate::tracing::CursorSnapshot;
 use tracing::{debug, span, Level};
 
 pub use app::execute_command;
+pub use layout::ensure_active_tab_visible;
 use lsp::{close_lsp_document, open_lsp_document, schedule_lsp_did_change};
 use syntax::schedule_syntax_parse;
 pub use ui::{resolve_palette_rows, search_everywhere_sections, ALL_TAB_GROUP_CAP};
