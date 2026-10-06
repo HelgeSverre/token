@@ -105,8 +105,8 @@ Do not migrate the CSV editor into a generic settings table as collateral work.
 
 ## Recommended slice 4: editor composition specimens
 
-**Implemented editor slice:** six `editor.*` specimens (selection, indent
-guides, folding, diagnostics, inlays, find) render a parsed sample through
+**Implemented editor slice:** seven `editor.*` specimens (selection, indent
+guides, folding, diagnostics, inlays, find, wrapped selection) render a parsed sample through
 `Renderer::render_editor_group`, and `terminal.content` covers terminal
 selection, link hover and the block cursor. Production has no cursor-shape or
 blink rendering, so no other cursor forms are shown.

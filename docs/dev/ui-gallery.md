@@ -7,7 +7,7 @@ Cargo feature. All build artifacts stay under `target/`.
 
 ## Current slice
 
-The catalog currently contains 67 labelled visual specimens:
+The catalog currently contains 68 labelled visual specimens:
 
 - Buttons: normal, hovered, pressed, focused, selected, disabled, long label.
 - Icon button: a glyph-label close action, using the standard button painter.
@@ -40,10 +40,12 @@ The catalog currently contains 67 labelled visual specimens:
 - Terminal content: a headless session fed deterministic ANSI (prompt, SGR
   colors, bold, an OSC-8 link and a bare URL), a text selection, a hovered link
   underline and the block cursor, rendered through the dock with its tab strip.
-- Editor: six real editor-group renders of a 28-line Rust sample: multiple
+- Editor: seven real editor-group renders of a 28-line Rust sample: multiple
   cursors with a selection and matched brackets, indent guides, a collapsed
   fold, error/warning/hint diagnostics with the marks lane, inlay hints with
-  ghost text, and a docked Find bar with match tints.
+  ghost text, a docked Find bar with match tints, and a soft-wrapped selection
+  ending with a continuation-row caret. The wrap fixture preserves the same
+  source text at wide/narrow widths and tests caret-to-text hit mapping.
 - Settings records: selected language-server records and the production empty
   collection state, including the narrow two-pane Settings layout.
 - Scrollbars: vertical/horizontal, normal/hovered, end position and content fitting,
@@ -177,7 +179,7 @@ both production and the gallery will actually use it.
 ## Planned performance-study coverage
 
 The [prototype component decision record](../ui/PROTOTYPE-COMPONENTS.md) defines
-new proposed families. They are **not** part of the current 67 specimens and
+new proposed families. They are **not** part of the current 68 specimens and
 should only enter the gallery with production layout/painters:
 
 - `pane-header.*`: title-only, optional icon/actions, truncation and overflow.

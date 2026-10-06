@@ -35,6 +35,7 @@ pub enum ChromePreview {
 #[derive(Clone, Copy)]
 pub enum EditorPreview {
     Selection,
+    WrappedSelection,
     IndentGuides,
     Folding,
     Diagnostics,
@@ -615,6 +616,13 @@ pub const SPECIMENS: &[Specimen] = &[
         category: 8,
         source: "view/find_bar.rs · render + view/mod.rs find_match_decorations",
         tokens: "editor bracket_match_background / selection / overlay field",
+    },
+    Specimen {
+        id: "editor.wrapped-selection",
+        preview: Preview::Editor(EditorPreview::WrappedSelection),
+        category: 8,
+        source: "view/editor_text.rs · production wrapped visual rows",
+        tokens: "soft wrap / continuation caret / cross-row selection / gutter",
     },
 ];
 
