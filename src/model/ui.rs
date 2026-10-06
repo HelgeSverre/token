@@ -1452,6 +1452,8 @@ impl Default for ProblemsPanelState {
 /// UI state - status messages and cursor animation
 #[derive(Debug, Clone)]
 pub struct UiState {
+    /// Opt-in proportional document-tab trial. None retains code-font tabs.
+    pub tab_text_metrics: Option<crate::view::frame::TextMetrics>,
     pub workspace_symbol_request: Option<crate::lsp::workspace_symbols::SymbolSearchRequest>,
     pub(crate) next_workspace_symbol_request: u64,
     /// The active bindings and pending chord state, shared by dispatch and hints.
@@ -1615,6 +1617,7 @@ impl UiState {
     /// Create a new UI state with default settings
     pub fn new() -> Self {
         Self {
+            tab_text_metrics: None,
             status_bar: StatusBar::new(),
             workspace_symbol_request: None,
             next_workspace_symbol_request: 0,

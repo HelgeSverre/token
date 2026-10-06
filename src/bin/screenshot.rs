@@ -71,6 +71,9 @@ struct Args {
     /// Write reproducibility and measured geometry next to each PNG
     #[arg(long)]
     metadata: bool,
+    /// Opt-in proportional document-tab typography trial (not an app default)
+    #[arg(long)]
+    ui_tabs: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -81,6 +84,8 @@ struct Args {
 #[serde(deny_unknown_fields)]
 struct Scenario {
     name: String,
+    #[serde(default)]
+    ui_tabs: bool,
     #[serde(default = "default_width")]
     width: u32,
     #[serde(default = "default_height")]
@@ -446,6 +451,20 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
     };
     model.recompute_tab_bar_height_from_line_height();
     model.recompute_status_bar_height(status_text_lh);
+    if scenario.ui_tabs {
+        let mut code_cache = GlyphCache::default();
+        let mut ui_cache = GlyphCache::default();
+        let painter = TextPainter::new(
+            &font.font,
+            &mut code_cache,
+            font.font_size,
+            font.ascent,
+            char_width,
+            line_height,
+        )
+        .with_ui_font(&ui_font, &mut ui_cache, token::view::FontRole::Ui);
+        model.ui.tab_text_metrics = Some(painter.snapshot_metrics());
+    }
     let mut scenario_editors = vec![model.editor().id.context("first scenario editor")?];
 
     // Add additional files as splits
@@ -1721,6 +1740,7 @@ fn main() -> Result<()> {
 
     for (_path, mut scenario) in scenarios {
         // Apply CLI overrides
+        scenario.ui_tabs |= args.ui_tabs;
         if let Some(scale) = args.scale {
             anyhow::ensure!(scale.is_finite() && scale > 0.0, "scale must be positive");
             let ratio = scale / scenario.scale;
@@ -1771,6 +1791,7 @@ fn main() -> Result<()> {
             let metadata = serde_json::json!({
                 "schema_version": 1,
                 "scenario": scenario.name,
+                "ui_tabs": scenario.ui_tabs,
                 "theme": theme_id,
                 "scale": scenario.scale,
                 "window": {
@@ -1843,6 +1864,54 @@ mod tests {
             binary_model.editor().tab_content,
             TabContent::BinaryPlaceholder(_)
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn proportional_tab_trial_measures_new_titles_and_reveals_the_same_hit_rect() -> Result<()> {
+        use token::layout::editor::{tab_width, EditorTabBarLayout};
+        for scale in [1.0, 1.5, 2.0] {
+            let mut scenario =
+                load_scenario(&PathBuf::from("screenshots/polish/tabs-overflow.yaml"))?;
+            scenario.scale = scale;
+            scenario.width = (900.0 * scale) as u32;
+            scenario.height = (650.0 * scale) as u32;
+            scenario.ui_tabs = true;
+            let mut model = create_model_from_scenario(&scenario, Theme::default())?;
+            let source = model.document().buffer.to_string();
+            let mut widths = Vec::new();
+            for name in ["iiii.rs", "WWWW.rs", "cafe\u{301}-猫-🙂.rs"] {
+                model.document_mut().file_path = Some(PathBuf::from(name));
+                let revision = model.document().revision;
+                model.document_mut().save_error = Some((revision, "fixture save failure".into()));
+                update(&mut model, Msg::Layout(LayoutMsg::SwitchToTab(7)));
+                let group = model.editor_area.focused_group().unwrap();
+                let tab = &group.tabs[7];
+                let layout = EditorTabBarLayout::new(group, &model, model.char_width);
+                let rect = layout.tab_rect(tab.id).unwrap();
+                let width = tab_width(&model, tab, model.char_width);
+                assert_eq!(
+                    rect.width, width as f32,
+                    "active title must be fully revealed"
+                );
+                assert_eq!(
+                    layout.tab_at(
+                        (rect.x + rect.width / 2.0) as f64,
+                        (rect.y + rect.height / 2.0) as f64
+                    ),
+                    Some(tab.id)
+                );
+                assert!(rect.x >= group.rect.x);
+                assert!(rect.x + rect.width <= group.rect.x + group.rect.width);
+                assert!(model.editor_area.tab_display_name(tab).ends_with(" !"));
+                widths.push(width);
+            }
+            assert!(
+                widths[0] < widths[1],
+                "equal character counts must not imply equal widths"
+            );
+            assert_eq!(model.document().buffer.to_string(), source);
+        }
         Ok(())
     }
 

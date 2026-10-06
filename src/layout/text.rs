@@ -56,6 +56,17 @@ pub trait TextMeasure {
     fn line_height(&mut self, style: TextStyle) -> f32;
 }
 
+/// A fixed-role, fixed-size snapshot for deterministic document-tab layout.
+impl TextMeasure for crate::view::frame::TextMetrics {
+    fn width(&mut self, text: &str, _style: TextStyle) -> f32 {
+        crate::view::frame::TextMetrics::width(self, text)
+    }
+
+    fn line_height(&mut self, _style: TextStyle) -> f32 {
+        self.line_height as f32
+    }
+}
+
 /// Direct measurement without an additional memo table.
 impl TextMeasure for TextPainter<'_> {
     fn width(&mut self, text: &str, style: TextStyle) -> f32 {

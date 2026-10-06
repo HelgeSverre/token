@@ -79,3 +79,24 @@ status fonts still setting the required height. Its text size, colors and
 horizontal layout are unchanged. The shared shell reserves the extra space;
 editor and dock content become correspondingly shorter. The screenshot binary
 now calls the production status-height method instead of copying its formula.
+
+## Opt-in proportional tab trial
+
+Compare document tabs in bundled Inter against the existing code-font tabs:
+
+```sh
+node scripts/ui-polish-baseline.mjs --binary target/release/screenshot \
+  --out-dir target/verification/ui-tabs-trial --ui-tabs --all-themes
+```
+
+The flag changes document-tab typography only, through production layout and
+painters. Source, inputs, explorer, docks and status text retain their font roles.
+The JSON sidecar records `ui_tabs`; omit the flag for the control capture.
+An immutable font-metric snapshot supplies arbitrary title widths, including
+fallback glyphs, to layout, hit testing, reveal and drag-ghost sizing. No cache
+of previously seen filenames is required.
+
+This is not a new application default or a runtime setting. Before promoting
+it, wire snapshot replacement and active-tab reveal into runtime font/scale,
+title and group-width transitions, then exercise live dragging and configured
+font families. Screenshot/update tests do not prove those runtime transitions.
