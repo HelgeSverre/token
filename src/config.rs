@@ -46,10 +46,6 @@ pub struct EditorConfig {
     #[serde(default = "default_ui_font")]
     pub ui_font: String,
 
-    /// Opt-in trial: use the UI font for document-tab labels.
-    #[serde(default)]
-    pub proportional_tabs: bool,
-
     /// Cursor blink interval in milliseconds (default: 600)
     #[serde(default = "default_cursor_blink_ms")]
     pub cursor_blink_ms: u64,
@@ -495,7 +491,6 @@ impl Default for EditorConfig {
             theme: default_theme(),
             editor_font: default_editor_font(),
             ui_font: default_ui_font(),
-            proportional_tabs: false,
             cursor_blink_ms: default_cursor_blink_ms(),
             auto_surround: true,
             bracket_matching: true,

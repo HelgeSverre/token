@@ -8,11 +8,6 @@ All notable changes to Token are documented in this file.
 
 ### Interface
 
-- Add an opt-in `proportional_tabs: true` configuration trial for document tabs
-  using the configured UI font. Refresh measured geometry on font/config/scale
-  changes and reveal the active tab when its pane width changes, without
-  resetting manual tab scrolling on unrelated layout updates.
-
 - Improve muted status and inactive-tab labels in bundled dark themes so
   status and tab text meet a 4.5:1 palette contrast floor. Preserve custom theme
   colors, existing backgrounds, syntax colors and active-tab accents.

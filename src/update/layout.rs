@@ -215,7 +215,7 @@ use crate::layout::editor::EditorTabBarLayout;
 
 /// Scroll the tab bar of `group_id` so the active tab is fully visible,
 /// and clamp the scroll offset to the current tab content width.
-pub fn ensure_active_tab_visible(model: &mut AppModel, group_id: GroupId) {
+fn ensure_active_tab_visible(model: &mut AppModel, group_id: GroupId) {
     let char_width = model.char_width;
     let padding = model.metrics.padding_medium;
     let Some(group) = model.editor_area.groups.get(&group_id) else {

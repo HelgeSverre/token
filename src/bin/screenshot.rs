@@ -1868,31 +1868,6 @@ mod tests {
     }
 
     #[test]
-    fn proportional_tabs_reveal_on_width_change_but_preserve_manual_scroll() -> Result<()> {
-        use token::layout::editor::{tab_width, EditorTabBarLayout};
-        let mut scenario = load_scenario(&PathBuf::from("screenshots/polish/tabs-overflow.yaml"))?;
-        scenario.ui_tabs = true;
-        let mut model = create_model_from_scenario(&scenario, Theme::default())?;
-        let id = model.editor_area.focused_group_id;
-        // Manual scrolling away from the active tab survives unrelated layout work.
-        model.editor_area.groups.get_mut(&id).unwrap().tab_scroll = 0;
-        let (width, height) = model.window_size;
-        model.resize(width, height + 20);
-        assert_eq!(model.editor_area.groups[&id].tab_scroll, 0);
-        // Narrowing the pane must reveal the active tab using the UI measurements.
-        model.resize(width - 100, height);
-        let group = &model.editor_area.groups[&id];
-        assert!(group.tab_scroll > 0);
-        let tab = &group.tabs[group.active_tab_index];
-        let layout = EditorTabBarLayout::new(group, &model, model.char_width);
-        let rect = layout.tab_rect(tab.id).unwrap();
-        assert_eq!(rect.width, tab_width(&model, tab, model.char_width) as f32);
-        assert!(rect.x >= group.rect.x);
-        assert!(rect.x + rect.width <= group.rect.x + group.rect.width);
-        Ok(())
-    }
-
-    #[test]
     fn proportional_tab_trial_measures_new_titles_and_reveals_the_same_hit_rect() -> Result<()> {
         use token::layout::editor::{tab_width, EditorTabBarLayout};
         for scale in [1.0, 1.5, 2.0] {

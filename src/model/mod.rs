@@ -735,23 +735,9 @@ impl AppModel {
         let editor_area_rect = crate::layout::chrome::shell(self)
             .rect(crate::layout::UiKey::EditorArea)
             .expect("window shell always declares the editor area");
-        let tab_widths: Vec<_> = if self.ui.tab_text_metrics.is_some() {
-            self.editor_area
-                .groups
-                .iter()
-                .map(|(&id, group)| (id, group.rect.width))
-                .collect()
-        } else {
-            Vec::new()
-        };
         self.editor_area
             .compute_layout_scaled(editor_area_rect, self.metrics.splitter_width);
         self.resync_viewports();
-        for (id, width) in tab_widths {
-            if self.editor_area.groups[&id].rect.width != width {
-                crate::update::ensure_active_tab_visible(self, id);
-            }
-        }
     }
 
     /// Recalculate viewport dimensions based on current dock layout
