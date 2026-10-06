@@ -12,8 +12,8 @@ contracts reliable.
 The intended direction is:
 
 - keep source text legible at the user's chosen editor size;
-- give persistent application chrome a quieter, proportional UI voice where it
-  improves scanning;
+- preserve the code-font identity of document tabs and explorer labels; improve
+  chrome through spacing, readable colors and useful context;
 - make the document tabs, document context, editor viewport, and status bar
   read as deliberate, separate regions;
 - introduce new chrome only through the documented primitives, rather than by
@@ -197,8 +197,14 @@ fonts and existing dock geometry. The second trial gives the global status bar
 a 22-logical-pixel minimum, retaining its configured text size. Bundled status
 and tab text now have a 4.5:1 palette contrast regression check; failing muted
 foregrounds are adjusted without changing backgrounds or custom themes.
-Other surface-contrast work and Phases 2–5 below remain pending; these trials
-do not adopt new typography or pane chrome.
+The proportional document-tab trial was evaluated and rejected: the code-font
+version was preferred. Both screenshot and native runtime opt-ins were removed.
+Do not continue font substitutions in explorer/dock labels on the assumption
+that proportional text is an improvement. The explorer readability audit passes
+for all 15 bundled themes: normal and selected text meet 4.5:1, including
+alpha-composited selection fills. A regression test preserves that result;
+no explorer palette or font changes were needed.
+New pane chrome and source line-pitch changes remain separate proposals.
 
 ### Phase 0 — Baseline and evaluation harness
 
@@ -252,6 +258,10 @@ matching updated viewport; existing tab clipping, drag, and status layout tests
 remain valid or are deliberately updated with numeric geometry expectations.
 
 ### Phase 2 — Typography-role trial
+
+**Disposition: rejected after native comparison.** Keep existing code-font tabs
+and do not proceed with the explorer/dock substitutions. The trial specification
+below is historical context, not pending implementation work.
 
 On a separate implementation branch, test Inter for non-editable explorer,
 document-tab, and dock labels. Keep source, terminal grids, and editable
