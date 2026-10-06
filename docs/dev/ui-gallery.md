@@ -7,7 +7,7 @@ Cargo feature. All build artifacts stay under `target/`.
 
 ## Current slice
 
-The catalog currently contains 64 labelled visual specimens:
+The catalog currently contains 67 labelled visual specimens:
 
 - Buttons: normal, hovered, pressed, focused, selected, disabled, long label.
 - Icon button: a glyph-label close action, using the standard button painter.
@@ -28,6 +28,10 @@ The catalog currently contains 64 labelled visual specimens:
 - Document tabs: active/inactive, save-error marker, clipped/scrolling title and
   drag ghost. Dock tabs, terminal active/hovered/exited/overflow states, and
   overlay tabs with count/pending/unavailable indicators remain distinct families.
+- Explorer: selected file with collapsed folders, deep nesting with a selected
+  long Unicode filename, and a scrolled selected folder. These use the production
+  sidebar painter and row layout with a synthetic in-memory tree; no directories
+  are scanned. Narrow mode exercises label truncation without changing fonts.
 - Bottom Problems and right Outline panels: real headers and borders; Outline is
   populated with nested, selected and truncated production tree rows. Problems
   includes grouped files, mixed severities, selection and a collapsed group.
@@ -173,7 +177,7 @@ both production and the gallery will actually use it.
 ## Planned performance-study coverage
 
 The [prototype component decision record](../ui/PROTOTYPE-COMPONENTS.md) defines
-new proposed families. They are **not** part of the current 64 specimens and
+new proposed families. They are **not** part of the current 67 specimens and
 should only enter the gallery with production layout/painters:
 
 - `pane-header.*`: title-only, optional icon/actions, truncation and overflow.

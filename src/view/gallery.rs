@@ -132,6 +132,11 @@ fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
         Preview::Chrome(crate::model::gallery::ChromePreview::TerminalContent) => {
             (popup_width, 180.0)
         }
+        Preview::Chrome(
+            crate::model::gallery::ChromePreview::ExplorerSelected
+            | crate::model::gallery::ChromePreview::ExplorerDeep
+            | crate::model::gallery::ChromePreview::ExplorerScrolled,
+        ) => (popup_width, 240.0),
         Preview::Chrome(crate::model::gallery::ChromePreview::DocumentDrag) => (popup_width, 48.0),
         Preview::Chrome(_) => (popup_width, 32.0),
         Preview::Editor(_) => (if compact { 500.0 } else { 580.0 }, 240.0),

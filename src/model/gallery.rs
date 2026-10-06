@@ -27,6 +27,9 @@ pub enum ChromePreview {
     UsagesPopulated,
     TerminalContent,
     RightPanel,
+    ExplorerSelected,
+    ExplorerDeep,
+    ExplorerScrolled,
 }
 
 #[derive(Clone, Copy)]
@@ -267,6 +270,27 @@ pub const SPECIMENS: &[Specimen] = &[
         category: 7,
         source: "view/panels.rs · render_dock",
         tokens: "sidebar / header / border / expanded tree / selected row",
+    },
+    Specimen {
+        id: "explorer.selected-file",
+        preview: Preview::Chrome(ChromePreview::ExplorerSelected),
+        category: 7,
+        source: "view/panels.rs · render_sidebar",
+        tokens: "sidebar / expanded and collapsed folders / selected filename",
+    },
+    Specimen {
+        id: "explorer.deep-long-name",
+        preview: Preview::Chrome(ChromePreview::ExplorerDeep),
+        category: 7,
+        source: "view/panels.rs · render_sidebar",
+        tokens: "sidebar / nested tree / selected long Unicode name / truncation",
+    },
+    Specimen {
+        id: "explorer.scrolled-folder",
+        preview: Preview::Chrome(ChromePreview::ExplorerScrolled),
+        category: 7,
+        source: "view/panels.rs · render_sidebar",
+        tokens: "sidebar / scrolled tree / selected folder / disclosure",
     },
     Specimen {
         id: "scrollbar.vertical",
