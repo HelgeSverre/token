@@ -3948,6 +3948,58 @@ fn keyboard_documentation_ignores_incidental_pointer_motion_but_not_blur() {
 }
 
 #[test]
+fn automation_focus_round_trip_dismisses_hover_and_rejects_late_reply() {
+    use crate::automation::InputEvent;
+
+    for keyboard in [false, true] {
+        for resolved in [false, true] {
+            let mut app = hover_app();
+            app.model.config.lsp.enabled = false;
+            if resolved {
+                open_test_hover(&mut app, keyboard);
+            } else {
+                update(
+                    &mut app.model,
+                    Msg::Lsp(if keyboard {
+                        LspMsg::ShowHover
+                    } else {
+                        LspMsg::ShowHoverAt { line: 0, col: 0 }
+                    }),
+                );
+            }
+            let request = app.model.ui.hover_request.expect("active hover request");
+            let cursors = app.model.editor().cursors.clone();
+            let response = send_automation_request(
+                &mut app,
+                AutomationRequest::Input {
+                    events: vec![
+                        InputEvent::Focus { focused: false },
+                        InputEvent::Focus { focused: true },
+                    ],
+                },
+            );
+            assert!(response.ok, "{}", response.message);
+            assert!(app.model.ui.hover_card.is_none());
+            assert!(app.model.ui.hover_request.is_none());
+            assert!(app.model.ui.cursor_overlay.is_none());
+
+            // The document revision and cursor still match, but focus loss
+            // must invalidate the request even after the window regains focus.
+            app.process_automation_msg(Msg::Lsp(LspMsg::HoverResolved {
+                document_id: request.anchor.document_id,
+                revision: request.anchor.revision,
+                cursor: request.position,
+                outcome: HoverOutcome::Content(Some("late documentation".into())),
+            }));
+            assert!(app.model.ui.hover_card.is_none());
+            assert!(app.model.ui.cursor_overlay.is_none());
+            assert_eq!(app.model.editor().cursors, cursors);
+            assert_eq!(app.model.document().buffer.to_string(), "alpha beta\n");
+        }
+    }
+}
+
+#[test]
 fn leaving_a_pending_mouse_target_invalidates_its_reply() {
     let mut app = hover_app();
     update(
