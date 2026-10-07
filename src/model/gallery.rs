@@ -88,6 +88,7 @@ pub enum Preview {
     },
     SelectOptions,
     ChoiceGroup,
+    InteractiveSelection,
     Disclosure {
         expanded: bool,
     },
@@ -122,6 +123,13 @@ pub struct Specimen {
 }
 
 pub const SPECIMENS: &[Specimen] = &[
+    Specimen {
+        id: "selection.interactive",
+        preview: Preview::InteractiveSelection,
+        category: 3,
+        source: "view/segmented_control.rs + view/button.rs",
+        tokens: "live sandbox / Tab / arrow keys / Home / End / reset",
+    },
     Specimen {
         id: "settings-form.semantic-controls",
         preview: Preview::SettingsForm,
@@ -653,14 +661,17 @@ pub struct GalleryState {
     pub selected_theme: usize,
     pub theme_select: crate::model::select::SelectState,
     pub focus: GalleryFocus,
+    pub playground_selection: usize,
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum GalleryFocus {
     #[default]
     Filter,
     Theme,
     Width,
+    PlaygroundSelection,
+    PlaygroundReset,
 }
 
 impl Default for GalleryState {
@@ -674,6 +685,7 @@ impl Default for GalleryState {
             selected_theme: 0,
             theme_select: Default::default(),
             focus: GalleryFocus::Filter,
+            playground_selection: 1,
         }
     }
 }

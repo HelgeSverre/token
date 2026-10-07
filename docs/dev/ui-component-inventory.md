@@ -208,7 +208,7 @@ proof none exists elsewhere. Sources:
 
 The first native development slice is now implemented on `main` behind the
 `ui-gallery` cargo feature (`just ui-gallery`).
-See [UI Gallery](ui-gallery.md) for its 70 specimens, launch/screenshot commands,
+See [UI Gallery](ui-gallery.md) for its 71 specimens, launch/screenshot commands,
 shared production painters, and explicit remaining scope. The broader proposal
 below remains a direction, not a claim that every inventoried component is covered.
 
