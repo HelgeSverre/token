@@ -51,7 +51,7 @@ fn load(model: &mut AppModel, path: &str, content: &str) -> Msg {
         identity: None,
         target,
         path,
-        result: Ok(content.to_owned()),
+        result: Ok(content.into()),
     })
 }
 

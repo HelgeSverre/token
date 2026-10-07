@@ -114,6 +114,38 @@ impl CsvState {
             self.data.row_count(),
             self.data.column_count(),
         );
+        // The number of columns that fit changes when scrolling across columns
+        // of different widths. Use the renderer's geometry after each shift.
+        self.sync_visible_columns();
+        while self.viewport_geometry.is_some()
+            && self.viewport.left_col < self.selected_cell.col
+            && !self.viewport.is_col_visible(self.selected_cell.col)
+        {
+            self.viewport.left_col += 1;
+            self.sync_visible_columns();
+        }
+    }
+
+    fn sync_visible_columns(&mut self) {
+        if let Some((width, char_width)) = self.viewport_geometry {
+            self.viewport.visible_cols =
+                super::render::CsvRenderLayout::calculate(self, 0, width, 0, 1, char_width)
+                    .visible_columns
+                    .len()
+                    .max(1);
+        }
+    }
+
+    /// Synchronize physical dimensions without undoing manual scrolling.
+    pub fn set_viewport_geometry(&mut self, rows: usize, width: usize, char_width: f32) {
+        let changed = self.viewport.visible_rows != rows
+            || self.viewport_geometry != Some((width, char_width));
+        self.viewport_geometry = Some((width, char_width));
+        self.viewport.visible_rows = rows;
+        self.sync_visible_columns();
+        if changed {
+            self.ensure_selection_visible();
+        }
     }
 
     /// Synchronize viewport dimensions, revealing the selection only on resize.
@@ -171,6 +203,29 @@ mod tests {
         }
         let data = parse_csv(&content, Delimiter::Comma).unwrap();
         CsvState::new(data, Delimiter::Comma)
+    }
+
+    #[test]
+    fn navigation_uses_variable_column_widths_and_preserves_manual_scroll() {
+        let mut state = make_csv_state(100, 8);
+        state.column_widths = vec![4, 4, 4, 40, 40, 40, 4, 4];
+        state.set_viewport_geometry(10, 400, 10.0);
+        state.move_selection(99, 7);
+        let layout = super::super::render::CsvRenderLayout::calculate(&state, 0, 400, 0, 20, 10.0);
+        assert!(layout.visible_columns.iter().any(|(col, _)| *col == 7));
+        assert_eq!(state.viewport.top_row, 90);
+
+        state.move_selection(0, -4);
+        assert_eq!(state.viewport.left_col, 3);
+        state.scroll_horizontal(-3);
+        state.scroll_vertical(-20);
+        state.set_viewport_geometry(10, 400, 10.0);
+        assert_eq!(state.viewport.left_col, 0);
+        assert_eq!(state.viewport.top_row, 70);
+
+        state.set_viewport_geometry(10, 300, 10.0);
+        assert_eq!(state.viewport.left_col, 3);
+        assert_eq!(state.viewport.top_row, 90);
     }
 
     #[test]

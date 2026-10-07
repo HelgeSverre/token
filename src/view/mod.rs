@@ -352,7 +352,7 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
 fn active_find_matches(
     model: &AppModel,
     document: &crate::model::Document,
-) -> std::sync::Arc<[crate::search::Match]> {
+) -> std::sync::Arc<crate::search::MatchList> {
     let Some(state) = &model.ui.find_bar else {
         return Default::default();
     };
@@ -406,8 +406,9 @@ fn find_match_decorations(
         .buffer
         .line_to_char(visible_lines.end.min(document.line_count()));
     let first = matches.partition_point(|m| m.end < start);
-    matches[first..]
+    matches
         .iter()
+        .skip(first)
         .take_while(|m| m.start <= end)
         .filter(|m| current_range != Some((m.start, m.end)))
         .map(|m| editor_text::RangeDecoration {
@@ -1956,7 +1957,7 @@ impl Renderer {
         let title = model.editor_area.tab_display_name(tab);
         let width = crate::layout::editor::tab_width(model, tab, painter.char_width());
         let height = metrics
-            .tab_bar_height
+            .document_tab_bar_height()
             .saturating_sub(metrics.padding_medium);
 
         // Center the ghost on the cursor
@@ -2406,7 +2407,7 @@ impl Renderer {
             y,
             line_height,
             self.char_width,
-            model.metrics.tab_bar_height,
+            model.metrics.document_tab_bar_height(),
         )
     }
 }
@@ -2808,7 +2809,7 @@ mod cursor_fast_path_scrollbar_tests {
         model.theme.scrollbar.track = crate::theme::Color::rgb(0x40, 0x50, 0x60);
         model.theme.scrollbar.thumb = crate::theme::Color::rgb(0x70, 0x80, 0x90);
         let group_id = model.editor_area.focused_group_id;
-        let tab_bar_height = model.metrics.tab_bar_height as f32;
+        let tab_bar_height = model.metrics.document_tab_bar_height() as f32;
         model.editor_area.groups.get_mut(&group_id).unwrap().rect =
             ModelRect::new(0.0, 0.0, width as f32, height as f32 + tab_bar_height);
 
@@ -2916,7 +2917,7 @@ mod find_match_decoration_tests {
         open_find(&mut model, "foo", false, false);
         let matches = active_find_matches(&model, model.document());
         assert_eq!(
-            matches.as_ref(),
+            matches.iter().collect::<Vec<_>>(),
             vec![
                 crate::search::Match { start: 0, end: 3 },
                 crate::search::Match { start: 8, end: 11 },
@@ -2942,7 +2943,7 @@ mod find_match_decoration_tests {
         // Only the two standalone "foo"s match; "foobar"'s "foo" prefix
         // doesn't, since it isn't at a word boundary on both sides.
         assert_eq!(
-            matches.as_ref(),
+            matches.iter().collect::<Vec<_>>(),
             vec![
                 crate::search::Match { start: 0, end: 3 },
                 crate::search::Match { start: 11, end: 14 },
@@ -2963,8 +2964,8 @@ mod find_match_decoration_tests {
         let matches = active_find_matches(&model, model.document());
 
         assert_eq!(
-            matches.as_ref(),
-            &[crate::search::Match { start: 4, end: 7 }]
+            matches.iter().collect::<Vec<_>>(),
+            [crate::search::Match { start: 4, end: 7 }]
         );
     }
 
@@ -2978,7 +2979,7 @@ mod find_match_decoration_tests {
         }
         let matches = active_find_matches(&model, model.document());
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].start, 4);
+        assert_eq!(matches.get(0).unwrap().start, 4);
     }
 
     #[test]

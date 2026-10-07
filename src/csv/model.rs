@@ -1,13 +1,13 @@
 //! CSV data model types
 //!
-//! Memory-efficient storage using delimited strings instead of Vec<Vec<String>>.
+//! Memory-efficient storage using packed UTF-8 rows instead of Vec<Vec<String>>.
 
 use crate::editable::{EditConstraints, EditableState, MoveTarget, StringBuffer};
 
 use super::viewport::CsvViewport;
 
-/// Internal delimiter for cell storage (0xFA - rarely used in real data)
-pub const CELL_DELIMITER: char = '\u{00FA}';
+/// Invalid in UTF-8, so no valid cell text can collide with this separator.
+const CELL_DELIMITER: u8 = 0xFF;
 
 /// Supported CSV delimiters
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -284,14 +284,19 @@ pub struct CellEdit {
 /// Memory-efficient CSV data storage
 ///
 /// Instead of storing `Vec<Vec<String>>` which has significant overhead,
-/// each row is stored as a single string with cells delimited by CELL_DELIMITER (0xFA).
+/// each row is stored as a single byte buffer with cells delimited by 0xFF.
 /// This reduces memory allocations while still allowing O(1) row access.
 #[derive(Debug, Clone, Default)]
 pub struct CsvData {
-    /// Each row stored as delimiter-separated string
-    rows: Vec<String>,
+    /// Valid UTF-8 cells separated by the non-UTF-8 byte CELL_DELIMITER.
+    rows: Vec<Vec<u8>>,
     /// Number of columns (max across all rows)
     column_count: usize,
+    /// Parser record ranges, including terminators; never physical line numbers.
+    record_ranges: Vec<std::ops::Range<usize>>,
+    /// Fenwick tree of edit deltas: prefix sums shift parser offsets in O(log n).
+    record_deltas: Vec<isize>,
+    pub(super) source: Option<ropey::Rope>,
 }
 
 impl CsvData {
@@ -306,10 +311,80 @@ impl CsvData {
 
         let rows = parsed_rows
             .into_iter()
-            .map(|row| row.join(&CELL_DELIMITER.to_string()))
+            .map(|row| {
+                row.iter()
+                    .map(|cell| cell.as_bytes())
+                    .collect::<Vec<_>>()
+                    .join(&CELL_DELIMITER)
+            })
             .collect();
 
-        Self { rows, column_count }
+        Self {
+            rows,
+            column_count,
+            ..Self::default()
+        }
+    }
+
+    /// Append directly from the parser's reusable record, without per-cell strings.
+    pub(super) fn push_record(&mut self, record: &csv::StringRecord, end: usize) {
+        let mut row = Vec::with_capacity(record.as_slice().len() + record.len().saturating_sub(1));
+        for (index, cell) in record.iter().enumerate() {
+            if index > 0 {
+                row.push(CELL_DELIMITER);
+            }
+            row.extend_from_slice(cell.as_bytes());
+        }
+        self.column_count = self.column_count.max(record.len());
+        self.rows.push(row);
+        self.record_ranges
+            .push(record.position().expect("parser record position").byte() as usize..end);
+        self.record_deltas.push(0);
+    }
+
+    pub(crate) fn record_range(
+        &self,
+        row: usize,
+        source: &ropey::Rope,
+    ) -> Option<std::ops::Range<usize>> {
+        self.source.as_ref().filter(|old| old.is_instance(source))?;
+        let range = self.record_ranges.get(row)?;
+        Some(
+            range.start.checked_add_signed(self.record_shift(row))?
+                ..range.end.checked_add_signed(self.record_shift(row + 1))?,
+        )
+    }
+
+    fn record_shift(&self, mut count: usize) -> isize {
+        let mut shift = 0;
+        while count > 0 {
+            shift += self.record_deltas[count - 1];
+            count &= count - 1;
+        }
+        shift
+    }
+
+    pub(crate) fn matches_source(&self, source: &ropey::Rope) -> bool {
+        self.source
+            .as_ref()
+            .is_some_and(|old| old.is_instance(source))
+    }
+
+    /// Adjust the index in O(log n), regardless of which record changed.
+    pub(crate) fn record_edited(
+        &mut self,
+        row: usize,
+        removed: usize,
+        inserted: usize,
+        source: &ropey::Rope,
+    ) {
+        let delta = inserted as isize - removed as isize;
+        let mut index = row + 1;
+        while index <= self.record_deltas.len() {
+            self.record_deltas[index - 1] += delta;
+            index += index.isolate_lowest_one();
+        }
+        self.source = Some(source.clone());
     }
 
     /// Get number of rows
@@ -324,38 +399,17 @@ impl CsvData {
 
     /// Get cell value at position
     pub fn get(&self, row: usize, col: usize) -> &str {
-        if row >= self.rows.len() {
-            return "";
-        }
-
-        let row_str = &self.rows[row];
-        let mut col_idx = 0;
-        let mut start = 0;
-
-        for (i, c) in row_str.char_indices() {
-            if c == CELL_DELIMITER {
-                if col_idx == col {
-                    return &row_str[start..i];
-                }
-                col_idx += 1;
-                start = i + c.len_utf8();
-            }
-        }
-
-        if col_idx == col {
-            return &row_str[start..];
-        }
-
-        ""
+        self.row_cells(row).nth(col).unwrap_or("")
     }
 
     /// Get entire row as iterator over cells
     pub fn row_cells(&self, row: usize) -> impl Iterator<Item = &str> {
         self.rows
             .get(row)
-            .map(|s| s.as_str())
-            .unwrap_or("")
-            .split(CELL_DELIMITER)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+            .split(|&byte| byte == CELL_DELIMITER)
+            .map(|cell| std::str::from_utf8(cell).expect("packed cells originate from valid UTF-8"))
     }
 
     /// Set cell value at position
@@ -364,15 +418,16 @@ impl CsvData {
             return;
         }
 
-        let cells: Vec<&str> = self.rows[row].split(CELL_DELIMITER).collect();
-        let mut new_cells: Vec<String> = cells.iter().map(|s| s.to_string()).collect();
+        let mut new_cells: Vec<&[u8]> = self.rows[row]
+            .split(|&byte| byte == CELL_DELIMITER)
+            .collect();
 
         while new_cells.len() <= col {
-            new_cells.push(String::new());
+            new_cells.push(&[]);
         }
 
-        new_cells[col] = value.to_string();
-        self.rows[row] = new_cells.join(&CELL_DELIMITER.to_string());
+        new_cells[col] = value.as_bytes();
+        self.rows[row] = new_cells.join(&CELL_DELIMITER);
 
         if col >= self.column_count {
             self.column_count = col + 1;
@@ -394,6 +449,8 @@ pub struct CsvState {
     pub selected_cell: CellPosition,
     /// Viewport for visible region
     pub viewport: CsvViewport,
+    /// Available grid rectangle width and font advance, synchronized by layout.
+    pub(super) viewport_geometry: Option<(usize, f32)>,
     /// Original delimiter used in file
     pub delimiter: Delimiter,
     /// Whether first row is a header
@@ -413,6 +470,7 @@ impl CsvState {
             data,
             selected_cell: CellPosition::default(),
             viewport: CsvViewport::default(),
+            viewport_geometry: None,
             delimiter,
             has_header_row: true,
             column_widths,
@@ -558,6 +616,22 @@ mod tests {
 
         assert_eq!(data.row_count(), 2);
         assert_eq!(data.column_count(), 3);
+    }
+
+    #[test]
+    fn packed_cells_preserve_all_utf8_including_old_separator_and_nul() {
+        let cells = vec![
+            "ú".to_owned(),
+            "".to_owned(),
+            "🙂\0ÿ".to_owned(),
+            "".to_owned(),
+        ];
+        let mut data = CsvData::from_rows(vec![cells.clone()]);
+        assert_eq!(data.row_cells(0).collect::<Vec<_>>(), cells);
+        data.set(0, 2, "úú");
+        assert_eq!(data.row_cells(0).collect::<Vec<_>>(), ["ú", "", "úú", ""]);
+        let parsed = crate::csv::parse_csv("ú,,🙂\0ÿ,\n", Delimiter::Comma).unwrap();
+        assert_eq!(parsed.row_cells(0).collect::<Vec<_>>(), cells);
     }
 
     #[test]

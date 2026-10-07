@@ -1,0 +1,42 @@
+name: polish-find-selection-diagnostics
+width: 1440
+height: 900
+scale: 1
+workspace: { root: ., sidebar_visible: false }
+files:
+  - path: fixtures/pricing.rs
+    cursor_line: 8
+    cursor_column: 22
+    selections:
+      - { anchor_line: 6, anchor_column: 8, head_line: 6, head_column: 16 }
+      - { anchor_line: 8, anchor_column: 8, head_line: 8, head_column: 22 }
+    content: |
+      struct Product { name: String, price: u32 }
+
+      fn total(products: &[Product]) -> u32 {
+          products.iter().map(|item| item.price).sum()
+      }
+
+      fn main() {
+          let tax = "25";
+          let subtotal = total(&[]);
+          let grand_total = subtotal + tax;
+          println!("Total: {grand_total}");
+      }
+modal:
+  id: find_replace
+  query: total
+  replacement: sum
+  replace_mode: true
+lsp:
+  problems: true
+  diagnostics:
+    - range: { start: { line: 9, character: 37 }, end: { line: 9, character: 40 } }
+      severity: 1
+      source: rust-analyzer
+      code: E0277
+      message: cannot add `&str` to `u32`
+    - range: { start: { line: 0, character: 17 }, end: { line: 0, character: 21 } }
+      severity: 2
+      source: rust-analyzer
+      message: field `name` is never read

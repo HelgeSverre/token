@@ -78,6 +78,13 @@ The public building blocks are deliberately small:
   `state()`, `document()`, and `actions()` return their respective payloads.
   Mutation conveniences include `insertText`, `setCursor`, `setSelection`,
   `action`, `scroll`, `setOverlayInput`, and `openPaths`.
+- `documentRange(start, end)` reads a half-open range of Unicode character
+  offsets from a document of any size. Each slice is limited to 512 KiB of UTF-8,
+  leaving room for JSON escaping. The response includes `text`, `start`, `end`,
+  `total_chars`, and `revision`; compare revisions when paging a changing file.
+  The same operation is exposed as the MCP `get_document_range` tool and the
+  automation CLI `document-range <start> <end>` command. Whole-document reads
+  retain their existing 3 MiB cap.
 - `inputEvent` constructs validated focus, pointer, button, wheel, and close
   events. `createPointer(client)` retains a window-local pointer position and
   batches move/button or move/wheel events atomically. `rectCenter` accepts the

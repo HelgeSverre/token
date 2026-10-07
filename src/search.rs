@@ -8,6 +8,8 @@
 
 use aho_corasick::AhoCorasick;
 use regex::Regex;
+use regex_cursor::{engines::meta::Regex as RopeRegex, Input};
+use std::sync::OnceLock;
 
 /// One match's char-offset range in a document, half-open like `Selection`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,14 +18,144 @@ pub struct Match {
     pub end: usize,
 }
 
+/// Immutable match offsets, using half the payload of `Match` on 64-bit
+/// platforms whenever the document's character-offset space fits in `u32`.
+#[derive(Debug, Clone)]
+pub struct MatchList {
+    storage: MatchStorage,
+}
+
+impl Default for MatchList {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
+#[derive(Debug, Clone)]
+enum MatchStorage {
+    Compact(Box<[[u32; 2]]>),
+    Wide(Box<[Match]>),
+}
+
+impl MatchList {
+    fn new(document_chars: usize) -> Self {
+        Self {
+            storage: if document_chars <= u32::MAX as usize {
+                MatchStorage::Compact(Box::default())
+            } else {
+                MatchStorage::Wide(Box::default())
+            },
+        }
+    }
+
+    fn from_matches(document_chars: usize, matches: impl IntoIterator<Item = Match>) -> Self {
+        let mut result = Self::new(document_chars);
+        match &mut result.storage {
+            MatchStorage::Compact(values) => {
+                *values = matches
+                    .into_iter()
+                    .map(|m| {
+                        [
+                            u32::try_from(m.start).expect("offset fits document"),
+                            u32::try_from(m.end).expect("offset fits document"),
+                        ]
+                    })
+                    .collect()
+            }
+            MatchStorage::Wide(values) => *values = matches.into_iter().collect(),
+        }
+        result
+    }
+
+    pub fn len(&self) -> usize {
+        match &self.storage {
+            MatchStorage::Compact(values) => values.len(),
+            MatchStorage::Wide(values) => values.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn get(&self, index: usize) -> Option<Match> {
+        match &self.storage {
+            MatchStorage::Compact(values) => values.get(index).map(|v| Match {
+                start: v[0] as usize,
+                end: v[1] as usize,
+            }),
+            MatchStorage::Wide(values) => values.get(index).copied(),
+        }
+    }
+
+    pub fn first(&self) -> Option<Match> {
+        self.get(0)
+    }
+
+    pub fn last(&self) -> Option<Match> {
+        self.len().checked_sub(1).and_then(|index| self.get(index))
+    }
+
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = Match> + ExactSizeIterator + '_ {
+        // Range::nth lets viewport consumers skip directly to a binary-searched
+        // offset; a default Iterator::nth would walk every preceding match.
+        (0..self.len()).map(|index| self.get(index).expect("index in bounds"))
+    }
+
+    pub fn partition_point(&self, mut predicate: impl FnMut(Match) -> bool) -> usize {
+        let mut left = 0;
+        let mut right = self.len();
+        while left < right {
+            let mid = left + (right - left) / 2;
+            if predicate(self.get(mid).expect("index in bounds")) {
+                left = mid + 1;
+            } else {
+                right = mid;
+            }
+        }
+        left
+    }
+
+    pub fn binary_search_by_key<K: Ord>(
+        &self,
+        key: &K,
+        mut f: impl FnMut(Match) -> K,
+    ) -> Result<usize, usize> {
+        let mut left = 0;
+        let mut right = self.len();
+        while left < right {
+            let mid = left + (right - left) / 2;
+            match f(self.get(mid).expect("index in bounds")).cmp(key) {
+                std::cmp::Ordering::Less => left = mid + 1,
+                std::cmp::Ordering::Greater => right = mid,
+                std::cmp::Ordering::Equal => return Ok(mid),
+            }
+        }
+        Err(left)
+    }
+
+    #[cfg(test)]
+    fn offset_payload_bytes(&self) -> usize {
+        match &self.storage {
+            MatchStorage::Compact(values) => values.len() * std::mem::size_of::<[u32; 2]>(),
+            MatchStorage::Wide(values) => values.len() * std::mem::size_of::<Match>(),
+        }
+    }
+}
+
 /// A compiled search query with case/whole-word/regex options.
 #[derive(Debug, Clone)]
 pub struct SearchQuery {
     pattern: String,
     compiled: Option<Regex>,
-    /// Optional acceleration for plain ASCII literals on ASCII-only text.
-    /// The regex remains authoritative for validation and Unicode case folding.
-    ascii_literal: Option<AhoCorasick>,
+    /// Compile only when a query actually needs rope-native regex matching.
+    /// Preserve the authoritative contiguous engine if this backend rejects it.
+    rope_compiled: OnceLock<Option<RopeRegex>>,
+    /// Optional acceleration for literals whose byte matching has regex-equivalent
+    /// semantics. This includes every case-sensitive literal and ASCII-only
+    /// case-insensitive literals; the regex remains authoritative otherwise.
+    literal: Option<AhoCorasick>,
+    case_sensitive: bool,
     /// Error message if regex compilation failed (invalid regex, or an
     /// invalid literal pattern once escaped with word boundaries).
     pub error: Option<String>,
@@ -34,14 +166,16 @@ impl SearchQuery {
         let mut query = Self {
             pattern: pattern.to_string(),
             compiled: None,
-            ascii_literal: None,
+            rope_compiled: OnceLock::new(),
+            literal: None,
+            case_sensitive,
             error: None,
         };
         query.compile(case_sensitive, whole_word, is_regex);
-        if query.is_valid() && !whole_word && !is_regex && pattern.is_ascii() {
+        if query.is_valid() && !whole_word && !is_regex && (case_sensitive || pattern.is_ascii()) {
             // One fixed-length pattern has the same non-overlapping match order
             // as the regex. Construction failure simply keeps the regex path.
-            query.ascii_literal = AhoCorasick::builder()
+            query.literal = AhoCorasick::builder()
                 .ascii_case_insensitive(!case_sensitive)
                 .build([pattern])
                 .ok();
@@ -93,43 +227,434 @@ impl SearchQuery {
         self.error.is_some()
     }
 
+    fn rope_regex(&self) -> Option<&RopeRegex> {
+        self.rope_compiled
+            .get_or_init(|| {
+                self.compiled
+                    .as_ref()
+                    .and_then(|regex| RopeRegex::new(regex.as_str()).ok())
+            })
+            .as_ref()
+    }
+
+    /// Search the immutable rope without flattening it for supported queries.
+    pub fn find_all_rope(&self, text: &ropey::Rope) -> Vec<Match> {
+        self.find_all_rope_in(text, None)
+    }
+
+    pub(crate) fn find_all_rope_compact(
+        &self,
+        text: &ropey::Rope,
+        scope: Option<(usize, usize)>,
+    ) -> MatchList {
+        let document_chars = text.len_chars();
+        if !self.is_valid() {
+            return MatchList::new(document_chars);
+        }
+        if (self.literal.is_some() && (self.case_sensitive || text.len_bytes() == document_chars))
+            || self.rope_regex().is_some()
+        {
+            MatchList::from_matches(document_chars, self.find_all_rope_iter(text, scope))
+        } else {
+            let contiguous = text.to_string();
+            MatchList::from_matches(document_chars, self.find_all_iter(&contiguous, scope))
+        }
+    }
+
+    /// As `find_all_rope`, but only allocates matches fully contained in `scope`.
+    /// Searching remains document-wide so regex anchors and boundaries retain
+    /// their authoritative meaning.
+    pub(crate) fn find_all_rope_in(
+        &self,
+        text: &ropey::Rope,
+        scope: Option<(usize, usize)>,
+    ) -> Vec<Match> {
+        self.find_all_rope_iter(text, scope).collect()
+    }
+
+    fn find_all_rope_iter<'a>(
+        &'a self,
+        text: &'a ropey::Rope,
+        scope: Option<(usize, usize)>,
+    ) -> Box<dyn Iterator<Item = Match> + 'a> {
+        if !self.is_valid() {
+            return Box::new(std::iter::empty());
+        }
+        if let Some(literal) = &self.literal {
+            // Every non-ASCII UTF-8 character occupies more than one byte.
+            // Rope stores both counts, so this proof does not scan the document.
+            let ascii = text.len_bytes() == text.len_chars();
+            if self.case_sensitive || ascii {
+                return Box::new(
+                    literal
+                        .stream_find_iter(crate::util::text::RopeReader::new(text))
+                        .map(move |result| {
+                            let found = result.expect("in-memory rope reads cannot fail");
+                            let char_offset = |byte| {
+                                if ascii {
+                                    byte
+                                } else {
+                                    text.byte_to_char(byte)
+                                }
+                            };
+                            Match {
+                                start: char_offset(found.start()),
+                                end: char_offset(found.end()),
+                            }
+                        })
+                        .filter(move |m| {
+                            scope.is_none_or(|(start, end)| m.start >= start && m.end <= end)
+                        }),
+                );
+            }
+        }
+        if let Some(regex) = self.rope_regex() {
+            let ascii = text.len_bytes() == text.len_chars();
+            return Box::new(
+                regex
+                    .find_iter(Input::new(text))
+                    .map(move |m| {
+                        if ascii {
+                            Match {
+                                start: m.start(),
+                                end: m.end(),
+                            }
+                        } else {
+                            Match {
+                                start: text.byte_to_char(m.start()),
+                                end: text.byte_to_char(m.end()),
+                            }
+                        }
+                    })
+                    .filter(move |m| {
+                        scope.is_none_or(|(start, end)| m.start >= start && m.end <= end)
+                    }),
+            );
+        }
+        Box::new(self.find_all_in(&text.to_string(), scope).into_iter())
+    }
+
     /// Find all matches in `text`, converting the regex crate's byte
     /// offsets to char offsets incrementally (one pass over the matched
     /// spans, not a re-scan of the whole text per match).
     pub fn find_all(&self, text: &str) -> Vec<Match> {
+        self.find_all_in(text, None)
+    }
+
+    fn find_all_in(&self, text: &str, scope: Option<(usize, usize)>) -> Vec<Match> {
+        self.find_all_iter(text, scope).collect()
+    }
+
+    fn find_all_iter<'a>(
+        &'a self,
+        text: &'a str,
+        scope: Option<(usize, usize)>,
+    ) -> Box<dyn Iterator<Item = Match> + 'a> {
         let Some(re) = &self.compiled else {
-            return Vec::new();
+            return Box::new(std::iter::empty());
         };
 
-        if let Some(literal) = self.ascii_literal.as_ref().filter(|_| text.is_ascii()) {
+        if let Some(literal) = self.literal.as_ref().filter(|_| text.is_ascii()) {
             // Byte and character offsets coincide only under this text gate.
-            return literal
-                .find_iter(text)
-                .map(|m| Match {
-                    start: m.start(),
-                    end: m.end(),
-                })
-                .collect();
+            return Box::new(
+                literal
+                    .find_iter(text)
+                    .map(|m| Match {
+                        start: m.start(),
+                        end: m.end(),
+                    })
+                    .filter(move |m| {
+                        scope.is_none_or(|(start, end)| m.start >= start && m.end <= end)
+                    }),
+            );
         }
 
-        let mut matches = Vec::new();
-        let mut prev_byte = 0;
-        let mut prev_char = 0;
-        for m in re.find_iter(text) {
-            prev_char += text[prev_byte..m.start()].chars().count();
-            let start = prev_char;
-            prev_char += text[m.start()..m.end()].chars().count();
-            let end = prev_char;
-            prev_byte = m.end();
-            matches.push(Match { start, end });
-        }
-        matches
+        let mut previous = (0, 0);
+        Box::new(re.find_iter(text).filter_map(move |m| {
+            previous.1 += text[previous.0..m.start()].chars().count();
+            let start = previous.1;
+            previous.1 += text[m.start()..m.end()].chars().count();
+            let result = Match {
+                start,
+                end: previous.1,
+            };
+            previous.0 = m.end();
+            scope
+                .is_none_or(|(scope_start, scope_end)| {
+                    result.start >= scope_start && result.end <= scope_end
+                })
+                .then_some(result)
+        }))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    fn reference_matches(query: &SearchQuery, text: &str) -> Vec<Match> {
+        query
+            .compiled
+            .as_ref()
+            .unwrap()
+            .find_iter(text)
+            .map(|m| Match {
+                start: text[..m.start()].chars().count(),
+                end: text[..m.end()].chars().count(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn rope_regex_matches_contiguous_engine_for_boundaries_and_unbounded_matches() {
+        let text = format!(
+            "{}\r\nBEGIN{}END\nKkK Σσς café １２3\n",
+            "aé🙂".repeat(401),
+            "x\n🙂".repeat(1001)
+        );
+        let rope = ropey::Rope::from_str(&text);
+        for pattern in [
+            r"(?s)BEGIN.*END",
+            r"(?s)BEGIN.*?END",
+            r"(?m)^|$",
+            r"\A|\z",
+            r"\b|\B",
+            r"(?i)k|σ",
+            r"\p{L}+",
+            r"\d+",
+            r"(?s:.*?)",
+            r"a|aé",
+            r"(?mR)^.*$",
+            r"[^\n]*",
+        ] {
+            let query = SearchQuery::new(pattern, true, false, true);
+            assert!(
+                query.rope_regex().is_some(),
+                "rope backend must be exercised: {pattern}"
+            );
+            let expected = reference_matches(&query, &text);
+            assert_eq!(query.find_all_rope(&rope), expected, "{pattern}");
+            for scope in [
+                None,
+                Some((1205, 1220)),
+                Some((0, 0)),
+                Some((1, rope.len_chars() - 1)),
+            ] {
+                let expected: Vec<_> = expected
+                    .iter()
+                    .copied()
+                    .filter(|m| scope.is_none_or(|(start, end)| m.start >= start && m.end <= end))
+                    .collect();
+                assert_eq!(
+                    query
+                        .find_all_rope_compact(&rope, scope)
+                        .iter()
+                        .collect::<Vec<_>>(),
+                    expected,
+                    "{pattern} {scope:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rope_regex_compile_fallback_preserves_results_and_errors() {
+        let query = SearchQuery::new(r"(?i)k|\b", true, false, true);
+        query.rope_compiled.set(None).unwrap();
+        let text = "é K k K";
+        let expected = reference_matches(&query, text);
+        assert_eq!(
+            query
+                .find_all_rope_compact(&ropey::Rope::from_str(text), None)
+                .iter()
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(SearchQuery::new("(", true, false, true).has_error());
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(128))]
+        #[test]
+        fn rope_regex_property_preserves_chunked_unicode_offsets(
+            symbols in prop::collection::vec(prop::sample::select(vec!['a', 'b', 'é', 'K', 'Σ', 'σ', '🙂', '\r', '\n', ' ', '1']), 1..30),
+            repeats in 20usize..70,
+            atom in prop::sample::select(vec!["a", "é", "k", "[a-z]", r"\w", r"\d", "."]),
+            quantifier in prop::sample::select(vec!["", "?", "*", "+", "{1,3}", "*?"]),
+            alternative in prop::sample::select(vec!["ab", "Σ", r"\b", "(?m:^)", "$"]),
+            sensitive in any::<bool>(),
+            whole_word in any::<bool>(),
+            bounds in (any::<u16>(), any::<u16>()),
+        ) {
+            let unit: String = symbols.into_iter().collect();
+            let text = format!("{}\r\n{}", "prefix ".repeat(160), unit.repeat(repeats));
+            let rope = ropey::Rope::from_str(&text);
+            let query = SearchQuery::new(&format!("(?:{atom}{quantifier})|(?:{alternative})"), sensitive, whole_word, true);
+            prop_assert!(query.rope_regex().is_some());
+            let expected = reference_matches(&query, &text);
+            prop_assert_eq!(query.find_all_rope(&rope), expected.clone());
+            let start = usize::from(bounds.0) % (rope.len_chars() + 1);
+            let end = usize::from(bounds.1) % (rope.len_chars() + 1);
+            let scope = (start.min(end), start.max(end));
+            let scoped: Vec<_> = expected.into_iter().filter(|m| m.start >= scope.0 && m.end <= scope.1).collect();
+            prop_assert_eq!(query.find_all_rope_compact(&rope, Some(scope)).iter().collect::<Vec<_>>(), scoped);
+        }
+    }
+
+    #[test]
+    fn match_list_selects_representation_at_u32_document_boundary() {
+        let edge = Match {
+            start: u32::MAX as usize - 1,
+            end: u32::MAX as usize,
+        };
+        let compact = MatchList::from_matches(u32::MAX as usize, [edge]);
+        assert!(matches!(compact.storage, MatchStorage::Compact(_)));
+        assert_eq!(compact.get(0), Some(edge));
+        assert_eq!(compact.offset_payload_bytes(), 8);
+
+        let Some(beyond_offset) = (u32::MAX as usize).checked_add(1) else {
+            return;
+        };
+        let beyond = Match {
+            start: u32::MAX as usize,
+            end: beyond_offset,
+        };
+        let wide = MatchList::from_matches(beyond_offset, [beyond]);
+        assert!(matches!(wide.storage, MatchStorage::Wide(_)));
+        assert_eq!(wide.get(0), Some(beyond));
+        if usize::BITS == 64 {
+            assert_eq!(wide.offset_payload_bytes(), 16);
+        }
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn compact_dense_collection_and_wide_navigation_are_identical() {
+        let expected: Vec<_> = (0..100_000)
+            .map(|start| Match {
+                start,
+                end: start + 1,
+            })
+            .collect();
+        let compact = MatchList::from_matches(100_000, expected.iter().copied());
+        let wide = MatchList::from_matches(u32::MAX as usize + 1, expected.iter().copied());
+        assert_eq!(compact.offset_payload_bytes(), expected.len() * 8);
+        assert_eq!(compact.iter().collect::<Vec<_>>(), expected);
+        assert_eq!(
+            compact.iter().rev().collect::<Vec<_>>(),
+            wide.iter().rev().collect::<Vec<_>>()
+        );
+        assert_eq!(compact.first(), wide.first());
+        assert_eq!(compact.last(), wide.last());
+        for list in [&compact, &wide] {
+            assert_eq!(list.partition_point(|m| m.start < 54_321), 54_321);
+            assert_eq!(list.binary_search_by_key(&76_543, |m| m.start), Ok(76_543));
+            assert_eq!(
+                list.binary_search_by_key(&100_000, |m| m.start),
+                Err(100_000)
+            );
+            assert_eq!(list.get(100_000), None);
+        }
+        assert_eq!(
+            compact.partition_point(|m| m.start < 54_321),
+            wide.partition_point(|m| m.start < 54_321)
+        );
+        assert_eq!(
+            compact.binary_search_by_key(&76_543, |m| m.start),
+            wide.binary_search_by_key(&76_543, |m| m.start)
+        );
+    }
+
+    #[test]
+    fn compact_search_collects_dense_results_and_preserves_scoped_regex_semantics() {
+        let rope = ropey::Rope::from_str(&"a".repeat(100_000));
+        let dense = SearchQuery::new("a", true, false, false).find_all_rope_compact(&rope, None);
+        assert_eq!(dense.len(), 100_000);
+        assert_eq!(dense.offset_payload_bytes(), 800_000);
+        assert_eq!(
+            dense.iter().nth(99_999),
+            Some(Match {
+                start: 99_999,
+                end: 100_000
+            })
+        );
+        let text = format!("{}\nAK café\r\n", "é".repeat(1024));
+        let rope = ropey::Rope::from_str(&text);
+        for (pattern, sensitive, word, regex) in [
+            ("café", true, false, false),
+            ("k", false, false, false),
+            ("A", false, true, false),
+            ("(?m)^|$", true, false, true),
+            ("(", true, false, true),
+        ] {
+            let query = SearchQuery::new(pattern, sensitive, word, regex);
+            for scope in [None, Some((1025, 1032)), Some((0, 0))] {
+                let expected: Vec<_> = query
+                    .find_all(&text)
+                    .into_iter()
+                    .filter(|m| scope.is_none_or(|(start, end)| m.start >= start && m.end <= end))
+                    .collect();
+                assert_eq!(
+                    query
+                        .find_all_rope_compact(&rope, scope)
+                        .iter()
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rope_search_preserves_boundaries_offsets_and_unicode_case_folding() {
+        let pattern = "Ab".repeat(1024);
+        let rope = ropey::Rope::from_str(&format!("{}{pattern}z", "p".repeat(700)));
+        assert!(rope.chunks().all(|chunk| chunk.len() < pattern.len()));
+        let query = SearchQuery::new(&pattern.to_lowercase(), false, false, false);
+        assert_eq!(
+            query.find_all_rope(&rope),
+            vec![Match {
+                start: 700,
+                end: 2748
+            }]
+        );
+        for (text, pattern, sensitive, expected) in [
+            (
+                "aaaaa",
+                "aa",
+                true,
+                vec![Match { start: 0, end: 2 }, Match { start: 2, end: 4 }],
+            ),
+            (
+                "ætail🙂tail",
+                "tail",
+                true,
+                vec![Match { start: 1, end: 5 }, Match { start: 6, end: 10 }],
+            ),
+            (
+                "KkK",
+                "k",
+                false,
+                vec![
+                    Match { start: 0, end: 1 },
+                    Match { start: 1, end: 2 },
+                    Match { start: 2, end: 3 },
+                ],
+            ),
+        ] {
+            let query = SearchQuery::new(pattern, sensitive, false, false);
+            assert_eq!(query.find_all_rope(&ropey::Rope::from_str(text)), expected);
+        }
+        let text = ropey::Rope::from_str("one\ntwo");
+        assert_eq!(
+            SearchQuery::new("one\\ntwo", true, false, true).find_all_rope(&text),
+            vec![Match { start: 0, end: 7 }]
+        );
+        assert!(SearchQuery::new("", false, false, false)
+            .find_all_rope(&text)
+            .is_empty());
+    }
 
     #[test]
     fn literal_search_is_case_insensitive_by_default() {
@@ -145,10 +670,10 @@ mod tests {
             for case_sensitive in [false, true] {
                 let query = SearchQuery::new(pattern, case_sensitive, false, false);
                 let mut fallback = query.clone();
-                fallback.ascii_literal = None;
+                fallback.literal = None;
                 assert_eq!(
-                    query.ascii_literal.is_some(),
-                    !pattern.is_empty() && pattern.is_ascii()
+                    query.literal.is_some(),
+                    !pattern.is_empty() && (case_sensitive || pattern.is_ascii())
                 );
                 for text in [
                     "",
@@ -179,7 +704,7 @@ mod tests {
     #[test]
     fn whole_word_excludes_partial_matches() {
         let query = SearchQuery::new("the", false, true, false);
-        assert!(query.ascii_literal.is_none());
+        assert!(query.literal.is_none());
         let matches = query.find_all("the other there");
         assert_eq!(matches, vec![Match { start: 0, end: 3 }]);
     }
@@ -187,7 +712,7 @@ mod tests {
     #[test]
     fn regex_search_finds_digit_runs() {
         let query = SearchQuery::new(r"\d+", false, false, true);
-        assert!(query.ascii_literal.is_none());
+        assert!(query.literal.is_none());
         let matches = query.find_all("abc 123 def 456 ghi");
         assert_eq!(
             matches,
@@ -217,5 +742,45 @@ mod tests {
         let query = SearchQuery::new("world", false, false, false);
         let matches = query.find_all("café world");
         assert_eq!(matches, vec![Match { start: 5, end: 10 }]);
+    }
+
+    #[test]
+    fn rope_paths_match_authoritative_regex_across_adversarial_chunks() {
+        // The long, mixed-width padding forces many Rope chunks and puts
+        // candidates at different byte/char offsets and chunk boundaries.
+        let padding = "a猫🙂β_".repeat(2_000);
+        let text = format!("{padding}é🙂猫é foo foobar foo\nΣσς\n{padding}é🙂猫é");
+        let rope = ropey::Rope::from_str(&text);
+        assert!(rope.chunks().count() > 2);
+
+        for (pattern, sensitive, whole_word, is_regex) in [
+            ("é🙂猫é", true, false, false),
+            ("foo", true, false, false),
+            ("foo", true, true, false),
+            ("σ", false, false, false),
+            (r"(?m)^|$", true, false, true),
+            (r"é🙂猫é|foo\b", true, false, true),
+        ] {
+            let query = SearchQuery::new(pattern, sensitive, whole_word, is_regex);
+            let expected = query.find_all(&text);
+            assert_eq!(
+                query.find_all_rope(&rope),
+                expected,
+                "pattern={pattern:?}, sensitive={sensitive}, whole_word={whole_word}, regex={is_regex}"
+            );
+
+            for scope in [
+                (0, 0),
+                (padding.chars().count(), padding.chars().count() + 4),
+                (1, text.chars().count() - 1),
+            ] {
+                let scoped: Vec<_> = expected
+                    .iter()
+                    .copied()
+                    .filter(|m| m.start >= scope.0 && m.end <= scope.1)
+                    .collect();
+                assert_eq!(query.find_all_rope_in(&rope, Some(scope)), scoped);
+            }
+        }
     }
 }

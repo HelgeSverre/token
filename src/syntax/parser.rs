@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::Arc;
 use std::time::Instant;
 
 use streaming_iterator::StreamingIterator;
@@ -22,7 +23,7 @@ struct DocParseState {
     /// The parsed tree
     tree: Tree,
     /// The source text that was parsed (needed for computing edits)
-    source: String,
+    source: Arc<str>,
     highlights: Option<SyntaxHighlights>,
 }
 
@@ -40,7 +41,7 @@ enum TreeChange {
         // The previous tree has already received the edit, as required by
         // Tree::changed_ranges. Highlighting decides how to use these inputs.
         previous_tree: Tree,
-        previous_source: String,
+        previous_source: Arc<str>,
     },
 }
 
@@ -484,23 +485,24 @@ impl ParserState {
     /// retain responsibility for highlighting and embedded-language parsing.
     fn parse_document_tree(
         &mut self,
-        source: &str,
+        source: Arc<str>,
         language: LanguageId,
         doc_id: DocumentId,
     ) -> Option<ParsedDocumentTree> {
         let parser = self.parsers.get_mut(&language)?;
         if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
             if cached.language == language {
-                let Some(edit) = compute_incremental_edit(&cached.source, source) else {
+                let Some(edit) = compute_incremental_edit(&cached.source, &source) else {
+                    cached.source = source;
                     return Some(ParsedDocumentTree {
                         tree: cached.tree.clone(),
                         change: TreeChange::Unchanged,
                     });
                 };
                 cached.tree.edit(&edit);
-                if let Some(tree) = parser.parse(source, Some(&cached.tree)) {
+                if let Some(tree) = parser.parse(source.as_bytes(), Some(&cached.tree)) {
                     let previous_tree = std::mem::replace(&mut cached.tree, tree.clone());
-                    let previous_source = std::mem::replace(&mut cached.source, source.to_owned());
+                    let previous_source = std::mem::replace(&mut cached.source, source);
                     return Some(ParsedDocumentTree {
                         tree,
                         change: TreeChange::Incremental {
@@ -520,13 +522,13 @@ impl ParserState {
         // Drop invalid trees and highlights before attempting a full parse, so
         // failure cannot leave an edited tree paired with the previous source.
         self.doc_cache.remove(&doc_id);
-        let tree = parser.parse(source, None)?;
+        let tree = parser.parse(source.as_bytes(), None)?;
         self.doc_cache.insert(
             doc_id,
             DocParseState {
                 language,
                 tree: tree.clone(),
-                source: source.to_owned(),
+                source,
                 highlights: None,
             },
         );
@@ -551,7 +553,7 @@ impl ParserState {
         revision: u64,
     ) -> Option<SyntaxTreeSnapshot> {
         let cached = self.doc_cache.get(&doc_id)?;
-        let source = cached.source.clone();
+        let source = Arc::clone(&cached.source);
         let language = cached.language;
         let tree = cached.tree.clone();
         let regions = crate::syntax::registry::language(language)
@@ -572,7 +574,7 @@ impl ParserState {
             if parser.set_included_ranges(&[included_range]).is_err() {
                 continue;
             }
-            let injected_tree = parser.parse(&source, None);
+            let injected_tree = parser.parse(source.as_bytes(), None);
             let _ = parser.set_included_ranges(&[]);
             if let Some(injected_tree) = injected_tree {
                 injections.push(InjectedSyntaxTree {
@@ -672,6 +674,27 @@ impl ParserState {
         doc_id: DocumentId,
         revision: u64,
     ) -> SyntaxHighlights {
+        // Plain text has no parser; avoid copying the compatibility input.
+        let source = if language == LanguageId::PlainText {
+            ""
+        } else {
+            source
+        };
+        self.parse_and_highlight_shared(Arc::from(source), language, doc_id, revision)
+    }
+
+    /// Parse and highlight an already-owned immutable snapshot.
+    ///
+    /// The worker uses this entry point so its snapshot is also retained by the
+    /// incremental parse cache and reused for injection queries without copying
+    /// the whole document.
+    pub fn parse_and_highlight_shared(
+        &mut self,
+        source: Arc<str>,
+        language: LanguageId,
+        doc_id: DocumentId,
+        revision: u64,
+    ) -> SyntaxHighlights {
         self.last_timing = ParserTiming::default();
         self.last_changed_line_ranges = None;
         self.last_highlight_patch = None;
@@ -684,24 +707,25 @@ impl ParserState {
 
         // Use specialized two-pass parsing for markdown (block + inline)
         if language == LanguageId::Markdown {
-            let highlights = self.parse_and_highlight_markdown(source, doc_id, revision);
+            let highlights =
+                self.parse_and_highlight_markdown(Arc::clone(&source), doc_id, revision);
             return highlights;
         }
 
         // Use specialized parsing with language injection for HTML
         if language == LanguageId::Html {
-            let highlights = self.parse_and_highlight_html(source, doc_id, revision);
+            let highlights = self.parse_and_highlight_html(Arc::clone(&source), doc_id, revision);
             return highlights;
         }
 
         // Use specialized parsing with language injection for Vue SFC
         if language == LanguageId::Vue {
-            let highlights = self.parse_and_highlight_vue(source, doc_id, revision);
+            let highlights = self.parse_and_highlight_vue(Arc::clone(&source), doc_id, revision);
             return highlights;
         }
 
         let parse_started = Instant::now();
-        let Some(parsed) = self.parse_document_tree(source, language, doc_id) else {
+        let Some(parsed) = self.parse_document_tree(Arc::clone(&source), language, doc_id) else {
             tracing::warn!(?language, "Unable to parse document");
             return SyntaxHighlights::new(language, revision);
         };
@@ -760,7 +784,7 @@ impl ParserState {
         }
         let highlight_started = Instant::now();
         let mut patch = self.extract_highlights(
-            source,
+            &source,
             &tree,
             language,
             revision,
@@ -793,7 +817,7 @@ impl ParserState {
             patch
         };
         if language == LanguageId::Svelte {
-            self.extract_component_embedded_highlights(source, &tree, &mut highlights);
+            self.extract_component_embedded_highlights(&source, &tree, &mut highlights);
             finalize_line_tokens(&mut highlights);
             if let Some(cached) = self.doc_cache.get_mut(&doc_id) {
                 cached.highlights = Some(highlights.clone());
@@ -921,13 +945,13 @@ impl ParserState {
     /// Two-pass markdown parsing: block structure + inline elements
     fn parse_and_highlight_markdown(
         &mut self,
-        source: &str,
+        source: Arc<str>,
         doc_id: DocumentId,
         revision: u64,
     ) -> SyntaxHighlights {
         let language = LanguageId::Markdown;
 
-        let Some(parsed) = self.parse_document_tree(source, language, doc_id) else {
+        let Some(parsed) = self.parse_document_tree(Arc::clone(&source), language, doc_id) else {
             tracing::warn!(?language, "Unable to parse document");
             return SyntaxHighlights::new(language, revision);
         };
@@ -935,15 +959,16 @@ impl ParserState {
         let block_tree = parsed.tree;
 
         // Step 2: Extract block-level highlights
-        let mut highlights = self.extract_highlights(source, &block_tree, language, revision, None);
+        let mut highlights =
+            self.extract_highlights(&source, &block_tree, language, revision, None);
 
         // Step 3: Parse inline content if we have the inline parser
         if self.markdown_inline_parser.is_some() && self.markdown_inline_query.is_some() {
-            self.parse_markdown_inline_regions(source, &block_tree, &mut highlights);
+            self.parse_markdown_inline_regions(&source, &block_tree, &mut highlights);
         }
 
         // Step 4: Language injection for fenced code blocks
-        self.extract_fenced_code_highlights(source, &block_tree, &mut highlights);
+        self.extract_fenced_code_highlights(&source, &block_tree, &mut highlights);
 
         // Re-sort tokens after adding inline and injected highlights
         finalize_line_tokens(&mut highlights);
@@ -1317,13 +1342,13 @@ impl ParserState {
     /// Specialized HTML parsing with script/style language injection
     fn parse_and_highlight_html(
         &mut self,
-        source: &str,
+        source: Arc<str>,
         doc_id: DocumentId,
         revision: u64,
     ) -> SyntaxHighlights {
         let language = LanguageId::Html;
 
-        let Some(parsed) = self.parse_document_tree(source, language, doc_id) else {
+        let Some(parsed) = self.parse_document_tree(Arc::clone(&source), language, doc_id) else {
             tracing::warn!(?language, "Unable to parse document");
             return SyntaxHighlights::new(language, revision);
         };
@@ -1331,10 +1356,10 @@ impl ParserState {
         let html_tree = parsed.tree;
 
         // Step 2: Extract HTML-level highlights
-        let mut highlights = self.extract_highlights(source, &html_tree, language, revision, None);
+        let mut highlights = self.extract_highlights(&source, &html_tree, language, revision, None);
 
         // Step 3: Language injection for <script> and <style> elements
-        self.extract_html_embedded_highlights(source, &html_tree, &mut highlights);
+        self.extract_html_embedded_highlights(&source, &html_tree, &mut highlights);
 
         // Re-sort tokens after adding injected highlights
         finalize_line_tokens(&mut highlights);
@@ -1450,13 +1475,13 @@ impl ParserState {
     /// Specialized Vue SFC parsing - HTML structure with smart script language detection
     fn parse_and_highlight_vue(
         &mut self,
-        source: &str,
+        source: Arc<str>,
         doc_id: DocumentId,
         revision: u64,
     ) -> SyntaxHighlights {
         let language = LanguageId::Vue;
 
-        let Some(parsed) = self.parse_document_tree(source, language, doc_id) else {
+        let Some(parsed) = self.parse_document_tree(Arc::clone(&source), language, doc_id) else {
             tracing::warn!(?language, "Unable to parse document");
             return SyntaxHighlights::new(language, revision);
         };
@@ -1464,10 +1489,10 @@ impl ParserState {
         let tree = parsed.tree;
 
         // Step 2: Extract HTML-level highlights (Vue uses same query as HTML)
-        let mut highlights = self.extract_highlights(source, &tree, language, revision, None);
+        let mut highlights = self.extract_highlights(&source, &tree, language, revision, None);
 
         // Step 3: Language injection for script/style with component lang detection
-        self.extract_component_embedded_highlights(source, &tree, &mut highlights);
+        self.extract_component_embedded_highlights(&source, &tree, &mut highlights);
 
         // Re-sort tokens after adding injected highlights
         finalize_line_tokens(&mut highlights);
@@ -3098,7 +3123,13 @@ test:
                 original, original, &unicode, &multiline, &unicode, &renamed, "", original,
             ] {
                 revision += 1;
-                let actual = incremental.parse_and_highlight(source, language, document, revision);
+                let shared_source: Arc<str> = Arc::from(source);
+                let actual = incremental.parse_and_highlight_shared(
+                    Arc::clone(&shared_source),
+                    language,
+                    document,
+                    revision,
+                );
                 let expected =
                     ParserState::new().parse_and_highlight(source, language, document, revision);
                 assert_eq!(
@@ -3108,7 +3139,8 @@ test:
                 assert_eq!(actual.revision, revision);
                 assert_eq!(actual.language, language);
                 let cached = incremental.doc_cache.get(&document).unwrap();
-                assert_eq!(cached.source, source);
+                assert_eq!(&*cached.source, source);
+                assert!(Arc::ptr_eq(&cached.source, &shared_source));
                 assert_eq!(cached.language, language);
                 if matches!(
                     language,

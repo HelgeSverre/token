@@ -1070,11 +1070,12 @@ pub enum Cmd {
         document_id: DocumentId,
         revision: u64,
         fold_policy: (u64, crate::util::text::TabStops),
-        // Arc<str>, not String: `check_lsp_did_change_deadlines` shares
-        // this exact snapshot with a coincident LSP didChange deadline
-        // via a cheap refcount clone instead of a second full-buffer
-        // copy (lsp-integration.md's Document Synchronization).
-        source: Arc<str>,
+        /// Cheap immutable snapshot; the worker flattens it only after
+        /// coalescing superseded requests.
+        source: ropey::Rope,
+        /// A contiguous snapshot made for a coincident LSP didChange. When
+        /// present the worker reuses it rather than flattening the rope again.
+        shared_source: Option<Arc<str>>,
         language: LanguageId,
         snapshot_ms: f64,
     },

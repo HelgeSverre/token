@@ -9,9 +9,17 @@ use token::config::FormatterConfig;
 use token::messages::{FormattingMsg, Msg};
 use token::model::{DocumentId, SaveIntent};
 use token::syntax::LanguageId;
-use token::util::file_validation::MAX_FILE_SIZE;
 use token::util::ByteSize;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+
+fn output_budget(input_bytes: usize) -> ByteSize {
+    // Allow pretty-printers to expand input, without permitting runaway output.
+    ByteSize::bytes(
+        (input_bytes as u64)
+            .saturating_mul(4)
+            .max(ByteSize::mebibytes(50).as_u64()),
+    )
+}
 
 pub(super) struct Job {
     pub document_id: DocumentId,
@@ -31,7 +39,12 @@ pub(super) fn spawn(job: Job, tx: Sender<Msg>, wake: Option<Arc<dyn Fn() + Send 
             .enable_all()
             .build()
             .context("Starting formatter runtime")
-            .and_then(|runtime| runtime.block_on(run(&job, Duration::from_secs(5))))
+            .and_then(|runtime| {
+                runtime.block_on(run(
+                    &job,
+                    Duration::from_secs(u64::from(job.formatter.timeout_seconds)),
+                ))
+            })
             .map_err(|error| format!("{}: {error:#}", job.formatter.command));
         let _ = tx.send(Msg::Formatting(FormattingMsg::ExternalResolved {
             document_id: job.document_id,
@@ -50,7 +63,7 @@ pub(super) fn spawn(job: Job, tx: Sender<Msg>, wake: Option<Arc<dyn Fn() + Send 
 async fn read_bounded(reader: impl AsyncRead + Unpin, limit: ByteSize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader
-        .take(limit.as_u64() + 1)
+        .take(limit.as_u64().saturating_add(1))
         .read_to_end(&mut bytes)
         .await?;
     if bytes.len() as u64 > limit.as_u64() {
@@ -120,7 +133,7 @@ async fn run(job: &Job, timeout: Duration) -> Result<String> {
             let wait = async { child.wait().await.map_err(anyhow::Error::from) };
             let (_, out, err, status) = tokio::try_join!(
                 writer,
-                read_bounded(stdout, MAX_FILE_SIZE),
+                read_bounded(stdout, output_budget(job.text.len())),
                 read_bounded(stderr, ByteSize::kibibytes(64)),
                 wait
             )?;
@@ -142,7 +155,7 @@ async fn run(job: &Job, timeout: Duration) -> Result<String> {
         };
         tokio::select! {
             result = work => result,
-            _ = tokio::time::sleep(timeout) => Err(anyhow::anyhow!("Timed out after {} seconds", timeout.as_secs_f32())),
+            _ = tokio::time::sleep(timeout), if !timeout.is_zero() => Err(anyhow::anyhow!("Timed out after {} seconds", timeout.as_secs_f32())),
             _ = cancelled => Err(anyhow::anyhow!("Formatting request superseded or document closed")),
         }
     };
@@ -168,6 +181,7 @@ mod tests {
                 enabled: true,
                 command: command.into(),
                 args: args.iter().map(|arg| (*arg).into()).collect(),
+                ..Default::default()
             },
             text: "unsaved 🐍 = 1\n".into(),
             file: Some(dir.path().join("file with spaces.py")),
@@ -177,6 +191,15 @@ mod tests {
             request: request.clone(),
         };
         (dir, request, job)
+    }
+
+    #[tokio::test]
+    async fn command_formatting_accepts_large_input_and_optional_timeout() {
+        let (_dir, _request, mut job) = job("/bin/cat", &[]);
+        job.text = "x".repeat(ByteSize::mebibytes(51).as_usize());
+        assert_eq!(output_budget(job.text.len()), ByteSize::mebibytes(204));
+        assert_eq!(output_budget(0), ByteSize::mebibytes(50));
+        assert_eq!(run(&job, Duration::ZERO).await.unwrap(), job.text);
     }
 
     #[tokio::test]

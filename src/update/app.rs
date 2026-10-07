@@ -619,7 +619,7 @@ pub(super) fn finish_load(
     target: crate::model::FileRequest,
     path: PathBuf,
     identity: Option<crate::util::FileIdentity>,
-    result: Result<String, String>,
+    result: Result<ropey::Rope, String>,
 ) -> Option<Cmd> {
     let external = target.external_reload;
     let document_id = target.document_id;
@@ -655,8 +655,8 @@ pub(super) fn finish_load(
             .as_ref()
             .zip(doc.file_identity())
             .is_some_and(|(old, current)| old != current.uri());
-    doc.detected_line_ending = crate::model::LineEnding::detect(&content);
-    doc.buffer = ropey::Rope::from(content);
+    doc.detected_line_ending = crate::model::LineEnding::detect_rope(&content);
+    doc.buffer = content;
     doc.folds = None;
     doc.record_saved_buffer(doc.buffer.clone());
     doc.undo_stack.clear();
@@ -684,7 +684,7 @@ pub(super) fn finish_load(
         editor.clear_selection_history();
         if external {
             if let Some(csv) = editor.view_mode.as_csv_mut() {
-                match crate::csv::parse_csv(&doc.buffer.to_string(), csv.delimiter) {
+                match crate::csv::parse_csv_rope(&doc.buffer, csv.delimiter) {
                     Ok(data) => {
                         let mut replacement = crate::csv::CsvState::new(data, csv.delimiter);
                         replacement.has_header_row = csv.has_header_row;
@@ -885,7 +885,7 @@ mod tests {
     fn complete_test_load(
         model: &mut AppModel,
         path: PathBuf,
-        result: Result<String, String>,
+        result: Result<ropey::Rope, String>,
     ) -> Option<Cmd> {
         let target = model
             .document_mut()
@@ -1127,7 +1127,7 @@ mod tests {
         let cmd = complete_test_load(
             &mut model,
             PathBuf::from("/tmp/reloaded.rs"),
-            Ok("fn main() {}".to_owned()),
+            Ok("fn main() {}".into()),
         )
         .expect("FileLoaded should produce a command");
 
@@ -1153,7 +1153,7 @@ mod tests {
         let cmd = complete_test_load(
             &mut model,
             PathBuf::from("/tmp/new.rs"),
-            Ok("fn main() {}".to_owned()),
+            Ok("fn main() {}".into()),
         )
         .expect("FileLoaded should produce a command");
 
@@ -1285,7 +1285,7 @@ mod tests {
             complete_test_load(
                 &mut model,
                 PathBuf::from("/tmp/notes.txt"),
-                Ok("fn main() {}".to_owned()),
+                Ok("fn main() {}".into()),
             );
 
             assert_eq!(model.document().language, expected, "pinned={pinned}");

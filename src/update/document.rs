@@ -914,9 +914,40 @@ fn apply_history_buffer(
         );
     }
     let doc = model.document_mut();
+    let before = match edit {
+        EditOperation::Replace {
+            csv_cell: Some(_), ..
+        } => Some(doc.buffer.clone()),
+        _ => None,
+    };
     doc.buffer.remove(position..position + removed);
     doc.buffer.insert(position, inserted);
     if let Some(id) = id {
         super::folding::after_edits(model, id);
+        if let (
+            Some(before),
+            EditOperation::Replace {
+                csv_cell: Some((delimiter, cell)),
+                ..
+            },
+        ) = (before, edit)
+        {
+            let cell = match direction {
+                HistoryDirection::Undo => crate::csv::CellEdit {
+                    position: cell.position,
+                    old_value: cell.new_value.clone(),
+                    new_value: cell.old_value.clone(),
+                },
+                HistoryDirection::Redo => cell.clone(),
+            };
+            super::csv::refresh_cell_views(
+                model,
+                id,
+                &before,
+                *delimiter,
+                &cell,
+                (deleted.len(), inserted.len()),
+            );
+        }
     }
 }

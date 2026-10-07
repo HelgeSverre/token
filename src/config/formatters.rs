@@ -16,6 +16,13 @@ pub struct FormatterConfig {
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
+    /// Execution deadline in seconds; zero disables the timeout.
+    #[serde(default = "default_timeout_seconds")]
+    pub timeout_seconds: u32,
+}
+
+pub(crate) const fn default_timeout_seconds() -> u32 {
+    30
 }
 
 impl Default for FormatterConfig {
@@ -25,6 +32,7 @@ impl Default for FormatterConfig {
             enabled: true,
             command: String::new(),
             args: Vec::new(),
+            timeout_seconds: default_timeout_seconds(),
         }
     }
 }
@@ -52,6 +60,10 @@ mod tests {
             serde_yaml::from_str(&serde_yaml::to_string(&custom).unwrap()).unwrap();
         assert_eq!(custom.formatters, saved.formatters);
         assert!(!saved.formatters.contains_key(&LanguageId::Python));
+        assert_eq!(saved.formatters[&LanguageId::Rust].timeout_seconds, 30);
+        let unlimited: FormatterConfig =
+            serde_yaml::from_str("command: cat\ntimeout_seconds: 0\n").unwrap();
+        assert_eq!(unlimited.timeout_seconds, 0);
     }
 }
 

@@ -17,10 +17,12 @@ use serde::Deserialize;
 
 use token::csv::{detect_delimiter, parse_csv, CsvState, Delimiter};
 use token::markdown::{content_to_preview_html, PreviewTheme};
-use token::messages::{LayoutMsg, LspMsg, Msg};
+use token::messages::{DocumentMsg, LayoutMsg, LspMsg, Msg};
 use token::model::document::Document;
-use token::model::editor::{EditorState, Position, Selection, ViewMode};
-use token::model::editor_area::{EditorArea, SplitDirection};
+use token::model::editor::{
+    BinaryPlaceholderState, EditorState, Position, Selection, TabContent, ViewMode,
+};
+use token::model::editor_area::{EditorArea, SplitDirection, Tab};
 use token::model::ui::{
     CommandPaletteState, FindReplaceState, GotoLineState, ModalState, ThemePickerState, UiState,
 };
@@ -39,6 +41,9 @@ use token::view::{Frame, GlyphCache, PreviewRenderMode, Renderer, TextPainter};
 #[derive(Parser, Debug)]
 #[command(name = "screenshot", about = "Generate screenshots of Token editor")]
 struct Args {
+    /// Print embedded theme IDs as JSON and exit
+    #[arg(long)]
+    list_builtin_themes: bool,
     /// Path to a single scenario YAML file
     #[arg(long)]
     scenario: Option<PathBuf>,
@@ -60,6 +65,12 @@ struct Args {
     /// Override height in physical pixels
     #[arg(long)]
     height: Option<u32>,
+    /// Override the scenario device scale factor
+    #[arg(long)]
+    scale: Option<f64>,
+    /// Write reproducibility and measured geometry next to each PNG
+    #[arg(long)]
+    metadata: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +90,15 @@ struct Scenario {
     #[serde(default)]
     theme: Option<String>,
     files: Vec<ScenarioFile>,
+    /// Additional documents opened as tabs in the focused group (not splits).
+    #[serde(default)]
+    tabs: Vec<ScenarioFile>,
+    /// Active tab index after all tabs are installed.
+    #[serde(default)]
+    active_tab: Option<usize>,
+    /// Tab to mark dirty through the normal document edit update path.
+    #[serde(default)]
+    dirty_tab: Option<usize>,
     #[serde(default)]
     split_direction: SplitDir,
     #[serde(default)]
@@ -150,16 +170,30 @@ struct ScenarioFile {
     /// Open a preview pane (markdown/HTML) next to this file's editor
     #[serde(default)]
     preview: bool,
+    #[serde(default)]
+    kind: ScenarioFileKind,
 }
 
 impl ScenarioFile {
     fn source(&self) -> Result<String> {
+        if !matches!(self.kind, ScenarioFileKind::Text) {
+            return Ok(String::new());
+        }
         match &self.content {
             Some(content) => Ok(content.clone()),
             None => std::fs::read_to_string(&self.path)
                 .with_context(|| format!("reading {}", self.path.display())),
         }
     }
+}
+
+#[derive(Deserialize, Debug, Default, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum ScenarioFileKind {
+    #[default]
+    Text,
+    Image,
+    Binary,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -355,17 +389,19 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
     let line_height = font.line_height;
     let char_width = font.char_width;
 
-    // Mirror AppModel::recompute_status_bar_height: status-bar text line
-    // height (at the configured size) + symmetric vertical padding.
+    // Measure the same UI font as production; the model owns chrome sizing.
     let metrics = ScaledMetrics::new(scale);
     let config = token::config::EditorConfig::default();
     let status_text_size = (config.status_bar_font_size_clamped() * scale as f32).round();
-    let status_text_lh = font
-        .font
+    let ui_font = fontdue::Font::from_bytes(
+        include_bytes!("../../assets/Inter-Regular.ttf") as &[u8],
+        fontdue::FontSettings::default(),
+    )
+    .expect("bundled UI font");
+    let status_text_lh = ui_font
         .horizontal_line_metrics(status_text_size)
         .map(|m| m.new_line_size.ceil() as usize)
         .unwrap_or(line_height);
-    let status_bar_height = status_text_lh + metrics.padding_small * 2;
     // Load first file
     let first = scenario
         .files
@@ -391,7 +427,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         config,
         window_size: (scenario.width, scenario.height),
         line_height,
-        status_bar_height,
+        status_bar_height: 0,
         char_width,
         metrics,
         workspace: None,
@@ -408,6 +444,8 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         jump_history: Vec::new(),
         forward_history: Vec::new(),
     };
+    model.recompute_tab_bar_height_from_line_height();
+    model.recompute_status_bar_height(status_text_lh);
     let mut scenario_editors = vec![model.editor().id.context("first scenario editor")?];
 
     // Add additional files as splits
@@ -458,6 +496,33 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         }
     }
 
+    for file in &scenario.tabs {
+        scenario_editors.push(add_scenario_tab(&mut model, file)?);
+    }
+
+    for (file, editor_id) in scenario
+        .files
+        .iter()
+        .chain(&scenario.tabs)
+        .zip(scenario_editors.iter().copied())
+    {
+        apply_file_kind(&mut model, editor_id, file)?;
+    }
+
+    let tab_count = model
+        .editor_area
+        .focused_group()
+        .context("focused group")?
+        .tabs
+        .len();
+    if let Some(index) = scenario.dirty_tab {
+        anyhow::ensure!(
+            index < tab_count,
+            "dirty_tab {index} is outside {tab_count} tabs"
+        );
+        update(&mut model, Msg::Layout(LayoutMsg::SwitchToTab(index)));
+        update(&mut model, Msg::Document(DocumentMsg::InsertChar(' ')));
+    }
     // Apply syntax highlighting synchronously
     apply_syntax_highlighting(&mut model);
 
@@ -468,7 +533,12 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
             .activate(token::panel::PanelId::OUTLINE);
     }
 
-    for (file, editor_id) in scenario.files.iter().zip(scenario_editors) {
+    for (file, editor_id) in scenario
+        .files
+        .iter()
+        .chain(&scenario.tabs)
+        .zip(scenario_editors)
+    {
         let editor = model
             .editor_area
             .editors
@@ -555,8 +625,78 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
             scenario.height,
         )),
     );
+    if let Some(index) = scenario.active_tab {
+        anyhow::ensure!(
+            index < tab_count,
+            "active_tab {index} is outside {tab_count} tabs"
+        );
+        // Switching only after the resize gives production reveal logic the
+        // solved tab-bar width rather than the constructor's empty rectangle.
+        update(&mut model, Msg::Layout(LayoutMsg::SwitchToTab(index)));
+    }
 
     Ok(model)
+}
+
+fn add_scenario_tab(model: &mut AppModel, file: &ScenarioFile) -> Result<token::model::EditorId> {
+    let document_id = model.editor_area.next_document_id();
+    let mut document = Document::with_text(&file.source()?);
+    document.id = Some(document_id);
+    document.file_path = Some(file.path.clone());
+    document.language = LanguageId::from_path(&file.path);
+    model.editor_area.documents.insert(document_id, document);
+
+    let editor_id = model.editor_area.next_editor_id();
+    let mut editor = EditorState::new();
+    editor.id = Some(editor_id);
+    editor.document_id = Some(document_id);
+    apply_cursor_and_scroll(&mut editor, file);
+    model.editor_area.editors.insert(editor_id, editor);
+
+    let tab = Tab {
+        id: model.editor_area.next_tab_id(),
+        editor_id,
+        is_pinned: false,
+        is_preview: false,
+    };
+    model
+        .editor_area
+        .focused_group_mut()
+        .context("focused group")?
+        .tabs
+        .push(tab);
+    Ok(editor_id)
+}
+
+fn apply_file_kind(
+    model: &mut AppModel,
+    editor_id: token::model::EditorId,
+    file: &ScenarioFile,
+) -> Result<()> {
+    let editor = model
+        .editor_area
+        .editors
+        .get_mut(&editor_id)
+        .context("scenario editor")?;
+    match file.kind {
+        ScenarioFileKind::Text => {}
+        ScenarioFileKind::Image => {
+            let image =
+                token::image::load_image(&file.path, model.window_size.0, model.window_size.1)
+                    .with_context(|| format!("loading image {}", file.path.display()))?;
+            editor.view_mode = ViewMode::Image(Box::new(image));
+        }
+        ScenarioFileKind::Binary => {
+            let size_bytes = std::fs::metadata(&file.path)
+                .with_context(|| format!("reading binary metadata {}", file.path.display()))?
+                .len();
+            editor.tab_content = TabContent::BinaryPlaceholder(BinaryPlaceholderState {
+                path: file.path.clone(),
+                size_bytes,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Run tree-sitter syntax highlighting on all documents synchronously
@@ -574,7 +714,7 @@ fn apply_syntax_highlighting(model: &mut AppModel) {
             token::outline::extract_outline(&snapshot.tree, &source, doc.language, doc.revision)
         });
         doc.folds = Some(std::sync::Arc::new(token::syntax::folding::detect(
-            &source,
+            &doc.buffer,
             token::folding::FoldStamp {
                 revision: doc.revision,
                 language: doc.language,
@@ -685,7 +825,7 @@ fn apply_lsp_fixture(model: &mut AppModel, fixture: &LspFixture) -> Result<()> {
 
 /// Apply view modes (CSV grid, etc.) based on scenario file settings
 fn apply_view_modes(model: &mut AppModel, scenario: &Scenario) {
-    for scenario_file in &scenario.files {
+    for scenario_file in scenario.files.iter().chain(&scenario.tabs) {
         let wants_csv = matches!(scenario_file.view_mode, Some(ScenarioViewMode::Csv));
         if !wants_csv {
             continue;
@@ -1563,6 +1703,14 @@ fn composite_html_previews(buffer: &mut [u32], model: &AppModel, scale: f64) {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    if args.list_builtin_themes {
+        let ids: Vec<_> = token::theme::BUILTIN_THEMES
+            .iter()
+            .map(|theme| theme.id)
+            .collect();
+        println!("{}", serde_json::to_string(&ids)?);
+        return Ok(());
+    }
     let scenarios = collect_scenarios(&args)?;
 
     eprintln!(
@@ -1573,6 +1721,13 @@ fn main() -> Result<()> {
 
     for (_path, mut scenario) in scenarios {
         // Apply CLI overrides
+        if let Some(scale) = args.scale {
+            anyhow::ensure!(scale.is_finite() && scale > 0.0, "scale must be positive");
+            let ratio = scale / scenario.scale;
+            scenario.width = (scenario.width as f64 * ratio).round() as u32;
+            scenario.height = (scenario.height as f64 * ratio).round() as u32;
+            scenario.scale = scale;
+        }
         if let Some(w) = args.width {
             scenario.width = w;
         }
@@ -1580,6 +1735,12 @@ fn main() -> Result<()> {
             scenario.height = h;
         }
 
+        let theme_id = args
+            .theme
+            .as_deref()
+            .or(scenario.theme.as_deref())
+            .unwrap_or("default-dark")
+            .to_owned();
         let theme = load_theme_for_scenario(args.theme.as_deref(), scenario.theme.as_deref());
         let font_info = setup_font(scenario.scale);
 
@@ -1596,6 +1757,51 @@ fn main() -> Result<()> {
             .join(format!("screenshot-{}.png", scenario.name));
 
         save_png(&buffer, scenario.width, scenario.height, &out_path)?;
+        if args.metadata {
+            let chrome = token::layout::chrome::chrome(&model);
+            let rect = |key| {
+                chrome.rect(key).map(|r| {
+                    serde_json::json!({
+                        "x": r.x, "y": r.y, "width": r.width, "height": r.height
+                    })
+                })
+            };
+            let focused = model.editor();
+            let cursor = focused.active_cursor();
+            let metadata = serde_json::json!({
+                "schema_version": 1,
+                "scenario": scenario.name,
+                "theme": theme_id,
+                "scale": scenario.scale,
+                "window": {
+                    "physical": [scenario.width, scenario.height],
+                    "logical": [scenario.width as f64 / scenario.scale, scenario.height as f64 / scenario.scale]
+                },
+                "fonts": { "editor": "JetBrains Mono", "ui": "Inter", "editor_size_px": font_info.font_size },
+                "metrics_px": {
+                    "line_height": model.line_height,
+                    "character_width": model.char_width,
+                    "tab_bar_height": model.metrics.tab_bar_height,
+                    "document_tab_bar_height": model.metrics.document_tab_bar_height(),
+                    "status_bar_height": model.status_bar_height
+                },
+                "chrome_px": {
+                    "editor_area": rect(token::layout::UiKey::EditorArea),
+                    "sidebar": rect(token::layout::UiKey::Sidebar),
+                    "right_dock": rect(token::layout::UiKey::Dock(token::panel::DockPosition::Right)),
+                    "bottom_dock": rect(token::layout::UiKey::Dock(token::panel::DockPosition::Bottom))
+                },
+                "focused_file": model.document().file_path.as_ref().map(|p| p.display().to_string()),
+                "source_files": scenario.files.iter().chain(&scenario.tabs)
+                    .filter(|file| file.content.is_none())
+                    .map(|file| &file.path).collect::<Vec<_>>(),
+                "viewport_top_line": focused.viewport.top_line,
+                "caret": { "line": cursor.line, "column": cursor.column }
+            });
+            let metadata_path = out_path.with_extension("json");
+            std::fs::write(&metadata_path, serde_json::to_vec_pretty(&metadata)?)
+                .with_context(|| format!("writing {}", metadata_path.display()))?;
+        }
         let display_path = out_path.display().to_string();
         if !display_path.starts_with('/') && !display_path.starts_with('.') {
             eprintln!(" saved ./{}", display_path);
@@ -1611,6 +1817,34 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn polish_fixtures_construct_tabs_and_special_documents() -> Result<()> {
+        let tabs = load_scenario(&PathBuf::from("screenshots/polish/tabs-overflow.yaml"))?;
+        let tabs_model = create_model_from_scenario(&tabs, Theme::default())?;
+        let group = tabs_model
+            .editor_area
+            .focused_group()
+            .context("tabs group")?;
+        assert_eq!(group.tabs.len(), 8);
+        assert_eq!(group.active_tab_index, 7);
+        assert!(group.tab_scroll > 0, "active final tab must be revealed");
+        let dirty_editor = &tabs_model.editor_area.editors[&group.tabs[2].editor_id];
+        let dirty_document = &tabs_model.editor_area.documents[&dirty_editor.document_id.unwrap()];
+        assert!(dirty_document.is_modified);
+
+        let image = load_scenario(&PathBuf::from("screenshots/polish/image.yaml"))?;
+        let image_model = create_model_from_scenario(&image, Theme::default())?;
+        assert!(matches!(image_model.editor().view_mode, ViewMode::Image(_)));
+
+        let binary = load_scenario(&PathBuf::from("screenshots/polish/binary.yaml"))?;
+        let binary_model = create_model_from_scenario(&binary, Theme::default())?;
+        assert!(matches!(
+            binary_model.editor().tab_content,
+            TabContent::BinaryPlaceholder(_)
+        ));
+        Ok(())
+    }
 
     /// Catch fixtures that parse successfully but silently omit their feature.
     #[test]

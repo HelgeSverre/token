@@ -49,6 +49,76 @@ fn contrast_ratio(a: Color, b: Color) -> f64 {
 }
 
 #[test]
+fn bundled_status_and_tab_labels_remain_readable() {
+    for builtin in BUILTIN_THEMES {
+        let theme = Theme::from_yaml(builtin.yaml).unwrap();
+        for (role, foreground, background) in [
+            (
+                "status",
+                theme.status_bar.foreground,
+                theme.status_bar.background,
+            ),
+            (
+                "active tab",
+                theme.tab_bar.active_foreground,
+                theme.tab_bar.active_background,
+            ),
+            (
+                "inactive tab",
+                theme.tab_bar.inactive_foreground,
+                theme.tab_bar.inactive_background,
+            ),
+        ] {
+            // These bundled chrome pairs are opaque; custom-theme resolution
+            // and alpha compositing are deliberately outside this palette test.
+            assert_eq!(foreground.a, 255);
+            assert_eq!(background.a, 255);
+            let ratio = contrast_ratio(foreground, background);
+            assert!(
+                ratio >= 4.5,
+                "{} {role}: {ratio:.2}:1 is below 4.5:1",
+                builtin.id
+            );
+        }
+    }
+}
+
+#[test]
+fn bundled_explorer_labels_remain_readable_on_selected_rows() {
+    let mut failures = Vec::new();
+    for builtin in BUILTIN_THEMES {
+        let theme = Theme::from_yaml(builtin.yaml).unwrap();
+        let sidebar = theme.sidebar;
+        assert_eq!(sidebar.background.a, 255);
+        // The production sidebar blends selection fill over its opaque base.
+        // Compute the resulting channels independently of the paint helper.
+        let alpha = f64::from(sidebar.selection_background.a) / 255.0;
+        let blend = |base: u8, overlay: u8| {
+            (f64::from(base) * (1.0 - alpha) + f64::from(overlay) * alpha) as u8
+        };
+        let selected = Color::rgb(
+            blend(sidebar.background.r, sidebar.selection_background.r),
+            blend(sidebar.background.g, sidebar.selection_background.g),
+            blend(sidebar.background.b, sidebar.selection_background.b),
+        );
+        for (role, foreground, background) in [
+            ("normal", sidebar.foreground, sidebar.background),
+            ("selected", sidebar.selection_foreground, selected),
+        ] {
+            assert_eq!(foreground.a, 255);
+            let ratio = contrast_ratio(foreground, background);
+            if ratio < 4.5 {
+                failures.push(format!("{} {role}: {ratio:.2}:1", builtin.id));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "Explorer contrast below 4.5:1: {failures:?}"
+    );
+}
+
+#[test]
 fn test_color_from_hex_6() {
     let color = Color::from_hex("#1E1E1E").unwrap();
     assert_eq!(color.r, 0x1E);

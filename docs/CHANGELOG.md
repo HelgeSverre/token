@@ -6,6 +6,19 @@ All notable changes to Token are documented in this file.
 
 ## Unreleased
 
+### Interface
+
+- Improve muted status and inactive-tab labels in bundled dark themes so
+  status and tab text meet a 4.5:1 palette contrast floor. Preserve custom theme
+  colors, existing backgrounds, syntax colors and active-tab accents.
+
+- Give the global status bar a 22-logical-pixel minimum height, keeping its
+  existing text size and accommodating larger configured status fonts.
+
+- Give document tabs a 32-logical-pixel minimum height without increasing code
+  line spacing or dock, terminal and preview headers. Larger fonts retain the
+  space they need, including at fractional display scales.
+
 ### Completion
 
 - Make completion-menu navigation, acceptance and dismissal rebindable through
@@ -23,6 +36,68 @@ All notable changes to Token are documented in this file.
   Windows Explorer and Linux file managers, without changing existing defaults.
 
 ### Editing
+
+- Search regex and Unicode case-insensitive queries directly over document
+  ropes instead of copying the entire document, retaining contiguous-engine
+  fallback for patterns unsupported by the rope backend.
+
+- Halve Find match-offset storage on 64-bit systems for documents fitting
+  32-bit character offsets; larger documents retain full-width offsets without
+  truncation. Navigation, replacement and rendering share compact results.
+
+- Reuse immutable document ropes for folding detection instead of rebuilding
+  them from contiguous syntax text; preserve fold fingerprints and injections.
+
+- Refresh indexed CSV cells directly during undo/redo, retaining full reparsing
+  for arbitrary text edits, incompatible delimiters and stale views.
+
+- Make CSV cell commits undoable document transactions that map peer-pane
+  cursors and refresh other CSV views. Update record offsets logarithmically
+  instead of walking every following record. Preserve empty single-field records
+  and Unicode text containing the former internal `ú` separator.
+- Move syntax-only contiguous snapshots to the worker after coalescing pending
+  requests, retaining shared snapshots when LSP synchronization also needs text.
+- Stream case-sensitive Unicode literal Find queries and avoid retaining
+  out-of-selection matches in scoped searches.
+
+- Raise workspace-symbol results from 2,000 to 20,000 while preserving ranking,
+  duplicate removal and the truncation indicator.
+
+- Raise the Sema semantic-token, inlay-hint and code-lens document budget from
+  8 MiB to 64 MiB, retaining request cancellation and stale-response checks.
+
+- Add bounded automation and MCP document-range reads for files of any size,
+  including Unicode character offsets and revision metadata for paged reads.
+
+- Remove the encoded-image file-size cap; bound decoder allocations and final
+  RGBA buffers to 512 MiB instead. Raise the separate preview-resource read
+  budget to 256 MiB while retaining directory containment and revocation checks.
+
+- Allow formatter output up to four times the input size, with a 50 MiB minimum
+  budget. Per-formatter `timeout_seconds` defaults to 30; zero disables the
+  timeout. Cancellation and bounded error-output capture remain active.
+
+- Stream eligible literal Find queries over rope chunks instead of copying the
+  whole document. Regex and Unicode case-insensitive searches retain full semantics.
+
+- Raise the folding scan budget from 32 MiB to 256 MiB. Skip unnecessary rope
+  allocation and fingerprinting when a document exceeds that budget.
+
+- Reuse syntax-worker document snapshots across parsing, incremental caches and
+  injection queries instead of making redundant whole-document copies.
+
+- Index CSV records during parsing so cell edits copy only one record, preserve
+  quoted multiline records, and reject stale document snapshots.
+
+- Speed up line-ending detection when opening text files by searching rope
+  chunks for newlines without scanning ordinary text byte by byte.
+
+- Reduce CSV grid parsing allocations by reading directly from the document rope
+  and building row storage without intermediate per-cell strings. Remove the
+  arbitrary 50 MiB text-opening and external-change limits; load text into ropes
+  without a full-file string copy. Image, preview-resource and formatter budgets
+  remain separate. CSV navigation now uses rendered column widths to keep the
+  selected cell visible.
 
 - Keep pane dividers at a consistent width when focus changes or the cursor
   blinks, restoring them after partial text and scrollbar redraws.

@@ -42,7 +42,7 @@ ui:
     active_background: "#282A36"
     active_foreground: "#F8F8F2"
     inactive_background: "#21222C"
-    inactive_foreground: "#6272A4"
+    inactive_foreground: "#8794B6"
     border: "#343746"
     modified_indicator: "#F8F8F2"
 

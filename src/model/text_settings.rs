@@ -32,24 +32,48 @@ impl LineEnding {
 
     /// Most common ending, with first occurrence breaking ties. No normalization.
     pub fn detect(text: &str) -> Self {
+        Self::detect_chunks([text.as_bytes()])
+    }
+
+    /// Detect without allocating a contiguous copy of the document.
+    pub fn detect_rope(text: &ropey::Rope) -> Self {
+        Self::detect_chunks(text.chunks().map(str::as_bytes))
+    }
+
+    fn detect_chunks<'a>(chunks: impl IntoIterator<Item = &'a [u8]>) -> Self {
         let mut counts = [
             (Self::Lf, 0, usize::MAX),
             (Self::Crlf, 0, usize::MAX),
             (Self::Cr, 0, usize::MAX),
         ];
-        let mut chars = text.char_indices().peekable();
-        while let Some((offset, ch)) = chars.next() {
-            let index = match ch {
-                '\r' if chars.peek().is_some_and(|&(_, next)| next == '\n') => {
-                    chars.next();
-                    1
-                }
-                '\r' => 2,
-                '\n' => 0,
-                _ => continue,
-            };
+        let mut record = |index: usize, offset: usize| {
             counts[index].1 += 1;
             counts[index].2 = counts[index].2.min(offset);
+        };
+        let mut base = 0;
+        let mut pending_cr = None;
+        for chunk in chunks {
+            // Skip ordinary text using the vectorized search, retaining byte
+            // offsets so only adjacent CR/LF bytes form a pair across chunks.
+            for index in memchr::memchr2_iter(b'\r', b'\n', chunk) {
+                let offset = base + index;
+                if let Some(cr_offset) = pending_cr.take() {
+                    if chunk[index] == b'\n' && offset == cr_offset + 1 {
+                        record(1, cr_offset);
+                        continue;
+                    }
+                    record(2, cr_offset);
+                }
+                if chunk[index] == b'\r' {
+                    pending_cr = Some(offset);
+                } else {
+                    record(0, offset);
+                }
+            }
+            base += chunk.len();
+        }
+        if let Some(offset) = pending_cr {
+            record(2, offset);
         }
         counts
             .into_iter()
@@ -131,6 +155,52 @@ impl DocumentTextSettings {
             "\t".into()
         } else {
             " ".repeat(self.indent_size - column % self.indent_size)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LineEnding;
+
+    #[test]
+    fn line_ending_detection_preserves_majority_and_first_occurrence_across_chunks() {
+        for (text, expected) in [
+            ("æ\r\nø\n", LineEnding::Crlf),
+            ("æ\nø\r\n", LineEnding::Lf),
+            ("æ\rø\r\nå\r", LineEnding::Cr),
+            ("æ\rø\r\nå\r\n", LineEnding::Crlf),
+            ("æøå", LineEnding::Lf),
+            ("", LineEnding::Lf),
+            ("\r", LineEnding::Cr),
+            ("\r\n", LineEnding::Crlf),
+            ("\r\r\n", LineEnding::Cr),
+            ("\r\n\r", LineEnding::Crlf),
+            ("\ræøå\n", LineEnding::Cr),
+            ("\næøå\r", LineEnding::Lf),
+        ] {
+            // Exercise every boundary, including empty chunks, split CRLF and
+            // UTF-8, and CR/LF separated by ordinary text in another chunk.
+            for size in 1..=text.len().max(1) {
+                assert_eq!(
+                    LineEnding::detect_chunks(text.as_bytes().chunks(size)),
+                    expected,
+                    "{text:?}, chunk size {size}"
+                );
+            }
+            for split in 0..=text.len() {
+                let (left, right) = text.as_bytes().split_at(split);
+                assert_eq!(
+                    LineEnding::detect_chunks([left, &[], right]),
+                    expected,
+                    "{text:?}, split at {split}"
+                );
+            }
+            assert_eq!(
+                LineEnding::detect_rope(&ropey::Rope::from_str(text)),
+                expected
+            );
+            assert_eq!(LineEnding::detect(text), expected);
         }
     }
 }

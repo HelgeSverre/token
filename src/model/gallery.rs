@@ -27,11 +27,15 @@ pub enum ChromePreview {
     UsagesPopulated,
     TerminalContent,
     RightPanel,
+    ExplorerSelected,
+    ExplorerDeep,
+    ExplorerScrolled,
 }
 
 #[derive(Clone, Copy)]
 pub enum EditorPreview {
     Selection,
+    WrappedSelection,
     IndentGuides,
     Folding,
     Diagnostics,
@@ -71,8 +75,12 @@ pub enum Preview {
     SettingsForm,
     SettingsRecords(SettingsRecordsPreview),
     SearchCollection(SearchCollectionPreview),
-    CompletionDocumentation,
-    HoverDocumentation,
+    CompletionDocumentation {
+        scrolled: bool,
+    },
+    HoverDocumentation {
+        near_bottom: bool,
+    },
     SignatureHelp,
     Checkbox(bool),
     Select {
@@ -158,17 +166,31 @@ pub const SPECIMENS: &[Specimen] = &[
     },
     Specimen {
         id: "completion.with-documentation",
-        preview: Preview::CompletionDocumentation,
+        preview: Preview::CompletionDocumentation { scrolled: false },
         category: 5,
         source: "view/overlay_surface.rs · list + Documentation",
         tokens: "completion selection / code and UI typography / docs scrollbar",
     },
     Specimen {
+        id: "completion.documentation-scrolled",
+        preview: Preview::CompletionDocumentation { scrolled: true },
+        category: 5,
+        source: "view/overlay_surface.rs · list + Documentation",
+        tokens: "independent documentation scroll / unchanged selected completion / clipped prose",
+    },
+    Specimen {
         id: "hover.documentation",
-        preview: Preview::HoverDocumentation,
+        preview: Preview::HoverDocumentation { near_bottom: false },
         category: 5,
         source: "view/overlay_surface.rs · cursor Zones",
         tokens: "hover signature / prose / diagnostic banner",
+    },
+    Specimen {
+        id: "hover.documentation-bottom-edge",
+        preview: Preview::HoverDocumentation { near_bottom: true },
+        category: 5,
+        source: "view/overlay_surface.rs · cursor anchor placement",
+        tokens: "bottom-edge caret / flip above / signature and diagnostic banner",
     },
     Specimen {
         id: "signature-help.active-parameter",
@@ -267,6 +289,27 @@ pub const SPECIMENS: &[Specimen] = &[
         category: 7,
         source: "view/panels.rs · render_dock",
         tokens: "sidebar / header / border / expanded tree / selected row",
+    },
+    Specimen {
+        id: "explorer.selected-file",
+        preview: Preview::Chrome(ChromePreview::ExplorerSelected),
+        category: 7,
+        source: "view/panels.rs · render_sidebar",
+        tokens: "sidebar / expanded and collapsed folders / selected filename",
+    },
+    Specimen {
+        id: "explorer.deep-long-name",
+        preview: Preview::Chrome(ChromePreview::ExplorerDeep),
+        category: 7,
+        source: "view/panels.rs · render_sidebar",
+        tokens: "sidebar / nested tree / selected long Unicode name / truncation",
+    },
+    Specimen {
+        id: "explorer.scrolled-folder",
+        preview: Preview::Chrome(ChromePreview::ExplorerScrolled),
+        category: 7,
+        source: "view/panels.rs · render_sidebar",
+        tokens: "sidebar / scrolled tree / selected folder / disclosure",
     },
     Specimen {
         id: "scrollbar.vertical",
@@ -591,6 +634,13 @@ pub const SPECIMENS: &[Specimen] = &[
         category: 8,
         source: "view/find_bar.rs · render + view/mod.rs find_match_decorations",
         tokens: "editor bracket_match_background / selection / overlay field",
+    },
+    Specimen {
+        id: "editor.wrapped-selection",
+        preview: Preview::Editor(EditorPreview::WrappedSelection),
+        category: 8,
+        source: "view/editor_text.rs · production wrapped visual rows",
+        tokens: "soft wrap / continuation caret / cross-row selection / gutter",
     },
 ];
 

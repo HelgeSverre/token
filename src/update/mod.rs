@@ -142,6 +142,7 @@ pub fn update(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
     let result = merge_cmds(result, file_change::reconcile(model));
     let result = merge_cmds(result, file_policy::reconcile(model));
     let result = merge_cmds(result, auto_save::reconcile(model));
+    let result = merge_cmds(result, csv::reconcile(model));
     let result = merge_cmds(
         result,
         merge_cmds(
@@ -309,6 +310,9 @@ fn update_inner(model: &mut AppModel, msg: Msg) -> Option<Cmd> {
             if let Some((true, is_editing)) = csv_info {
                 if let Some(csv_msg) = map_document_to_csv(&m, is_editing) {
                     return csv::update_csv(model, csv_msg);
+                }
+                if !is_editing && matches!(m, DocumentMsg::Undo | DocumentMsg::Redo) {
+                    return document::update_document(model, m);
                 }
                 return None;
             }
@@ -497,6 +501,8 @@ fn map_document_to_csv(doc_msg: &DocumentMsg, is_editing: bool) -> Option<CsvMsg
         (DocumentMsg::InsertChar(ch), true) => Some(CsvMsg::EditInsertChar(*ch)),
         (DocumentMsg::DeleteBackward, true) => Some(CsvMsg::EditDeleteBackward),
         (DocumentMsg::DeleteForward, true) => Some(CsvMsg::EditDeleteForward),
+        (DocumentMsg::Undo, true) => Some(CsvMsg::EditUndo),
+        (DocumentMsg::Redo, true) => Some(CsvMsg::EditRedo),
         _ => None,
     }
 }
@@ -628,7 +634,7 @@ fn async_reply_trace_names_exclude_source_payloads() {
         identity: None,
         target,
         path: "/fixture/a.txt".into(),
-        result: Ok(doc.buffer.to_string()),
+        result: Ok(doc.buffer),
     });
     for message in [save, load] {
         let name = msg_type_name(&message);

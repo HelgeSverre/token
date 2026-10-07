@@ -65,7 +65,8 @@ struct SyntaxParseRequest {
     fold_policy: (u64, token::util::text::TabStops),
     document_id: token::model::editor_area::DocumentId,
     revision: u64,
-    source: Arc<str>,
+    source: ropey::Rope,
+    shared_source: Option<Arc<str>>,
     language: LanguageId,
     snapshot_ms: f64,
     queued_at: Instant,
@@ -1223,40 +1224,25 @@ impl App {
 
     /// Trigger syntax parsing for all documents loaded at startup
     fn trigger_initial_syntax_parsing(&mut self) {
-        // Collect document info first to avoid borrow issues
+        // Use the same snapshot policy as interactive opens, one document at a
+        // time. In particular, large plain-text files need no syntax snapshot.
         let docs_to_parse: Vec<_> = self
             .model
             .editor_area
             .documents
             .iter()
-            .map(|(&id, doc)| {
-                let source: Arc<str> = doc.buffer.to_string().into();
-                (
-                    id,
-                    doc.revision,
-                    source,
-                    doc.language,
-                    (doc.text_policy_generation, doc.text_settings.tabs),
-                )
-            })
+            .map(|(&id, doc)| (id, doc.revision))
             .collect();
 
-        // Send parse requests for each document
-        for (doc_id, revision, source, language, fold_policy) in docs_to_parse {
-            if let Err(e) = self
-                .syntax_tx
-                .send(SyntaxWorkerRequest::Parse(SyntaxParseRequest {
-                    document_id: doc_id,
-                    fold_policy,
+        for (document_id, revision) in docs_to_parse {
+            if let Some(cmd) = update(
+                &mut self.model,
+                Msg::Syntax(SyntaxMsg::ParseReady {
+                    document_id,
                     revision,
-                    source,
-                    language,
-                    snapshot_ms: 0.0,
-                    queued_at: Instant::now(),
-                    extract_outline: false,
-                }))
-            {
-                tracing::warn!("Failed to send initial syntax parse request: {}", e);
+                }),
+            ) {
+                self.process_cmd(cmd);
             }
         }
 
@@ -2983,6 +2969,7 @@ impl App {
                 fold_policy,
                 revision,
                 source,
+                shared_source,
                 language,
                 snapshot_ms,
             } => {
@@ -2991,7 +2978,7 @@ impl App {
                     document_id.0,
                     revision,
                     language,
-                    source.len()
+                    source.len_bytes()
                 );
                 let syntax_tx = self.syntax_tx.clone();
                 if let Err(e) = syntax_tx.send(SyntaxWorkerRequest::Parse(SyntaxParseRequest {
@@ -2999,6 +2986,7 @@ impl App {
                     fold_policy,
                     revision,
                     source,
+                    shared_source,
                     language,
                     snapshot_ms,
                     queued_at: Instant::now(),
@@ -5965,11 +5953,13 @@ impl ApplicationHandler for App {
         // fired parses took — the LSP did-change check below reuses them
         // for documents whose deadlines coincide (design doc: "must not
         // double" the rope `to_string()`).
-        let (syntax_redraw, syntax_snapshots) = self.check_syntax_deadlines();
+        let now = Instant::now();
+        let lsp_changes = self.lsp_change_deadlines.take_expired(now);
+        let (syntax_redraw, syntax_snapshots) = self.check_syntax_deadlines(&lsp_changes);
         if syntax_redraw {
             needs_redraw = true;
         }
-        self.check_lsp_did_change_deadlines(&syntax_snapshots);
+        self.check_lsp_did_change_deadlines_for(lsp_changes, &syntax_snapshots);
         self.check_lsp_restart_deadlines();
         self.check_lsp_definition_deadlines();
         self.check_lsp_hover_deadlines();
@@ -6196,6 +6186,21 @@ impl App {
                             }
                             Err(error) => AutomationResponse::error(error),
                         };
+                    let _ = envelope.response_tx.send(response);
+                }
+                AutomationRequest::DocumentRange { start, end } => {
+                    let response = match crate::automation::DocumentSnapshot::from_range(
+                        &self.model,
+                        start,
+                        end,
+                    ) {
+                        Ok(document) => {
+                            let mut response = self.automation_response("document range");
+                            response.document = Some(document);
+                            response
+                        }
+                        Err(error) => AutomationResponse::error(error),
+                    };
                     let _ = envelope.response_tx.send(response);
                 }
                 AutomationRequest::Actions => {
@@ -6573,6 +6578,7 @@ impl App {
     /// coincide (design doc: "must not double" the rope-to-string cost).
     fn check_syntax_deadlines(
         &mut self,
+        lsp_changes: &[(token::model::editor_area::DocumentId, u64)],
     ) -> (
         bool,
         HashMap<token::model::editor_area::DocumentId, Arc<str>>,
@@ -6608,8 +6614,22 @@ impl App {
                     revision,
                 }),
             ) {
-                if let Cmd::RunSyntaxParse { ref source, .. } = cmd {
-                    snapshots.insert(document_id, source.clone());
+                let mut cmd = cmd;
+                if let Cmd::RunSyntaxParse {
+                    revision,
+                    ref source,
+                    ref mut shared_source,
+                    ref mut snapshot_ms,
+                    ..
+                } = cmd
+                {
+                    if lsp_changes.contains(&(document_id, revision)) {
+                        let started = Instant::now();
+                        let text: Arc<str> = source.to_string().into();
+                        *snapshot_ms += started.elapsed().as_secs_f64() * 1000.0;
+                        *shared_source = Some(text.clone());
+                        snapshots.insert(document_id, text);
+                    }
                 }
                 if cmd.needs_redraw() {
                     needs_redraw = true;
@@ -6627,12 +6647,12 @@ impl App {
     /// on to a newer revision since the deadline was scheduled (the next
     /// edit's own `record_edit` call will have already re-armed the
     /// deadline for that newer revision).
-    fn check_lsp_did_change_deadlines(
+    fn check_lsp_did_change_deadlines_for(
         &mut self,
+        expired: Vec<(token::model::editor_area::DocumentId, u64)>,
         shared_snapshots: &HashMap<token::model::editor_area::DocumentId, Arc<str>>,
     ) {
-        let now = Instant::now();
-        for (document_id, revision) in self.lsp_change_deadlines.take_expired(now) {
+        for (document_id, revision) in expired {
             let current_revision = self
                 .model
                 .editor_area
@@ -6645,6 +6665,15 @@ impl App {
             let text = shared_snapshots.get(&document_id).cloned();
             self.send_lsp_did_change(document_id, revision, text);
         }
+    }
+
+    #[cfg(test)]
+    fn check_lsp_did_change_deadlines(
+        &mut self,
+        shared_snapshots: &HashMap<token::model::editor_area::DocumentId, Arc<str>>,
+    ) {
+        let expired = self.lsp_change_deadlines.take_expired(Instant::now());
+        self.check_lsp_did_change_deadlines_for(expired, shared_snapshots);
     }
 
     /// Keep open-document subscriptions independent of workspace ignore rules.
@@ -6753,9 +6782,14 @@ fn syntax_worker_loop(
 
             let worker_started = Instant::now();
             let queue_ms = req.queued_at.elapsed().as_secs_f64() * 1000.0;
+            let snapshot_started = Instant::now();
+            let source: Arc<str> = req
+                .shared_source
+                .unwrap_or_else(|| req.source.to_string().into());
+            let snapshot_ms = req.snapshot_ms + snapshot_started.elapsed().as_secs_f64() * 1000.0;
             let parse_started = Instant::now();
-            let full_highlights = parser_state.parse_and_highlight(
-                &req.source,
+            let full_highlights = parser_state.parse_and_highlight_shared(
+                Arc::clone(&source),
                 req.language,
                 req.document_id,
                 req.revision,
@@ -6785,7 +6819,7 @@ fn syntax_worker_loop(
                 parser_state
                     .get_cached_tree(req.document_id)
                     .map(|(tree, lang)| {
-                        token::outline::extract_outline(tree, &req.source, lang, req.revision)
+                        token::outline::extract_outline(tree, &source, lang, req.revision)
                     })
                     .unwrap_or_else(|| token::outline::OutlineData::empty(req.revision))
             });
@@ -6811,7 +6845,7 @@ fn syntax_worker_loop(
                 outline,
                 folds,
                 timing: Box::new(token::messages::SyntaxWorkerTiming {
-                    snapshot_ms: req.snapshot_ms,
+                    snapshot_ms,
                     queue_ms,
                     parse_highlight_ms,
                     parse_ms: parser_timing.parse_ms,
@@ -6859,6 +6893,48 @@ fn handle_syntax_worker_request(
             pending.remove(&document_id);
             parser_state.clear_doc_cache(document_id);
         }
+    }
+}
+
+#[cfg(test)]
+mod syntax_worker_tests {
+    use super::*;
+
+    fn request(revision: u64, text: &str, language: LanguageId) -> SyntaxParseRequest {
+        SyntaxParseRequest {
+            fold_policy: (revision, token::util::text::TabStops::default()),
+            document_id: token::model::editor_area::DocumentId(7),
+            revision,
+            source: ropey::Rope::from_str(text),
+            shared_source: None,
+            language,
+            snapshot_ms: 0.0,
+            queued_at: Instant::now(),
+            extract_outline: false,
+        }
+    }
+
+    #[test]
+    fn syntax_worker_coalescing_keeps_latest_snapshot_and_ownership() {
+        let mut pending = HashMap::new();
+        let mut parser_state = ParserState::new();
+        handle_syntax_worker_request(
+            &mut pending,
+            &mut parser_state,
+            SyntaxWorkerRequest::Parse(request(1, "old", LanguageId::Rust)),
+        );
+        handle_syntax_worker_request(
+            &mut pending,
+            &mut parser_state,
+            SyntaxWorkerRequest::Parse(request(2, "new", LanguageId::JavaScript)),
+        );
+
+        let latest = pending.values().next().unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(latest.revision, 2);
+        assert_eq!(latest.source.to_string(), "new");
+        assert_eq!(latest.language, LanguageId::JavaScript);
+        assert_eq!(latest.fold_policy.0, 2);
     }
 }
 

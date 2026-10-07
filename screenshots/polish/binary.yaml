@@ -1,0 +1,7 @@
+name: polish-binary
+width: 1440
+height: 900
+scale: 1
+files:
+  - path: assets/JetBrainsMono.ttf
+    kind: binary

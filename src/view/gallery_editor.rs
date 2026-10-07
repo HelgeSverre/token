@@ -79,7 +79,7 @@ pub(super) fn build_model(
             Some(parser.parse_and_highlight(&source, doc.language, *doc_id, doc.revision));
         doc.syntax_tree = parser.syntax_tree_snapshot(*doc_id, doc.revision);
         doc.folds = Some(Arc::new(crate::syntax::folding::detect(
-            &source,
+            &doc.buffer,
             FoldStamp {
                 revision: doc.revision,
                 language: doc.language,
@@ -118,6 +118,17 @@ fn editor_and_document_mut(model: &mut AppModel) -> (&mut EditorState, &Document
 
 fn apply_variant(model: &mut AppModel, kind: EditorPreview) {
     match kind {
+        EditorPreview::WrappedSelection => {
+            let end = model.document().line_length(LINE_ENTRY);
+            let editor = model.editor_mut();
+            editor.soft_wrap = true;
+            editor.cursors = vec![Cursor::at(LINE_ENTRY, end)];
+            editor.selections = vec![Selection::from_anchor_head(
+                Position::new(LINE_ENTRY, 12),
+                Position::new(LINE_ENTRY, end),
+            )];
+            editor.viewport.top_line = LINE_FN_ADD;
+        }
         EditorPreview::Selection => {
             let editor = model.editor_mut();
             editor.cursors = vec![Cursor::at(LINE_ADDED, 25), Cursor::at(LINE_ADDED, 42)];
@@ -191,7 +202,8 @@ fn apply_variant(model: &mut AppModel, kind: EditorPreview) {
             let editor = model.editor_mut();
             editor.cursors = vec![Cursor::at(LINE_IF, 8)];
             editor.selections = vec![Selection::new(Position::new(LINE_IF, 8))];
-            editor.viewport.top_line = 7;
+            // Keep all three severity rows inside the fixed-height preview.
+            editor.viewport.top_line = LINE_NEW_BODY;
         }
         EditorPreview::Inlays => {
             model.config.lsp.inlay_hints = true;
@@ -273,17 +285,127 @@ mod tests {
     use super::*;
     use crate::view::GlyphCache;
 
-    fn painter_and_model(kind: EditorPreview) -> AppModel {
+    fn painter_and_model_at(kind: EditorPreview, width: usize, scale: f64) -> AppModel {
         let font = fontdue::Font::from_bytes(
             include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
             fontdue::FontSettings::default(),
         )
         .unwrap();
         let mut cache = GlyphCache::default();
-        let ascent = font.horizontal_line_metrics(14.0).unwrap().ascent;
-        let char_width = font.rasterize('M', 14.0).0.advance_width;
-        let painter = TextPainter::new(&font, &mut cache, 14.0, ascent, char_width, 20);
-        build_model(&Theme::default_dark(), &painter, (580, 240), 1.0, kind)
+        let size = 14.0 * scale as f32;
+        let ascent = font.horizontal_line_metrics(size).unwrap().ascent;
+        let char_width = font.rasterize('M', size).0.advance_width;
+        let painter = TextPainter::new(
+            &font,
+            &mut cache,
+            size,
+            ascent,
+            char_width,
+            (20.0 * scale) as usize,
+        );
+        let (_, height) = super::super::gallery::specimen_size(
+            crate::model::gallery::Preview::Editor(kind),
+            width == 500,
+        );
+        build_model(
+            &Theme::default_dark(),
+            &painter,
+            (
+                (width as f64 * scale) as usize,
+                (height as f64 * scale) as usize,
+            ),
+            scale,
+            kind,
+        )
+    }
+
+    fn painter_and_model(kind: EditorPreview) -> AppModel {
+        painter_and_model_at(kind, 580, 1.0)
+    }
+
+    #[test]
+    fn wrapped_selection_spans_rows_and_caret_hits_its_logical_position() {
+        for scale in [1.0, 1.5, 2.0] {
+            for width in [500, 580] {
+                let model = painter_and_model_at(EditorPreview::WrappedSelection, width, scale);
+                let editor = model.editor();
+                let document = model.document();
+                let end = document.line_length(LINE_ENTRY);
+                let map = editor.viewport_map(document);
+                assert!(editor.soft_wrap);
+                assert_eq!(editor.selections[0].anchor, Position::new(LINE_ENTRY, 12));
+                assert_eq!(editor.selections[0].head, Position::new(LINE_ENTRY, end));
+                assert_eq!(
+                    editor.cursors[0].to_position(),
+                    Position::new(LINE_ENTRY, end)
+                );
+                assert!(
+                    map.visual_line_for_position(LINE_ENTRY, end)
+                        > map.visual_line_for_position(LINE_ENTRY, 12)
+                );
+                assert!(map.visible_row_for_position(LINE_ENTRY, end).is_some());
+                assert_eq!(editor.viewport.left_column, 0);
+                let caret = crate::view::caret::editor_text_rect_at(
+                    &model,
+                    LINE_ENTRY,
+                    end,
+                    model.char_width,
+                    model.line_height,
+                )
+                .unwrap();
+                let group = model.editor_area.focused_group().unwrap();
+                let layout =
+                    crate::view::geometry::GroupLayout::new(group, &model, model.char_width);
+                assert_eq!(
+                    layout.pixel_to_cursor(
+                        caret.x as f64,
+                        caret.y as f64,
+                        model.char_width,
+                        model.line_height as f64,
+                        editor,
+                        document
+                    ),
+                    (LINE_ENTRY, end)
+                );
+                assert_eq!(document.buffer.to_string(), SAMPLE);
+            }
+        }
+    }
+
+    #[test]
+    fn diagnostic_specimen_shows_every_severity_inside_the_viewport() {
+        use lsp_types::DiagnosticSeverity;
+        for scale in [1.0, 1.5, 2.0] {
+            for width in [500, 580] {
+                let model = painter_and_model_at(EditorPreview::Diagnostics, width, scale);
+                let editor = model.editor();
+                let document = model.document();
+                let map = editor.viewport_map(document);
+                let group = model.editor_area.focused_group().unwrap();
+                let layout =
+                    crate::view::geometry::GroupLayout::new(group, &model, model.char_width);
+                for severity in [
+                    DiagnosticSeverity::ERROR,
+                    DiagnosticSeverity::WARNING,
+                    DiagnosticSeverity::HINT,
+                ] {
+                    let diagnostic = document
+                        .diagnostics
+                        .iter()
+                        .find(|d| d.severity == Some(severity))
+                        .unwrap();
+                    let line = diagnostic.range.start.line as usize;
+                    let row = map
+                        .visible_row_for_position(line, 0)
+                        .expect("diagnostic row must be visible");
+                    let scrollbar = layout
+                        .h_scrollbar_rect(model.metrics.scrollbar_width)
+                        .unwrap();
+                    let row_bottom = layout.content_rect.y + ((row + 1) * model.line_height) as f32;
+                    assert!(row_bottom <= scrollbar.y, "severity {severity:?} row must clear scrollbar at width {width}, scale {scale}");
+                }
+            }
+        }
     }
 
     #[test]

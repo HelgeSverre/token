@@ -26,10 +26,12 @@ pub(super) fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
             let group_id = model.editor_area.focused_group_id;
             let group = model.editor_area.groups.get(&group_id)?;
             let area_x = group.rect.x as f64;
-            let area_y = group.rect.y as f64 + model.metrics.tab_bar_height as f64;
+            let area_y = group.rect.y as f64 + model.metrics.document_tab_bar_height() as f64;
 
             let area_w = group.rect.width as f64;
-            let area_h = group.rect.height as f64 - model.metrics.tab_bar_height as f64;
+            let area_h = (group.rect.height as f64
+                - model.metrics.document_tab_bar_height() as f64)
+                .max(0.0);
 
             let editor = model.editor_area.editors.get_mut(&editor_id)?;
             let state = editor.view_mode.as_image_mut()?;
@@ -137,8 +139,9 @@ pub(super) fn update_image(model: &mut AppModel, msg: ImageMsg) -> Option<Cmd> {
             let group_id = model.editor_area.focused_group_id;
             let group = model.editor_area.groups.get(&group_id)?;
             let vw = group.rect.width as u32;
-            let vh =
-                (group.rect.height as usize).saturating_sub(model.metrics.tab_bar_height) as u32;
+            let vh = (group.rect.height as usize)
+                .saturating_sub(model.metrics.document_tab_bar_height())
+                as u32;
 
             let editor = model.editor_area.editors.get_mut(&editor_id)?;
             let state = editor.view_mode.as_image_mut()?;
@@ -188,7 +191,7 @@ mod tests {
         image_height: u32,
     ) -> AppModel {
         let mut model = AppModel::new(content_width, content_height, 1.0);
-        let tab_bar_height = model.metrics.tab_bar_height as f32;
+        let tab_bar_height = model.metrics.document_tab_bar_height() as f32;
         let group_id = model.editor_area.focused_group_id;
         model.editor_area.groups.get_mut(&group_id).unwrap().rect = Rect::new(
             group_x,
@@ -225,7 +228,7 @@ mod tests {
     fn zoom_from_center_of_centered_image_keeps_offsets_stable() {
         let mut model = make_image_model(0.0, 0.0, 800, 600, 100, 100);
         let mouse_x = 400.0;
-        let mouse_y = model.metrics.tab_bar_height as f64 + 300.0;
+        let mouse_y = model.metrics.document_tab_bar_height() as f64 + 300.0;
 
         let cmd = update_image(
             &mut model,
@@ -250,7 +253,7 @@ mod tests {
         let group_x = 100.0;
         let group_y = 20.0;
         let mut explicit = make_image_model(group_x, group_y, 800, 600, 100, 100);
-        let tab_bar_height = explicit.metrics.tab_bar_height as f64;
+        let tab_bar_height = explicit.metrics.document_tab_bar_height() as f64;
         let mouse_x = group_x as f64 + 400.0;
         let mouse_y = group_y as f64 + tab_bar_height + 300.0;
 

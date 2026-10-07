@@ -4,7 +4,10 @@
 //! escaped quotes, and custom delimiters.
 
 use super::model::{CsvData, Delimiter};
-use std::io::Cursor;
+use crate::util::text::RopeReader;
+#[cfg(test)]
+use std::io;
+use std::io::Read;
 
 /// Error type for CSV parsing
 #[derive(Debug, Clone)]
@@ -28,32 +31,37 @@ impl std::error::Error for ParseError {}
 ///
 /// Uses the csv crate for RFC 4180 compliant parsing.
 pub fn parse_csv(content: &str, delimiter: Delimiter) -> Result<CsvData, ParseError> {
-    let cursor = Cursor::new(content.as_bytes());
+    parse_reader(content.as_bytes(), delimiter)
+}
 
+/// Parse a document without flattening its rope into another full-size string.
+pub fn parse_csv_rope(content: &ropey::Rope, delimiter: Delimiter) -> Result<CsvData, ParseError> {
+    let mut data = parse_reader(RopeReader::new(content), delimiter)?;
+    data.source = Some(content.clone());
+    Ok(data)
+}
+
+fn parse_reader(input: impl Read, delimiter: Delimiter) -> Result<CsvData, ParseError> {
     let mut reader = csv::ReaderBuilder::new()
         .delimiter(delimiter.char() as u8)
         .has_headers(false)
         .flexible(true)
-        .from_reader(cursor);
+        .from_reader(input);
 
-    let mut rows: Vec<Vec<String>> = Vec::new();
-
-    for (line_num, result) in reader.records().enumerate() {
-        match result {
-            Ok(record) => {
-                let row: Vec<String> = record.iter().map(|s| s.to_string()).collect();
-                rows.push(row);
-            }
-            Err(e) => {
+    let mut data = CsvData::new();
+    let mut record = csv::StringRecord::new();
+    loop {
+        match reader.read_record(&mut record) {
+            Ok(true) => data.push_record(&record, reader.position().byte() as usize),
+            Ok(false) => return Ok(data),
+            Err(error) => {
                 return Err(ParseError {
-                    message: e.to_string(),
-                    line: Some(line_num + 1),
-                });
+                    message: error.to_string(),
+                    line: Some(data.row_count() + 1),
+                })
             }
         }
     }
-
-    Ok(CsvData::from_rows(rows))
 }
 
 /// Detect delimiter by analyzing first few lines
@@ -142,6 +150,71 @@ mod tests {
 
         assert_eq!(data.column_count(), 3);
         assert_eq!(data.get(1, 2), "");
+    }
+
+    #[test]
+    fn test_parse_rope_spanning_chunks_and_ragged_records() {
+        let long_value = "æøå🦀".repeat(2048);
+        let text = format!(
+            "\"{long_value},quoted\r\nsecond line\",\"a \"\"quote\"\"\",\r\nshort\r\nlast,end,3,4"
+        );
+        let rope = ropey::Rope::from_str(&text);
+        assert!(rope.chunks().count() > 2);
+        let data = parse_csv_rope(&rope, Delimiter::Comma).unwrap();
+        assert_eq!(data.row_count(), 3);
+        assert_eq!(data.column_count(), 4);
+        assert_eq!(
+            data.get(0, 0),
+            format!("{long_value},quoted\r\nsecond line")
+        );
+        assert_eq!(data.get(0, 1), "a \"quote\"");
+        assert_eq!(data.get(0, 2), "");
+        assert_eq!(data.get(1, 0), "short");
+        assert_eq!(data.get(1, 1), "");
+        assert_eq!(data.get(2, 3), "4");
+        assert!(parse_csv_rope(&ropey::Rope::new(), Delimiter::Comma)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn test_parse_reader_one_byte_reads() {
+        struct OneByte<'a>(&'a [u8]);
+        impl Read for OneByte<'_> {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                let length = buffer.len().min(1);
+                self.0.read(&mut buffer[..length])
+            }
+        }
+        let data = parse_reader(
+            OneByte("\"æ\tø\"\t\"a\"\"b\"\r\n\"x\ny\"\tå".as_bytes()),
+            Delimiter::Tab,
+        )
+        .unwrap();
+        assert_eq!(data.row_count(), 2);
+        assert_eq!(data.column_count(), 2);
+        assert_eq!(data.get(0, 0), "æ\tø");
+        assert_eq!(data.get(0, 1), "a\"b");
+        assert_eq!(data.get(1, 0), "x\ny");
+        assert_eq!(data.get(1, 1), "å");
+    }
+
+    #[test]
+    fn test_parse_reader_propagates_io_error() {
+        let error = std::io::Error::other("read failed");
+        struct BrokenReader(io::Error);
+        impl Read for BrokenReader {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::new(self.0.kind(), self.0.to_string()))
+            }
+        }
+        let result = parse_reader(
+            b"a,b\n".as_slice().chain(BrokenReader(error)),
+            Delimiter::Comma,
+        )
+        .unwrap_err();
+        assert_eq!(result.line, Some(2));
+        assert!(result.message.contains("read failed"));
     }
 
     #[test]

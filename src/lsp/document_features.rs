@@ -10,7 +10,7 @@ use crate::{
     util::ByteSize,
 };
 
-pub const MAX_DOCUMENT_BYTES: ByteSize = ByteSize::mebibytes(8);
+pub const MAX_DOCUMENT_BYTES: ByteSize = ByteSize::mebibytes(64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Feature {

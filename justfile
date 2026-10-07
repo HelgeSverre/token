@@ -230,6 +230,11 @@ bench-multicursor:
 bench-large:
     cargo bench -- large_file
 
+# Provisional native 1 GiB CSV target; currently expected to fail at file opening.
+[group('bench')]
+gate-csv: release
+    node scripts/gate-csv.mjs
+
 [group('coverage')]
 coverage:
     cargo llvm-cov --html {{ coverage_ignore }}

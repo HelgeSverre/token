@@ -1,0 +1,16 @@
+name: polish-unicode-wrap
+width: 1440
+height: 900
+scale: 1
+files:
+  - path: fixtures/国際化/very-long-component-name-with-emoji-🚀-and-version-2026.10.06.ts
+    soft_wrap: true
+    cursor_line: 4
+    cursor_column: 18
+    content: |
+      const release = "v2026.10.06+build.18446744073709551615";
+      const greeting = "Καλημέρα · こんにちは · مرحبًا · 👩🏽‍💻";
+      const marks = "á ë ñ क् क्षि";
+      export function describeInternationalRelease() {
+        return `Release ${release}: ${greeting} — this deliberately long line wraps through production text layout while retaining digits, combining marks, punctuation, and wide Unicode glyphs.`;
+      }

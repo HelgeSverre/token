@@ -19,6 +19,15 @@ struct InstanceParams {
     instance: Option<u32>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+struct DocumentRangeParams {
+    /// Inclusive Unicode character offset.
+    start: usize,
+    /// Exclusive Unicode character offset.
+    end: usize,
+    instance: Option<u32>,
+}
+
 fn target(instance: Option<u32>) -> Target {
     instance.map_or(Target::Default, Target::Instance)
 }
@@ -114,6 +123,24 @@ impl TokenMcp {
         Parameters(InstanceParams { instance }): Parameters<InstanceParams>,
     ) -> CallToolResult {
         response(target(instance), AutomationRequest::Document).await
+    }
+
+    #[tool(
+        description = "Read a range of the active document regardless of total size. Use half-open Unicode character offsets; each range may contain at most 512 KiB of UTF-8. Responses include total_chars and revision for paging."
+    )]
+    async fn get_document_range(
+        &self,
+        Parameters(DocumentRangeParams {
+            start,
+            end,
+            instance,
+        }): Parameters<DocumentRangeParams>,
+    ) -> CallToolResult {
+        response(
+            target(instance),
+            AutomationRequest::DocumentRange { start, end },
+        )
+        .await
     }
 
     #[tool(description = "List named actions currently bound in the running Token editor")]

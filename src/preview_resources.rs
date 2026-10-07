@@ -9,7 +9,9 @@ use std::sync::{Arc, OnceLock};
 
 use cap_std::fs::{Dir, OpenOptions};
 
-use crate::util::{file_validation::MAX_FILE_SIZE, FileIdentity};
+use crate::util::{ByteSize, FileIdentity};
+
+const MAX_PREVIEW_RESOURCE_SIZE: ByteSize = ByteSize::mebibytes(256);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResourceError {
@@ -176,10 +178,10 @@ impl ScopedFile {
         if !metadata.is_file() {
             return Err(ResourceError::Forbidden);
         }
-        if metadata.len() > MAX_FILE_SIZE.as_u64() {
+        if metadata.len() > MAX_PREVIEW_RESOURCE_SIZE.as_u64() {
             return Err(ResourceError::TooLarge);
         }
-        let bytes = read_bounded(file, MAX_FILE_SIZE.as_u64())?;
+        let bytes = read_bounded(file, MAX_PREVIEW_RESOURCE_SIZE.as_u64())?;
         self.scope.check_active()?;
         Ok(ScopedBytes {
             bytes,
@@ -263,7 +265,20 @@ mod tests {
             assert!(scope.file(name.into()).is_err(), "{name}");
         }
         let large = std::fs::File::create(root.path().join("large")).unwrap();
-        large.set_len(MAX_FILE_SIZE.as_u64() + 1).unwrap();
+        large.set_len(ByteSize::mebibytes(51).as_u64()).unwrap();
+        assert_eq!(
+            scope
+                .file("large".into())
+                .unwrap()
+                .read()
+                .unwrap()
+                .bytes
+                .len(),
+            ByteSize::mebibytes(51).as_usize()
+        );
+        large
+            .set_len(MAX_PREVIEW_RESOURCE_SIZE.as_u64() + 1)
+            .unwrap();
         assert_eq!(
             scope.file("large".into()).unwrap().read().unwrap_err(),
             ResourceError::TooLarge

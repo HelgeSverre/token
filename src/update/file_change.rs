@@ -147,7 +147,7 @@ fn apply_observation(
                 target,
                 path,
                 observed.identity,
-                Ok(text.to_string()),
+                Ok(text.clone()),
             );
         }
     }

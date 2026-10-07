@@ -52,7 +52,7 @@ fn preview_pad_x(preview: Preview) -> f32 {
         Preview::SettingsForm
             | Preview::SettingsRecords(_)
             | Preview::SearchCollection(_)
-            | Preview::CompletionDocumentation
+            | Preview::CompletionDocumentation { .. }
             | Preview::Editor(_)
     ) {
         48.0
@@ -67,7 +67,7 @@ fn metadata_above(preview: Preview) -> bool {
         Preview::SettingsForm
             | Preview::SettingsRecords(_)
             | Preview::SearchCollection(_)
-            | Preview::CompletionDocumentation
+            | Preview::CompletionDocumentation { .. }
             | Preview::Editor(_)
     )
 }
@@ -82,7 +82,7 @@ fn row_extra(preview: Preview) -> f32 {
 
 /// Fixture constraints, not a control's stretch allocation. Heights describe
 /// the actual example; row spacing is derived from them separately.
-fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
+pub(super) fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
     let field_width = if compact { 130.0 } else { 220.0 };
     let popup_width = if compact { 260.0 } else { 400.0 };
     match preview {
@@ -118,8 +118,9 @@ fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
             crate::model::gallery::SearchCollectionPreview::Loading
             | crate::model::gallery::SearchCollectionPreview::Empty,
         ) => (if compact { 500.0 } else { 580.0 }, 220.0),
-        Preview::CompletionDocumentation => (if compact { 500.0 } else { 580.0 }, 320.0),
-        Preview::HoverDocumentation | Preview::SignatureHelp => (popup_width, 150.0),
+        Preview::CompletionDocumentation { .. } => (if compact { 500.0 } else { 580.0 }, 320.0),
+        Preview::HoverDocumentation { near_bottom: true } => (popup_width, 220.0),
+        Preview::HoverDocumentation { .. } | Preview::SignatureHelp => (popup_width, 150.0),
         Preview::MenuRows { .. } => (popup_width, 168.0),
         Preview::Chrome(
             crate::model::gallery::ChromePreview::BottomPanel
@@ -132,8 +133,16 @@ fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
         Preview::Chrome(crate::model::gallery::ChromePreview::TerminalContent) => {
             (popup_width, 180.0)
         }
+        Preview::Chrome(
+            crate::model::gallery::ChromePreview::ExplorerSelected
+            | crate::model::gallery::ChromePreview::ExplorerDeep
+            | crate::model::gallery::ChromePreview::ExplorerScrolled,
+        ) => (popup_width, 240.0),
         Preview::Chrome(crate::model::gallery::ChromePreview::DocumentDrag) => (popup_width, 48.0),
         Preview::Chrome(_) => (popup_width, 32.0),
+        Preview::Editor(crate::model::gallery::EditorPreview::Diagnostics) => {
+            (if compact { 500.0 } else { 580.0 }, 260.0)
+        }
         Preview::Editor(_) => (if compact { 500.0 } else { 580.0 }, 240.0),
         Preview::OverlayTabs => (popup_width, 56.0),
         Preview::Scrollbar {
@@ -1133,7 +1142,7 @@ fn paint_specimen(
             };
             render_overlay(frame, painter, masks, theme, &overlay, size, scale);
         }
-        Preview::CompletionDocumentation => {
+        Preview::CompletionDocumentation { scrolled } => {
             let rows = [
                 Row {
                     icon: RowIcon::KindBadge(MenuItemKind::Method),
@@ -1191,6 +1200,12 @@ fn paint_specimen(
             docs.push_str(
                 "The returned frame uses the same geometry for painting and hit testing.",
             );
+            docs.push_str(
+                "\n\nClipping\nContent stays within the supplied pane rectangle, including long labels and wrapped documentation.\n\n\
+                 Font roles\nCode signatures retain the configured code face. Explanatory prose uses the UI face.\n\n\
+                 Scrolling\nDocumentation scrolls independently of the completion list. Reading further does not select another item.\n\n\
+                 Theme changes\nColors come from the active resolved theme; no prototype palette is embedded in the renderer.",
+            );
             let logical_width = rect.width / scale as f32;
             let menu_width = if logical_width <= 500.0 { 180.0 } else { 210.0 };
             let overlay = OverlaySpec {
@@ -1215,11 +1230,21 @@ fn paint_specimen(
                 },
                 footer: None,
                 hover_row: None,
-                docs: Some(Documentation::from(&docs)),
+                docs: Some(Documentation {
+                    text: &docs,
+                    state: crate::model::ui::DocumentationState {
+                        scroll: if scrolled { 8 } else { 0 },
+                        expanded: false,
+                    },
+                }),
             };
             render_overlay(frame, painter, masks, theme, &overlay, size, scale);
         }
-        Preview::HoverDocumentation | Preview::SignatureHelp => {
+        Preview::HoverDocumentation { .. } | Preview::SignatureHelp => {
+            let near_bottom = matches!(
+                spec.preview,
+                Preview::HoverDocumentation { near_bottom: true }
+            );
             let signature = if matches!(spec.preview, Preview::SignatureHelp) {
                 "render(frame: &mut Frame, theme: &Theme)"
             } else {
@@ -1231,7 +1256,7 @@ fn paint_specimen(
                 style: SpanStyle::Accent,
             }];
             let zones = Zones {
-                banner: matches!(spec.preview, Preview::HoverDocumentation).then_some((
+                banner: matches!(spec.preview, Preview::HoverDocumentation { .. }).then_some((
                     overlay_surface::Severity::Info,
                     "Production renderer",
                     "Token",
@@ -1245,11 +1270,25 @@ fn paint_specimen(
                 }),
                 ..Default::default()
             };
+            let anchor_y = if near_bottom {
+                (rect.y + rect.height - 18.0 * scale as f32) as usize
+            } else {
+                rect.y as usize
+            };
+            if near_bottom {
+                frame.fill_rect_px(
+                    rect.x as usize,
+                    anchor_y,
+                    (scale.round() as usize).max(1),
+                    (18.0 * scale) as usize,
+                    theme.editor.cursor_color.to_argb_u32(),
+                );
+            }
             let overlay = OverlaySpec {
                 tabs: None,
                 anchor: Anchor::Cursor {
                     x: rect.x as usize,
-                    y: rect.y as usize,
+                    y: anchor_y,
                     h: (18.0 * scale) as usize,
                     prefer_below: true,
                     width: WidthRule {
@@ -1531,6 +1570,89 @@ mod tests {
     use super::*;
 
     #[test]
+    fn bottom_edge_hover_leaves_its_anchor_uncovered() {
+        let mut renderer = GalleryRenderer::new().unwrap();
+        let theme = Theme::default_dark();
+        let panel_background = theme.overlay.panel_background.to_argb_u32() | 0xFF00_0000;
+        for scale in [1.0, 1.5, 2.0] {
+            for compact in [false, true] {
+                let mut state = GalleryState {
+                    compact,
+                    ..Default::default()
+                };
+                state.query.insert_text("hover.documentation-bottom-edge");
+                let size = ((1100.0 * scale) as usize, (780.0 * scale) as usize);
+                let mut pixels = vec![0; size.0 * size.1];
+                let layout = renderer.render(&mut pixels, size, scale, &state, &theme);
+                assert_eq!(layout.rows.len(), 1);
+                let width = layout.rows[0].preview.width as usize;
+                let height = layout.rows[0].preview.height as usize;
+                let anchor_x = (24.0 * scale) as usize;
+                // Canvas inset + specimen height - caret height: 24 + 220 - 18.
+                let anchor_y = (226.0 * scale) as usize;
+                let tile = &renderer.specimen_buffer;
+                // Sample the caret midpoint, beyond the panel's soft shadow.
+                assert_eq!(
+                    tile[(anchor_y + (9.0 * scale) as usize) * width + anchor_x],
+                    theme.editor.cursor_color.to_argb_u32()
+                );
+                assert!(
+                    (0..anchor_y).any(|y| tile[y * width + width / 2] == panel_background),
+                    "hover card must be painted above anchor"
+                );
+                // The production shadow may extend past the panel edge.
+                assert!(
+                    (anchor_y..height).all(|y| tile[y * width + width / 2] != panel_background),
+                    "hover card must not extend below anchor"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn documentation_scroll_changes_card_but_not_completion_rows() {
+        let mut renderer = GalleryRenderer::new().unwrap();
+        for scale in [1.0, 1.5, 2.0] {
+            for compact in [false, true] {
+                let mut captures = Vec::new();
+                for id in [
+                    "completion.with-documentation",
+                    "completion.documentation-scrolled",
+                ] {
+                    let mut state = GalleryState {
+                        compact,
+                        ..Default::default()
+                    };
+                    state.query.insert_text(id);
+                    let size = ((1100.0 * scale) as usize, (800.0 * scale) as usize);
+                    let mut pixels = vec![0; size.0 * size.1];
+                    let layout =
+                        renderer.render(&mut pixels, size, scale, &state, &Theme::default_dark());
+                    assert_eq!(layout.rows.len(), 1);
+                    let width = layout.rows[0].preview.width as usize;
+                    captures.push((width, renderer.specimen_buffer.clone()));
+                }
+                assert_eq!(captures[0].0, captures[1].0);
+                assert_ne!(captures[0].1, captures[1].1, "docs must visibly scroll");
+                // The card is on the left; the right third contains menu labels
+                // and selection, but no documentation. Ignore gallery metadata.
+                let width = captures[0].0;
+                for (top, scrolled) in captures[0]
+                    .1
+                    .chunks_exact(width)
+                    .zip(captures[1].1.chunks_exact(width))
+                {
+                    assert_eq!(
+                        &top[width * 2 / 3..],
+                        &scrolled[width * 2 / 3..],
+                        "documentation scrolling must not alter the menu"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn production_compositions_render_at_compact_width_and_hidpi() {
         let mut renderer = GalleryRenderer::new().unwrap();
         let theme = Theme::default_dark();
@@ -1540,6 +1662,8 @@ mod tests {
                     s.preview,
                     Preview::Chrome(_)
                         | Preview::Editor(_)
+                        | Preview::CompletionDocumentation { .. }
+                        | Preview::HoverDocumentation { .. }
                         | Preview::SettingsRecords(_)
                         | Preview::SearchCollection(_)
                         | Preview::OverlayTabs

@@ -240,7 +240,7 @@ fn find_bar_follows_active_text_pane_and_hides_on_special_tabs() {
     let other_layout = GroupLayout::new(other, &model, model.char_width);
     assert_eq!(
         other_layout.content_rect.y,
-        other.rect.y + model.metrics.tab_bar_height as f32
+        other.rect.y + model.metrics.document_tab_bar_height() as f32
     );
     assert_eq!(
         FindBarLayout::new(&model).unwrap().rect.x,

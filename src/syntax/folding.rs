@@ -4,6 +4,8 @@ use super::{LanguageId, SyntaxTreeSnapshot};
 use crate::folding::{self, FoldCandidates, FoldRegion, FoldStamp};
 use crate::util::text::TabStops;
 
+pub const MAX_FOLD_SCAN_SIZE: crate::util::ByteSize = crate::util::ByteSize::mebibytes(256);
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FoldingProfile(&'static [&'static str]);
 
@@ -92,49 +94,54 @@ pub(crate) const fn profile(language: LanguageId) -> FoldingProfile {
 }
 
 pub fn detect(
-    source: &str,
+    source: &ropey::Rope,
     stamp: FoldStamp,
     tabs: TabStops,
     tree: Option<&SyntaxTreeSnapshot>,
 ) -> FoldCandidates {
-    let buffer = ropey::Rope::from_str(source);
+    // No candidates means there is nothing to restore from a fingerprint.
+    // Avoid hashing a document whose scan is disabled.
+    if source.len_bytes() > MAX_FOLD_SCAN_SIZE.as_usize() {
+        return FoldCandidates {
+            stamp,
+            regions: Vec::new(),
+            content_fingerprint: 0,
+        };
+    }
     let mut regions = Vec::new();
-    // Bound initial full scans and derived state independently of rendering.
-    if source.len() <= crate::util::ByteSize::mebibytes(32).as_usize() {
-        let supported = !super::registry::language(stamp.language)
-            .folding
-            .0
-            .is_empty();
-        if let Some(snapshot) = tree.filter(|tree| {
-            supported
-                && tree.language == stamp.language
-                && tree.revision == stamp.revision
-                && !tree.tree.root_node().has_error()
-        }) {
+    let supported = !super::registry::language(stamp.language)
+        .folding
+        .0
+        .is_empty();
+    if let Some(snapshot) = tree.filter(|tree| {
+        supported
+            && tree.language == stamp.language
+            && tree.revision == stamp.revision
+            && !tree.tree.root_node().has_error()
+    }) {
+        collect(
+            source,
+            &snapshot.tree,
+            snapshot.language,
+            0..source.len_bytes(),
+            &mut regions,
+        );
+        for injection in snapshot.injections() {
             collect(
-                &buffer,
-                &snapshot.tree,
-                snapshot.language,
-                0..source.len(),
+                source,
+                &injection.tree,
+                injection.language,
+                injection.range.clone(),
                 &mut regions,
             );
-            for injection in snapshot.injections() {
-                collect(
-                    &buffer,
-                    &injection.tree,
-                    injection.language,
-                    injection.range.clone(),
-                    &mut regions,
-                );
-            }
-        } else {
-            regions = folding::indentation(&buffer, tabs);
         }
+    } else {
+        regions = folding::indentation(source, tabs);
     }
     FoldCandidates {
         stamp,
-        regions: folding::normalize(regions, buffer.len_lines()),
-        content_fingerprint: folding::digest(source.bytes()),
+        regions: folding::normalize(regions, source.len_lines()),
+        content_fingerprint: folding::digest(source.chunks().flat_map(str::bytes)),
     }
 }
 
@@ -191,5 +198,60 @@ fn collect(
                 return;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn folding_rope_preserves_unicode_crlf_regions_and_fingerprint_across_chunks() {
+        let text = format!("root\n  {}\r\nlast\n", "æ".repeat(1024));
+        let source = ropey::Rope::from_str(&text);
+        assert!(source.chunks().count() > 1);
+        let candidates = detect(
+            &source,
+            FoldStamp {
+                revision: 7,
+                language: LanguageId::PlainText,
+                policy_generation: 3,
+            },
+            TabStops::default(),
+            None,
+        );
+        assert_eq!(
+            candidates.content_fingerprint,
+            folding::digest(text.bytes())
+        );
+        assert_eq!(candidates.regions.len(), 1);
+        assert_eq!(
+            (candidates.regions[0].header, candidates.regions[0].end),
+            (0, 2)
+        );
+    }
+
+    #[test]
+    fn folding_budget_includes_boundary_and_skips_oversized_fingerprint() {
+        let stamp = FoldStamp {
+            revision: 1,
+            language: LanguageId::PlainText,
+            policy_generation: 0,
+        };
+        let mut source = "root\n  child\n".to_owned();
+        source.push_str(&"x".repeat(MAX_FOLD_SCAN_SIZE.as_usize() - source.len()));
+        let mut source = ropey::Rope::from_str(&source);
+        let candidates = detect(&source, stamp, TabStops::default(), None);
+        assert_eq!(candidates.regions.len(), 1);
+        assert_eq!(
+            (candidates.regions[0].header, candidates.regions[0].end),
+            (0, 2)
+        );
+        assert_ne!(candidates.content_fingerprint, 0);
+        source.insert(source.len_chars(), "x");
+        let skipped = detect(&source, stamp, TabStops::default(), None);
+        assert!(skipped.regions.is_empty());
+        assert_eq!(skipped.content_fingerprint, 0);
+        assert_eq!(skipped.stamp, stamp);
     }
 }

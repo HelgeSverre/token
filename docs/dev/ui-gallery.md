@@ -7,7 +7,7 @@ Cargo feature. All build artifacts stay under `target/`.
 
 ## Current slice
 
-The catalog currently contains 64 labelled visual specimens:
+The catalog currently contains 70 labelled visual specimens:
 
 - Buttons: normal, hovered, pressed, focused, selected, disabled, long label.
 - Icon button: a glyph-label close action, using the standard button painter.
@@ -20,14 +20,21 @@ The catalog currently contains 64 labelled visual specimens:
   presentation; visible labels no longer determine the control kind.
 - Menus and rows: selected/hovered menu rows with shortcut keycaps and a
   separator; a selected completion row with a kind badge.
-- Contextual overlays: completion with documentation, hover documentation and
-  signature help with an accented active parameter.
+- Contextual overlays: completion with long documentation at the top and scrolled
+  down independently of the selected completion, hover documentation below its
+  anchor and flipped above a bottom-edge caret marker, and
+  signature help with an accented active parameter. These are static reading
+  states, not simulated loading/error cards that production does not provide.
 - Search Everywhere: grouped Commands and Files, workspace-symbol loading, and a
   non-selectable empty state rendered by the production modal.
 - Surface swatches: panel, secondary, recessed.
 - Document tabs: active/inactive, save-error marker, clipped/scrolling title and
   drag ghost. Dock tabs, terminal active/hovered/exited/overflow states, and
   overlay tabs with count/pending/unavailable indicators remain distinct families.
+- Explorer: selected file with collapsed folders, deep nesting with a selected
+  long Unicode filename, and a scrolled selected folder. These use the production
+  sidebar painter and row layout with a synthetic in-memory tree; no directories
+  are scanned. Narrow mode exercises label truncation without changing fonts.
 - Bottom Problems and right Outline panels: real headers and borders; Outline is
   populated with nested, selected and truncated production tree rows. Problems
   includes grouped files, mixed severities, selection and a collapsed group.
@@ -36,10 +43,12 @@ The catalog currently contains 64 labelled visual specimens:
 - Terminal content: a headless session fed deterministic ANSI (prompt, SGR
   colors, bold, an OSC-8 link and a bare URL), a text selection, a hovered link
   underline and the block cursor, rendered through the dock with its tab strip.
-- Editor: six real editor-group renders of a 28-line Rust sample: multiple
+- Editor: seven real editor-group renders of a 28-line Rust sample: multiple
   cursors with a selection and matched brackets, indent guides, a collapsed
   fold, error/warning/hint diagnostics with the marks lane, inlay hints with
-  ghost text, and a docked Find bar with match tints.
+  ghost text, a docked Find bar with match tints, and a soft-wrapped selection
+  ending with a continuation-row caret. The wrap fixture preserves the same
+  source text at wide/narrow widths and tests caret-to-text hit mapping.
 - Settings records: selected language-server records and the production empty
   collection state, including the narrow two-pane Settings layout.
 - Scrollbars: vertical/horizontal, normal/hovered, end position and content fitting,
@@ -99,6 +108,9 @@ are static visual examples; they do not provide editor or terminal interaction.
 Editor specimens likewise build an isolated `AppModel`, parse and highlight the
 sample synchronously, and paint through `Renderer::render_editor_group`; the
 240-pixel frame shows roughly ten rows, so some tagged lines sit below the fold.
+The diagnostics fixture uses a 260-pixel frame and starts at its first diagnostic
+so error, warning and hint rows all fit above the horizontal scrollbar at
+wide/narrow widths and tested scales.
 
 Unsupported styling is not invented: the document-tab fixture includes a dirty
 document, but the current production tab title has no distinct dirty marker.
@@ -173,7 +185,7 @@ both production and the gallery will actually use it.
 ## Planned performance-study coverage
 
 The [prototype component decision record](../ui/PROTOTYPE-COMPONENTS.md) defines
-new proposed families. They are **not** part of the current 64 specimens and
+new proposed families. They are **not** part of the current 70 specimens and
 should only enter the gallery with production layout/painters:
 
 - `pane-header.*`: title-only, optional icon/actions, truncation and overflow.

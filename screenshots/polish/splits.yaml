@@ -1,0 +1,12 @@
+name: polish-splits
+width: 1440
+height: 900
+scale: 1
+split_direction: horizontal
+files:
+  - path: samples/syntax/sample.rs
+    scroll_to: 8
+  - path: samples/syntax/sample.ts
+    scroll_to: 4
+    cursor_line: 10
+    cursor_column: 4

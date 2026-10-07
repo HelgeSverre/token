@@ -2003,8 +2003,7 @@ fn find_next_from(
     let found = matches
         .iter()
         .find(|m| m.start > start_offset || (inclusive && m.start == start_offset))
-        .or_else(|| matches.first())
-        .copied();
+        .or_else(|| matches.first());
 
     if let Some(m) = found {
         let (start_line, start_col) = doc.offset_to_cursor(m.start);
@@ -2051,8 +2050,7 @@ fn find_prev_in_document(model: &mut AppModel, state: &FindReplaceState) -> Opti
         .iter()
         .rev()
         .find(|m| m.start < start_offset)
-        .or_else(|| matches.last())
-        .copied();
+        .or_else(|| matches.last());
 
     if let Some(m) = found {
         let (start_line, start_col) = doc.offset_to_cursor(m.start);
@@ -2161,7 +2159,8 @@ fn replace_all(model: &mut AppModel, state: &FindReplaceState, replacement: &str
         .collect();
     // Earlier matches do not exist, so later replacements cannot shift this
     // offset. Derive its actual line/column through the shared placement policy.
-    let first_end = occurrences[0].start + replacement.chars().count();
+    let first_end =
+        occurrences.first().expect("non-empty matches").start + replacement.chars().count();
     let effects = apply_find_edits(model, planned, first_end);
 
     model.ui.transient_message = Some(TransientMessage::new(

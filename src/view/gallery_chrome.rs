@@ -6,6 +6,65 @@ use crate::model::{gallery::ChromePreview, AppModel, Document, EditorState, Rect
 use crate::panel::{DockPosition, PanelId};
 use crate::theme::Theme;
 
+fn populate_explorer(model: &mut AppModel, kind: ChromePreview, width: f32) {
+    use crate::model::workspace::{FileNode, FileTree, Workspace};
+    use std::path::PathBuf;
+
+    let root = PathBuf::from("/gallery/project");
+    let src = root.join("src");
+    let view = src.join("view");
+    let components = view.join("components");
+    let long_name = components.join("café_configuration_with_a_very_long_descriptive_name.rs");
+    let mut nested = FileNode::new_dir(components.clone());
+    nested.children = vec![FileNode::new_file(long_name.clone())];
+    let mut view_node = FileNode::new_dir(view.clone());
+    view_node.children = vec![nested, FileNode::new_file(view.join("mod.rs"))];
+    let mut src_node = FileNode::new_dir(src.clone());
+    src_node.children = vec![
+        view_node,
+        FileNode::new_file(src.join("lib.rs")),
+        FileNode::new_file(src.join("main.rs")),
+    ];
+    let mut docs = FileNode::new_dir(root.join("docs"));
+    docs.children = vec![FileNode::new_file(
+        root.join("docs/hidden-until-expanded.md"),
+    )];
+    let mut project = FileNode::new_dir(root.clone());
+    project.children = vec![
+        docs,
+        src_node,
+        FileNode::new_file(root.join("Cargo.toml")),
+        FileNode::new_file(root.join("LICENSE.md")),
+        FileNode::new_file(root.join("README.md")),
+    ];
+    let deep = !matches!(kind, ChromePreview::ExplorerSelected);
+    let mut expanded_folders = [root.clone(), src.clone()]
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+    if deep {
+        expanded_folders.extend([view.clone(), components]);
+    }
+    model.workspace = Some(Workspace {
+        root,
+        expanded_folders,
+        selected_item: Some(match kind {
+            ChromePreview::ExplorerDeep => long_name,
+            ChromePreview::ExplorerScrolled => view,
+            _ => src.join("main.rs"),
+        }),
+        file_tree: FileTree {
+            roots: vec![project],
+        },
+        sidebar_visible: true,
+        sidebar_width_logical: width / model.metrics.scale_factor as f32,
+        scroll_offset: if matches!(kind, ChromePreview::ExplorerScrolled) {
+            2
+        } else {
+            0
+        },
+    });
+}
+
 fn outline_node(
     kind: crate::outline::OutlineKind,
     name: &str,
@@ -215,7 +274,13 @@ pub(super) fn render(
     let mut painter = painter.with_font(FontRole::Code);
     let right = matches!(kind, ChromePreview::RightPanel);
     let width = rect.width.ceil() as usize * if right { 3 } else { 1 };
-    let height = if right {
+    let explorer = matches!(
+        kind,
+        ChromePreview::ExplorerSelected
+            | ChromePreview::ExplorerDeep
+            | ChromePreview::ExplorerScrolled
+    );
+    let height = if right || explorer {
         rect.height as usize + (24.0 * scale) as usize
     } else {
         (600.0 * scale) as usize
@@ -230,6 +295,16 @@ pub(super) fn render(
     let source = {
         let mut tile = Frame::new(&mut pixels, width, height);
         match kind {
+            ChromePreview::ExplorerSelected
+            | ChromePreview::ExplorerDeep
+            | ChromePreview::ExplorerScrolled => {
+                populate_explorer(&mut model, kind, rect.width);
+                let chrome = crate::layout::chrome::sidebar_rows(&model);
+                super::panels::render_sidebar(&mut tile, &mut painter, &model, &chrome);
+                chrome
+                    .rect(crate::layout::UiKey::Sidebar)
+                    .unwrap_or_default()
+            }
             ChromePreview::DocumentTabs
             | ChromePreview::DocumentOverflow
             | ChromePreview::DocumentDrag => {
@@ -445,6 +520,45 @@ mod tests {
         dock.is_open = true;
         dock.set_size(180.0, 1.0);
         model
+    }
+
+    #[test]
+    fn explorer_fixtures_keep_selection_visible_and_collapsed_children_hidden() {
+        for (kind, selected_name, first_name) in [
+            (ChromePreview::ExplorerSelected, "main.rs", "project"),
+            (
+                ChromePreview::ExplorerDeep,
+                "café_configuration_with_a_very_long_descriptive_name.rs",
+                "project",
+            ),
+            (ChromePreview::ExplorerScrolled, "view", "src"),
+        ] {
+            let mut model = model();
+            populate_explorer(&mut model, kind, 260.0);
+            let workspace = model.workspace.as_ref().unwrap();
+            let visible: Vec<_> = (0..workspace.visible_item_count())
+                .map(|i| {
+                    workspace
+                        .file_tree
+                        .get_visible_item(i, &workspace.expanded_folders)
+                        .unwrap()
+                })
+                .collect();
+            assert_eq!(visible[workspace.scroll_offset].name, first_name);
+            assert!(!visible
+                .iter()
+                .any(|node| node.name == "hidden-until-expanded.md"));
+            let selected = visible
+                .iter()
+                .position(|node| Some(&node.path) == workspace.selected_item.as_ref())
+                .unwrap();
+            assert_eq!(visible[selected].name, selected_name);
+            assert!((workspace.scroll_offset..workspace.scroll_offset + 10).contains(&selected));
+            assert_eq!(
+                visible[selected].is_dir,
+                matches!(kind, ChromePreview::ExplorerScrolled)
+            );
+        }
     }
 
     #[test]

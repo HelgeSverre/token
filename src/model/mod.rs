@@ -310,6 +310,14 @@ impl ScaledMetrics {
                 .round() as usize,
         }
     }
+
+    /// Document tabs have their own minimum chrome height, independent of code
+    /// line pitch. Keep the font-derived height when larger text needs more room;
+    /// dock, terminal and preview headers retain their existing compact height.
+    pub fn document_tab_bar_height(&self) -> usize {
+        self.tab_bar_height
+            .max((32.0 * self.scale_factor).round() as usize)
+    }
 }
 
 impl Default for ScaledMetrics {
@@ -485,7 +493,7 @@ impl AppModel {
         let editor = self.editor_area.editors.get(&editor_id)?;
         editor.is_plain_text_mode().then(|| {
             let available =
-                (group.rect.height as usize).saturating_sub(self.metrics.tab_bar_height);
+                (group.rect.height as usize).saturating_sub(self.metrics.document_tab_bar_height());
             (
                 editor_id,
                 crate::view::find_bar::height(
@@ -628,12 +636,14 @@ impl AppModel {
     /// (which depends on the configured font size, so only the renderer can
     /// supply it).
     ///
-    /// Formula: text line height + symmetric vertical padding.
+    /// Keep a 22-logical-pixel floor, or text height plus symmetric padding
+    /// when a larger configured status font needs more room.
     pub fn recompute_status_bar_height(&mut self, status_text_line_height: usize) {
         if status_text_line_height == 0 {
             return;
         }
-        self.status_bar_height = status_text_line_height + self.metrics.padding_small * 2;
+        self.status_bar_height = (status_text_line_height + self.metrics.padding_small * 2)
+            .max((22.0 * self.metrics.scale_factor).round() as usize);
     }
 
     /// Get the focused editor (read-only), or None if no editor is focused
@@ -1078,6 +1088,53 @@ mod tests {
     use ropey::Rope;
 
     #[test]
+    fn status_height_preserves_large_fonts_and_reserves_scaled_shell_space() {
+        for (scale, text_height, expected) in [
+            (1.0, 15, 22),
+            (1.25, 18, 28),
+            (1.5, 22, 33),
+            (2.0, 30, 44),
+            (1.0, 19, 23),
+            (2.0, 45, 53),
+        ] {
+            let mut model = AppModel::new(800, 599, scale);
+            let line_height = model.line_height;
+            let tabs = model.metrics.document_tab_bar_height();
+            model.recompute_status_bar_height(text_height);
+            model.resize(800, 599);
+            assert_eq!(model.status_bar_height, expected);
+            assert_eq!(model.line_height, line_height);
+            assert_eq!(model.metrics.document_tab_bar_height(), tabs);
+            let shell = crate::layout::chrome::shell(&model);
+            let status = shell.rect(crate::layout::UiKey::StatusBar).unwrap();
+            let editor = shell.rect(crate::layout::UiKey::EditorArea).unwrap();
+            assert_eq!(status.height, expected as f32);
+            assert_eq!(status.y, (599 - expected) as f32);
+            assert_eq!(editor.y + editor.height, status.y);
+            model.recompute_status_bar_height(0);
+            assert_eq!(model.status_bar_height, expected);
+        }
+    }
+
+    #[test]
+    fn document_tab_height_has_scaled_floor_without_changing_font_or_other_chrome() {
+        for (scale, line_height, compact, document) in [
+            (1.0, 19, 27, 32),
+            (1.25, 24, 34, 40),
+            (1.5, 28, 40, 48),
+            (2.0, 37, 53, 64),
+            (1.0, 41, 49, 49),
+        ] {
+            let mut model = AppModel::new(800, 600, scale);
+            model.line_height = line_height;
+            model.recompute_tab_bar_height_from_line_height();
+            assert_eq!(model.line_height, line_height);
+            assert_eq!(model.metrics.tab_bar_height, compact);
+            assert_eq!(model.metrics.document_tab_bar_height(), document);
+        }
+    }
+
+    #[test]
     fn test_scaled_metrics_standard() {
         let metrics = ScaledMetrics::new(1.0);
         assert_eq!(metrics.tab_bar_height, 28);
@@ -1219,7 +1276,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             model.editor().viewport.visible_lines,
-            (editor_rect.height as usize).saturating_sub(model.metrics.tab_bar_height)
+            (editor_rect.height as usize).saturating_sub(model.metrics.document_tab_bar_height())
                 / model.line_height
         );
     }

@@ -18,6 +18,8 @@ pub(crate) const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_MESSAGE_SIZE: ByteSize = ByteSize::mebibytes(4);
 const MAX_DOCUMENT_SIZE: ByteSize = ByteSize::mebibytes(3);
+// Even worst-case JSON escaping stays below the message budget.
+const MAX_DOCUMENT_RANGE_SIZE: ByteSize = ByteSize::kibibytes(512);
 pub(crate) const MAX_INPUT_EVENTS: usize = 64;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -25,6 +27,11 @@ pub(crate) const MAX_INPUT_EVENTS: usize = 64;
 pub(crate) enum AutomationRequest {
     State,
     Document,
+    /// Half-open Unicode character offsets, independent of document size.
+    DocumentRange {
+        start: usize,
+        end: usize,
+    },
     Actions,
     InsertText {
         text: String,
@@ -219,6 +226,9 @@ pub(crate) struct EditorSnapshot {
     pub window_width: u32,
     pub window_height: u32,
     pub document_name: String,
+    /// CSV state without serializing the whole document for performance probes.
+    #[serde(default)]
+    pub csv: Option<CsvSnapshot>,
     pub revision: u64,
     pub modified: bool,
     pub line_count: usize,
@@ -273,6 +283,15 @@ pub(crate) struct EditorSnapshot {
     /// The context menu (context-menu.md), if open — `None` when
     /// `ui.cursor_overlay`'s kind isn't `ContextMenu`.
     pub context_menu: Option<ContextMenuSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CsvSnapshot {
+    pub rows: usize,
+    pub columns: usize,
+    pub selected_row: usize,
+    pub selected_column: usize,
+    pub selected_value: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -977,6 +996,18 @@ impl EditorSnapshot {
             window_width: model.window_size.0,
             window_height: model.window_size.1,
             document_name: document.display_name(),
+            csv: model.editor().view_mode.as_csv().map(|csv| CsvSnapshot {
+                rows: csv.data.row_count(),
+                columns: csv.data.column_count(),
+                selected_row: csv.selected_cell.row,
+                selected_column: csv.selected_cell.col,
+                selected_value: csv
+                    .data
+                    .get(csv.selected_cell.row, csv.selected_cell.col)
+                    .chars()
+                    .take(128)
+                    .collect(),
+            }),
             revision: document.revision,
             modified: document.is_modified,
             line_count: document.line_count(),
@@ -1053,9 +1084,14 @@ fn gutter_marks_snapshot(
         .collect()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub(crate) struct DocumentSnapshot {
     pub text: String,
+    pub start: usize,
+    pub end: usize,
+    pub total_chars: usize,
+    pub revision: u64,
 }
 
 impl DocumentSnapshot {
@@ -1064,8 +1100,36 @@ impl DocumentSnapshot {
         if let Some(error) = document_size_error(bytes) {
             return Err(error);
         }
+        Self::read(
+            model,
+            0,
+            model.document().buffer.len_chars(),
+            MAX_DOCUMENT_SIZE,
+        )
+    }
+
+    pub(crate) fn from_range(model: &AppModel, start: usize, end: usize) -> Result<Self, String> {
+        Self::read(model, start, end, MAX_DOCUMENT_RANGE_SIZE)
+    }
+
+    fn read(model: &AppModel, start: usize, end: usize, limit: ByteSize) -> Result<Self, String> {
+        let doc = model.document();
+        let total_chars = doc.buffer.len_chars();
+        if start > end || end > total_chars {
+            return Err("document range is outside the document".into());
+        }
+        let slice = doc.buffer.slice(start..end);
+        if slice.len_bytes() > limit.as_usize() {
+            return Err(format!(
+                "requested document range exceeds {limit}; request a smaller range"
+            ));
+        }
         Ok(Self {
-            text: model.document().buffer.to_string(),
+            text: slice.to_string(),
+            start,
+            end,
+            total_chars,
+            revision: doc.revision,
         })
     }
 }
@@ -1641,6 +1705,10 @@ fn parse_cli(mut args: impl Iterator<Item = String>) -> Result<(Target, CliComma
         "instances" => return Ok((target, CliCommand::Instances)),
         "state" => AutomationRequest::State,
         "document" => AutomationRequest::Document,
+        "document-range" => AutomationRequest::DocumentRange {
+            start: parse_arg(args.next(), "start character")?,
+            end: parse_arg(args.next(), "end character")?,
+        },
         "actions" => AutomationRequest::Actions,
         "text" => AutomationRequest::InsertText {
             text: args.collect::<Vec<_>>().join(" "),
@@ -1682,7 +1750,7 @@ fn parse_cli(mut args: impl Iterator<Item = String>) -> Result<(Target, CliComma
         },
         _ => {
             return Err(format!(
-            "unknown automation command `{command}`; use instances, state, document, actions, text, cursor, selection, action, scroll, input, profile, syntax-profile, overlay-input, or open (prefix with --instance <id> to pick an editor)"
+            "unknown automation command `{command}`; use instances, state, document, document-range, actions, text, cursor, selection, action, scroll, input, profile, syntax-profile, overlay-input, or open (prefix with --instance <id> to pick an editor)"
         ))
         }
     };
@@ -1819,6 +1887,45 @@ mod tests {
             .activate(token::panel::PanelId::PROBLEMS);
 
         assert!(EditorSnapshot::from_model(&model).problems.is_some());
+    }
+
+    #[test]
+    fn document_ranges_read_large_unicode_documents_without_full_snapshots() {
+        let mut model = AppModel::new(800, 600, 1.0);
+        model.document_mut().buffer =
+            ropey::Rope::from_str(&"æ".repeat(MAX_DOCUMENT_SIZE.as_usize()));
+        model.document_mut().revision = 42;
+        let len = model.document().buffer.len_chars();
+        assert!(super::DocumentSnapshot::from_model(&model).is_err());
+        let snapshot = super::DocumentSnapshot::from_range(&model, len - 2, len).unwrap();
+        assert_eq!(snapshot.text, "ææ");
+        assert_eq!(
+            (
+                snapshot.start,
+                snapshot.end,
+                snapshot.total_chars,
+                snapshot.revision
+            ),
+            (len - 2, len, len, 42)
+        );
+        assert!(super::DocumentSnapshot::from_range(&model, len, len)
+            .unwrap()
+            .text
+            .is_empty());
+        assert!(super::DocumentSnapshot::from_range(&model, len, len + 1).is_err());
+        assert!(super::DocumentSnapshot::from_range(&model, 2, 1).is_err());
+        assert!(super::DocumentSnapshot::from_range(
+            &model,
+            0,
+            super::MAX_DOCUMENT_RANGE_SIZE.as_usize()
+        )
+        .is_err());
+        model.document_mut().buffer =
+            ropey::Rope::from_str(&"\u{0001}".repeat(super::MAX_DOCUMENT_RANGE_SIZE.as_usize()));
+        let snapshot =
+            super::DocumentSnapshot::from_range(&model, 0, model.document().buffer.len_chars())
+                .unwrap();
+        assert!(serde_json::to_vec(&snapshot).unwrap().len() < MAX_MESSAGE_SIZE.as_usize());
     }
 
     #[test]
@@ -2065,6 +2172,21 @@ mod tests {
         assert!(open.path.is_absolute());
         assert!(open.path.ends_with("definitely/missing.rs"));
         assert_eq!((open.line, open.column), (Some(9), Some(4)));
+    }
+
+    #[test]
+    fn csv_snapshot_reports_logical_records_and_bounded_selected_value() {
+        let mut model = AppModel::new(800, 600, 1.0);
+        assert!(EditorSnapshot::from_model(&model).csv.is_none());
+        let text = format!("\"one\ntwo\",{}\n", "x".repeat(200));
+        let data = token::csv::parse_csv(&text, token::csv::Delimiter::Comma).unwrap();
+        let mut csv = token::csv::CsvState::new(data, token::csv::Delimiter::Comma);
+        csv.selected_cell.col = 1;
+        model.editor_mut().view_mode = token::model::ViewMode::Csv(Box::new(csv));
+        let snapshot = EditorSnapshot::from_model(&model).csv.unwrap();
+        assert_eq!((snapshot.rows, snapshot.columns), (1, 2));
+        assert_eq!((snapshot.selected_row, snapshot.selected_column), (0, 1));
+        assert_eq!(snapshot.selected_value, "x".repeat(128));
     }
 
     fn instance(id: u32, root: Option<&str>, focused_at_ms: u64) -> Instance {

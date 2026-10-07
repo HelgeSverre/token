@@ -53,6 +53,7 @@ fn visual_row_lookup(bencher: divan::Bencher) {
 #[divan::bench(args = [10_000, 100_000])]
 fn folding_detection(bencher: divan::Bencher, lines: usize) {
     let source = "header\n  body\n  inner\n    leaf\n".repeat(lines / 4);
+    let source = ropey::Rope::from_str(&source);
     bencher.bench_local(|| {
         divan::black_box(token::syntax::folding::detect(
             &source,
@@ -84,7 +85,7 @@ fn folding_collapse_all(bencher: divan::Bencher, lines: usize) {
     let source = "header\n  body\n  inner\n    leaf\n".repeat(lines / 4);
     let mut document = Document::with_text(&source);
     document.folds = Some(std::sync::Arc::new(token::syntax::folding::detect(
-        &source,
+        &document.buffer,
         token::folding::FoldStamp {
             revision: document.revision,
             language: document.language,

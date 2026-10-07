@@ -19,7 +19,7 @@ fn detect(document: &mut Document, syntax: bool) {
     }
     let tree = parser.syntax_tree_snapshot(id, document.revision);
     document.folds = Some(Arc::new(token::syntax::folding::detect(
-        &source,
+        &document.buffer,
         FoldStamp {
             revision: document.revision,
             language: document.language,
