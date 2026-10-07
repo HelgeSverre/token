@@ -743,6 +743,7 @@ fn paint_settings_records(
         SettingsRecordsPreview::Empty => None,
     };
     let mut state = crate::settings::SettingsState::new(&model.config);
+    state.category = crate::settings::CategoryId::LanguageServers;
     state.form = Some(crate::settings::forms::SettingsForm::language_server(
         selected,
         &model.config,

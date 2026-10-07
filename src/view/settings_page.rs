@@ -4,13 +4,7 @@ use super::*;
 use crate::view::section_navigation::ROW_STEP as NAV_STEP;
 use crate::view::{TextFieldOptions, TextFieldRenderer};
 
-fn item_height(
-    row: &DisplayRow<'_>,
-    sf: f64,
-    viewport_height: usize,
-    width: usize,
-    form: bool,
-) -> usize {
+fn item_height(row: &DisplayRow<'_>, sf: f64, viewport_height: usize, width: usize) -> usize {
     match row {
         DisplayRow::Row(
             Row {
@@ -49,14 +43,16 @@ fn item_height(
         }
         DisplayRow::Row(
             Row {
-                accessory: Accessory::Choices { labels, .. },
+                accessory:
+                    Accessory::Choices {
+                        labels,
+                        presentation: ChoicePresentation::Buttons,
+                        ..
+                    },
                 ..
             },
             _,
         ) => {
-            if form {
-                return row_height(sf);
-            }
             let rect = WidgetRect {
                 x: 0,
                 y: 0,
@@ -430,7 +426,6 @@ pub(super) fn layout(
                 sf,
                 viewport_height,
                 p.w.saturating_sub(detail_sidebar + content_pad * 2),
-                manager.is_some(),
             ); }
             start..total
         })
@@ -1490,6 +1485,73 @@ pub(super) fn render(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn language_server_form_rows_contain_wrapped_buttons() {
+        use crate::settings::{forms::SettingsForm, SettingsState};
+        for scale in [1.0, 1.5, 2.0] {
+            for width in [596.0, 676.0, 1200.0] {
+                let (width, height) = (scaled(width, scale), scaled(648.0, scale));
+                let model = crate::model::AppModel::new(width as u32, height as u32, scale);
+                for selected in [None, Some("rust-analyzer")] {
+                    let mut state = SettingsState {
+                        form: Some(SettingsForm::language_server(selected, &model.config)),
+                        ..SettingsState::default()
+                    };
+                    state.refresh_entries(&model.config);
+                    crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                        let layout = super::super::layout(spec, width, height, scale);
+                        let Body::List { sections, .. } = &spec.body else {
+                            panic!("settings rows")
+                        };
+                        let row_width = layout.rows[0].w;
+                        let mut wrapped = false;
+                        for item in flatten_rows(sections) {
+                            let DisplayRow::Row(row, index) = item else {
+                                continue;
+                            };
+                            let range = &layout.settings_positions[index.0];
+                            if range.is_empty() {
+                                continue;
+                            } // Fixed footer actions.
+                            if let Accessory::Choices {
+                                labels,
+                                presentation,
+                                ..
+                            } = &row.accessory
+                            {
+                                if *presentation == ChoicePresentation::Buttons {
+                                    let rect = WidgetRect {
+                                        x: 0,
+                                        y: 0,
+                                        w: row_width,
+                                        h: range.len(),
+                                    };
+                                    let chips = preset_rects(&rect, labels, scale);
+                                    wrapped |= chips
+                                        .last()
+                                        .is_some_and(|last| last.y + last.h > row_height(scale));
+                                    for chip in chips {
+                                        assert!(chip.y + chip.h <= rect.h,
+                                            "{} spills into the next row at width {width}, scale {scale}", row.label);
+                                    }
+                                } else {
+                                    assert_eq!(
+                                        range.len(),
+                                        row_height(scale),
+                                        "non-button controls must not reserve wrapped option space"
+                                    );
+                                }
+                            }
+                        }
+                        if selected.is_none() {
+                            assert!(wrapped, "new-server templates must exercise wrapping");
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    #[test]
     fn settings_collection_dropdown_and_record_targets_match_layout() {
         use crate::settings::{forms::SettingsForm, SettingsState};
         for (width, height, scale) in [(1200, 900, 1.0), (700, 600, 1.0), (1200, 900, 2.0)] {
@@ -1615,7 +1677,6 @@ mod tests {
                     sf,
                     scaled(600.0, sf),
                     width,
-                    false,
                 );
                 let rect = WidgetRect {
                     x: 20,
