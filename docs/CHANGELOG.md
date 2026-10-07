@@ -17,6 +17,8 @@ All notable changes to Token are documented in this file.
 
 ### Platform integration
 
+- Preserve Debian package metadata when adding Linux desktop and MIME registrations,
+  fixing package rebuild failures.
 - Register Token as an available editor for supported text and source files in
   Windows Explorer and Linux file managers, without changing existing defaults.
 
