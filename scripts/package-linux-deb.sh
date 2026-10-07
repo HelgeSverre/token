@@ -26,7 +26,7 @@ root="$work_dir/root"
 
 xmllint --noout assets/linux/no.helgesverre.token.xml
 desktop-file-validate assets/linux/no.helgesverre.token.desktop
-dpkg-deb --extract "$package" "$root"
+dpkg-deb --raw-extract "$package" "$root"
 rm -f "$root/usr/share/applications/"*.desktop
 install -D -m 644 assets/linux/no.helgesverre.token.desktop \
     "$root/usr/share/applications/no.helgesverre.token.desktop"
