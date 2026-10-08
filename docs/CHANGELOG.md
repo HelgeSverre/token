@@ -8,6 +8,13 @@ All notable changes to Token are documented in this file.
 
 ### Interface
 
+- Replace the language-server and formatter "Start from" template button grids
+  with dropdowns, align their edges with text fields, and tighten narrow-form
+  label spacing. Align the selected-row accent with its label and checkbox.
+
+- Give wrapped Settings form buttons enough vertical space so language-server
+  templates and language choices no longer overlap the following fields.
+
 - Improve muted status and inactive-tab labels in bundled dark themes so
   status and tab text meet a 4.5:1 palette contrast floor. Preserve custom theme
   colors, existing backgrounds, syntax colors and active-tab accents.

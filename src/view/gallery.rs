@@ -14,7 +14,7 @@ use super::scrollbar::{render_scrollbar, ScrollbarColors, ScrollbarGeometry, Scr
 use super::{FontRole, Frame, GlyphCache, TextFieldOptions, TextFieldRenderer, TextPainter};
 use crate::completion::menu::MenuItemKind;
 use crate::editable::{EditConstraints, EditableState, Position, StringBuffer};
-use crate::model::gallery::{GalleryState, Preview, Specimen, CATEGORIES};
+use crate::model::gallery::{GalleryFocus, GalleryState, Preview, Specimen, CATEGORIES};
 use crate::model::{Rect, Span, SpanStyle, StyledText};
 use crate::theme::Theme;
 
@@ -38,6 +38,41 @@ pub struct GalleryRow {
     pub preview: Rect,
     /// Padded content bounds inside the specimen canvas.
     pub content: Rect,
+}
+
+impl GalleryRow {
+    pub fn canvas_content(&self) -> Rect {
+        Rect::new(
+            self.content.x - self.preview.x,
+            self.content.y - self.preview.y,
+            self.content.width,
+            self.content.height,
+        )
+    }
+}
+
+/// Canvas-local control geometry shared by painting and hit testing.
+pub struct SelectionPlaygroundLayout {
+    pub segments: Vec<WidgetRect>,
+    pub reset: Rect,
+}
+
+impl SelectionPlaygroundLayout {
+    pub fn new(bounds: Rect, scale: f64) -> Self {
+        let height = 26.0 * scale as f32;
+        Self {
+            segments: super::segmented_control::segment_rects(
+                Rect::new(bounds.x, bounds.y, bounds.width, height),
+                3,
+            ),
+            reset: Rect::new(
+                bounds.x,
+                bounds.y + 44.0 * scale as f32,
+                bounds.width,
+                height,
+            ),
+        }
+    }
 }
 
 const PREVIEW_PAD: f32 = 24.0;
@@ -105,6 +140,7 @@ pub(super) fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
         Preview::Select { .. } => (field_width, 29.0),
         Preview::SelectOptions => (field_width, 171.0),
         Preview::ChoiceGroup => (field_width, if compact { 74.0 } else { 48.0 }),
+        Preview::InteractiveSelection => (popup_width, 70.0),
         Preview::Disclosure { .. } => (field_width, 22.0),
         Preview::SearchField => (popup_width, 184.0),
         Preview::ListRow => (popup_width, 176.0),
@@ -262,6 +298,7 @@ pub struct GalleryRenderer {
 struct SpecimenPaintContext<'a> {
     masks: &'a mut RoundedRectMaskCache,
     theme: &'a Theme,
+    state: &'a GalleryState,
     scale: f64,
     size: (usize, usize),
 }
@@ -448,6 +485,7 @@ impl GalleryRenderer {
                 let mut context = SpecimenPaintContext {
                     masks: &mut self.masks,
                     theme,
+                    state,
                     scale,
                     size: (preview_w, preview_h),
                 };
@@ -455,18 +493,12 @@ impl GalleryRenderer {
                 {
                     let mut specimen = Frame::new(&mut self.specimen_buffer, preview_w, preview_h);
                     specimen.clear(canvas_bg);
-                    let local_content = Rect::new(
-                        row.content.x - row.preview.x,
-                        row.content.y - row.preview.y,
-                        row.content.width,
-                        row.content.height,
-                    );
                     paint_specimen(
                         &mut specimen,
                         &mut painter,
                         &mut context,
                         row.specimen,
-                        local_content,
+                        row.canvas_content(),
                     );
                 }
                 for y in 0..preview_h {
@@ -492,7 +524,11 @@ impl GalleryRenderer {
                     &mut tile,
                     row.preview.x as usize,
                     (row.preview.y + row.preview.height) as usize + px(8.0),
-                    "STATIC STATE",
+                    if matches!(row.specimen.preview, Preview::InteractiveSelection) {
+                        "INTERACTIVE · isolated from editor settings"
+                    } else {
+                        "STATIC STATE"
+                    },
                     (10.0 * scale) as f32,
                     0.0,
                     colors.text_dim.to_argb_u32(),
@@ -699,19 +735,29 @@ fn paint_settings_records(
     use crate::model::ModalState;
 
     let mut model = gallery_modal_model(theme, painter, size, scale);
-    if matches!(preview, SettingsRecordsPreview::Empty) {
+    if !matches!(preview, SettingsRecordsPreview::Selected) {
         model.config.lsp.servers.clear();
     }
     let selected = match preview {
         SettingsRecordsPreview::Selected => Some("rust-analyzer"),
-        SettingsRecordsPreview::Empty => None,
+        SettingsRecordsPreview::Empty | SettingsRecordsPreview::TemplatesOpen => None,
     };
     let mut state = crate::settings::SettingsState::new(&model.config);
+    state.category = crate::settings::CategoryId::LanguageServers;
     state.form = Some(crate::settings::forms::SettingsForm::language_server(
         selected,
         &model.config,
     ));
     state.refresh_entries(&model.config);
+    if matches!(preview, SettingsRecordsPreview::TemplatesOpen) {
+        let index = state.rows.iter().position(|&index| {
+            matches!(
+                state.entries[index].kind,
+                crate::settings::RowKind::FormPreset
+            )
+        });
+        state.form.as_mut().unwrap().open_select = index;
+    }
     model.ui.active_modal = Some(ModalState::Settings(state));
     super::modal::render_modals(frame, painter, &model, size.0, size.1, masks);
 }
@@ -729,6 +775,29 @@ fn paint_specimen(
     let masks = &mut *context.masks;
     use crate::model::gallery::Preview;
     match spec.preview {
+        Preview::InteractiveSelection => {
+            let controls = SelectionPlaygroundLayout::new(rect, scale);
+            super::segmented_control::SegmentedControl {
+                segments: &controls.segments,
+                labels: &["Off", "Auto", "On"],
+                selected: context.state.playground_selection,
+                focused: context.state.focus == GalleryFocus::PlaygroundSelection,
+                scale,
+            }
+            .render(frame, painter, theme);
+            render_button(
+                frame,
+                painter,
+                theme,
+                controls.reset,
+                "Reset to Auto",
+                ButtonStyle {
+                    state: ButtonState::Normal,
+                    focused: context.state.focus == GalleryFocus::PlaygroundReset,
+                    text_size: Some((12.0 * scale) as f32),
+                },
+            );
+        }
         Preview::SearchCollection(preview) => {
             paint_search_collection(frame, painter, masks, theme, size, scale, preview)
         }
