@@ -34,7 +34,7 @@ fn item_height(row: &DisplayRow<'_>, sf: f64, viewport_height: usize, width: usi
                 if width >= scaled(440.0, sf) {
                     24.0
                 } else {
-                    60.0
+                    42.0
                 },
                 sf,
             );
@@ -86,9 +86,9 @@ fn input_rect(rect: Rect, sf: f64, browse: bool) -> Rect {
     }
     Rect::new(
         rect.x + scaled(8.0, sf) as f32,
-        rect.y + scaled(48.0, sf) as f32,
+        rect.y + scaled(30.0, sf) as f32,
         (rect.width - scaled(16.0, sf) as f32).max(0.0),
-        (rect.height - scaled(60.0, sf) as f32).max(0.0),
+        (rect.height - scaled(42.0, sf) as f32).max(0.0),
     )
 }
 
@@ -125,15 +125,17 @@ fn checkbox_rect(row: &WidgetRect, sf: f64) -> WidgetRect {
 }
 
 fn select_rect(row: &WidgetRect, sf: f64) -> WidgetRect {
-    let inset = if row.w >= scaled(440.0, sf) {
-        scaled(124.0, sf)
+    let horizontal = row.w >= scaled(440.0, sf);
+    // Match the painted text-field surface (four pixels outside its content).
+    let inset = if horizontal {
+        scaled(120.0, sf)
     } else {
-        0
+        scaled(4.0, sf)
     };
     WidgetRect {
         x: row.x + inset,
-        y: row.y + scaled(if inset == 0 { 26.0 } else { 4.0 }, sf),
-        w: row.w.saturating_sub(inset),
+        y: row.y + scaled(if horizontal { 8.0 } else { 26.0 }, sf),
+        w: row.w.saturating_sub(inset + scaled(4.0, sf)),
         h: scaled(29.0, sf),
     }
 }
@@ -1119,7 +1121,7 @@ pub(super) fn render(
                             rect.x.saturating_sub(scaled(8.0, sf)),
                             rect.y + scaled(10.0, sf),
                             scaled(2.0, sf),
-                            scaled(24.0, sf),
+                            scaled(14.0, sf),
                             colors.accent,
                         );
                     }
@@ -1155,7 +1157,8 @@ pub(super) fn render(
                         x: rect.x,
                         y: rect.y + scaled(8.0, sf),
                         w: if horizontal_field
-                            || (collection(spec).is_some()
+                            || (rect.w >= scaled(440.0, sf)
+                                && collection(spec).is_some()
                                 && matches!(
                                     &row.accessory,
                                     Accessory::Choices {
@@ -1485,7 +1488,73 @@ pub(super) fn render(
 #[cfg(test)]
 mod tests {
     #[test]
-    fn language_server_form_rows_contain_wrapped_buttons() {
+    fn dropdown_anchors_align_with_text_field_surfaces() {
+        for scale in [1.0, 1.5, 2.0] {
+            for width in [300.0, 439.0, 440.0, 600.0] {
+                let rect = WidgetRect {
+                    x: 100,
+                    y: 200,
+                    w: scaled(width, scale),
+                    h: scaled(64.0, scale),
+                };
+                let input = input_rect(
+                    Rect::new(rect.x as f32, rect.y as f32, rect.w as f32, rect.h as f32),
+                    scale,
+                    false,
+                );
+                let select = select_rect(&rect, scale);
+                let padding = scaled(4.0, scale) as f32;
+                assert_eq!(select.x as f32, input.x - padding);
+                assert_eq!(select.y as f32, input.y - padding);
+                assert_eq!(select.w as f32, input.width + 2.0 * padding);
+            }
+        }
+    }
+
+    #[test]
+    fn template_dropdown_options_have_matching_hit_targets() {
+        use crate::settings::{forms::SettingsForm, RowKind, SettingsState};
+        for scale in [1.0, 1.5, 2.0] {
+            for width in [596.0, 676.0, 1200.0] {
+                let (width, height) = (scaled(width, scale), scaled(648.0, scale));
+                let model = crate::model::AppModel::new(width as u32, height as u32, scale);
+                let mut state = SettingsState {
+                    form: Some(SettingsForm::language_server(None, &model.config)),
+                    ..SettingsState::default()
+                };
+                state.refresh_entries(&model.config);
+                let index = state
+                    .rows
+                    .iter()
+                    .position(|&index| matches!(state.entries[index].kind, RowKind::FormPreset))
+                    .unwrap();
+                let form = state.form.as_mut().unwrap();
+                let count = form.presets().len() + 1;
+                form.open_select = Some(index);
+                crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                    let layout = super::super::layout(spec, width, height, scale);
+                    let options = select_options(spec, &layout);
+                    assert_eq!(options.len(), count);
+                    assert_eq!(options[0].2, "Custom");
+                    for (row, choice, _, rect) in options {
+                        assert_eq!(
+                            super::super::hit_test(
+                                spec,
+                                &layout,
+                                rect.x + rect.w / 2,
+                                rect.y + rect.h / 2
+                            ),
+                            OverlayHit::Choice { row, choice }
+                        );
+                        assert!(rect.y + rect.h <= layout.footer.unwrap().y);
+                    }
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn language_server_form_rows_size_controls_by_presentation() {
         use crate::settings::{forms::SettingsForm, SettingsState};
         for scale in [1.0, 1.5, 2.0] {
             for width in [596.0, 676.0, 1200.0] {
@@ -1503,11 +1572,22 @@ mod tests {
                             panic!("settings rows")
                         };
                         let row_width = layout.rows[0].w;
-                        let mut wrapped = false;
                         for item in flatten_rows(sections) {
                             let DisplayRow::Row(row, index) = item else {
                                 continue;
                             };
+                            if matches!(
+                                state.entries[state.rows[index.0]].kind,
+                                crate::settings::RowKind::FormPreset
+                            ) {
+                                assert!(matches!(
+                                    row.accessory,
+                                    Accessory::Choices {
+                                        presentation: ChoicePresentation::Select,
+                                        ..
+                                    }
+                                ));
+                            }
                             let range = &layout.settings_positions[index.0];
                             if range.is_empty() {
                                 continue;
@@ -1526,9 +1606,6 @@ mod tests {
                                         h: range.len(),
                                     };
                                     let chips = preset_rects(&rect, labels, scale);
-                                    wrapped |= chips
-                                        .last()
-                                        .is_some_and(|last| last.y + last.h > row_height(scale));
                                     for chip in chips {
                                         assert!(chip.y + chip.h <= rect.h,
                                             "{} spills into the next row at width {width}, scale {scale}", row.label);
@@ -1541,9 +1618,6 @@ mod tests {
                                     );
                                 }
                             }
-                        }
-                        if selected.is_none() {
-                            assert!(wrapped, "new-server templates must exercise wrapping");
                         }
                     });
                 }

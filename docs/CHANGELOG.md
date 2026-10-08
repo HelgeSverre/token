@@ -8,6 +8,10 @@ All notable changes to Token are documented in this file.
 
 ### Interface
 
+- Replace the language-server and formatter "Start from" template button grids
+  with dropdowns, align their edges with text fields, and tighten narrow-form
+  label spacing. Align the selected-row accent with its label and checkbox.
+
 - Give wrapped Settings form buttons enough vertical space so language-server
   templates and language choices no longer overlap the following fields.
 

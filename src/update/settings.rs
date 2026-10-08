@@ -920,6 +920,47 @@ mod tooling_tests {
     use crate::model::ModalId;
 
     #[test]
+    fn template_dropdown_keyboard_selection_only_changes_the_draft() {
+        use crate::messages::SettingsCollectionAction;
+        let mut model = AppModel::new(1200, 900, 1.0);
+        super::super::update(
+            &mut model,
+            crate::messages::Msg::Ui(crate::messages::UiMsg::ToggleModal(ModalId::Settings)),
+        );
+        open_server(&mut model, None);
+        let original = model.config.clone();
+        let state = state_mut(&mut model.ui).unwrap();
+        let row = state
+            .rows
+            .iter()
+            .position(|&index| matches!(state.entries[index].kind, RowKind::FormPreset))
+            .unwrap();
+        let presets = state.form.as_ref().unwrap().presets();
+        let expected = presets.last().unwrap().id;
+        update_settings(
+            &mut model,
+            SettingsMsg::CollectionAction(SettingsCollectionAction::ToggleSelect(row)),
+        );
+        assert!(select_key(&mut model, -1, false).is_some());
+        assert_eq!(
+            state_mut(&mut model.ui)
+                .unwrap()
+                .form
+                .as_ref()
+                .unwrap()
+                .select_cursor,
+            presets.len()
+        );
+        assert!(select_key(&mut model, 0, true).is_some());
+        let form = state_mut(&mut model.ui).unwrap().form.as_ref().unwrap();
+        assert_eq!(form.preset_id.as_deref(), Some(expected));
+        assert!(form.open_select.is_none());
+        assert!(form.dirty);
+        assert_eq!(model.config.lsp, original.lsp);
+        assert_eq!(model.config.formatters, original.formatters);
+    }
+
+    #[test]
     fn guidance_actions_only_copy_open_or_probe_without_applying_the_draft() {
         let mut model = AppModel::new(1200, 900, 1.0);
         super::super::update(

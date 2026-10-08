@@ -7,7 +7,7 @@ Cargo feature. All build artifacts stay under `target/`.
 
 ## Current slice
 
-The catalog currently contains 70 static specimens and one interactive sandbox:
+The catalog currently contains 71 static specimens and one interactive sandbox:
 
 - `selection.interactive`: live Off/Auto/On segmented selection and a reset button.
   Click an option or Tab from the shell into the sandbox; Left/Right and Home/End
@@ -56,8 +56,9 @@ The catalog currently contains 70 static specimens and one interactive sandbox:
   ghost text, a docked Find bar with match tints, and a soft-wrapped selection
   ending with a continuation-row caret. The wrap fixture preserves the same
   source text at wide/narrow widths and tests caret-to-text hit mapping.
-- Settings records: selected language-server records and the production empty
-  collection state, including the narrow two-pane Settings layout.
+- Settings records: selected language-server records, the production empty
+  collection state, and an open template dropdown, including the narrow two-pane
+  Settings layout.
 - Scrollbars: vertical/horizontal, normal/hovered, end position and content fitting,
   shown in small dummy-content viewports so the thumb position has context.
   Splitters: horizontal and vertical boundaries.
@@ -192,7 +193,7 @@ both production and the gallery will actually use it.
 ## Planned performance-study coverage
 
 The [prototype component decision record](../ui/PROTOTYPE-COMPONENTS.md) defines
-new proposed families. They are **not** part of the current 71 specimens and
+new proposed families. They are **not** part of the current 72 specimens and
 should only enter the gallery with production layout/painters:
 
 - `pane-header.*`: title-only, optional icon/actions, truncation and overflow.

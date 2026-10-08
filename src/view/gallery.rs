@@ -735,12 +735,12 @@ fn paint_settings_records(
     use crate::model::ModalState;
 
     let mut model = gallery_modal_model(theme, painter, size, scale);
-    if matches!(preview, SettingsRecordsPreview::Empty) {
+    if !matches!(preview, SettingsRecordsPreview::Selected) {
         model.config.lsp.servers.clear();
     }
     let selected = match preview {
         SettingsRecordsPreview::Selected => Some("rust-analyzer"),
-        SettingsRecordsPreview::Empty => None,
+        SettingsRecordsPreview::Empty | SettingsRecordsPreview::TemplatesOpen => None,
     };
     let mut state = crate::settings::SettingsState::new(&model.config);
     state.category = crate::settings::CategoryId::LanguageServers;
@@ -749,6 +749,15 @@ fn paint_settings_records(
         &model.config,
     ));
     state.refresh_entries(&model.config);
+    if matches!(preview, SettingsRecordsPreview::TemplatesOpen) {
+        let index = state.rows.iter().position(|&index| {
+            matches!(
+                state.entries[index].kind,
+                crate::settings::RowKind::FormPreset
+            )
+        });
+        state.form.as_mut().unwrap().open_select = index;
+    }
     model.ui.active_modal = Some(ModalState::Settings(state));
     super::modal::render_modals(frame, painter, &model, size.0, size.1, masks);
 }

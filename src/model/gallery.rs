@@ -54,6 +54,7 @@ pub enum SearchCollectionPreview {
 pub enum SettingsRecordsPreview {
     Selected,
     Empty,
+    TemplatesOpen,
 }
 
 #[derive(Clone, Copy)]
@@ -150,6 +151,13 @@ pub const SPECIMENS: &[Specimen] = &[
         category: 4,
         source: "view/modal.rs · with_settings_spec + settings_page empty state",
         tokens: "settings collection / no saved entries / add record",
+    },
+    Specimen {
+        id: "settings-records.templates-open",
+        preview: Preview::SettingsRecords(SettingsRecordsPreview::TemplatesOpen),
+        category: 4,
+        source: "view/modal.rs · with_settings_spec + settings_page template dropdown",
+        tokens: "settings collection / template selection / open dropdown",
     },
     Specimen {
         id: "search-everywhere.grouped-results",
