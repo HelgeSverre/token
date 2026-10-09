@@ -18,7 +18,7 @@ Token retains its model → update → command → render architecture, and its 
 CPU renderer. IntelliJ is a vocabulary and interaction reference, not a framework
 dependency or a mandate to copy its appearance.
 
-The [native gallery](../dev/ui-gallery.md) currently has 71 static specimens
+The [native gallery](../dev/ui-gallery.md) currently has 77 static specimens
 and one interactive selection/reset sandbox using production painters.
 Its live shell supports filtering, category navigation, theme selection, width
 selection and scrolling. Static visual coverage is not proof of production
@@ -112,7 +112,7 @@ durable external references; Token implementation links point into this reposito
 | Scrolling/layout      | Scroll containers and component guidelines                      | Existing pixel/editor and row/list geometry helpers                        | Keep coordinate units and one geometry authority explicit         |
 | Theme/typography      | Semantic themed components                                      | Resolved theme families and scoped Code/UI painters                        | Add only necessary roles with compatibility fallbacks             |
 | Accessibility         | Semantic and keyboard guidance                                  | Some keyboard paths; no general platform accessibility tree                | Specify roles/focus/announcements as gaps, not implemented claims |
-| Gallery               | Reference illustrations/sample components                       | 71 static specimens, a live selection/reset sandbox and an interactive shell | Add more production collections and scoped interaction verification |
+| Gallery               | Reference illustrations/sample components                       | 77 static specimens, a live selection/reset sandbox and an interactive shell | Add more production collections and scoped interaction verification |
 
 The IntelliJ column describes reference guidance, not a source-code audit of its
 entire toolkit. Token claims link to implementation evidence in the family docs;
@@ -137,9 +137,10 @@ the recommendations are proposed synthesis.
    accessibility contracts are mandatory for new work, not retroactive claims.
 6. **Gallery:** named states must render production helpers. Static tiles prove
    appearance only; focus, cancellation and async identity require real owners.
-7. **Next additions:** explicit form-control metadata, documentation overlays and
-   the first tree/list/panel compositions are implemented. Real editor
-   compositions are next. New combo/split controls wait for concrete consumers.
+7. **Next additions:** form-control metadata, documentation overlays,
+   tree/list/panel and real editor compositions are implemented. Static pane
+   header/footer helpers now have gallery coverage; Performance data/host
+   integration is next. New combo/split controls wait for concrete consumers.
 
 ## Implementation boundaries
 
