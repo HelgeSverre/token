@@ -58,6 +58,16 @@ pub enum SettingsRecordsPreview {
 }
 
 #[derive(Clone, Copy)]
+pub enum PaneChromePreview {
+    TitleOnly,
+    Actions,
+    Overflow,
+    HintFooter,
+    StatusFooter,
+    NarrowFooter,
+}
+
+#[derive(Clone, Copy)]
 pub enum Preview {
     ButtonNormal,
     ButtonHovered,
@@ -101,6 +111,7 @@ pub enum Preview {
     Secondary,
     Recessed,
     Chrome(ChromePreview),
+    PaneChrome(PaneChromePreview),
     Editor(EditorPreview),
     OverlayTabs,
     Scrollbar {
@@ -130,6 +141,48 @@ pub const SPECIMENS: &[Specimen] = &[
         category: 3,
         source: "view/segmented_control.rs + view/button.rs",
         tokens: "live sandbox / Tab / arrow keys / Home / End / reset",
+    },
+    Specimen {
+        id: "pane-header.title-only",
+        preview: Preview::PaneChrome(PaneChromePreview::TitleOnly),
+        category: 7,
+        source: "view/pane_chrome.rs · PaneHeader / PaneLayout",
+        tokens: "static / code-font title / absent actions and footer",
+    },
+    Specimen {
+        id: "pane-header.actions",
+        preview: Preview::PaneChrome(PaneChromePreview::Actions),
+        category: 7,
+        source: "view/pane_chrome.rs · PaneHeader",
+        tokens: "static / optional icon / selected + focused / disabled action",
+    },
+    Specimen {
+        id: "pane-header.overflow",
+        preview: Preview::PaneChrome(PaneChromePreview::Overflow),
+        category: 7,
+        source: "view/pane_chrome.rs · HeaderLayout",
+        tokens: "static / long title / whole-list overflow affordance",
+    },
+    Specimen {
+        id: "pane-footer.hint",
+        preview: Preview::PaneChrome(PaneChromePreview::HintFooter),
+        category: 7,
+        source: "view/pane_chrome.rs · PaneFooter",
+        tokens: "static / passive hint / optional icon / separator",
+    },
+    Specimen {
+        id: "pane-footer.status",
+        preview: Preview::PaneChrome(PaneChromePreview::StatusFooter),
+        category: 7,
+        source: "view/pane_chrome.rs · PaneFooter",
+        tokens: "static / labelled dot / trailing metadata / independent slots",
+    },
+    Specimen {
+        id: "pane-footer.narrow",
+        preview: Preview::PaneChrome(PaneChromePreview::NarrowFooter),
+        category: 7,
+        source: "view/pane_chrome.rs · FooterLayout",
+        tokens: "static / owner prioritizes leading slot / trailing hidden",
     },
     Specimen {
         id: "settings-form.semantic-controls",
