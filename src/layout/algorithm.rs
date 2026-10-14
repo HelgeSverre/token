@@ -169,6 +169,10 @@ pub(crate) fn solve(
                 );
                 (root.x + px as f32, root.y + py as f32)
             }
+            FloatAnchor::WindowPoint { x, y } => (
+                x.clamp(root.x, (root.x + root.width - w[f]).max(root.x)),
+                y.clamp(root.y, (root.y + root.height - h[f]).max(root.y)),
+            ),
             FloatAnchor::Caret {
                 x: ax,
                 y: ay,

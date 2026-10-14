@@ -5,23 +5,120 @@
 
 use serde::{Deserialize, Serialize};
 #[cfg(debug_assertions)]
-use std::array::from_fn;
-#[cfg(debug_assertions)]
 use std::collections::VecDeque;
 #[cfg(debug_assertions)]
 use std::time::{Duration, Instant};
 
 #[cfg(debug_assertions)]
-use crate::overlay::{
-    render_overlay_background, render_overlay_border, OverlayAnchor, OverlayConfig,
-};
-#[cfg(debug_assertions)]
-use crate::theme::Theme;
-#[cfg(debug_assertions)]
-use crate::view::{Frame, TextPainter};
+pub const PERF_HISTORY_SIZE: usize = 60;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ObservationMode {
+    Hidden,
+    DockOpen,
+    FloatingOpen,
+}
 
 #[cfg(debug_assertions)]
-pub const PERF_HISTORY_SIZE: usize = 60;
+#[derive(Debug, Clone)]
+pub struct CompletedFrameSample {
+    pub frame_time: Duration,
+    pub stages: [Duration; PerfStage::COUNT],
+    pub untracked: Option<Duration>,
+    pub cache_hits: usize,
+    pub cache_misses: usize,
+    pub cache_entries: usize,
+    pub observation_mode: ObservationMode,
+}
+
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy)]
+pub struct CompletedPerfView<'a> {
+    samples: &'a VecDeque<CompletedFrameSample>,
+    total_cache_hits: usize,
+    total_cache_misses: usize,
+}
+
+#[cfg(debug_assertions)]
+impl CompletedPerfView<'_> {
+    pub fn samples(&self) -> impl ExactSizeIterator<Item = &CompletedFrameSample> {
+        self.samples.iter()
+    }
+
+    pub fn sample_count(&self) -> usize {
+        self.samples.len()
+    }
+
+    pub fn latest(&self) -> Option<&CompletedFrameSample> {
+        self.samples.back()
+    }
+
+    pub fn frame_mean(&self) -> Option<Duration> {
+        mean_duration(self.samples.iter().map(|sample| sample.frame_time)).map(|(mean, _)| mean)
+    }
+
+    pub fn frame_median(&self) -> Option<Duration> {
+        percentile(self.samples.iter().map(|sample| sample.frame_time), 50)
+    }
+
+    pub fn frame_p95(&self) -> Option<Duration> {
+        percentile(self.samples.iter().map(|sample| sample.frame_time), 95)
+    }
+
+    pub fn stage_mean(&self, stage: PerfStage) -> Option<Duration> {
+        mean_duration(
+            self.samples
+                .iter()
+                .map(|sample| sample.stages[stage.index()]),
+        )
+        .map(|(mean, _)| mean)
+    }
+
+    /// The mean and denominator of only composable untracked samples.
+    /// Overlapping stage totals remain gaps, not zero-duration samples.
+    pub fn untracked_mean(&self) -> Option<(Duration, usize)> {
+        mean_duration(self.samples.iter().filter_map(|sample| sample.untracked))
+    }
+
+    pub fn lifetime_cache_hit_rate(&self) -> Option<f64> {
+        let lookups = self.total_cache_hits + self.total_cache_misses;
+        (lookups > 0).then(|| self.total_cache_hits as f64 / lookups as f64 * 100.0)
+    }
+
+    pub fn lifetime_cache_counts(&self) -> (usize, usize) {
+        (self.total_cache_hits, self.total_cache_misses)
+    }
+}
+
+#[cfg(debug_assertions)]
+fn mean_duration(values: impl IntoIterator<Item = Duration>) -> Option<(Duration, usize)> {
+    let (total, count) = values
+        .into_iter()
+        .fold((0_u128, 0_usize), |(sum, n), value| {
+            (sum + value.as_nanos(), n + 1)
+        });
+    (count > 0).then(|| {
+        let nanos = total / count as u128;
+        (
+            Duration::new(
+                (nanos / 1_000_000_000) as u64,
+                (nanos % 1_000_000_000) as u32,
+            ),
+            count,
+        )
+    })
+}
+
+#[cfg(debug_assertions)]
+fn percentile(values: impl Iterator<Item = Duration>, percentile: usize) -> Option<Duration> {
+    let mut values: Vec<_> = values.collect();
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_unstable();
+    let rank = (percentile * values.len()).div_ceil(100);
+    values.get(rank.saturating_sub(1)).copied()
+}
 
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,7 +146,6 @@ pub enum PerfStage {
     StatusBar,
     Modal,
     DropOverlay,
-    PerfOverlay,
     DebugOverlay,
     SurfaceAcquire,
     BufferCopy,
@@ -108,7 +204,6 @@ impl PerfStage {
             Self::StatusBar => "status_bar",
             Self::Modal => "modal",
             Self::DropOverlay => "drop_overlay",
-            Self::PerfOverlay => "perf_overlay",
             Self::DebugOverlay => "debug_overlay",
             Self::SurfaceAcquire => "surface_acquire",
             Self::BufferCopy => "buffer_copy",
@@ -120,7 +215,7 @@ impl PerfStage {
 }
 
 impl PerfStage {
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 29] = [
         Self::BuildPlan,
         Self::Layout,
         Self::Clear,
@@ -144,7 +239,6 @@ impl PerfStage {
         Self::StatusBar,
         Self::Modal,
         Self::DropOverlay,
-        Self::PerfOverlay,
         Self::DebugOverlay,
         Self::SurfaceAcquire,
         Self::BufferCopy,
@@ -158,6 +252,21 @@ impl PerfStage {
     #[inline(always)]
     pub const fn index(self) -> usize {
         self as usize
+    }
+
+    #[cfg(debug_assertions)]
+    pub const fn label(self) -> &'static str {
+        self.spec().label
+    }
+
+    #[cfg(debug_assertions)]
+    pub const fn short_label(self) -> &'static str {
+        self.spec().short_label
+    }
+
+    #[cfg(debug_assertions)]
+    pub const fn color(self) -> u32 {
+        self.spec().color
     }
 
     #[inline(always)]
@@ -279,11 +388,6 @@ impl PerfStage {
                 short_label: "Drop",
                 color: 0xFFE0AF68,
             },
-            Self::PerfOverlay => PerfStageSpec {
-                label: "Perf Overlay",
-                short_label: "Perf",
-                color: 0xFFCBA6F7,
-            },
             Self::DebugOverlay => PerfStageSpec {
                 label: "Debug Overlay",
                 short_label: "Debug",
@@ -322,15 +426,14 @@ impl PerfStage {
 pub struct PerfStats {
     pub frame_start: Option<Instant>,
     pub last_frame_time: Duration,
-    pub frame_times: VecDeque<Duration>,
     stage_times: [Duration; PerfStage::COUNT],
-    stage_histories: [VecDeque<Duration>; PerfStage::COUNT],
-    untracked_history: VecDeque<Duration>,
     pub frame_cache_hits: usize,
     pub frame_cache_misses: usize,
     pub total_cache_hits: usize,
     pub total_cache_misses: usize,
-    pub show_overlay: bool,
+    completed_frames: VecDeque<CompletedFrameSample>,
+    cache_entries: usize,
+    observation_mode: ObservationMode,
     #[cfg(feature = "profile-tracing")]
     frame_span: Option<tracing::span::EnteredSpan>,
 }
@@ -357,15 +460,14 @@ impl Default for PerfStats {
         Self {
             frame_start: None,
             last_frame_time: Duration::ZERO,
-            frame_times: VecDeque::new(),
             stage_times: [Duration::ZERO; PerfStage::COUNT],
-            stage_histories: from_fn(|_| VecDeque::new()),
-            untracked_history: VecDeque::new(),
             frame_cache_hits: 0,
             frame_cache_misses: 0,
             total_cache_hits: 0,
             total_cache_misses: 0,
-            show_overlay: false,
+            completed_frames: VecDeque::new(),
+            cache_entries: 0,
+            observation_mode: ObservationMode::Hidden,
             #[cfg(feature = "profile-tracing")]
             frame_span: None,
         }
@@ -436,13 +538,32 @@ impl PerfStats {
         }
     }
 
+    pub fn set_observation_mode(&mut self, mode: ObservationMode) {
+        self.observation_mode = mode;
+    }
+
+    pub fn set_cache_entries(&mut self, entries: usize) {
+        self.cache_entries = entries;
+    }
+
     #[inline(always)]
     pub fn record_frame_time(&mut self) {
         if let Some(start) = self.frame_start.take() {
             self.last_frame_time = start.elapsed();
-            self.frame_times.push_back(self.last_frame_time);
-            if self.frame_times.len() > PERF_HISTORY_SIZE {
-                self.frame_times.pop_front();
+            let tracked: Duration = self.stage_times.iter().copied().sum();
+            let sample = CompletedFrameSample {
+                frame_time: self.last_frame_time,
+                stages: self.stage_times,
+                untracked: (tracked <= self.last_frame_time)
+                    .then(|| self.last_frame_time.saturating_sub(tracked)),
+                cache_hits: self.frame_cache_hits,
+                cache_misses: self.frame_cache_misses,
+                cache_entries: self.cache_entries,
+                observation_mode: self.observation_mode,
+            };
+            self.completed_frames.push_back(sample);
+            if self.completed_frames.len() > PERF_HISTORY_SIZE {
+                self.completed_frames.pop_front();
             }
         }
         #[cfg(feature = "profile-tracing")]
@@ -453,18 +574,7 @@ impl PerfStats {
 
     #[inline(always)]
     pub fn record_render_history(&mut self) {
-        for stage in PerfStage::ALL {
-            let history = &mut self.stage_histories[stage.index()];
-            history.push_back(self.stage_times[stage.index()]);
-            if history.len() > PERF_HISTORY_SIZE {
-                history.pop_front();
-            }
-        }
-
-        self.untracked_history.push_back(self.untracked_time());
-        if self.untracked_history.len() > PERF_HISTORY_SIZE {
-            self.untracked_history.pop_front();
-        }
+        // Completed samples are published atomically by `record_frame_time`.
     }
 
     #[inline(always)]
@@ -489,18 +599,8 @@ impl PerfStats {
     }
 
     #[inline(always)]
-    pub fn should_show_overlay(&self) -> bool {
-        self.show_overlay
-    }
-
-    #[inline(always)]
     pub fn stage_time(&self, stage: PerfStage) -> Duration {
         self.stage_times[stage.index()]
-    }
-
-    #[inline(always)]
-    pub fn stage_history(&self, stage: PerfStage) -> &VecDeque<Duration> {
-        &self.stage_histories[stage.index()]
     }
 
     #[inline(always)]
@@ -514,16 +614,8 @@ impl PerfStats {
     }
 
     #[inline(always)]
-    pub fn untracked_history(&self) -> &VecDeque<Duration> {
-        &self.untracked_history
-    }
-
     pub fn avg_frame_time(&self) -> Duration {
-        if self.frame_times.is_empty() {
-            return Duration::ZERO;
-        }
-        let total: Duration = self.frame_times.iter().copied().sum();
-        total / self.frame_times.len() as u32
+        self.completed_view().frame_mean().unwrap_or_default()
     }
 
     pub fn render_throughput_per_sec(&self) -> f64 {
@@ -550,9 +642,9 @@ impl PerfStats {
             .filter(|stage| {
                 self.stage_time(*stage) > Duration::ZERO
                     || self
-                        .stage_history(*stage)
+                        .completed_frames
                         .iter()
-                        .any(|value| *value > Duration::ZERO)
+                        .any(|sample| sample.stages[stage.index()] > Duration::ZERO)
             })
             .collect()
     }
@@ -561,12 +653,7 @@ impl PerfStats {
         let stages = PerfStage::ALL
             .into_iter()
             .map(|stage| {
-                let history = self.stage_history(stage);
-                let average = if history.is_empty() {
-                    Duration::ZERO
-                } else {
-                    history.iter().copied().sum::<Duration>() / history.len() as u32
-                };
+                let average = self.completed_view().stage_mean(stage).unwrap_or_default();
                 PerfStageSnapshot {
                     name: stage.spec().label.to_owned(),
                     average_ms: average.as_secs_f64() * 1000.0,
@@ -575,19 +662,52 @@ impl PerfStats {
             })
             .collect();
         PerfSnapshot {
-            frame_count: self.frame_times.len(),
+            frame_count: self.completed_frames.len(),
             average_frame_ms: self.avg_frame_time().as_secs_f64() * 1000.0,
             last_frame_ms: self.last_frame_time.as_secs_f64() * 1000.0,
             stages,
         }
     }
 
-    pub fn clear_history(&mut self) {
-        self.frame_times.clear();
-        for history in &mut self.stage_histories {
-            history.clear();
+    pub fn completed_view(&self) -> CompletedPerfView<'_> {
+        CompletedPerfView {
+            samples: &self.completed_frames,
+            total_cache_hits: self.total_cache_hits,
+            total_cache_misses: self.total_cache_misses,
         }
-        self.untracked_history.clear();
+    }
+
+    #[cfg(any(test, feature = "ui-gallery"))]
+    pub fn push_fixture_sample(
+        &mut self,
+        frame_time: Duration,
+        stages: &[(PerfStage, Duration)],
+        cache_entries: usize,
+        mode: ObservationMode,
+    ) {
+        let mut stage_values = [Duration::ZERO; PerfStage::COUNT];
+        for &(stage, elapsed) in stages {
+            stage_values[stage.index()] = elapsed;
+        }
+        let tracked: Duration = stage_values.iter().copied().sum();
+        self.completed_frames.push_back(CompletedFrameSample {
+            frame_time,
+            stages: stage_values,
+            untracked: (tracked <= frame_time).then(|| frame_time - tracked),
+            cache_hits: 21,
+            cache_misses: 3,
+            cache_entries,
+            observation_mode: mode,
+        });
+        self.total_cache_hits += 21;
+        self.total_cache_misses += 3;
+        if self.completed_frames.len() > PERF_HISTORY_SIZE {
+            self.completed_frames.pop_front();
+        }
+    }
+
+    pub fn clear_history(&mut self) {
+        self.completed_frames.clear();
     }
 }
 
@@ -598,6 +718,12 @@ impl PerfStats {
 
     #[inline(always)]
     pub fn add_cache_stats(&mut self, _hits: usize, _misses: usize) {}
+
+    #[inline(always)]
+    pub fn set_observation_mode(&mut self, _mode: ObservationMode) {}
+
+    #[inline(always)]
+    pub fn set_cache_entries(&mut self, _entries: usize) {}
 
     #[inline(always)]
     pub fn start_frame(&mut self) {
@@ -638,11 +764,6 @@ impl PerfStats {
     #[inline(always)]
     pub fn record_stage_elapsed(&mut self, _stage: PerfStage, _elapsed: std::time::Duration) {}
 
-    #[inline(always)]
-    pub fn should_show_overlay(&self) -> bool {
-        false
-    }
-
     pub fn snapshot(&self) -> PerfSnapshot {
         PerfSnapshot::default()
     }
@@ -650,338 +771,101 @@ impl PerfStats {
     pub fn clear_history(&mut self) {}
 }
 
-#[cfg(debug_assertions)]
-pub fn render_perf_overlay(
-    frame: &mut Frame,
-    painter: &mut TextPainter,
-    perf: &PerfStats,
-    theme: &Theme,
-) {
-    let width_usize = frame.width();
-    let height_usize = frame.height();
-    let line_height = painter.line_height();
-    let scale = (line_height as f32 / 20.0).max(1.0);
+#[cfg(all(test, debug_assertions))]
+mod tests {
+    use super::*;
 
-    let active_stages = perf.visible_stages();
-    let show_untracked = perf.untracked_time() > Duration::ZERO
-        || perf
-            .untracked_history()
-            .iter()
-            .any(|value| *value > Duration::ZERO);
-
-    let padding_x = (10.0 * scale).round() as usize;
-    let padding_y = (8.0 * scale).round() as usize;
-    let row_gap = (4.0 * scale).round() as usize;
-    let section_gap = (6.0 * scale).round() as usize;
-    let row_height = line_height + row_gap;
-    let summary_rows = 4;
-    let legend_rows = 1;
-    let stacked_bar_rows = 1;
-    let cache_rows = 4;
-    let breakdown_header_rows = 1;
-    let breakdown_rows = active_stages.len() + usize::from(show_untracked);
-    let overlay_width = (500.0 * scale).round() as usize;
-    let overlay_rows = summary_rows
-        + legend_rows
-        + stacked_bar_rows
-        + cache_rows
-        + breakdown_header_rows
-        + breakdown_rows;
-    let overlay_height = (padding_y * 2 + overlay_rows * row_height + section_gap * 3)
-        .max((360.0 * scale).round() as usize);
-
-    let config = OverlayConfig::new(OverlayAnchor::TopRight, overlay_width, overlay_height)
-        .with_margin((10.0 * scale).round() as usize)
-        .with_background(theme.overlay.background.to_argb_u32());
-
-    let bounds = config.compute_bounds(width_usize, height_usize);
-    render_overlay_background(
-        frame.buffer_mut(),
-        &bounds,
-        config.background,
-        width_usize,
-        height_usize,
-    );
-
-    if let Some(border_color) = &theme.overlay.border {
-        render_overlay_border(
-            frame.buffer_mut(),
-            &bounds,
-            border_color.to_argb_u32(),
-            width_usize,
-            height_usize,
-        );
-    }
-
-    let text_color = theme.overlay.foreground.to_argb_u32();
-    let highlight_color = theme.overlay.highlight.to_argb_u32();
-    let warning_color = theme.overlay.warning.to_argb_u32();
-    let error_color = theme.overlay.error.to_argb_u32();
-    let untracked_color = 0xFF4B5563_u32;
-
-    let inner_left = bounds.x + padding_x;
-    let inner_right = bounds
-        .x
-        .saturating_add(bounds.width)
-        .saturating_sub(padding_x);
-    let inner_width = inner_right.saturating_sub(inner_left);
-    let row_text_y = |row_top: usize| row_top + row_height.saturating_sub(line_height) / 2;
-    let row_box_y =
-        |row_top: usize, box_height: usize| row_top + row_height.saturating_sub(box_height) / 2;
-    let mut row_top = bounds.y + padding_y;
-
-    painter.draw(
-        frame,
-        inner_left,
-        row_text_y(row_top),
-        "Performance",
-        text_color,
-    );
-    row_top += row_height;
-
-    let frame_ms = perf.last_frame_time.as_secs_f64() * 1000.0;
-    let throughput = perf.render_throughput_per_sec();
-    let budget_pct = (frame_ms / 16.67 * 100.0).min(999.0);
-    let frame_color = if budget_pct < 80.0 {
-        highlight_color
-    } else if budget_pct < 100.0 {
-        warning_color
-    } else {
-        error_color
-    };
-
-    painter.draw(
-        frame,
-        inner_left,
-        row_text_y(row_top),
-        &format!("Frame: {:.1}ms", frame_ms),
-        frame_color,
-    );
-    row_top += row_height;
-
-    painter.draw(
-        frame,
-        inner_left,
-        row_text_y(row_top),
-        &format!("Throughput: {:.1} renders/s", throughput),
-        text_color,
-    );
-    row_top += row_height;
-
-    let tracked_ms = perf.tracked_time().as_secs_f64() * 1000.0;
-    let untracked_ms = perf.untracked_time().as_secs_f64() * 1000.0;
-    painter.draw(
-        frame,
-        inner_left,
-        row_text_y(row_top),
-        &format!(
-            "Tracked: {:.1}ms | Untracked: {:.1}ms",
-            tracked_ms, untracked_ms
-        ),
-        text_color,
-    );
-    row_top += row_height;
-
-    let mut phase_entries: Vec<(&'static str, Duration, u32)> = active_stages
-        .iter()
-        .map(|stage| {
-            let spec = stage.spec();
-            (spec.short_label, perf.stage_time(*stage), spec.color)
-        })
-        .collect();
-    if show_untracked {
-        phase_entries.push(("Untracked", perf.untracked_time(), untracked_color));
-    }
-    phase_entries.sort_by_key(|a| std::cmp::Reverse(a.1));
-
-    let legend = phase_entries
-        .iter()
-        .take(4)
-        .map(|(name, duration, _)| {
-            let pct = if perf.last_frame_time.is_zero() {
-                0
-            } else {
-                (duration.as_secs_f64() / perf.last_frame_time.as_secs_f64() * 100.0) as u32
-            };
-            format!("{} {}%", name, pct)
-        })
-        .collect::<Vec<_>>()
-        .join(" │ ");
-    painter.draw(frame, inner_left, row_text_y(row_top), &legend, text_color);
-    row_top += row_height;
-    row_top += section_gap;
-
-    let frame_us = perf.last_frame_time.as_micros().max(1) as f32;
-    let bar_height = ((line_height as f32 * 0.7).round() as usize).max(10);
-    let bar_total_width = inner_width.min((340.0 * scale).round() as usize);
-    let bar_y = row_box_y(row_top, bar_height);
-
-    frame.fill_rect_px(
-        inner_left,
-        bar_y,
-        bar_total_width,
-        bar_height,
-        untracked_color,
-    );
-
-    let mut bar_x = inner_left;
-    let bar_end_x = inner_left + bar_total_width;
-    for stage in &active_stages {
-        let spec = stage.spec();
-        let duration = perf.stage_time(*stage);
-        let segment_width =
-            ((duration.as_micros() as f32 / frame_us) * bar_total_width as f32).round() as usize;
-        if segment_width > 0 && bar_x < bar_end_x {
-            let remaining = bar_end_x.saturating_sub(bar_x);
-            let actual_width = segment_width.min(remaining);
-            frame.fill_rect_px(bar_x, bar_y, actual_width, bar_height, spec.color);
-            bar_x += actual_width;
+    fn sample(ms: u64, mode: ObservationMode) -> CompletedFrameSample {
+        CompletedFrameSample {
+            frame_time: Duration::from_millis(ms),
+            stages: [Duration::ZERO; PerfStage::COUNT],
+            untracked: Some(Duration::from_millis(ms)),
+            cache_hits: 0,
+            cache_misses: 0,
+            cache_entries: 0,
+            observation_mode: mode,
         }
     }
-    row_top += row_height;
-    row_top += section_gap;
 
-    let avg_ms = perf.avg_frame_time().as_secs_f64() * 1000.0;
-    painter.draw(
-        frame,
-        inner_left,
-        row_text_y(row_top),
-        &format!("Avg render: {:.1}ms", avg_ms),
-        text_color,
-    );
-    row_top += row_height;
-
-    let cache_size = painter.glyph_cache_size();
-    let hit_rate = perf.cache_hit_rate();
-    painter.draw(
-        frame,
-        inner_left,
-        row_text_y(row_top),
-        &format!("Cache: {} glyphs", cache_size),
-        text_color,
-    );
-    row_top += row_height;
-
-    let hit_color = if hit_rate > 99.0 {
-        highlight_color
-    } else if hit_rate > 90.0 {
-        warning_color
-    } else {
-        error_color
-    };
-    painter.draw(
-        frame,
-        inner_left,
-        row_text_y(row_top),
-        &format!("Hits: {} ({:.1}%)", perf.total_cache_hits, hit_rate),
-        hit_color,
-    );
-    row_top += row_height;
-
-    painter.draw(
-        frame,
-        inner_left,
-        row_text_y(row_top),
-        &format!("Miss: {}", perf.total_cache_misses),
-        text_color,
-    );
-    row_top += row_height;
-    row_top += section_gap;
-
-    painter.draw(
-        frame,
-        inner_left,
-        row_text_y(row_top),
-        "Render breakdown:",
-        text_color,
-    );
-    row_top += row_height;
-
-    let mut max_label_width = active_stages
-        .iter()
-        .map(|stage| painter.measure_width(stage.spec().label).ceil() as usize)
-        .max()
-        .unwrap_or(0);
-    if show_untracked {
-        max_label_width = max_label_width.max(painter.measure_width("Untracked").ceil() as usize);
+    #[test]
+    fn completed_view_uses_actual_sample_count_and_nearest_rank_percentiles() {
+        let samples = [1, 2, 3, 4, 20]
+            .into_iter()
+            .map(|ms| sample(ms, ObservationMode::Hidden))
+            .collect();
+        let view = CompletedPerfView {
+            samples: &samples,
+            total_cache_hits: 0,
+            total_cache_misses: 0,
+        };
+        assert_eq!(view.sample_count(), 5);
+        assert_eq!(view.frame_mean(), Some(Duration::from_millis(6)));
+        assert_eq!(view.frame_median(), Some(Duration::from_millis(3)));
+        assert_eq!(view.frame_p95(), Some(Duration::from_millis(20)));
+        assert_eq!(view.lifetime_cache_hit_rate(), None);
     }
 
-    let mut max_value_width = active_stages
-        .iter()
-        .map(|stage| {
-            painter
-                .measure_width(&format!("{} µs", perf.stage_time(*stage).as_micros()))
-                .ceil() as usize
-        })
-        .max()
-        .unwrap_or(0);
-    if show_untracked {
-        max_value_width = max_value_width.max(
-            painter
-                .measure_width(&format!("{} µs", perf.untracked_time().as_micros()))
-                .ceil() as usize,
+    #[test]
+    fn completed_sample_latches_observation_mode_and_all_stage_values() {
+        let mut stats = PerfStats::default();
+        stats.set_observation_mode(ObservationMode::FloatingOpen);
+        stats.start_frame();
+        stats.record_stage_elapsed(PerfStage::Layout, Duration::from_micros(25));
+        stats.record_frame_time();
+        let view = stats.completed_view();
+        let latest = view.latest().unwrap();
+        assert_eq!(latest.observation_mode, ObservationMode::FloatingOpen);
+        assert_eq!(
+            latest.stages[PerfStage::Layout.index()],
+            Duration::from_micros(25)
         );
     }
 
-    let chart_gap = (8.0 * scale).round() as usize;
-    let value_gap = (8.0 * scale).round() as usize;
-    let label_width = max_label_width.max((80.0 * scale).round() as usize);
-    let value_width = max_value_width.max((84.0 * scale).round() as usize);
-    let chart_x = inner_left + label_width + chart_gap;
-    let value_x = inner_right.saturating_sub(value_width);
-    let chart_bg = theme.overlay.background.with_alpha(200).to_argb_u32();
-    let chart_height = ((line_height as f32 * 0.75).round() as usize).max(10);
-    let chart_width = value_x.saturating_sub(value_gap).saturating_sub(chart_x);
-
-    for stage in &active_stages {
-        let spec = stage.spec();
-        let duration = perf.stage_time(*stage);
-        let text_y = row_text_y(row_top);
-        let chart_y = row_box_y(row_top, chart_height);
-        painter.draw(frame, inner_left, text_y, spec.label, text_color);
-        if chart_width > 0 {
-            frame.draw_sparkline(
-                chart_x,
-                chart_y,
-                chart_width,
-                chart_height,
-                perf.stage_history(*stage),
-                spec.color,
-                chart_bg,
+    #[test]
+    fn untracked_mean_skips_overlap_gaps_but_stage_mean_uses_every_frame() {
+        let mut stats = PerfStats::default();
+        for (layout, glyphs) in [(2, 0), (6, 7), (4, 0)] {
+            stats.push_fixture_sample(
+                Duration::from_millis(10),
+                &[
+                    (PerfStage::Layout, Duration::from_millis(layout)),
+                    (PerfStage::TextGlyphs, Duration::from_millis(glyphs)),
+                ],
+                0,
+                ObservationMode::DockOpen,
             );
         }
-        painter.draw(
-            frame,
-            value_x,
-            text_y,
-            &format!("{} µs", duration.as_micros()),
-            spec.color,
+        let view = stats.completed_view();
+        assert_eq!(
+            view.stage_mean(PerfStage::Layout),
+            Some(Duration::from_millis(4))
         );
-        row_top += row_height;
+        assert_eq!(view.untracked_mean(), Some((Duration::from_millis(7), 2)));
+        assert_eq!(
+            view.latest().and_then(|sample| sample.untracked),
+            Some(Duration::from_millis(6))
+        );
+
+        let mut only_overlap = PerfStats::default();
+        only_overlap.push_fixture_sample(
+            Duration::from_millis(10),
+            &[
+                (PerfStage::Layout, Duration::from_millis(6)),
+                (PerfStage::TextGlyphs, Duration::from_millis(7)),
+            ],
+            0,
+            ObservationMode::DockOpen,
+        );
+        assert_eq!(only_overlap.completed_view().untracked_mean(), None);
     }
 
-    if show_untracked {
-        let duration = perf.untracked_time();
-        let text_y = row_text_y(row_top);
-        let chart_y = row_box_y(row_top, chart_height);
-        painter.draw(frame, inner_left, text_y, "Untracked", text_color);
-        if chart_width > 0 {
-            frame.draw_sparkline(
-                chart_x,
-                chart_y,
-                chart_width,
-                chart_height,
-                perf.untracked_history(),
-                untracked_color,
-                chart_bg,
-            );
-        }
-        painter.draw(
-            frame,
-            value_x,
-            text_y,
-            &format!("{} µs", duration.as_micros()),
-            untracked_color,
+    #[test]
+    fn mean_duration_handles_large_values_without_duration_sum_overflow() {
+        let almost_max = Duration::new(u64::MAX, 999_999_998);
+        assert_eq!(
+            mean_duration([almost_max, almost_max]),
+            Some((almost_max, 2))
         );
+        assert_eq!(mean_duration([]), None);
     }
 }

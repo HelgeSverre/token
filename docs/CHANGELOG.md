@@ -8,6 +8,14 @@ All notable changes to Token are documented in this file.
 
 ### Interface
 
+- Replace the debug F2 performance overlay with a Performance panel (debug
+  builds only). It opens docked on the right and can float inside the window,
+  be dragged and resized, closed, reopened, and returned to its dock slot, and
+  the layout is restored with the session. Its scrollable body shows frame and
+  stage history with latest and mean timings, an untracked remainder, a stage
+  composition bar, and glyph-cache statistics. Floating panels stay above
+  cursor-line redraws.
+
 - Fix docks overflowing the status bar and window in short or narrow windows.
   A dock now gives up space once the editor is fully collapsed, and a bottom dock
   keeps its header.

@@ -12,6 +12,7 @@
 //! consumers agree by construction and the function stays painter-free —
 //! callable from `update/`.
 
+use crate::layout::anchor::{FloatAnchor, FloatDecl};
 use crate::layout::keys::UiKey;
 use crate::layout::sizing::{Dir, Padding, Sizing, SizingAxes};
 use crate::layout::snapshot::LayoutSnapshot;
@@ -19,7 +20,7 @@ use crate::layout::text::{CellMeasure, TextStyle};
 use crate::layout::tree::{Content, ElementDecl, RowListDecl, UiTree};
 use crate::model::editor_area::Rect;
 use crate::model::AppModel;
-use crate::panel::{DockPosition, PanelId};
+use crate::panel::{DockPosition, NonDockedPanel, PanelHost, PanelId};
 
 /// Solve the complete window shell and dock chrome for the current model
 /// state. Keys present in the snapshot:
@@ -173,6 +174,10 @@ fn solve_chrome(
                 sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(status_bar_height)),
                 ..Default::default()
             });
+
+            if include_dock_contents {
+                declare_floating_panels(t, model, sidebar_width.unwrap_or(0.0));
+            }
         },
     );
 
@@ -181,6 +186,86 @@ fn solve_chrome(
         line_height: model.line_height as f32,
     };
     tree.solve(root, model.metrics.scale_factor, &mut measure)
+}
+
+/// Declare each floating panel as a window-level float: a framed column with
+/// a draggable header (title and actions) over a clipped content box. The size
+/// is the panel's chosen extent, capped at the window.
+fn declare_floating_panels(t: &mut UiTree, model: &AppModel, work_x: f32) {
+    let scale = model.metrics.scale_factor as f32;
+    for (&panel, &placement) in &model.non_docked_panels.by_id {
+        let NonDockedPanel::Floating { rect, .. } = placement else {
+            continue;
+        };
+        let width = rect.width * scale;
+        let height = rect.height * scale;
+        t.node(
+            ElementDecl {
+                key: Some(UiKey::FloatingPanel(panel)),
+                dir: Dir::Column,
+                // Capped at the window so a short window never cuts the
+                // panel off below the status bar.
+                sizing: SizingAxes::new(
+                    Sizing::Prefer {
+                        size: width,
+                        min: 0.0,
+                    },
+                    Sizing::Prefer {
+                        size: height,
+                        min: model.metrics.tab_bar_height as f32,
+                    },
+                ),
+                clip: true,
+                float: Some(FloatDecl {
+                    anchor: FloatAnchor::WindowPoint {
+                        x: work_x + rect.x * scale,
+                        y: rect.y * scale,
+                    },
+                    z: 50,
+                    width: None,
+                }),
+                ..Default::default()
+            },
+            |t| {
+                t.node(
+                    ElementDecl {
+                        key: Some(UiKey::FloatingPanelHeader(panel)),
+                        dir: Dir::Row,
+                        sizing: SizingAxes::new(
+                            Sizing::GROW,
+                            Sizing::Fixed(model.metrics.tab_bar_height as f32),
+                        ),
+                        padding: Padding::xy(
+                            model.metrics.padding_large as f32,
+                            model.metrics.padding_medium as f32,
+                        ),
+                        gap: model.metrics.padding_small as f32,
+                        ..Default::default()
+                    },
+                    |t| {
+                        t.text(None, panel.display_name(), TextStyle::sized(0.0));
+                        t.leaf(ElementDecl {
+                            sizing: SizingAxes::grow(),
+                            ..Default::default()
+                        });
+                        for &action in panel.header_actions(PanelHost::Floating) {
+                            t.leaf(ElementDecl {
+                                key: Some(UiKey::FloatingPanelAction(panel, action)),
+                                sizing: SizingAxes::new(Sizing::Fixed(22.0 * scale), Sizing::GROW),
+                                ..Default::default()
+                            });
+                        }
+                    },
+                );
+                t.leaf(ElementDecl {
+                    key: Some(UiKey::FloatingPanelContent(panel)),
+                    sizing: SizingAxes::grow(),
+                    clip: true,
+                    ..Default::default()
+                });
+            },
+        );
+    }
 }
 
 fn visible_dock_size(model: &AppModel, position: DockPosition) -> Option<f32> {
@@ -252,6 +337,25 @@ fn declare_dock(
                             );
                         },
                     );
+                }
+                if let Some((panel, actions)) = active_panel
+                    .map(|panel| (panel, panel.header_actions(PanelHost::Docked)))
+                    .filter(|(_, actions)| !actions.is_empty())
+                {
+                    t.leaf(ElementDecl {
+                        sizing: SizingAxes::grow(),
+                        ..Default::default()
+                    });
+                    for &action in actions {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::DockPanelAction(panel, action)),
+                            sizing: SizingAxes::new(
+                                Sizing::Fixed(22.0 * model.metrics.scale_factor as f32),
+                                Sizing::GROW,
+                            ),
+                            ..Default::default()
+                        });
+                    }
                 }
             },
         );

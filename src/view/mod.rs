@@ -24,6 +24,7 @@ pub mod hit_test;
 pub mod modal;
 pub mod overlay_surface;
 pub mod panels;
+pub mod performance_panel;
 pub mod scrollbar;
 pub mod section_navigation;
 pub mod segmented_control;
@@ -114,8 +115,6 @@ struct RenderPlan {
     show_drop_overlay: bool,
     show_tab_drag_ghost: bool,
     #[cfg(debug_assertions)]
-    show_perf_overlay: bool,
-    #[cfg(debug_assertions)]
     show_debug_overlay: bool,
 }
 
@@ -202,23 +201,35 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
         );
     }
 
-    fn render_right_dock_phase(&mut self) {
+    fn render_right_dock_phase(&mut self, perf: &crate::perf::PerfStats) {
         Renderer::render_dock(
             &mut self.frame,
             &mut self.painter,
             self.model,
             crate::panel::DockPosition::Right,
             &self.plan.chrome,
+            perf,
         );
     }
 
-    fn render_bottom_dock_phase(&mut self) {
+    fn render_bottom_dock_phase(&mut self, perf: &crate::perf::PerfStats) {
         Renderer::render_dock(
             &mut self.frame,
             &mut self.painter,
             self.model,
             crate::panel::DockPosition::Bottom,
             &self.plan.chrome,
+            perf,
+        );
+    }
+
+    fn render_floating_panels_phase(&mut self, perf: &crate::perf::PerfStats) {
+        panels::render_floating_panels(
+            &mut self.frame,
+            &mut self.painter,
+            self.model,
+            &self.plan.chrome,
+            perf,
         );
     }
 
@@ -285,20 +296,6 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
     }
 
     #[cfg(debug_assertions)]
-    fn render_perf_overlay_phase(&mut self, perf: &crate::perf::PerfStats) {
-        if !self.plan.show_perf_overlay {
-            return;
-        }
-
-        crate::perf::render_perf_overlay(
-            &mut self.frame,
-            &mut self.painter,
-            perf,
-            &self.model.theme,
-        );
-    }
-
-    #[cfg(debug_assertions)]
     fn render_debug_overlay_phase(&mut self) {
         if !self.plan.show_debug_overlay {
             return;
@@ -341,6 +338,7 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
     fn record_cache_stats(&self, perf: &mut crate::perf::PerfStats) {
         let stats = self.painter.cache_stats();
         perf.add_cache_stats(stats.hits, stats.misses);
+        perf.set_cache_entries(self.painter.glyph_cache_size());
     }
 }
 
@@ -994,15 +992,7 @@ impl Renderer {
     /// - Modal is active (background dim accumulation)
     /// - Drop overlay is showing
     /// - Debug overlays are visible (debug builds only)
-    fn compute_effective_damage(
-        &self,
-        damage: &Damage,
-        model: &AppModel,
-        show_perf_overlay: bool,
-    ) -> Damage {
-        #[cfg(not(debug_assertions))]
-        let _ = show_perf_overlay;
-
+    fn compute_effective_damage(&self, damage: &Damage, model: &AppModel) -> Damage {
         // Force full redraw for complex overlays
         if model.ui.active_modal.is_some() {
             return Damage::Full;
@@ -1022,9 +1012,6 @@ impl Renderer {
         // Debug builds: force full for perf/debug overlays
         #[cfg(debug_assertions)]
         {
-            if show_perf_overlay {
-                return Damage::Full;
-            }
             if let Some(ref overlay) = model.debug_overlay {
                 if overlay.visible {
                     return Damage::Full;
@@ -1044,7 +1031,6 @@ impl Renderer {
         window_height: usize,
         line_height: usize,
         char_width: f32,
-        show_perf_overlay: bool,
         chrome: crate::layout::LayoutSnapshot,
     ) -> RenderPlan {
         let editor_area_rect = chrome
@@ -1058,7 +1044,7 @@ impl Renderer {
             .editor_area
             .sync_all_viewports(line_height, char_width, &model.metrics, inset);
 
-        let effective_damage = self.compute_effective_damage(damage, model, show_perf_overlay);
+        let effective_damage = self.compute_effective_damage(damage, model);
         let render_editor = effective_damage.is_full()
             || effective_damage.includes_editor()
             || has_cursor_lines_damage(&effective_damage);
@@ -1094,8 +1080,6 @@ impl Renderer {
                 || model.ui.signature_help.is_some(),
             show_drop_overlay: model.ui.drop_state.is_hovering,
             show_tab_drag_ghost: model.ui.tab_drag.is_some_and(|d| d.active),
-            #[cfg(debug_assertions)]
-            show_perf_overlay,
             #[cfg(debug_assertions)]
             show_debug_overlay: model
                 .debug_overlay
@@ -1418,6 +1402,7 @@ impl Renderer {
         model: &AppModel,
         dirty_lines: &[usize],
         splitters: &[SplitterBar],
+        chrome: &crate::layout::LayoutSnapshot,
         perf: &mut crate::perf::PerfStats,
     ) {
         perf.measure_stage(crate::perf::PerfStage::CursorFastPath, || {
@@ -1438,6 +1423,10 @@ impl Renderer {
                 Self::render_splitters(frame, splitters, model);
             });
         }
+        // Floating panels sit above editor lines in the full pass. A cursor
+        // blink can repaint underneath one without clearing the whole frame,
+        // so restore that same host painter after all editor-owned layers.
+        panels::render_floating_panels(frame, painter, model, chrome, perf);
     }
 
     /// Redraw the focused group's scrollbars on top of whatever was just
@@ -1532,8 +1521,9 @@ impl Renderer {
         model: &AppModel,
         position: crate::panel::DockPosition,
         chrome: &crate::layout::LayoutSnapshot,
+        perf: &crate::perf::PerfStats,
     ) {
-        panels::render_dock(frame, painter, model, position, chrome);
+        panels::render_dock(frame, painter, model, position, chrome, perf);
     }
 
     /// Render CSV grid view
@@ -2049,7 +2039,6 @@ impl Renderer {
         let width_usize = self.width as usize;
         let height_usize = self.height as usize;
 
-        let show_perf_overlay = perf.should_show_overlay();
         let chrome = perf.measure_stage(crate::perf::PerfStage::Layout, || {
             crate::layout::chrome::chrome(model)
         });
@@ -2061,7 +2050,6 @@ impl Renderer {
                 height_usize,
                 line_height,
                 char_width,
-                show_perf_overlay,
                 chrome,
             )
         });
@@ -2091,6 +2079,7 @@ impl Renderer {
                 model,
                 dirty_lines,
                 &plan.splitters,
+                &plan.chrome,
                 perf,
             );
             #[cfg(debug_assertions)]
@@ -2131,9 +2120,9 @@ impl Renderer {
                     ))
                     .is_some()
                 {
-                    perf.measure_stage(crate::perf::PerfStage::RightDock, || {
-                        session.render_right_dock_phase();
-                    });
+                    let start = std::time::Instant::now();
+                    session.render_right_dock_phase(perf);
+                    perf.record_stage_elapsed(crate::perf::PerfStage::RightDock, start.elapsed());
                 }
                 if plan
                     .chrome
@@ -2142,10 +2131,11 @@ impl Renderer {
                     ))
                     .is_some()
                 {
-                    perf.measure_stage(crate::perf::PerfStage::BottomDock, || {
-                        session.render_bottom_dock_phase();
-                    });
+                    let start = std::time::Instant::now();
+                    session.render_bottom_dock_phase(perf);
+                    perf.record_stage_elapsed(crate::perf::PerfStage::BottomDock, start.elapsed());
                 }
+                session.render_floating_panels_phase(perf);
             }
 
             if plan.render_status_bar {
@@ -2169,13 +2159,6 @@ impl Renderer {
             }
             if plan.show_tab_drag_ghost {
                 session.render_tab_drag_ghost_phase();
-            }
-
-            #[cfg(debug_assertions)]
-            if plan.show_perf_overlay {
-                let start = std::time::Instant::now();
-                session.render_perf_overlay_phase(perf);
-                perf.record_stage_elapsed(crate::perf::PerfStage::PerfOverlay, start.elapsed());
             }
 
             #[cfg(debug_assertions)]
@@ -2768,6 +2751,7 @@ mod cursor_fast_path_scrollbar_tests {
                                 &model,
                                 &[0],
                                 &splitters,
+                                &crate::layout::chrome::chrome(&model),
                                 &mut perf,
                             );
                             for (&(x, y), &expected) in points.iter().zip(&before) {

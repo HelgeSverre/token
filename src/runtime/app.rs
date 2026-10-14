@@ -49,8 +49,8 @@ mod references;
 #[path = "workspace_symbols.rs"]
 mod workspace_symbols;
 use super::mouse::{
-    end_tab_drag, handle_mouse_press, handle_mouse_wheel, make_mouse_event, update_hover_target,
-    update_tab_drag, ClickTracker, DragState,
+    end_tab_drag, handle_mouse_press, handle_mouse_wheel_with_perf, make_mouse_event,
+    update_hover_target, update_tab_drag, ClickTracker, DragState,
 };
 use super::webview::WebviewManager;
 use token::view::{Renderer, RendererPreparation};
@@ -1405,6 +1405,24 @@ impl App {
             return false;
         }
 
+        if let Some(drag) = self.model.ui.floating_panel_drag {
+            self.model.ui.hover = HoverRegion::FloatingPanel(drag.panel);
+            use token::model::ui::{FloatingPanelDragKind, FloatingResizeEdge as Edge};
+            let icon = match drag.kind {
+                FloatingPanelDragKind::Move => CursorIcon::Grabbing,
+                FloatingPanelDragKind::Resize(Edge::Left | Edge::Right) => CursorIcon::ColResize,
+                FloatingPanelDragKind::Resize(Edge::Top | Edge::Bottom) => CursorIcon::RowResize,
+                FloatingPanelDragKind::Resize(Edge::TopLeft | Edge::BottomRight) => {
+                    CursorIcon::NwseResize
+                }
+                FloatingPanelDragKind::Resize(Edge::TopRight | Edge::BottomLeft) => {
+                    CursorIcon::NeswResize
+                }
+            };
+            window.set_cursor(icon);
+            return false;
+        }
+
         let pt = Point::new(x, y);
         let char_width = renderer.char_width();
         let target = {
@@ -1511,6 +1529,8 @@ impl App {
                     self.model.cancel_scroll_animations();
                     self.drag.end();
                     self.model.ui.find_selection_drag = None;
+                    self.model.ui.floating_panel_drag = None;
+                    self.model.ui.panel_action_press = None;
                     update(
                         &mut self.model,
                         Msg::Ui(UiMsg::Settings(
@@ -1575,10 +1595,23 @@ impl App {
                             },
                         );
                     }
+                    if event.logical_key == Key::Named(NamedKey::Escape) {
+                        if let token::model::FocusTarget::FloatingPanel(panel) = self.model.ui.focus
+                        {
+                            return update(
+                                &mut self.model,
+                                Msg::DockablePanel(token::messages::PanelPlacementMsg::Dock(panel)),
+                            );
+                        }
+                    }
                     #[cfg(debug_assertions)]
                     if event.logical_key == Key::Named(NamedKey::F2) {
-                        self.perf.show_overlay = !self.perf.show_overlay;
-                        return Some(Cmd::Redraw);
+                        return update(
+                            &mut self.model,
+                            Msg::DockablePanel(token::messages::PanelPlacementMsg::Open(
+                                token::panel::PanelId::Performance,
+                            )),
+                        );
                     }
 
                     #[cfg(debug_assertions)]
@@ -1750,6 +1783,43 @@ impl App {
                     return update(
                         &mut self.model,
                         Msg::Workspace(WorkspaceMsg::UpdateSidebarResize { x: position.x }),
+                    );
+                }
+
+                if let Some(drag) = self.model.ui.floating_panel_drag {
+                    let scale = self.model.metrics.scale_factor.max(f64::EPSILON);
+                    let dx = ((position.x - drag.press.0) / scale) as f32;
+                    let dy = ((position.y - drag.press.1) / scale) as f32;
+                    let mut rect = drag.original;
+                    match drag.kind {
+                        token::model::ui::FloatingPanelDragKind::Move => {
+                            rect.x += dx;
+                            rect.y += dy;
+                        }
+                        token::model::ui::FloatingPanelDragKind::Resize(edge) => {
+                            use token::model::ui::FloatingResizeEdge as Edge;
+                            if matches!(edge, Edge::Left | Edge::TopLeft | Edge::BottomLeft) {
+                                rect.x += dx;
+                                rect.width -= dx;
+                            }
+                            if matches!(edge, Edge::Right | Edge::TopRight | Edge::BottomRight) {
+                                rect.width += dx;
+                            }
+                            if matches!(edge, Edge::Top | Edge::TopLeft | Edge::TopRight) {
+                                rect.y += dy;
+                                rect.height -= dy;
+                            }
+                            if matches!(edge, Edge::Bottom | Edge::BottomLeft | Edge::BottomRight) {
+                                rect.height += dy;
+                            }
+                        }
+                    }
+                    return update(
+                        &mut self.model,
+                        Msg::DockablePanel(token::messages::PanelPlacementMsg::SetFloatingRect {
+                            panel: drag.panel,
+                            rect,
+                        }),
                     );
                 }
 
@@ -1988,6 +2058,33 @@ impl App {
                     Msg::Terminal(token::messages::TerminalMsg::SelectionEnd),
                 );
 
+                if let Some(press) = self.model.ui.panel_action_press.take() {
+                    let released = self.mouse_position.and_then(|(x, y)| {
+                        match token::layout::chrome::chrome(&self.model).hit(x as f32, y as f32) {
+                            Some(token::layout::UiKey::FloatingPanelAction(panel, action))
+                            | Some(token::layout::UiKey::DockPanelAction(panel, action)) => {
+                                Some((panel, action))
+                            }
+                            _ => None,
+                        }
+                    });
+                    if released == Some((press.panel, press.action)) {
+                        let message = match press.action {
+                            token::panel::PanelActionId::Float => {
+                                token::messages::PanelPlacementMsg::Float(press.panel)
+                            }
+                            token::panel::PanelActionId::Dock => {
+                                token::messages::PanelPlacementMsg::Dock(press.panel)
+                            }
+                            token::panel::PanelActionId::Close => {
+                                token::messages::PanelPlacementMsg::Close(press.panel)
+                            }
+                        };
+                        return update(&mut self.model, Msg::DockablePanel(message));
+                    }
+                    return Some(Cmd::Redraw);
+                }
+
                 // Finish tab drag if one is armed/active
                 if self.model.ui.tab_drag.is_some() {
                     if let Some(cmd) = end_tab_drag(&mut self.model) {
@@ -2022,6 +2119,10 @@ impl App {
                         &mut self.model,
                         Msg::Dock(token::messages::DockMsg::EndResize),
                     );
+                }
+
+                if self.model.ui.floating_panel_drag.take().is_some() {
+                    return Some(Cmd::Redraw);
                 }
 
                 // End image pan if active
@@ -2105,14 +2206,21 @@ impl App {
                 if let Some(renderer) = &mut self.renderer {
                     let mut painter = renderer.text_painter();
                     let mut measure = token::layout::PainterMeasure::new(&mut painter);
-                    handle_mouse_wheel(
+                    handle_mouse_wheel_with_perf(
                         &mut self.model,
                         self.mouse_position,
                         scroll,
                         Some(&mut measure),
+                        Some(&self.perf),
                     )
                 } else {
-                    handle_mouse_wheel(&mut self.model, self.mouse_position, scroll, None)
+                    handle_mouse_wheel_with_perf(
+                        &mut self.model,
+                        self.mouse_position,
+                        scroll,
+                        None,
+                        Some(&self.perf),
+                    )
                 }
             }
             WindowEvent::DroppedFile(path) => {
@@ -2143,6 +2251,27 @@ impl App {
             // children are captured. Input/event processing continues normally.
             return Ok(());
         }
+        #[cfg(debug_assertions)]
+        self.perf.set_observation_mode(
+            if matches!(
+                self.model
+                    .non_docked_panels
+                    .by_id
+                    .get(&token::panel::PanelId::Performance),
+                Some(token::panel::NonDockedPanel::Floating { .. })
+            ) {
+                token::perf::ObservationMode::FloatingOpen
+            } else if self
+                .model
+                .dock_layout
+                .active_panel_position(token::panel::PanelId::Performance)
+                .is_some()
+            {
+                token::perf::ObservationMode::DockOpen
+            } else {
+                token::perf::ObservationMode::Hidden
+            },
+        );
         self.perf.start_frame();
 
         if let Some(renderer) = &mut self.renderer {
@@ -3440,14 +3569,6 @@ impl App {
                 // `exit` notification -> await process exit (2s) -> kill.
                 self.graceful_lsp_teardown();
                 self.should_quit = true;
-            }
-
-            // =====================================================================
-            // Debug Commands
-            // =====================================================================
-            #[cfg(debug_assertions)]
-            Cmd::TogglePerfOverlay => {
-                self.perf.show_overlay = !self.perf.show_overlay;
             }
         }
     }

@@ -36,9 +36,12 @@ pub mod snapshot;
 pub mod text;
 pub mod tree;
 
+pub use crate::panel::PanelActionId;
 pub use anchor::{AttachPoint, FloatAnchor, FloatDecl, WidthRule};
 pub use keys::UiKey;
 pub use sizing::{AlignX, AlignY, Dir, Padding, Sizing, SizingAxes};
 pub use snapshot::{LayoutSnapshot, RowListView, SolvedContent, SolvedNode};
 pub use text::{CellMeasure, PainterMeasure, TextMeasure, TextStyle};
-pub use tree::{Content, ElementDecl, RowListDecl, ScrollDecl, TextDecl, UiTree, Wrap};
+pub use tree::{
+    Content, ElementDecl, LayoutNodeId, RowListDecl, ScrollDecl, TextDecl, UiTree, Wrap,
+};

@@ -1,7 +1,11 @@
 # Performance panel
 
-> **Status:** Planned. This document specifies a replacement for the debug-only
-> F2 floating overlay; it does not authorize a native implementation yet.
+> **Status:** Docking and the sectioned body are implemented. F2 opens or
+> focuses the debug-only Performance panel; the former bespoke overlay is no
+> longer part of the render path. Stage rows show latest and retained-window
+> mean durations. The untracked row excludes overlapping samples from its mean
+> and leaves gaps in its history; overlapping latest stages suppress the
+> composition bar.
 >
 > **Default presentation:** a tab in the right dock. **Second presentation:** a
 > floating panel inside Token's window, using the same data projection and body.
@@ -31,7 +35,14 @@ limitations visible in the empty/summary states. It does not claim wall-clock
 application FPS, display refresh rate, input latency, CPU utilization, or
 release-equivalent performance.
 
-## Current evidence and constraints
+## Pre-implementation evidence and constraints
+
+The following section records the instrumentation from which the implemented
+panel was derived. Production now publishes one bounded deque of coherent
+`CompletedFrameSample` values. Each sample latches frame/stage/cache values and
+the hidden, docked, or floating observation mode at frame completion;
+`CompletedPerfView` derives the panel's latest, mean, median, p95, stage, and
+lifetime-cache projections without copying them into `AppModel`.
 
 ### Instrumentation that exists today
 
@@ -46,51 +57,45 @@ the human label, short label, and visual color for each stage.
 At the start of each `App::render`, `src/runtime/app.rs` records an `Instant`.
 The runtime calls the renderer, webview visibility work, text-input rectangle
 synchronization, and webview synchronization; it then calls
-`record_frame_time()` and `record_render_history()`. The latter appends one
-sample for every `PerfStage` and untracked time, retaining at most
-`PERF_HISTORY_SIZE = 60` samples. A stage sample is a `Duration` accumulated
-within that rendered frame. A missing/zero stage is still represented as a zero
-in history; `visible_stages()` only hides stages that are zero both now and
-throughout retained history.
+`record_frame_time()`, which publishes one coherent `CompletedFrameSample` and
+retains at most `PERF_HISTORY_SIZE = 60` samples. Each sample contains the frame
+duration, complete fixed stage array, non-negative untracked time, cache
+counters and entries, and panel observation mode. A missing stage remains zero;
+the panel hides it only when both its latest and retained mean are zero.
 
 The existing summary values are available with precise meanings:
 
 | Value | Current source | Correct display meaning |
 | --- | --- | --- |
-| Latest frame | `last_frame_time` | elapsed time from the runtime's `start_frame()` to just before history recording for the latest rendered frame, in ms |
-| Mean rendered frame | `avg_frame_time()` | arithmetic mean of retained rendered-frame durations, in ms; denominator is `frame_times.len()`, not 60 when history is warm-up/empty |
-| Render throughput | `1 / avg_frame_time()` | reciprocal of that mean in renders/s; a derived throughput estimate, not monitor FPS |
-| Stage latest / mean | `stage_time()` / `stage_history()` | accumulated duration for one named stage in the latest frame / mean over that stage's actual retained history length, in µs or ms |
-| Tracked / untracked | sum of current stages / `last_frame_time - tracked` | instrumented time and the non-negative remainder of the latest frame; they are not guaranteed to be mutually exclusive work categories outside the measured boundaries |
-| Cache hits/misses | `TextPainter` cache statistics supplied each frame | glyph-cache lookup counters; the existing percentage uses process-lifetime `total_cache_hits / (total_cache_hits + total_cache_misses)`, not a per-frame ratio |
+| Latest frame | `CompletedPerfView::latest()` | elapsed time from the runtime's `start_frame()` to sample publication for the latest rendered frame, in ms |
+| Mean rendered frame | `CompletedPerfView::frame_mean()` | arithmetic mean of retained rendered-frame durations, in ms; denominator is the actual sample count, not 60 during warm-up |
+| Render throughput | `1 / CompletedPerfView::frame_mean()` | reciprocal of that mean in renders/s; a derived throughput estimate, not monitor FPS |
+| Stage latest / mean | latest sample / `CompletedPerfView::stage_mean()` | accumulated duration for one named stage in the latest frame / mean over the retained sample count, in µs or ms |
+| Tracked / untracked | sample stage sum / sample `untracked` | instrumented time and the non-negative remainder of the latest frame; they are not guaranteed to be mutually exclusive work categories outside the measured boundaries |
+| Cache hits/misses | `TextPainter` cache statistics latched per sample | glyph-cache lookup counters; the displayed percentage uses process-lifetime totals, not a per-frame ratio |
 | Cache entries | `TextPainter::glyph_cache_size()` | current glyph-cache entry count, sampled while rendering; it has no historical series today |
 
 There is no timestamped wall-clock sample, budget value, live/paused capture
 state, user-selected history duration, per-stage cache, or per-frame cache-rate
-history. Median and p95 *can* be derived from the existing bounded
-`frame_times` window; they need documented sorted-window conventions, not new
-instrumentation. The prototype's over-budget, wall-time distribution, and gauge
+history. Median and p95 are derived from the bounded completed-sample window
+using documented sorted-window conventions. The prototype's over-budget,
+wall-time distribution, and gauge
 views cannot be copied as facts until a separate instrumentation phase records
 the required inputs and defines their denominators.
 
-`Frame::draw_sparkline` already paints duration histories with a clipping/bounds
-test, but it is used only by the old overlay. This supports a feature-local
-time-series helper in the first implementation; it is not evidence that Token
-needs a universal chart framework.
+The panel feeds bounded frame and stage histories into the shared duration
+sparkline painter. This does not imply a general-purpose chart system.
 
-### Why the old overlay changes the thing it observes
+### Why the removed overlay changed the thing it observed
 
-The F2 key currently toggles runtime-owned `PerfStats::show_overlay` in debug
-builds. `Cmd::TogglePerfOverlay` maps to `Damage::Full`; while visible,
-`build_render_plan` cannot take the normal cursor-lines fast path, and the
-renderer paints `render_perf_overlay` near the end of the frame while timing it
-as `PerfStage::PerfOverlay`. The panel must preserve this caveat in its empty
-and summary copy: opening F2 forces full redraw, so visible samples diagnose
-render stages but are not comparable to normal damage-limited rendering.
+Before this implementation, F2 toggled runtime-owned overlay state and forced
+full redraw while the overlay was visible. The bespoke painter and its
+overlay-only stage have now been removed. A docked panel changes normal shell
+geometry; a floating panel adds its own paint work. Completed samples therefore
+latch `ObservationMode` so those presentations remain distinguishable.
 
-A right dock will itself be measured by the existing `RightDock` stage; a
-floating panel will need a named rendering stage before it can report its own
-cost. The first rollout must label each sample by the observation mode latched
+A right dock is measured by the existing `RightDock` stage. The completed
+sample labels each frame by the observation mode latched
 when that sample completed. Opening the panel first draws a history that may
 have been captured while hidden, so it must not relabel those entries “with
 Performance panel open.” If a retained window mixes Hidden, DockOpen, and
@@ -381,8 +386,8 @@ ship a bespoke floating overlay.
   empty, partial-history, zero-cache, untracked, percentile and warm-60
   behavior.
 - Move only reusable duration/statistical formatting and feature-local plot
-  geometry out of `render_perf_overlay`; do not preserve its fixed top-right
-  geometry or duplicate its bespoke layout.
+  geometry out of the former overlay painter; do not preserve its fixed
+  top-right geometry or duplicate its bespoke layout.
 - Decide and add a named stage for panel/floating chrome painting if the
   measurements are expected to explain their own observer cost. Do not create
   overlay-only timers.
@@ -482,10 +487,10 @@ tests that already exist. This documentation-only change adds no Rust test code.
 
 ## Source map
 
-- `src/perf.rs` — collector, stage registry, history semantics, old overlay.
+- `src/perf.rs` — collector, stage registry, completed-frame history and
+  statistics projection.
 - `src/runtime/app.rs` — runtime frame boundary and current F2 handling.
-- `src/view/mod.rs` — stage timing/order, render plan and full-redraw overlay
-  consequence.
+- `src/view/mod.rs` — stage timing/order and render plan.
 - `src/view/frame.rs` — existing bounded sparkline painter.
 - `src/panel/dock.rs`, `src/model/ui.rs`, `src/messages.rs`,
   `src/update/dock.rs` — dock identity/state/focus/update boundaries.

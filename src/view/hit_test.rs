@@ -91,6 +91,20 @@ impl MouseEvent {
 /// future use (e.g., context menus, detailed click handling).
 #[derive(Clone, Debug)]
 pub enum HitTarget {
+    FloatingPanelAction {
+        panel: crate::panel::PanelId,
+        action: crate::layout::PanelActionId,
+    },
+    FloatingPanelHeader {
+        panel: crate::panel::PanelId,
+    },
+    FloatingPanelContent {
+        panel: crate::panel::PanelId,
+    },
+    FloatingPanelResize {
+        panel: crate::panel::PanelId,
+        edge: crate::model::ui::FloatingResizeEdge,
+    },
     SettingsRecordsScrollbar {
         geometry: super::scrollbar::ScrollbarGeometry,
     },
@@ -344,6 +358,15 @@ impl HitTarget {
                 SplitDirection::Horizontal => CursorIcon::ColResize,
                 SplitDirection::Vertical => CursorIcon::RowResize,
             },
+            HitTarget::FloatingPanelResize { edge, .. } => {
+                use crate::model::ui::FloatingResizeEdge as Edge;
+                match edge {
+                    Edge::Left | Edge::Right => CursorIcon::ColResize,
+                    Edge::Top | Edge::Bottom => CursorIcon::RowResize,
+                    Edge::TopLeft | Edge::BottomRight => CursorIcon::NwseResize,
+                    Edge::TopRight | Edge::BottomLeft => CursorIcon::NeswResize,
+                }
+            }
             _ => CursorIcon::Default,
         }
     }
@@ -367,6 +390,10 @@ impl HitTarget {
                 HoverRegion::CursorOverlay
             }
             HitTarget::StatusBar => HoverRegion::StatusBar,
+            HitTarget::FloatingPanelAction { panel, .. }
+            | HitTarget::FloatingPanelHeader { panel }
+            | HitTarget::FloatingPanelContent { panel }
+            | HitTarget::FloatingPanelResize { panel, .. } => HoverRegion::FloatingPanel(*panel),
             HitTarget::SidebarResize => HoverRegion::SidebarResize,
             HitTarget::SidebarEmpty | HitTarget::SidebarItem { .. } => HoverRegion::Sidebar,
             HitTarget::Splitter { .. } => HoverRegion::Splitter,
@@ -995,6 +1022,9 @@ fn hit_test_docks_in(
                 .active_panel_position(crate::panel::PanelId::Terminal)?,
         }),
         UiKey::DockTab(position, panel_id) => Some(HitTarget::DockTab { position, panel_id }),
+        UiKey::DockPanelAction(panel, action) => {
+            Some(HitTarget::FloatingPanelAction { panel, action })
+        }
         UiKey::DockHeader(position) => Some(HitTarget::DockTabBarEmpty { position }),
         UiKey::PanelContent(_) | UiKey::PanelRows(_) => {
             let position = [
@@ -1053,6 +1083,53 @@ pub fn hit_test_ui(
     // 1. Modal overlay (highest priority)
     if let Some(target) = hit_test_modal(model, pt) {
         return Some(target);
+    }
+
+    if !model.non_docked_panels.by_id.is_empty() {
+        let chrome = crate::layout::chrome::chrome(model);
+        let solved = chrome.hit(pt.x as f32, pt.y as f32);
+        match solved {
+            Some(crate::layout::UiKey::FloatingPanelAction(panel, action)) => {
+                return Some(HitTarget::FloatingPanelAction { panel, action });
+            }
+            Some(crate::layout::UiKey::FloatingPanel(panel))
+            | Some(crate::layout::UiKey::FloatingPanelHeader(panel))
+            | Some(crate::layout::UiKey::FloatingPanelContent(panel)) => {
+                if let Some(rect) = chrome.rect(crate::layout::UiKey::FloatingPanel(panel)) {
+                    let zone = model.metrics.resize_handle_zone as f64;
+                    let left = (pt.x - rect.x as f64).abs() <= zone;
+                    let right = (pt.x - (rect.x + rect.width) as f64).abs() <= zone;
+                    let top = (pt.y - rect.y as f64).abs() <= zone;
+                    let bottom = (pt.y - (rect.y + rect.height) as f64).abs() <= zone;
+                    use crate::model::ui::FloatingResizeEdge as Edge;
+                    let edge = match (left, right, top, bottom) {
+                        (true, _, true, _) => Some(Edge::TopLeft),
+                        (_, true, true, _) => Some(Edge::TopRight),
+                        (true, _, _, true) => Some(Edge::BottomLeft),
+                        (_, true, _, true) => Some(Edge::BottomRight),
+                        (true, _, _, _) => Some(Edge::Left),
+                        (_, true, _, _) => Some(Edge::Right),
+                        (_, _, true, _) => Some(Edge::Top),
+                        (_, _, _, true) => Some(Edge::Bottom),
+                        _ => None,
+                    };
+                    if let Some(edge) = edge {
+                        return Some(HitTarget::FloatingPanelResize { panel, edge });
+                    }
+                }
+            }
+            _ => {}
+        }
+        match solved {
+            Some(crate::layout::UiKey::FloatingPanelHeader(panel)) => {
+                return Some(HitTarget::FloatingPanelHeader { panel });
+            }
+            Some(crate::layout::UiKey::FloatingPanelContent(panel))
+            | Some(crate::layout::UiKey::FloatingPanel(panel)) => {
+                return Some(HitTarget::FloatingPanelContent { panel });
+            }
+            _ => {}
+        }
     }
 
     // The cheap shell drives the common path. Sidebar or dock rows are solved

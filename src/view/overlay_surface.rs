@@ -1615,8 +1615,14 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
             | UiKey::Dock(_)
             | UiKey::DockHeader(_)
             | UiKey::DockTab(_, _)
+            | UiKey::DockPanelAction(_, _)
             | UiKey::PanelContent(_)
             | UiKey::PanelRows(_)
+            | UiKey::FloatingPanel(_)
+            | UiKey::FloatingPanelHeader(_)
+            | UiKey::FloatingPanelAction(_, _)
+            | UiKey::FloatingPanelContent(_)
+            | UiKey::FloatingPanelFooter(_)
             | UiKey::Sidebar
             | UiKey::EditorArea
             | UiKey::StatusBar,

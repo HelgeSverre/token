@@ -976,6 +976,8 @@ pub enum TerminalMsg {
 /// Dock-level messages (panel switching, resizing, visibility)
 #[derive(Debug, Clone)]
 pub enum DockMsg {
+    /// Scroll the shared Performance body by physical pixels.
+    ScrollPerformance { pixels: isize, max: usize },
     /// Focus-then-toggle: If dock not focused, focus and open panel.
     /// If dock already focused on this panel, close dock.
     /// This is the primary keybinding action (Cmd+1, Cmd+2, etc.)
@@ -1016,6 +1018,20 @@ pub enum DockMsg {
 
     /// Toggle dock visibility at position
     ToggleDock(crate::panel::DockPosition),
+}
+
+/// Atomic lifecycle transitions for panels that may leave their dock.
+#[derive(Debug, Clone, Copy)]
+pub enum PanelPlacementMsg {
+    Open(crate::panel::PanelId),
+    OpenInDock(crate::panel::PanelId),
+    Float(crate::panel::PanelId),
+    Dock(crate::panel::PanelId),
+    Close(crate::panel::PanelId),
+    SetFloatingRect {
+        panel: crate::panel::PanelId,
+        rect: crate::panel::LogicalRect,
+    },
 }
 
 /// Workspace messages (file tree sidebar)
@@ -1134,6 +1150,8 @@ pub enum Msg {
     Workspace(WorkspaceMsg),
     /// Dock messages (panel visibility, focus, resize)
     Dock(DockMsg),
+    /// Dockable-panel lifecycle and floating geometry.
+    DockablePanel(PanelPlacementMsg),
     /// Outline panel messages
     Outline(OutlineMsg),
     /// Problems panel messages
