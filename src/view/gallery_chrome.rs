@@ -62,6 +62,7 @@ fn populate_explorer(model: &mut AppModel, kind: ChromePreview, width: f32) {
         } else {
             0
         },
+        hide_gitignored: false,
     });
 }
 
