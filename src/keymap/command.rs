@@ -268,6 +268,8 @@ pub enum Command {
     FileTreeOpenOrToggle,
     /// Refresh the file tree from disk
     FileTreeRefresh,
+    /// Hide or show files matched by `.gitignore` in the file tree
+    ToggleGitignoredFiles,
 
     // ========================================================================
     // Panels/Docks
@@ -595,6 +597,7 @@ impl Command {
             FileTreeSelectNext => vec![Msg::Workspace(WorkspaceMsg::SelectNext)],
             FileTreeOpenOrToggle => vec![Msg::Workspace(WorkspaceMsg::OpenOrToggle)],
             FileTreeRefresh => vec![Msg::Workspace(WorkspaceMsg::Refresh)],
+            ToggleGitignoredFiles => vec![Msg::Workspace(WorkspaceMsg::ToggleHideGitignored)],
 
             // Panels/Docks
             ToggleFileExplorer => vec![Msg::Dock(DockMsg::FocusOrTogglePanel(
@@ -756,6 +759,7 @@ impl Command {
                 | Command::OpenRecentFiles
                 | Command::FuzzyFileFinder
                 | Command::ToggleFileExplorer
+                | Command::ToggleGitignoredFiles
                 | Command::ToggleTerminal
                 | Command::NewTerminal
                 | Command::CloseTerminal
@@ -874,6 +878,7 @@ impl Command {
             FileTreeSelectNext => "File Tree: Select Next",
             FileTreeOpenOrToggle => "File Tree: Open/Toggle",
             FileTreeRefresh => "File Tree: Refresh",
+            ToggleGitignoredFiles => "File Tree: Toggle Gitignored Files",
 
             ToggleFileExplorer => "View: Toggle File Explorer",
             ToggleTerminal => "View: Toggle Terminal",

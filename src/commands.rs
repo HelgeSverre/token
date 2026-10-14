@@ -96,6 +96,7 @@ pub enum CommandId {
 
     // Panels/Docks
     ToggleFileExplorer,
+    ToggleGitignoredFiles,
     ToggleTerminal,
     NewTerminal,
     CloseTerminal,
@@ -509,6 +510,12 @@ pub static COMMANDS: &[CommandDef] = &[
         action: Some(KeymapCommand::ToggleFileExplorer),
         category: CommandCategory::Panel,
         label: "View: Toggle File Explorer",
+    },
+    CommandDef {
+        id: CommandId::ToggleGitignoredFiles,
+        action: Some(KeymapCommand::ToggleGitignoredFiles),
+        category: CommandCategory::Panel,
+        label: "File Tree: Toggle Gitignored Files",
     },
     CommandDef {
         id: CommandId::ToggleTerminal,

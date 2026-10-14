@@ -193,6 +193,7 @@ fn create_workspace_with_tree(file_count: usize) -> Workspace {
         sidebar_visible: true,
         sidebar_width_logical: metrics.sidebar_default_width_logical,
         scroll_offset: 0,
+        hide_gitignored: false,
     }
 }
 
@@ -291,6 +292,7 @@ fn reveal_file_deep_path(depth: usize) {
         sidebar_visible: true,
         sidebar_width_logical: 250.0,
         scroll_offset: 0,
+        hide_gitignored: false,
     };
 
     // Create a deep path

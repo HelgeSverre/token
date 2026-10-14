@@ -176,6 +176,21 @@ pub(super) fn update_workspace(model: &mut AppModel, msg: WorkspaceMsg) -> Optio
             Some(Cmd::redraw_editor())
         }
 
+        WorkspaceMsg::ToggleHideGitignored => {
+            if let Some(workspace) = &mut model.workspace {
+                match workspace.toggle_hide_gitignored() {
+                    Ok(()) if workspace.hide_gitignored => {
+                        model.ui.set_status("Gitignored files hidden");
+                    }
+                    Ok(()) => model.ui.set_status("Gitignored files shown"),
+                    Err(e) => model.ui.set_status(format!("Failed to refresh: {}", e)),
+                }
+            }
+            // Hiding files can shrink the tree below the current offset.
+            clamp_sidebar_scroll(model);
+            Some(Cmd::redraw_editor())
+        }
+
         WorkspaceMsg::Scroll { lines } => {
             // Calculate how many rows fit in the sidebar viewport
             let visible_rows = sidebar_visible_rows(model);
@@ -647,6 +662,38 @@ mod tests {
         assert_eq!(model.workspace.as_ref().unwrap().selected_item, Some(path));
     }
 
+    #[test]
+    fn toggle_hide_gitignored_flips_flag_and_reports_status() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "*.log\n").unwrap();
+        std::fs::write(dir.path().join("app.log"), "").unwrap();
+        let mut model = AppModel::new(800, 600, 1.0);
+        model.workspace =
+            Some(Workspace::new(dir.path().to_path_buf(), &ScaledMetrics::new(1.0)).unwrap());
+
+        update_workspace(&mut model, WorkspaceMsg::ToggleHideGitignored);
+        let ws = model.workspace.as_ref().unwrap();
+        assert!(ws.hide_gitignored);
+        assert_eq!(
+            ws.file_tree.roots[0].children.len(),
+            1,
+            "only .gitignore remains"
+        );
+        assert_eq!(
+            model.ui.transient_message.as_ref().unwrap().text,
+            "Gitignored files hidden"
+        );
+
+        update_workspace(&mut model, WorkspaceMsg::ToggleHideGitignored);
+        let ws = model.workspace.as_ref().unwrap();
+        assert!(!ws.hide_gitignored);
+        assert_eq!(ws.file_tree.roots[0].children.len(), 2);
+        assert_eq!(
+            model.ui.transient_message.as_ref().unwrap().text,
+            "Gitignored files shown"
+        );
+    }
+
     fn test_workspace() -> Workspace {
         let metrics = ScaledMetrics::new(1.0);
         Workspace {
@@ -657,6 +704,7 @@ mod tests {
             sidebar_visible: true,
             sidebar_width_logical: metrics.sidebar_default_width_logical,
             scroll_offset: 0,
+            hide_gitignored: false,
         }
     }
 

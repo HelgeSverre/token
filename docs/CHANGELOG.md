@@ -8,6 +8,10 @@ All notable changes to Token are documented in this file.
 
 ### Interface
 
+- Add **File Tree: Toggle Gitignored Files** to the command palette (bindable
+  as `ToggleGitignoredFiles`). Gitignored files are shown by default; the
+  toggle hides entries matched by `.gitignore` files and `.git/info/exclude`.
+
 - Improve muted status and inactive-tab labels in bundled dark themes so
   status and tab text meet a 4.5:1 palette contrast floor. Preserve custom theme
   colors, existing backgrounds, syntax colors and active-tab accents.

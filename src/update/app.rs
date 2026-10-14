@@ -777,6 +777,10 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
             // Command palette uses focus-agnostic toggle (pure open/close)
             super::dock::update_dock(model, DockMsg::TogglePanel(PanelId::FILE_EXPLORER))
         }
+        CommandId::ToggleGitignoredFiles => super::workspace::update_workspace(
+            model,
+            crate::messages::WorkspaceMsg::ToggleHideGitignored,
+        ),
         CommandId::ToggleTerminal => {
             // Command palette uses focus-agnostic toggle (pure open/close)
             super::dock::update_dock(model, DockMsg::TogglePanel(PanelId::TERMINAL))

@@ -64,7 +64,7 @@ pub use ui::{
     RenameSymbolState, ScrollbarDragAxis, ScrollbarDragState, SearchTab, SidebarResizeState,
     SignatureHelpState, SignatureView, ThemePickerState, UiState, COMMAND_PALETTE_MAX_VISIBLE,
 };
-pub use workspace::{FileExtension, FileNode, FileTree, Workspace};
+pub use workspace::{FileExtension, FileNode, FileTree, ScanOptions, Workspace};
 
 use crate::config::EditorConfig;
 #[cfg(debug_assertions)]

@@ -294,6 +294,7 @@ fn test_workspace() -> Workspace {
         sidebar_visible: true,
         sidebar_width_logical: metrics.sidebar_default_width_logical,
         scroll_offset: 0,
+        hide_gitignored: false,
     }
 }
 

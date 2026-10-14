@@ -221,6 +221,17 @@ const IGNORE_PATTERNS: &[&str] = &[
     ".env",
 ];
 
+/// How the file tree filters directory contents while scanning.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ScanOptions {
+    /// Hide entries matched by `.gitignore` files (and `.git/info/exclude`).
+    ///
+    /// Off by default: gitignored files such as build output are shown
+    /// unless the user asks to hide them. The built-in `IGNORE_PATTERNS`
+    /// apply regardless of this flag.
+    pub hide_gitignored: bool,
+}
+
 /// The complete file tree for a workspace
 #[derive(Debug, Clone, Default)]
 pub struct FileTree {
@@ -234,58 +245,106 @@ impl FileTree {
     /// The workspace root folder itself becomes the first (and only) root node,
     /// with its contents as children. This matches VS Code behavior where the
     /// project folder name is visible at the top of the file tree.
-    pub fn from_directory(root: &Path) -> std::io::Result<Self> {
+    pub fn from_directory(root: &Path, options: ScanOptions) -> std::io::Result<Self> {
         if !root.is_dir() {
             return Ok(Self { roots: Vec::new() });
         }
 
-        // Scan the contents of the root directory
-        let mut children = Self::scan_directory(root, 0)?;
-        Self::sort_nodes(&mut children);
-
         // Create the root folder node with the workspace directory itself
         let mut root_node = FileNode::new_dir(root.to_path_buf());
-        root_node.children = children;
+        root_node.children = Self::scan_directory(root, options)?;
 
         Ok(Self {
             roots: vec![root_node],
         })
     }
 
-    /// Scan a directory recursively (up to max depth)
-    fn scan_directory(dir: &Path, depth: usize) -> std::io::Result<Vec<FileNode>> {
+    /// Scan a directory recursively (up to `MAX_DEPTH` levels below `dir`).
+    ///
+    /// Returns `dir`'s children, each directory populated with its own sorted
+    /// subtree. Entries that fail to read (permissions, broken symlink loops)
+    /// are skipped; only `dir` itself failing is an error.
+    ///
+    /// Scanning goes through the `ignore` walker so that, when
+    /// `options.hide_gitignored` is set, nested `.gitignore` files and
+    /// ancestors above `dir` are honoured the same way git does.
+    fn scan_directory(dir: &Path, options: ScanOptions) -> std::io::Result<Vec<FileNode>> {
         const MAX_DEPTH: usize = 20;
 
-        if depth > MAX_DEPTH {
-            return Ok(Vec::new());
-        }
+        let mut walker = Self::walker(dir, options);
+        walker.max_depth(Some(MAX_DEPTH + 1));
 
-        let mut nodes = Vec::new();
-
-        for entry in std::fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            // Check if should ignore
-            if Self::should_ignore(&path) {
+        // Pre-order walk: a directory arrives before its contents, so the
+        // stack holds the open directories from `dir` (depth 0) down to the
+        // parent of the current entry.
+        let mut stack: Vec<FileNode> = vec![FileNode::new_dir(dir.to_path_buf())];
+        for result in walker.build() {
+            let entry = match result {
+                Ok(entry) => entry,
+                Err(err) if err.depth().is_some_and(|depth| depth > 0) => {
+                    tracing::debug!("Skipping unreadable file tree entry: {err}");
+                    continue;
+                }
+                Err(err) => {
+                    return Err(err
+                        .into_io_error()
+                        .unwrap_or_else(|| std::io::Error::other(dir.display().to_string())));
+                }
+            };
+            if entry.depth() == 0 {
                 continue;
             }
+            Self::close_directories(&mut stack, entry.depth());
 
-            let node = if path.is_dir() {
-                let mut dir_node = FileNode::new_dir(path.clone());
-                // Recursively scan children
-                dir_node.children = Self::scan_directory(&path, depth + 1)?;
-                Self::sort_nodes(&mut dir_node.children);
-                dir_node
-            } else {
-                FileNode::new_file(path)
-            };
-
-            // Skip empty directories? (optional, currently keeping them)
-            nodes.push(node);
+            let is_dir = entry.file_type().is_some_and(|kind| kind.is_dir());
+            if is_dir {
+                stack.push(FileNode::new_dir(entry.into_path()));
+            } else if let Some(parent) = stack.last_mut() {
+                parent.children.push(FileNode::new_file(entry.into_path()));
+            }
         }
+        Self::close_directories(&mut stack, 1);
 
-        Ok(nodes)
+        let mut root = stack
+            .pop()
+            .unwrap_or_else(|| FileNode::new_dir(dir.to_path_buf()));
+        Self::sort_nodes(&mut root.children);
+        Ok(root.children)
+    }
+
+    /// The directory walker every scan shares: built-in patterns and hidden
+    /// files are decided by `should_ignore`, and `.gitignore` rules only
+    /// apply when `options` ask for them.
+    fn walker(dir: &Path, options: ScanOptions) -> ignore::WalkBuilder {
+        let mut walker = ignore::WalkBuilder::new(dir);
+        walker
+            .standard_filters(false)
+            .follow_links(true)
+            .filter_entry(|entry| entry.depth() == 0 || !Self::should_ignore(entry.path()));
+        if options.hide_gitignored {
+            walker
+                .git_ignore(true)
+                .git_exclude(true)
+                .parents(true)
+                // Honour a `.gitignore` even when the workspace is not a git
+                // checkout; the toggle is about the files, not the repository.
+                .require_git(false);
+        }
+        walker
+    }
+
+    /// Pop finished directories off the walk stack until it holds `depth`
+    /// entries, sorting each one and attaching it to its parent.
+    fn close_directories(stack: &mut Vec<FileNode>, depth: usize) {
+        while stack.len() > depth.max(1) {
+            let Some(mut node) = stack.pop() else {
+                break;
+            };
+            Self::sort_nodes(&mut node.children);
+            if let Some(parent) = stack.last_mut() {
+                parent.children.push(node);
+            }
+        }
     }
 
     /// Check if a path should be ignored
@@ -324,8 +383,8 @@ impl FileTree {
     }
 
     /// Refresh the file tree from disk (full rescan)
-    pub fn refresh(&mut self, root: &Path) -> std::io::Result<()> {
-        *self = Self::from_directory(root)?;
+    pub fn refresh(&mut self, root: &Path, options: ScanOptions) -> std::io::Result<()> {
+        *self = Self::from_directory(root, options)?;
         Ok(())
     }
 
@@ -334,7 +393,12 @@ impl FileTree {
     /// Instead of rescanning the entire tree, this method only refreshes
     /// the parent directories of the changed paths. This is much faster
     /// for typical file system changes (creating/deleting/modifying files).
-    pub fn update_paths(&mut self, root: &Path, paths: &[PathBuf]) -> std::io::Result<()> {
+    pub fn update_paths(
+        &mut self,
+        root: &Path,
+        paths: &[PathBuf],
+        options: ScanOptions,
+    ) -> std::io::Result<()> {
         // Collect unique parent directories that need updating
         let mut parents_to_refresh: HashSet<PathBuf> = HashSet::new();
 
@@ -350,50 +414,87 @@ impl FileTree {
 
         // If no valid parents or too many changes, fall back to full refresh
         if parents_to_refresh.is_empty() || parents_to_refresh.len() > 10 {
-            return self.refresh(root);
+            return self.refresh(root, options);
         }
 
         // Refresh each parent directory incrementally
         for parent in &parents_to_refresh {
-            self.refresh_directory(root, parent)?;
+            self.refresh_directory(root, parent, options)?;
         }
 
         Ok(())
     }
 
     /// Refresh a single directory's children in the tree.
-    fn refresh_directory(&mut self, root: &Path, dir_path: &Path) -> std::io::Result<()> {
+    fn refresh_directory(
+        &mut self,
+        root: &Path,
+        dir_path: &Path,
+        options: ScanOptions,
+    ) -> std::io::Result<()> {
         // Special case: refreshing the root itself
         if dir_path == root {
-            return self.refresh(root);
+            return self.refresh(root, options);
         }
 
         // Find the node for this directory and update its children
         for tree_root in &mut self.roots {
-            if Self::refresh_node_directory(tree_root, dir_path)? {
+            if Self::refresh_node_directory(tree_root, dir_path, options)? {
                 return Ok(());
             }
         }
 
+        // A directory the scan filter excludes (gitignored, `node_modules`,
+        // ...) is never in the tree; changes inside it must not trigger a
+        // full rescan, which with hiding on would fire for every log write.
+        if Self::is_excluded(root, dir_path, options) {
+            return Ok(());
+        }
+
         // Directory not found in tree - might be new, do full refresh
-        self.refresh(root)
+        self.refresh(root, options)
+    }
+
+    /// Whether `dir` (inside `root`) is dropped by the scan filter.
+    ///
+    /// Walks only the chain of directories from `root` down to `dir`, so the
+    /// cost is one directory listing per level rather than a tree scan.
+    fn is_excluded(root: &Path, dir: &Path, options: ScanOptions) -> bool {
+        let Ok(relative) = dir.strip_prefix(root) else {
+            return false;
+        };
+        let depth = relative.components().count();
+        if depth == 0 {
+            return false;
+        }
+        let target = dir.to_path_buf();
+        let mut walker = Self::walker(root, options);
+        walker
+            .max_depth(Some(depth))
+            .filter_entry(move |entry| target.starts_with(entry.path()));
+        !walker
+            .build()
+            .filter_map(Result::ok)
+            .any(|entry| entry.path() == dir)
     }
 
     /// Recursively find and refresh a directory node.
     /// Returns true if the directory was found and refreshed.
-    fn refresh_node_directory(node: &mut FileNode, target_dir: &Path) -> std::io::Result<bool> {
+    fn refresh_node_directory(
+        node: &mut FileNode,
+        target_dir: &Path,
+        options: ScanOptions,
+    ) -> std::io::Result<bool> {
         if node.path == target_dir && node.is_dir {
             // Found it! Refresh this node's children
-            let mut new_children = Self::scan_directory(&node.path, 0)?;
-            Self::sort_nodes(&mut new_children);
-            node.children = new_children;
+            node.children = Self::scan_directory(&node.path, options)?;
             return Ok(true);
         }
 
         // Recurse into children
         if node.is_dir && target_dir.starts_with(&node.path) {
             for child in &mut node.children {
-                if Self::refresh_node_directory(child, target_dir)? {
+                if Self::refresh_node_directory(child, target_dir, options)? {
                     return Ok(true);
                 }
             }
@@ -495,6 +596,9 @@ pub struct Workspace {
 
     /// Scroll offset in the file tree (in items)
     pub scroll_offset: usize,
+
+    /// Hide files matched by `.gitignore` from the tree (off by default).
+    pub hide_gitignored: bool,
 }
 
 /// Last navigation synchronized with the explorer, independent of tree selection.
@@ -513,7 +617,7 @@ impl Workspace {
         // This ensures file_name() works correctly (e.g., "." becomes "/path/to/dir")
         let root = std::fs::canonicalize(&root)?;
 
-        let file_tree = FileTree::from_directory(&root)?;
+        let file_tree = FileTree::from_directory(&root, ScanOptions::default())?;
 
         // Auto-expand the workspace root folder so its contents are visible
         let mut expanded_folders = HashSet::new();
@@ -527,7 +631,24 @@ impl Workspace {
             sidebar_visible: true,
             sidebar_width_logical: metrics.sidebar_default_width_logical,
             scroll_offset: 0,
+            hide_gitignored: false,
         })
+    }
+
+    /// Scan options derived from the workspace's current filter state.
+    pub fn scan_options(&self) -> ScanOptions {
+        ScanOptions {
+            hide_gitignored: self.hide_gitignored,
+        }
+    }
+
+    /// Flip gitignored-file hiding and rescan the tree under the new filter.
+    ///
+    /// Expansion and selection state are kept so that showing the files
+    /// again restores the previous view.
+    pub fn toggle_hide_gitignored(&mut self) -> std::io::Result<()> {
+        self.hide_gitignored = !self.hide_gitignored;
+        self.refresh()
     }
 
     /// Get sidebar width in physical pixels
@@ -571,13 +692,14 @@ impl Workspace {
 
     /// Refresh the file tree from disk (full rescan)
     pub fn refresh(&mut self) -> std::io::Result<()> {
-        self.file_tree.refresh(&self.root)
+        self.file_tree.refresh(&self.root, self.scan_options())
     }
 
     /// Incrementally update the file tree for specific changed paths.
     /// Much faster than full refresh for typical file operations.
     pub fn update_paths(&mut self, paths: &[PathBuf]) -> std::io::Result<()> {
-        self.file_tree.update_paths(&self.root, paths)
+        self.file_tree
+            .update_paths(&self.root, paths, self.scan_options())
     }
 
     /// Get visible item count (for scrollbar)
@@ -673,6 +795,136 @@ mod tests {
         assert!(!FileTree::should_ignore(Path::new("main.rs")));
     }
 
+    /// A workspace with a root `.gitignore`, a nested one, and matching files.
+    fn gitignored_fixture() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join(".gitignore"), "dist/\n*.log\n").unwrap();
+        std::fs::create_dir(root.join("dist")).unwrap();
+        std::fs::write(root.join("dist/bundle.js"), "").unwrap();
+        std::fs::write(root.join("app.log"), "").unwrap();
+        std::fs::create_dir(root.join("src")).unwrap();
+        std::fs::write(root.join("src/.gitignore"), "generated.rs\n").unwrap();
+        std::fs::write(root.join("src/generated.rs"), "").unwrap();
+        std::fs::write(root.join("src/main.rs"), "").unwrap();
+        dir
+    }
+
+    fn names(nodes: &[FileNode]) -> Vec<&str> {
+        nodes.iter().map(|node| node.name.as_str()).collect()
+    }
+
+    fn child<'a>(nodes: &'a [FileNode], name: &str) -> &'a FileNode {
+        nodes.iter().find(|node| node.name == name).unwrap()
+    }
+
+    #[test]
+    fn gitignored_files_are_shown_by_default() {
+        let dir = gitignored_fixture();
+        let tree = FileTree::from_directory(dir.path(), ScanOptions::default()).unwrap();
+        let children = &tree.roots[0].children;
+        assert_eq!(names(children), ["dist", "src", ".gitignore", "app.log"]);
+        assert_eq!(names(&child(children, "dist").children), ["bundle.js"]);
+        assert_eq!(
+            names(&child(children, "src").children),
+            [".gitignore", "generated.rs", "main.rs"]
+        );
+    }
+
+    #[test]
+    fn hiding_gitignored_files_honours_root_and_nested_gitignore() {
+        let dir = gitignored_fixture();
+        let options = ScanOptions {
+            hide_gitignored: true,
+        };
+        let tree = FileTree::from_directory(dir.path(), options).unwrap();
+        let children = &tree.roots[0].children;
+        assert_eq!(names(children), ["src", ".gitignore"]);
+        assert_eq!(
+            names(&child(children, "src").children),
+            [".gitignore", "main.rs"]
+        );
+    }
+
+    #[test]
+    fn incremental_refresh_keeps_gitignored_files_hidden() {
+        let dir = gitignored_fixture();
+        let options = ScanOptions {
+            hide_gitignored: true,
+        };
+        let mut tree = FileTree::from_directory(dir.path(), options).unwrap();
+        std::fs::write(dir.path().join("src/other.log"), "").unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "").unwrap();
+
+        let changed = vec![
+            dir.path().join("src/other.log"),
+            dir.path().join("src/lib.rs"),
+        ];
+        tree.update_paths(dir.path(), &changed, options).unwrap();
+        let children = &tree.roots[0].children;
+        assert_eq!(
+            names(&child(children, "src").children),
+            [".gitignore", "lib.rs", "main.rs"]
+        );
+    }
+
+    #[test]
+    fn changes_inside_an_excluded_directory_do_not_rescan_the_tree() {
+        let dir = gitignored_fixture();
+        let options = ScanOptions {
+            hide_gitignored: true,
+        };
+        let mut tree = FileTree::from_directory(dir.path(), options).unwrap();
+        // An unreported new file would only show up through a full rescan.
+        std::fs::write(dir.path().join("src/unreported.rs"), "").unwrap();
+        std::fs::write(dir.path().join("dist/other.js"), "").unwrap();
+
+        let changed = vec![dir.path().join("dist/other.js")];
+        tree.update_paths(dir.path(), &changed, options).unwrap();
+        let children = &tree.roots[0].children;
+        assert_eq!(names(children), ["src", ".gitignore"]);
+        assert_eq!(
+            names(&child(children, "src").children),
+            [".gitignore", "main.rs"]
+        );
+    }
+
+    #[test]
+    fn changes_inside_a_new_visible_directory_still_rescan() {
+        let dir = gitignored_fixture();
+        let options = ScanOptions {
+            hide_gitignored: true,
+        };
+        let mut tree = FileTree::from_directory(dir.path(), options).unwrap();
+        std::fs::create_dir(dir.path().join("docs")).unwrap();
+        std::fs::write(dir.path().join("docs/readme.md"), "").unwrap();
+
+        let changed = vec![dir.path().join("docs/readme.md")];
+        tree.update_paths(dir.path(), &changed, options).unwrap();
+        let children = &tree.roots[0].children;
+        assert_eq!(names(children), ["docs", "src", ".gitignore"]);
+    }
+
+    #[test]
+    fn toggling_hide_gitignored_rescans_the_tree() {
+        let dir = gitignored_fixture();
+        let metrics = ScaledMetrics::new(1.0);
+        let mut ws = Workspace::new(dir.path().to_path_buf(), &metrics).unwrap();
+        assert!(!ws.hide_gitignored);
+        assert_eq!(ws.file_tree.roots[0].children.len(), 4);
+
+        ws.toggle_hide_gitignored().unwrap();
+        assert!(ws.hide_gitignored);
+        assert_eq!(
+            names(&ws.file_tree.roots[0].children),
+            ["src", ".gitignore"]
+        );
+
+        ws.toggle_hide_gitignored().unwrap();
+        assert!(!ws.hide_gitignored);
+        assert_eq!(ws.file_tree.roots[0].children.len(), 4);
+    }
+
     #[test]
     fn test_workspace_folder_toggle() {
         let metrics = ScaledMetrics::new(1.0);
@@ -684,6 +936,7 @@ mod tests {
             sidebar_visible: true,
             sidebar_width_logical: metrics.sidebar_default_width_logical,
             scroll_offset: 0,
+            hide_gitignored: false,
         };
 
         let folder = Path::new("/test/src");

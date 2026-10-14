@@ -396,6 +396,7 @@ All navigation commands have `*WithSelection` variants that extend the selection
 | `FileTreeSelectNext` | Select next item in file tree |
 | `FileTreeOpenOrToggle` | Open selected file or toggle folder |
 | `FileTreeRefresh` | Refresh the file tree from disk |
+| `ToggleGitignoredFiles` | Hide or show files matched by `.gitignore` in the file tree (shown by default) |
 
 ### Panels/Docks
 

@@ -1075,6 +1075,9 @@ pub enum WorkspaceMsg {
     /// Refresh the file tree from disk
     Refresh,
 
+    /// Flip whether `.gitignore`d files are hidden from the tree, then rescan
+    ToggleHideGitignored,
+
     /// Scroll the sidebar file tree (positive = down, negative = up)
     Scroll { lines: i32 },
 
