@@ -10,6 +10,7 @@ use std::ops::Range;
 
 use crate::layout::keys::UiKey;
 use crate::layout::text::TextStyle;
+use crate::layout::tree::LayoutNodeId;
 use crate::model::editor_area::Rect;
 
 /// One wrapped line of a solved text leaf: a byte range into the source
@@ -82,6 +83,15 @@ pub struct LayoutSnapshot {
 }
 
 impl LayoutSnapshot {
+    /// Geometry addressed only within the tree that produced this snapshot.
+    pub fn local_node(&self, id: LayoutNodeId) -> Option<&SolvedNode> {
+        self.nodes.get(id.0 as usize)
+    }
+
+    pub fn local_rect(&self, id: LayoutNodeId) -> Option<Rect> {
+        self.local_node(id).map(|node| node.rect)
+    }
+
     pub fn node(&self, key: UiKey) -> Option<&SolvedNode> {
         self.by_key.get(&key).map(|&i| &self.nodes[i as usize])
     }

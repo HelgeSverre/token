@@ -8,6 +8,10 @@ All notable changes to Token are documented in this file.
 
 ### Interface
 
+- Fix docks overflowing the status bar and window in short or narrow windows.
+  A dock now gives up space once the editor is fully collapsed, and a bottom dock
+  keeps its header.
+
 - Add **File Tree: Toggle Gitignored Files** to the command palette (bindable
   as `ToggleGitignoredFiles`). Gitignored files are shown by default; the
   toggle hides entries matched by `.gitignore` files and `.git/info/exclude`.

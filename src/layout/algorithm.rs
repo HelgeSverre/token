@@ -15,9 +15,10 @@
 //!    solved rects, subtree translated)
 //! 9. snapshot emission (z-sorted draw order)
 //!
-//! Divergences from Clay, chosen for Token's chrome: only `Grow` children
-//! shrink when a row over-flows (fit/fixed content keeps its size and the
-//! clip stack handles overflow), and a `Fit` child's cross-axis size is
+//! Divergences from Clay, chosen for Token's chrome: `Grow` children
+//! shrink first when a row over-flows, then opt-in `Shrink` (fit-to-content)
+//! children; `Fit`/`Fixed` content keeps its size and the clip stack handles
+//! overflow, and a `Fit` child's cross-axis size is
 //! capped at the parent's content box (chrome never wants cross-axis
 //! overflow, and wrapping text needs the bound).
 
@@ -330,12 +331,18 @@ fn fit_size(nodes: &[Node], i: usize, axis: Axis, sizes: &[f32], content_size: f
     let node = &nodes[i];
     match axis.sizing(node) {
         Sizing::Fixed(v) => v.max(0.0),
+        Sizing::Prefer { size, min } => size.max(min).max(0.0),
         // Percent resolves against the parent in the top-down pass; a
         // percent child contributes nothing to its parent's fit size.
         Sizing::Percent(_) => 0.0,
         // Grow contributes its minimum to the parent's fit size.
         Sizing::Grow { min, .. } => min.max(0.0),
-        Sizing::Fit { min, max } => {
+        Sizing::Fit { .. } | Sizing::Shrink { .. } => {
+            let (min, max) = match axis.sizing(node) {
+                Sizing::Fit { min, max } => (min, max),
+                Sizing::Shrink { min } => (min, f32::INFINITY),
+                _ => unreachable!(),
+            };
             let children_size = if node.children.is_empty() {
                 content_size
             } else if axis.is_along(node.decl.dir) {
@@ -379,7 +386,10 @@ fn distribute_axis(nodes: &[Node], i: usize, axis: Axis, sizes: &mut [f32], root
                 Sizing::Percent(p) => sizes[c as usize] = (p * root_size).max(0.0),
                 // Fit keeps its bottom-up size; Grow means "as much as the
                 // window allows" for a float.
-                Sizing::Fit { .. } => {}
+                Sizing::Fit { .. } | Sizing::Shrink { .. } => {}
+                Sizing::Prefer { size, min } => {
+                    sizes[c as usize] = size.min(root_size).max(min).max(0.0)
+                }
                 Sizing::Grow { min, max } => sizes[c as usize] = root_size.clamp(min.max(0.0), max),
             }
         }
@@ -398,7 +408,8 @@ fn distribute_axis(nodes: &[Node], i: usize, axis: Axis, sizes: &mut [f32], root
                 // Divergence from Clay: cap fit at the content box so
                 // wrapping text is bounded and chrome never overflows on
                 // the cross axis.
-                Sizing::Fit { .. } => sizes[ci].min(content),
+                Sizing::Fit { .. } | Sizing::Shrink { .. } => sizes[ci].min(content),
+                Sizing::Prefer { size, min } => size.min(content).max(min).max(0.0),
             };
         }
         return;
@@ -409,12 +420,14 @@ fn distribute_axis(nodes: &[Node], i: usize, axis: Axis, sizes: &mut [f32], root
     let mut used = 0.0;
     let mut count = 0usize;
     let mut grow: Vec<u32> = Vec::new();
+    let mut shrinkable: Vec<u32> = Vec::new();
     for c in flow_children(nodes, i) {
         let ci = c as usize;
         let child = &nodes[ci];
         match axis.sizing(child) {
             Sizing::Percent(p) => sizes[ci] = (p * content).max(0.0),
             Sizing::Grow { .. } => grow.push(c),
+            Sizing::Shrink { .. } | Sizing::Prefer { .. } => shrinkable.push(c),
             Sizing::Fixed(_) | Sizing::Fit { .. } => {}
         }
         used += sizes[ci];
@@ -423,13 +436,15 @@ fn distribute_axis(nodes: &[Node], i: usize, axis: Axis, sizes: &mut [f32], root
     used += node.decl.gap * count.saturating_sub(1) as f32;
 
     let leftover = content - used;
-    if grow.is_empty() || leftover == 0.0 {
-        return;
-    }
     if leftover > 0.0 {
         grow_children(nodes, axis, sizes, &grow, leftover);
-    } else {
-        shrink_children(nodes, axis, sizes, &grow, -leftover);
+    } else if leftover < 0.0 {
+        // Grow children give up space first; content-sized Shrink children
+        // only once every Grow sibling is at its minimum.
+        let overflow = shrink_children(nodes, axis, sizes, &grow, -leftover);
+        if overflow > f32::EPSILON {
+            shrink_children(nodes, axis, sizes, &shrinkable, overflow);
+        }
     }
 }
 
@@ -482,12 +497,21 @@ fn grow_children(nodes: &[Node], axis: Axis, sizes: &mut [f32], grow: &[u32], mu
     }
 }
 
-/// Symmetric shrink: repeatedly lower the largest grow children toward the
-/// next-largest size until the overflow is recovered or every child hits
-/// its min clamp. Fixed/fit children never shrink (overflow clips).
-fn shrink_children(nodes: &[Node], axis: Axis, sizes: &mut [f32], grow: &[u32], mut overflow: f32) {
+/// Symmetric shrink: repeatedly lower the largest of `grow` (Grow or Shrink
+/// children) toward the next-largest size until the overflow is recovered or
+/// every child hits its min clamp. Fixed/fit children never shrink (overflow
+/// clips). Returns the overflow that could not be recovered.
+fn shrink_children(
+    nodes: &[Node],
+    axis: Axis,
+    sizes: &mut [f32],
+    grow: &[u32],
+    mut overflow: f32,
+) -> f32 {
     let min_of = |c: u32| match axis.sizing(&nodes[c as usize]) {
-        Sizing::Grow { min, .. } => min.max(0.0),
+        Sizing::Grow { min, .. } | Sizing::Shrink { min } | Sizing::Prefer { min, .. } => {
+            min.max(0.0)
+        }
         _ => 0.0,
     };
     let mut open: Vec<u32> = grow
@@ -526,6 +550,7 @@ fn shrink_children(nodes: &[Node], axis: Axis, sizes: &mut [f32], grow: &[u32], 
         }
         open.retain(|&c| sizes[c as usize] > min_of(c));
     }
+    overflow.max(0.0)
 }
 
 /// Position the flow children of `i` (its own position is already set) and
@@ -646,4 +671,72 @@ fn intersect(a: Rect, b: Rect) -> Rect {
 /// line and `\r\n` is tolerated.
 fn split_source_lines(text: &str) -> impl Iterator<Item = &str> {
     text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l))
+}
+
+#[cfg(test)]
+mod shrink_tests {
+    use crate::layout::{
+        CellMeasure, Content, Dir, ElementDecl, Sizing, SizingAxes, TextDecl, TextStyle, UiTree,
+        Wrap,
+    };
+    use crate::model::editor_area::Rect;
+
+    /// A row of one growing field and two content-sized labels ("abcde" is
+    /// 40px at 8px cells), solved at `width`. Returns the three widths.
+    fn solve_row(width: f32, label_min: f32) -> (f32, f32, f32) {
+        let mut tree = UiTree::new();
+        let label = |tree: &mut UiTree| {
+            tree.leaf(ElementDecl {
+                sizing: SizingAxes::new(Sizing::Shrink { min: label_min }, Sizing::GROW),
+                content: Content::Text(TextDecl {
+                    text: "abcde".into(),
+                    style: TextStyle::sized(14.0),
+                    wrap: Wrap::None,
+                }),
+                ..Default::default()
+            })
+        };
+        let (_, ids) = tree.node_with(
+            ElementDecl {
+                dir: Dir::Row,
+                sizing: SizingAxes::grow(),
+                ..Default::default()
+            },
+            |tree| {
+                let field = tree.leaf(ElementDecl {
+                    sizing: SizingAxes::new(
+                        Sizing::grow_clamped(20.0, f32::INFINITY),
+                        Sizing::GROW,
+                    ),
+                    ..Default::default()
+                });
+                (field, label(tree), label(tree))
+            },
+        );
+        let solved = tree.solve(
+            Rect::new(0.0, 0.0, width, 20.0),
+            1.0,
+            &mut CellMeasure {
+                char_width: 8.0,
+                line_height: 16.0,
+            },
+        );
+        let w = |id| solved.local_rect(id).unwrap().width;
+        (w(ids.0), w(ids.1), w(ids.2))
+    }
+
+    #[test]
+    fn shrink_children_keep_content_width_while_there_is_room() {
+        assert_eq!(solve_row(200.0, 0.0), (120.0, 40.0, 40.0));
+    }
+
+    #[test]
+    fn shrink_children_give_way_only_after_grow_reaches_its_minimum() {
+        assert_eq!(solve_row(70.0, 0.0), (20.0, 25.0, 25.0));
+    }
+
+    #[test]
+    fn shrink_children_stop_at_their_minimum() {
+        assert_eq!(solve_row(40.0, 15.0), (20.0, 15.0, 15.0));
+    }
 }

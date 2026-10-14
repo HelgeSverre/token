@@ -132,7 +132,15 @@ fn solve_chrome(
                                             t,
                                             model,
                                             DockPosition::Right,
-                                            SizingAxes::new(Sizing::Fixed(width), Sizing::GROW),
+                                            // The chosen width yields once the editor is
+                                            // gone, so a narrow window never overflows.
+                                            SizingAxes::new(
+                                                Sizing::Prefer {
+                                                    size: width,
+                                                    min: 0.0,
+                                                },
+                                                Sizing::GROW,
+                                            ),
                                             include_dock_contents,
                                         );
                                     }
@@ -143,7 +151,15 @@ fn solve_chrome(
                                     t,
                                     model,
                                     DockPosition::Bottom,
-                                    SizingAxes::new(Sizing::GROW, Sizing::Fixed(height)),
+                                    // Keeps its header; the rest yields in short
+                                    // windows instead of covering the status bar.
+                                    SizingAxes::new(
+                                        Sizing::GROW,
+                                        Sizing::Prefer {
+                                            size: height,
+                                            min: model.metrics.tab_bar_height as f32,
+                                        },
+                                    ),
                                     include_dock_contents,
                                 );
                             }
@@ -283,4 +299,45 @@ fn declare_dock(
             },
         );
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::layout::UiKey;
+    use crate::model::AppModel;
+    use crate::panel::{DockPosition, PanelId};
+
+    #[test]
+    fn short_windows_shrink_docks_instead_of_overflowing() {
+        for scale in [1.0, 2.0] {
+            let mut model = AppModel::new((800.0 * scale) as u32, (260.0 * scale) as u32, scale);
+            model.dock_layout.bottom.size_logical = 500.0;
+            model.dock_layout.bottom.activate(PanelId::Terminal);
+            let chrome = super::chrome(&model);
+            let status = chrome.rect(UiKey::StatusBar).unwrap();
+            let dock = chrome.rect(UiKey::Dock(DockPosition::Bottom)).unwrap();
+            assert!(
+                dock.y + dock.height <= status.y + 0.5,
+                "the bottom dock ends above the status bar at {scale}x"
+            );
+            assert!(
+                dock.height >= model.metrics.tab_bar_height as f32,
+                "keeps its header"
+            );
+        }
+    }
+
+    #[test]
+    fn narrow_windows_shrink_the_right_dock_instead_of_overflowing() {
+        let mut model = AppModel::new(300, 600, 1.0);
+        model.dock_layout.right.size_logical = 900.0;
+        model.dock_layout.right.activate(PanelId::Outline);
+        model.dock_layout.right.is_open = true;
+        let chrome = super::chrome(&model);
+        let dock = chrome.rect(UiKey::Dock(DockPosition::Right)).unwrap();
+        assert!(
+            dock.x + dock.width <= model.window_size.0 as f32 + 0.5,
+            "the right dock stays inside the window"
+        );
+    }
 }

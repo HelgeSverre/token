@@ -18,6 +18,14 @@ pub enum Sizing {
     Percent(f32),
     /// Exact pixel size.
     Fixed(f32),
+    /// Size to content like `Fit`, but give up space down to `min` when the
+    /// parent overflows along its layout axis — only after every `Grow`
+    /// sibling has reached its own minimum (Clay's fit-shrink, opt-in here).
+    Shrink { min: f32 },
+    /// A preferred exact size (a dock's or floating panel's chosen extent)
+    /// that yields down to `min` when the parent overflows, after `Grow`
+    /// siblings; a float is also capped at the window.
+    Prefer { size: f32, min: f32 },
 }
 
 impl Sizing {
