@@ -805,51 +805,89 @@ impl<'a> Frame<'a> {
         }
     }
 
-    /// Draw a sparkline chart (used by perf overlay)
+    /// Draw a bounded duration history with its own data-derived scale.
+    /// Missing samples keep their x-slot but break the line.
     #[cfg(debug_assertions)]
     #[allow(clippy::too_many_arguments)]
-    pub fn draw_sparkline(
+    pub fn draw_sparkline<D: Into<Option<std::time::Duration>>>(
         &mut self,
         x: usize,
         y: usize,
         chart_width: usize,
         chart_height: usize,
-        data: &std::collections::VecDeque<std::time::Duration>,
-        bar_color: u32,
+        data: impl IntoIterator<Item = D>,
+        line_color: u32,
         bg_color: u32,
     ) {
-        if data.is_empty() || chart_width == 0 || chart_height == 0 {
+        if chart_width == 0 || chart_height == 0 {
             return;
         }
 
         self.fill_rect_px(x, y, chart_width, chart_height, bg_color);
 
-        let sample_count = data.len().min(chart_width);
+        let samples: Vec<Option<f64>> = data
+            .into_iter()
+            .map(|duration| duration.into().map(|value| value.as_secs_f64()))
+            .collect();
+        let sample_count = samples.len().min(chart_width);
         if sample_count == 0 {
             return;
         }
 
-        let start_idx = data.len().saturating_sub(sample_count);
-        let samples: Vec<u128> = data
+        let samples = &samples[samples.len() - sample_count..];
+        let low = samples
             .iter()
-            .skip(start_idx)
-            .map(|duration| duration.as_micros())
-            .collect();
-        let max_val = samples.iter().copied().max().unwrap_or(1).max(1) as f32;
-
-        for column in 0..chart_width {
-            let sample_idx = column * sample_count / chart_width;
-            let sample = samples[sample_idx.min(sample_count - 1)];
-            let normalized = sample as f32 / max_val;
-            let bar_height = ((normalized * chart_height as f32).round() as usize)
-                .max(1)
-                .min(chart_height);
-            let px = x + column;
-
-            for dy in 0..bar_height {
-                let py = y + chart_height - dy - 1;
-                self.set_pixel(px, py, bar_color);
+            .flatten()
+            .copied()
+            .fold(f64::INFINITY, f64::min);
+        if !low.is_finite() {
+            return;
+        }
+        let high = samples.iter().flatten().copied().fold(0.0, f64::max);
+        let margin = ((high - low) * 0.15).max(high * 0.05).max(f64::EPSILON);
+        let bottom = (low - margin).max(0.0);
+        let range = (high + margin - bottom).max(f64::EPSILON);
+        let point = |index: usize, value: f64| {
+            let px =
+                x + index * chart_width.saturating_sub(1) / sample_count.saturating_sub(1).max(1);
+            let normalized = ((value - bottom) / range).clamp(0.0, 1.0);
+            let py = y + chart_height.saturating_sub(1)
+                - (normalized * chart_height.saturating_sub(1) as f64).round() as usize;
+            (px as isize, py as isize)
+        };
+        let mut previous: Option<(isize, isize)> = None;
+        for (index, value) in samples.iter().enumerate() {
+            let Some(value) = value else {
+                previous = None;
+                continue;
+            };
+            let (px, py) = point(index, *value);
+            if let Some((last_x, last_y)) = previous {
+                let dx = (px - last_x).abs();
+                let sx = if last_x < px { 1 } else { -1 };
+                let dy = -(py - last_y).abs();
+                let sy = if last_y < py { 1 } else { -1 };
+                let (mut lx, mut ly) = (last_x, last_y);
+                let mut error = dx + dy;
+                loop {
+                    self.set_pixel(lx as usize, ly as usize, line_color);
+                    if lx == px && ly == py {
+                        break;
+                    }
+                    let twice = error * 2;
+                    if twice >= dy {
+                        error += dy;
+                        lx += sx;
+                    }
+                    if twice <= dx {
+                        error += dx;
+                        ly += sy;
+                    }
+                }
+            } else {
+                self.set_pixel(px as usize, py as usize, line_color);
             }
+            previous = Some((px, py));
         }
     }
 }
@@ -1740,7 +1778,7 @@ mod tests {
         let mut frame = Frame::new(&mut buffer, 20, 20);
         let history: VecDeque<_> = (1..=16).map(Duration::from_micros).collect();
 
-        frame.draw_sparkline(4, 5, 6, 4, &history, 0xFFFF0000, 0xFF000000);
+        frame.draw_sparkline(4, 5, 6, 4, history.iter().copied(), 0xFFFF0000, 0xFF000000);
 
         for y in 0..20 {
             for x in 0..20 {

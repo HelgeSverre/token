@@ -432,6 +432,7 @@ fn create_model_from_scenario(scenario: &Scenario, theme: Theme) -> Result<AppMo
         metrics,
         workspace: None,
         dock_layout: token::panel::DockLayout::default(),
+        non_docked_panels: token::panel::NonDockedPanels::default(),
         terminal: token::terminal::TerminalState::default(),
         outline_panel: token::model::OutlinePanelState::default(),
         problems_panel: token::model::ProblemsPanelState::default(),
@@ -1389,6 +1390,7 @@ fn render_to_buffer(model: &mut AppModel, font_info: &FontInfo) -> Vec<u32> {
                     model,
                     position,
                     &chrome,
+                    &token::perf::PerfStats::default(),
                 );
             }
         }

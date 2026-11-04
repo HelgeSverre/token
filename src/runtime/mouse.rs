@@ -1838,6 +1838,9 @@ pub fn handle_mouse_press(
         match focus_target {
             token::model::FocusTarget::Editor => model.ui.focus_editor(),
             token::model::FocusTarget::Dock(pos) => model.ui.focus_dock(*pos),
+            token::model::FocusTarget::FloatingPanel(panel) => {
+                model.ui.focus = token::model::FocusTarget::FloatingPanel(*panel);
+            }
             token::model::FocusTarget::Modal => {}
             token::model::FocusTarget::FindBar => {
                 model.ui.focus = token::model::FocusTarget::FindBar
@@ -2151,6 +2154,52 @@ fn handle_left_click(
 
         // Status bar - consume but do nothing
         HitTarget::StatusBar => EventResult::consumed_no_redraw(),
+
+        HitTarget::FloatingPanelAction { panel, action } => {
+            model.ui.panel_action_press = Some(token::model::ui::PanelActionPress {
+                panel: *panel,
+                action: *action,
+            });
+            if matches!(
+                model.non_docked_panels.by_id.get(panel),
+                Some(token::panel::NonDockedPanel::Floating { .. })
+            ) {
+                EventResult::consumed_with_focus(FocusTarget::FloatingPanel(*panel))
+            } else if let Some(position) = model.dock_layout.find_panel(*panel) {
+                EventResult::consumed_with_focus(FocusTarget::Dock(position))
+            } else {
+                EventResult::consumed_no_redraw()
+            }
+        }
+        HitTarget::FloatingPanelHeader { panel } => {
+            if let Some(token::panel::NonDockedPanel::Floating { rect, .. }) =
+                model.non_docked_panels.by_id.get(panel).copied()
+            {
+                model.ui.floating_panel_drag = Some(token::model::ui::FloatingPanelDragState {
+                    panel: *panel,
+                    kind: token::model::ui::FloatingPanelDragKind::Move,
+                    press: (event.pos.x, event.pos.y),
+                    original: rect,
+                });
+            }
+            EventResult::consumed_with_focus(FocusTarget::FloatingPanel(*panel))
+        }
+        HitTarget::FloatingPanelResize { panel, edge } => {
+            if let Some(token::panel::NonDockedPanel::Floating { rect, .. }) =
+                model.non_docked_panels.by_id.get(panel).copied()
+            {
+                model.ui.floating_panel_drag = Some(token::model::ui::FloatingPanelDragState {
+                    panel: *panel,
+                    kind: token::model::ui::FloatingPanelDragKind::Resize(*edge),
+                    press: (event.pos.x, event.pos.y),
+                    original: rect,
+                });
+            }
+            EventResult::consumed_with_focus(FocusTarget::FloatingPanel(*panel))
+        }
+        HitTarget::FloatingPanelContent { panel } => {
+            EventResult::consumed_with_focus(FocusTarget::FloatingPanel(*panel))
+        }
 
         // Sidebar resize handle
         HitTarget::SidebarResize => {
@@ -2923,6 +2972,10 @@ fn handle_middle_click(
         | HitTarget::TerminalAction { .. }
         | HitTarget::DockTabBarEmpty { .. }
         | HitTarget::DockContent { .. } => EventResult::consumed_no_redraw(),
+        HitTarget::FloatingPanelAction { .. }
+        | HitTarget::FloatingPanelHeader { .. }
+        | HitTarget::FloatingPanelContent { .. }
+        | HitTarget::FloatingPanelResize { .. } => EventResult::consumed_no_redraw(),
 
         // Binary placeholder button - no middle-click action
         HitTarget::BinaryPlaceholderButton { .. } => EventResult::consumed_no_redraw(),
@@ -3098,11 +3151,22 @@ impl From<(i32, i32)> for WheelScroll {
     }
 }
 
+#[cfg(test)]
 pub(super) fn handle_mouse_wheel(
     model: &mut AppModel,
     mouse_position: Option<(f64, f64)>,
     scroll: WheelScroll,
     measure: Option<&mut dyn token::layout::TextMeasure>,
+) -> Option<Cmd> {
+    handle_mouse_wheel_with_perf(model, mouse_position, scroll, measure, None)
+}
+
+pub(super) fn handle_mouse_wheel_with_perf(
+    model: &mut AppModel,
+    mouse_position: Option<(f64, f64)>,
+    scroll: WheelScroll,
+    measure: Option<&mut dyn token::layout::TextMeasure>,
+    perf: Option<&token::perf::PerfStats>,
 ) -> Option<Cmd> {
     let (_, v_delta) = scroll.rows;
     if model.terminal.selection_drag.is_some() {
@@ -3134,7 +3198,7 @@ pub(super) fn handle_mouse_wheel(
             }
         }
     }
-    let cmd = scroll_hovered_region(model, mouse_position, scroll);
+    let cmd = scroll_hovered_region_with_perf(model, mouse_position, scroll, perf);
     merge(hover_changed.then_some(Cmd::Redraw), cmd)
 }
 
@@ -3159,14 +3223,58 @@ fn merge(a: Option<Cmd>, b: Option<Cmd>) -> Option<Cmd> {
     }
 }
 
+#[cfg(test)]
 fn scroll_hovered_region(
     model: &mut AppModel,
     mouse_position: Option<(f64, f64)>,
     scroll: WheelScroll,
 ) -> Option<Cmd> {
+    scroll_hovered_region_with_perf(model, mouse_position, scroll, None)
+}
+
+fn scroll_hovered_region_with_perf(
+    model: &mut AppModel,
+    mouse_position: Option<(f64, f64)>,
+    scroll: WheelScroll,
+    perf: Option<&token::perf::PerfStats>,
+) -> Option<Cmd> {
     use token::model::HoverRegion;
     let (h_delta, v_delta) = scroll.rows;
+    let performance = match model.ui.hover {
+        HoverRegion::FloatingPanel(token::panel::PanelId::Performance) => Some(
+            token::layout::UiKey::FloatingPanelContent(token::panel::PanelId::Performance),
+        ),
+        HoverRegion::Dock(position)
+            if model.dock_layout.dock(position).active_panel()
+                == Some(token::panel::PanelId::Performance) =>
+        {
+            Some(token::layout::UiKey::PanelContent(
+                token::panel::PanelId::Performance,
+            ))
+        }
+        _ => None,
+    };
+    if let (Some(key), Some(perf)) = (performance, perf) {
+        let viewport = token::layout::chrome::chrome(model).rect(key)?;
+        if !mouse_position.is_some_and(|(x, y)| viewport.contains(x as f32, y as f32)) {
+            return None;
+        }
+        let max = token::view::performance_panel::scroll_limit(model, viewport, perf);
+        let pixels = scroll
+            .pixels
+            .map_or(v_delta as isize * model.line_height as isize, |(_, y)| {
+                y.round() as isize
+            });
+        if pixels == 0 {
+            return None;
+        }
+        return update(
+            model,
+            Msg::Dock(token::messages::DockMsg::ScrollPerformance { pixels, max }),
+        );
+    }
     match model.ui.hover {
+        HoverRegion::FloatingPanel(_) => None,
         // Sidebar: scroll the file tree
         HoverRegion::Sidebar => {
             if v_delta != 0 {

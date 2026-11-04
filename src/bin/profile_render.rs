@@ -291,6 +291,7 @@ fn create_model(args: &Args) -> Result<token::model::AppModel> {
         metrics: token::model::ScaledMetrics::new(SCALE_FACTOR),
         workspace: None,
         dock_layout: token::panel::DockLayout::default(),
+        non_docked_panels: token::panel::NonDockedPanels::default(),
         terminal: token::terminal::TerminalState::default(),
         outline_panel: token::model::OutlinePanelState::default(),
         problems_panel: token::model::ProblemsPanelState::default(),

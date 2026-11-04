@@ -13,6 +13,7 @@ enum DockContentKind {
     Terminal,
     Problems,
     Usages,
+    Performance,
     Placeholder { message: &'static str },
 }
 
@@ -26,6 +27,7 @@ struct DockTabScene {
 }
 
 struct DockPaneScene {
+    active_panel: crate::panel::PanelId,
     position: crate::panel::DockPosition,
     dock_rect: Rect,
     header_rect: Rect,
@@ -92,6 +94,7 @@ impl DockPaneScene {
             crate::panel::PanelId::Terminal => DockContentKind::Terminal,
             crate::panel::PanelId::Problems => DockContentKind::Problems,
             crate::panel::PanelId::Usages => DockContentKind::Usages,
+            crate::panel::PanelId::Performance => DockContentKind::Performance,
             _ => {
                 let placeholder = crate::panels::PlaceholderPanel::new(active_panel);
                 DockContentKind::Placeholder {
@@ -101,6 +104,7 @@ impl DockPaneScene {
         };
 
         Some(Self {
+            active_panel,
             position,
             dock_rect,
             header_rect,
@@ -122,11 +126,12 @@ impl DockPaneScene {
         painter: &mut TextPainter,
         model: &AppModel,
         chrome: &LayoutSnapshot,
+        perf: &crate::perf::PerfStats,
     ) {
         self.render_chrome(frame);
         {
             let mut painter = painter.with_font(FontRole::Code);
-            self.render_header(frame, &mut painter);
+            self.render_header(frame, &mut painter, chrome);
             if matches!(self.content, DockContentKind::Terminal) {
                 crate::panels::terminal::render_tabs(frame, &mut painter, model, chrome);
             }
@@ -167,6 +172,9 @@ impl DockPaneScene {
             }
             DockContentKind::Placeholder { message } => {
                 self.render_placeholder_content(frame, painter, message);
+            }
+            DockContentKind::Performance => {
+                super::performance_panel::render(frame, painter, model, self.content_rect, perf);
             }
             DockContentKind::Usages => {
                 if let Some(rows) = chrome.row_list(UiKey::PanelRows(crate::panel::PanelId::Usages))
@@ -213,7 +221,7 @@ impl DockPaneScene {
         }
     }
 
-    fn render_header(&self, frame: &mut Frame, painter: &mut TextPainter) {
+    fn render_header(&self, frame: &mut Frame, painter: &mut TextPainter, chrome: &LayoutSnapshot) {
         frame.push_clip(self.header_rect);
         for tab in &self.tabs {
             if tab.is_active {
@@ -232,6 +240,14 @@ impl DockPaneScene {
             };
             painter.draw(frame, tab.text_pos.0, tab.text_pos.1, &tab.title, fg);
         }
+        render_header_actions(
+            frame,
+            painter,
+            chrome,
+            self.active_panel,
+            crate::panel::PanelHost::Docked,
+            self.text_color,
+        );
         frame.pop_clip();
     }
 
@@ -411,12 +427,114 @@ pub fn render_dock(
     model: &AppModel,
     position: crate::panel::DockPosition,
     chrome: &LayoutSnapshot,
+    perf: &crate::perf::PerfStats,
 ) {
     let Some(scene) = DockPaneScene::resolve(model, position, chrome) else {
         return;
     };
 
-    scene.render(frame, painter, model, chrome);
+    scene.render(frame, painter, model, chrome, perf);
+}
+
+/// Paint every floating panel above the editor: frame, draggable header with
+/// its actions, and the panel body.
+pub fn render_floating_panels(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    chrome: &LayoutSnapshot,
+    perf: &crate::perf::PerfStats,
+) {
+    for (&panel, placement) in &model.non_docked_panels.by_id {
+        if !matches!(placement, crate::panel::NonDockedPanel::Floating { .. }) {
+            continue;
+        }
+        let (Some(root), Some(header), Some(content)) = (
+            chrome.rect(UiKey::FloatingPanel(panel)),
+            chrome.rect(UiKey::FloatingPanelHeader(panel)),
+            chrome.rect(UiKey::FloatingPanelContent(panel)),
+        ) else {
+            continue;
+        };
+        let theme = &model.theme.sidebar;
+        frame.fill_rect(root, theme.background.to_argb_u32());
+        let (x, y, width, height) = snap(root);
+        let border = theme.border.to_argb_u32();
+        let stroke = model.metrics.border_width.max(1);
+        frame.fill_rect_px(x, y, width, stroke, border);
+        frame.fill_rect_px(x, y + height.saturating_sub(stroke), width, stroke, border);
+        frame.fill_rect_px(x, y, stroke, height, border);
+        frame.fill_rect_px(x + width.saturating_sub(stroke), y, stroke, height, border);
+        let (hx, hy, hw, hh) = snap(header);
+        frame.fill_rect_px(hx, hy + hh.saturating_sub(stroke), hw, stroke, border);
+
+        let mut code_painter = painter.with_font(FontRole::Code);
+        let header_text_x = chrome
+            .node(UiKey::FloatingPanelHeader(panel))
+            .map_or(hx, |node| snap(node.content_rect).0);
+        let header_text_y = centered_text_y(header, code_painter.line_height() as f32);
+        code_painter.draw(
+            frame,
+            header_text_x,
+            header_text_y,
+            panel.display_name(),
+            theme.foreground.to_argb_u32(),
+        );
+        render_header_actions(
+            frame,
+            &mut code_painter,
+            chrome,
+            panel,
+            crate::panel::PanelHost::Floating,
+            theme.foreground.to_argb_u32(),
+        );
+        drop(code_painter);
+
+        frame.push_clip(content);
+        if panel == crate::panel::PanelId::Performance {
+            super::performance_panel::render(frame, painter, model, content, perf);
+        }
+        frame.pop_clip();
+    }
+}
+
+/// Top of a line of `line_height` pixels centred vertically in `rect`.
+fn centered_text_y(rect: Rect, line_height: f32) -> usize {
+    (rect.y + (rect.height - line_height) / 2.0)
+        .max(0.0)
+        .round() as usize
+}
+
+/// Paint a panel header's action glyphs (float, dock, close) at the boxes the
+/// chrome layout solved for them.
+fn render_header_actions(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    chrome: &LayoutSnapshot,
+    panel: crate::panel::PanelId,
+    host: crate::panel::PanelHost,
+    color: u32,
+) {
+    for &action in panel.header_actions(host) {
+        let key = match host {
+            crate::panel::PanelHost::Docked => UiKey::DockPanelAction(panel, action),
+            crate::panel::PanelHost::Floating => UiKey::FloatingPanelAction(panel, action),
+        };
+        let Some(rect) = chrome.rect(key) else {
+            continue;
+        };
+        let (x, _, width, _) = snap(rect);
+        let glyph = action.glyph();
+        let glyph_width = painter.measure_width(glyph).round().max(0.0) as usize;
+        let text_y = centered_text_y(rect, painter.line_height() as f32);
+        painter.draw(
+            frame,
+            x + width.saturating_sub(glyph_width) / 2,
+            text_y,
+            glyph,
+            color,
+        );
+    }
 }
 
 /// Paint the same dock header and borders without its content.
@@ -430,7 +548,7 @@ pub(crate) fn render_dock_chrome(
 ) {
     if let Some(scene) = DockPaneScene::resolve(model, position, chrome) {
         scene.render_chrome(frame);
-        scene.render_header(frame, &mut painter.with_font(FontRole::Code));
+        scene.render_header(frame, &mut painter.with_font(FontRole::Code), chrome);
     }
 }
 

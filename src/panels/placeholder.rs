@@ -32,6 +32,7 @@ impl PlaceholderPanel {
             PanelId::FileExplorer => "File explorer",
             PanelId::Problems => "No problems",
             PanelId::Usages => "Run Find Usages at a symbol to search",
+            PanelId::Performance => "Waiting for completed frame samples",
         }
     }
 }

@@ -2,6 +2,8 @@
 //!
 //! This module defines the core data structures for the docking panel system.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 /// Position where a dock can be placed
@@ -45,6 +47,108 @@ pub enum Axis {
     Vertical,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PanelActionId {
+    Float,
+    Dock,
+    Close,
+}
+
+impl PanelActionId {
+    pub const fn glyph(self) -> &'static str {
+        match self {
+            Self::Float => "↗",
+            Self::Dock => "↙",
+            Self::Close => "×",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanelHost {
+    Docked,
+    Floating,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LogicalRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl LogicalRect {
+    pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    pub fn is_finite(self) -> bool {
+        self.x.is_finite()
+            && self.y.is_finite()
+            && self.width.is_finite()
+            && self.height.is_finite()
+    }
+
+    pub fn normalized(self, work_width: f32, work_height: f32) -> Option<Self> {
+        if !self.is_finite() || work_width <= 0.0 || work_height <= 0.0 {
+            return None;
+        }
+        let mx = 8.0_f32.min(((work_width - 1.0) / 2.0).max(0.0));
+        let my = 8.0_f32.min(((work_height - 1.0) / 2.0).max(0.0));
+        let available_width = work_width - 2.0 * mx;
+        let available_height = work_height - 2.0 * my;
+        let min_width = 240.0_f32.min(available_width);
+        let min_height = 160.0_f32.min(available_height);
+        let width = self.width.clamp(min_width, available_width);
+        let height = self.height.clamp(min_height, available_height);
+        Some(Self {
+            x: self.x.clamp(mx, work_width - mx - width),
+            y: self.y.clamp(my, work_height - my - height),
+            width,
+            height,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DockReturnSlot {
+    pub dock: DockPosition,
+    pub index: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum LastPresentation {
+    Docked {
+        return_slot: DockReturnSlot,
+    },
+    Floating {
+        rect: LogicalRect,
+        return_slot: DockReturnSlot,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum NonDockedPanel {
+    Floating {
+        rect: LogicalRect,
+        return_slot: DockReturnSlot,
+    },
+    Hidden {
+        last: LastPresentation,
+    },
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NonDockedPanels {
+    pub by_id: HashMap<PanelId, NonDockedPanel>,
+}
+
 /// Unique identifier for a panel type
 ///
 /// Panel IDs are used for persistence, keybindings, and registry lookup.
@@ -59,9 +163,26 @@ pub enum PanelId {
     TodoList,
     Problems,
     Usages,
+    Performance,
 }
 
 impl PanelId {
+    pub fn available_in_current_build(self) -> bool {
+        self != Self::Performance || cfg!(debug_assertions)
+    }
+
+    /// Header actions are the shared declaration for layout, paint, and hit
+    /// keys in each panel presentation.
+    pub const fn header_actions(self, host: PanelHost) -> &'static [PanelActionId] {
+        match (self, host) {
+            (Self::Performance, PanelHost::Docked) => &[PanelActionId::Float, PanelActionId::Close],
+            (Self::Performance, PanelHost::Floating) => {
+                &[PanelActionId::Dock, PanelActionId::Close]
+            }
+            _ => &[],
+        }
+    }
+
     pub const FILE_EXPLORER: PanelId = PanelId::FileExplorer;
     pub const OUTLINE: PanelId = PanelId::Outline;
     pub const TERMINAL: PanelId = PanelId::Terminal;
@@ -81,6 +202,7 @@ impl PanelId {
             PanelId::TodoList => "TODOs",
             PanelId::Problems => "Problems",
             PanelId::Usages => "Usages",
+            PanelId::Performance => "Performance",
         }
     }
 
@@ -94,7 +216,7 @@ impl PanelId {
             | PanelId::TodoList
             | PanelId::Problems
             | PanelId::Usages => DockPosition::Bottom,
-            PanelId::AiChat => DockPosition::Right,
+            PanelId::AiChat | PanelId::Performance => DockPosition::Right,
         }
     }
 }
@@ -148,6 +270,29 @@ impl Dock {
                 self.active_index = Some(0);
             }
         }
+    }
+
+    pub fn remove_panel(&mut self, panel_id: PanelId) -> Option<usize> {
+        let removed = self.panel_ids.iter().position(|id| *id == panel_id)?;
+        let active = self.active_panel();
+        self.panel_ids.remove(removed);
+        self.active_index = if self.panel_ids.is_empty() {
+            self.is_open = false;
+            None
+        } else if active == Some(panel_id) {
+            Some(removed.min(self.panel_ids.len() - 1))
+        } else {
+            active.and_then(|id| self.panel_ids.iter().position(|candidate| *candidate == id))
+        };
+        Some(removed)
+    }
+
+    pub fn insert_panel(&mut self, index: usize, panel_id: PanelId) {
+        self.panel_ids.retain(|id| *id != panel_id);
+        let index = index.min(self.panel_ids.len());
+        self.panel_ids.insert(index, panel_id);
+        self.active_index = Some(index);
+        self.is_open = true;
     }
 
     /// Activate a panel by ID, opening the dock if closed
@@ -239,6 +384,8 @@ impl Default for DockLayout {
         // Register default panels
         layout.left.register_panel(PanelId::FILE_EXPLORER);
         layout.right.register_panel(PanelId::OUTLINE);
+        #[cfg(debug_assertions)]
+        layout.right.register_panel(PanelId::Performance);
         layout.bottom.register_panel(PanelId::TERMINAL);
         layout.bottom.register_panel(PanelId::PROBLEMS);
         layout.bottom.register_panel(PanelId::Usages);
@@ -351,6 +498,29 @@ mod tests {
         assert_eq!(DockPosition::Left.cycle_next(), DockPosition::Bottom);
         assert_eq!(DockPosition::Bottom.cycle_next(), DockPosition::Right);
         assert_eq!(DockPosition::Right.cycle_next(), DockPosition::Left);
+    }
+
+    #[test]
+    fn floating_rect_normalization_adapts_to_tiny_work_areas() {
+        let rect = LogicalRect::new(-50.0, 90.0, 400.0, 300.0)
+            .normalized(100.0, 34.0)
+            .unwrap();
+        assert_eq!(rect, LogicalRect::new(8.0, 8.0, 84.0, 18.0));
+
+        let one_pixel = LogicalRect::new(99.0, -10.0, 0.0, 0.0)
+            .normalized(1.0, 1.0)
+            .unwrap();
+        assert_eq!(one_pixel, LogicalRect::new(0.0, 0.0, 1.0, 1.0));
+    }
+
+    #[test]
+    fn floating_rect_normalization_rejects_invalid_geometry() {
+        assert!(LogicalRect::new(f32::NAN, 0.0, 320.0, 240.0)
+            .normalized(800.0, 600.0)
+            .is_none());
+        assert!(LogicalRect::new(0.0, 0.0, 320.0, 240.0)
+            .normalized(0.0, 600.0)
+            .is_none());
     }
 
     #[test]

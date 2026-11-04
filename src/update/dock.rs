@@ -3,9 +3,11 @@
 //! Handles dock-related messages for panel visibility, focus, and resizing.
 
 use crate::commands::Cmd;
-use crate::messages::{DockMsg, TerminalMsg};
+use crate::messages::{DockMsg, PanelPlacementMsg, TerminalMsg};
 use crate::model::{AppModel, FocusTarget};
-use crate::panel::{DockPosition, PanelId};
+use crate::panel::{
+    DockPosition, DockReturnSlot, LastPresentation, LogicalRect, NonDockedPanel, PanelId,
+};
 use crate::panels::terminal::{grid_size_for_rect, TerminalGridSize};
 
 /// Sync workspace sidebar visibility with dock layout (left dock)
@@ -40,6 +42,41 @@ fn physical_delta_to_logical(delta: f64, scale_factor: f64) -> f64 {
 
 fn physical_dimension_to_logical(dimension: u32, scale_factor: f64) -> f32 {
     physical_delta_to_logical(dimension as f64, scale_factor) as f32
+}
+
+fn floating_work_area(model: &AppModel) -> (f32, f32) {
+    let sidebar_width = model
+        .workspace
+        .as_ref()
+        .filter(|workspace| workspace.sidebar_visible)
+        .map_or(0.0, |workspace| workspace.sidebar_width_logical);
+    let width = (physical_dimension_to_logical(model.window_size.0, model.metrics.scale_factor)
+        - sidebar_width)
+        .max(0.0);
+    let height = physical_dimension_to_logical(
+        model
+            .window_size
+            .1
+            .saturating_sub(model.status_bar_height as u32),
+        model.metrics.scale_factor,
+    );
+    (width, height)
+}
+
+fn default_floating_rect(work_width: f32, work_height: f32) -> Option<LogicalRect> {
+    LogicalRect::new((work_width - 420.0).max(8.0), 48.0, 400.0, 360.0)
+        .normalized(work_width, work_height)
+}
+
+pub(super) fn normalize_floating_panels(model: &mut AppModel) {
+    let (work_width, work_height) = floating_work_area(model);
+    for placement in model.non_docked_panels.by_id.values_mut() {
+        if let NonDockedPanel::Floating { rect, .. } = placement {
+            if let Some(normalized) = rect.normalized(work_width, work_height) {
+                *rect = normalized;
+            }
+        }
+    }
 }
 
 fn terminal_sync_command(model: &mut AppModel) -> Option<Cmd> {
@@ -110,6 +147,19 @@ fn with_opened_panel_sync(model: &mut AppModel, panel_id: PanelId, cmd: Cmd) -> 
 /// Update function for dock messages
 pub(super) fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
     match msg {
+        DockMsg::ScrollPerformance { pixels, max } => {
+            let current = model.ui.performance_scroll_px.min(max);
+            let next = if pixels >= 0 {
+                current.saturating_add(pixels as usize).min(max)
+            } else {
+                current.saturating_sub(pixels.unsigned_abs())
+            };
+            if next == model.ui.performance_scroll_px {
+                return None;
+            }
+            model.ui.performance_scroll_px = next;
+            Some(Cmd::Redraw)
+        }
         DockMsg::FocusOrTogglePanel(panel_id) => {
             let is_dock_focused = |pos| model.ui.focus == FocusTarget::Dock(pos);
 
@@ -324,6 +374,142 @@ pub(super) fn update_dock(model: &mut AppModel, msg: DockMsg) -> Option<Cmd> {
     }
 }
 
+pub(super) fn update_panel_placement(model: &mut AppModel, msg: PanelPlacementMsg) -> Option<Cmd> {
+    let panel = match msg {
+        PanelPlacementMsg::Open(panel)
+        | PanelPlacementMsg::OpenInDock(panel)
+        | PanelPlacementMsg::Float(panel)
+        | PanelPlacementMsg::Dock(panel)
+        | PanelPlacementMsg::Close(panel)
+        | PanelPlacementMsg::SetFloatingRect { panel, .. } => panel,
+    };
+    if panel != PanelId::Performance {
+        return None;
+    }
+
+    let (work_width, work_height) = floating_work_area(model);
+
+    match msg {
+        PanelPlacementMsg::Float(panel) => {
+            let default_rect = default_floating_rect(work_width, work_height)?;
+            let dock = model.dock_layout.find_panel(panel)?;
+            let index = model.dock_layout.dock_mut(dock).remove_panel(panel)?;
+            model.non_docked_panels.by_id.insert(
+                panel,
+                NonDockedPanel::Floating {
+                    rect: default_rect,
+                    return_slot: DockReturnSlot { dock, index },
+                },
+            );
+            model.ui.focus = FocusTarget::FloatingPanel(panel);
+        }
+        PanelPlacementMsg::Dock(panel) | PanelPlacementMsg::OpenInDock(panel) => {
+            let record = model.non_docked_panels.by_id.remove(&panel);
+            let return_slot = match record {
+                Some(NonDockedPanel::Floating { return_slot, .. })
+                | Some(NonDockedPanel::Hidden {
+                    last: LastPresentation::Floating { return_slot, .. },
+                })
+                | Some(NonDockedPanel::Hidden {
+                    last: LastPresentation::Docked { return_slot },
+                }) => return_slot,
+                None => DockReturnSlot {
+                    dock: panel.default_position(),
+                    index: model
+                        .dock_layout
+                        .dock(panel.default_position())
+                        .panel_ids
+                        .len(),
+                },
+            };
+            model
+                .dock_layout
+                .dock_mut(return_slot.dock)
+                .insert_panel(return_slot.index, panel);
+            model.ui.focus = FocusTarget::Dock(return_slot.dock);
+        }
+        PanelPlacementMsg::Close(panel) => {
+            let last = if let Some(position) = model.dock_layout.find_panel(panel) {
+                let index = model.dock_layout.dock_mut(position).remove_panel(panel)?;
+                LastPresentation::Docked {
+                    return_slot: DockReturnSlot {
+                        dock: position,
+                        index,
+                    },
+                }
+            } else {
+                match model.non_docked_panels.by_id.remove(&panel)? {
+                    NonDockedPanel::Floating { rect, return_slot } => {
+                        LastPresentation::Floating { rect, return_slot }
+                    }
+                    NonDockedPanel::Hidden { last } => last,
+                }
+            };
+            model
+                .non_docked_panels
+                .by_id
+                .insert(panel, NonDockedPanel::Hidden { last });
+            model.ui.focus = FocusTarget::Editor;
+        }
+        PanelPlacementMsg::Open(panel) => {
+            let record = model.non_docked_panels.by_id.remove(&panel);
+            let last = match record {
+                Some(NonDockedPanel::Floating { rect, return_slot }) => {
+                    model
+                        .non_docked_panels
+                        .by_id
+                        .insert(panel, NonDockedPanel::Floating { rect, return_slot });
+                    model.ui.focus = FocusTarget::FloatingPanel(panel);
+                    return Some(Cmd::Redraw);
+                }
+                Some(NonDockedPanel::Hidden { last }) => last,
+                None => return update_dock(model, DockMsg::FocusOrTogglePanel(panel)),
+            };
+            match last {
+                LastPresentation::Docked { return_slot } => {
+                    model
+                        .dock_layout
+                        .dock_mut(return_slot.dock)
+                        .insert_panel(return_slot.index, panel);
+                    model.ui.focus = FocusTarget::Dock(return_slot.dock);
+                }
+                LastPresentation::Floating { rect, return_slot } => {
+                    model.non_docked_panels.by_id.insert(
+                        panel,
+                        NonDockedPanel::Floating {
+                            rect: rect
+                                .normalized(work_width, work_height)
+                                .or_else(|| default_floating_rect(work_width, work_height))
+                                .unwrap_or(rect),
+                            return_slot,
+                        },
+                    );
+                    model.ui.focus = FocusTarget::FloatingPanel(panel);
+                }
+            }
+        }
+        PanelPlacementMsg::SetFloatingRect { panel, rect } => {
+            let normalized = rect.normalized(work_width, work_height)?;
+            let Some(NonDockedPanel::Floating { return_slot, .. }) =
+                model.non_docked_panels.by_id.get(&panel).copied()
+            else {
+                return None;
+            };
+            model.non_docked_panels.by_id.insert(
+                panel,
+                NonDockedPanel::Floating {
+                    rect: normalized,
+                    return_slot,
+                },
+            );
+        }
+    }
+    if !matches!(msg, PanelPlacementMsg::SetFloatingRect { .. }) {
+        model.recalculate_viewports();
+    }
+    Some(Cmd::Redraw)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,6 +520,43 @@ mod tests {
 
     fn test_model() -> AppModel {
         AppModel::new(800, 600, 1.0)
+    }
+
+    #[test]
+    fn performance_scroll_clamps_to_viewport_and_does_not_resurrect_stale_offset() {
+        let mut model = test_model();
+        assert!(matches!(
+            update_dock(
+                &mut model,
+                DockMsg::ScrollPerformance {
+                    pixels: 60,
+                    max: 100
+                }
+            ),
+            Some(Cmd::Redraw)
+        ));
+        assert_eq!(model.ui.performance_scroll_px, 60);
+        update_dock(
+            &mut model,
+            DockMsg::ScrollPerformance {
+                pixels: 100,
+                max: 100,
+            },
+        );
+        assert_eq!(model.ui.performance_scroll_px, 100);
+        update_dock(
+            &mut model,
+            DockMsg::ScrollPerformance { pixels: 0, max: 10 },
+        );
+        assert_eq!(model.ui.performance_scroll_px, 10);
+        update_dock(
+            &mut model,
+            DockMsg::ScrollPerformance {
+                pixels: -4,
+                max: 10,
+            },
+        );
+        assert_eq!(model.ui.performance_scroll_px, 6);
     }
 
     fn hidpi_test_model() -> AppModel {
@@ -578,5 +801,63 @@ mod tests {
 
         assert!(model.ui.sidebar_resize.is_none());
         assert!(model.ui.dock_resize.is_none());
+    }
+
+    #[test]
+    fn performance_float_and_redock_preserve_return_slot_and_identity() {
+        let mut model = test_model();
+        let original_index = model
+            .dock_layout
+            .right
+            .panel_ids
+            .iter()
+            .position(|panel| *panel == PanelId::Performance)
+            .unwrap();
+
+        update_panel_placement(&mut model, PanelPlacementMsg::Float(PanelId::Performance));
+        assert_eq!(model.dock_layout.find_panel(PanelId::Performance), None);
+        assert!(matches!(
+            model.non_docked_panels.by_id.get(&PanelId::Performance),
+            Some(NonDockedPanel::Floating {
+                return_slot: DockReturnSlot { dock: DockPosition::Right, index },
+                ..
+            }) if *index == original_index
+        ));
+
+        update_panel_placement(&mut model, PanelPlacementMsg::Dock(PanelId::Performance));
+        assert_eq!(
+            model.dock_layout.right.panel_ids[original_index],
+            PanelId::Performance
+        );
+        assert_eq!(
+            model.dock_layout.right.active_panel(),
+            Some(PanelId::Performance)
+        );
+        assert!(!model
+            .non_docked_panels
+            .by_id
+            .contains_key(&PanelId::Performance));
+    }
+
+    #[test]
+    fn closing_and_reopening_float_restores_normalized_rectangle() {
+        let mut model = test_model();
+        update_panel_placement(&mut model, PanelPlacementMsg::Float(PanelId::Performance));
+        update_panel_placement(&mut model, PanelPlacementMsg::Close(PanelId::Performance));
+        assert!(matches!(
+            model.non_docked_panels.by_id.get(&PanelId::Performance),
+            Some(NonDockedPanel::Hidden {
+                last: LastPresentation::Floating { .. }
+            })
+        ));
+        update_panel_placement(&mut model, PanelPlacementMsg::Open(PanelId::Performance));
+        assert!(matches!(
+            model.non_docked_panels.by_id.get(&PanelId::Performance),
+            Some(NonDockedPanel::Floating { .. })
+        ));
+        assert_eq!(
+            model.ui.focus,
+            FocusTarget::FloatingPanel(PanelId::Performance)
+        );
     }
 }

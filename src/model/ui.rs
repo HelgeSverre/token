@@ -3,7 +3,7 @@
 use super::editor_area::{GroupId, SplitDirection};
 use super::status_bar::{SegmentContent, SegmentId, StatusBar, TransientMessage};
 use crate::editable::{EditConstraints, EditableState, StringBuffer};
-use crate::panel::DockPosition;
+use crate::panel::{DockPosition, PanelId};
 use crate::theme::{list_available_themes, ThemeInfo};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -24,6 +24,8 @@ pub enum FocusTarget {
     Editor,
     /// A dock panel, including the file explorer in the left dock
     Dock(DockPosition),
+    /// An in-window floating dockable panel.
+    FloatingPanel(PanelId),
     /// Docked find/replace text field.
     FindBar,
     /// Modal dialog (command palette, goto line, etc.)
@@ -62,6 +64,8 @@ pub enum HoverRegion {
     Splitter,
     /// Hovering over a dock panel (right or bottom)
     Dock(DockPosition),
+    /// Hovering over an in-window floating dockable panel.
+    FloatingPanel(PanelId),
     /// Hovering over a dock resize handle
     DockResize(DockPosition),
     /// Hovering over a preview pane
@@ -1325,6 +1329,38 @@ pub struct DockResizeState {
     pub original_size: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloatingResizeEdge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum FloatingPanelDragKind {
+    Move,
+    Resize(FloatingResizeEdge),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FloatingPanelDragState {
+    pub panel: PanelId,
+    pub kind: FloatingPanelDragKind,
+    pub press: (f64, f64),
+    pub original: crate::panel::LogicalRect,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PanelActionPress {
+    pub panel: PanelId,
+    pub action: crate::panel::PanelActionId,
+}
+
 /// Which axis a scrollbar drag applies to
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollbarDragAxis {
@@ -1489,6 +1525,10 @@ pub struct UiState {
     pub sidebar_resize: Option<SidebarResizeState>,
     /// Dock resize drag state (right/bottom dock resize handle)
     pub dock_resize: Option<DockResizeState>,
+    pub floating_panel_drag: Option<FloatingPanelDragState>,
+    pub panel_action_press: Option<PanelActionPress>,
+    /// Pixel offset for the debug Performance body's shared scroll viewport.
+    pub performance_scroll_px: usize,
     /// Scrollbar thumb drag state
     pub scrollbar_drag: Option<ScrollbarDragState>,
     /// Editor tab drag state (reorder within a group / move between groups)
@@ -1635,6 +1675,9 @@ impl UiState {
             splitter_drag: None,
             sidebar_resize: None,
             dock_resize: None,
+            floating_panel_drag: None,
+            panel_action_press: None,
+            performance_scroll_px: 0,
             scrollbar_drag: None,
             tab_drag: None,
             focus: FocusTarget::Editor,
