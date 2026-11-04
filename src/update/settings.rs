@@ -303,6 +303,13 @@ pub(super) fn select_key(model: &mut AppModel, delta: isize, confirm: bool) -> O
     }
 }
 
+/// Close an open form dropdown without changing the draft.
+pub(super) fn close_select(model: &mut AppModel) {
+    if let Some(form) = state_mut(&mut model.ui).and_then(|state| state.form.as_mut()) {
+        form.open_select = None;
+    }
+}
+
 pub(super) fn adjust_form(model: &mut AppModel) -> Option<Cmd> {
     let state = state_mut(&mut model.ui)?;
     if matches!(
@@ -765,12 +772,7 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                             .is_some_and(|form| Arc::ptr_eq(&form.session, &session))
                 });
                 if let Some(state) = state_mut(&mut model.ui) {
-                    if matches!(*change, SettingsChange::Remove { .. })
-                        && state
-                            .form
-                            .as_ref()
-                            .is_some_and(|form| Arc::ptr_eq(&form.session, &session))
-                    {
+                    if removed_current {
                         state.form = None;
                     }
                     state.refresh_entries(&model.config);
@@ -791,10 +793,12 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                         if let Some(form) =
                             state_mut(&mut model.ui).and_then(|state| state.form.as_ref())
                         {
-                            commands.push(Cmd::InspectSettingsExecutable {
-                                session: Arc::clone(&form.session),
-                                command: form.fields[0].input.text(),
-                            });
+                            if let Some(index) = form.executable_field() {
+                                commands.push(Cmd::InspectSettingsExecutable {
+                                    session: Arc::clone(&form.session),
+                                    command: form.fields[index].input.text(),
+                                });
+                            }
                         }
                     }
                     SettingsChange::LanguageServer {

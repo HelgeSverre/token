@@ -1421,8 +1421,15 @@ pub(super) fn render(
     }
     render_list_scrollbar(frame, layout, colors);
     for (row, choice, label, rect) in select_options(spec, layout) {
-        let hovered = matches!(spec.anchor, Anchor::Settings {hovered_choice: Some((r,c)), ..} if r == row.0 && c == choice)
-            || collection(spec).is_some_and(|collection| collection.select_cursor == choice);
+        // One highlight: the pointer while it is over the list, else the
+        // keyboard cursor. Both at once would show two selected rows.
+        let hovered = match spec.anchor {
+            Anchor::Settings {
+                hovered_choice: Some((r, c)),
+                ..
+            } if r == row.0 => c == choice,
+            _ => collection(spec).is_some_and(|collection| collection.select_cursor == choice),
+        };
         settings_button(
             frame,
             painter,
