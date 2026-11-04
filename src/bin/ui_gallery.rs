@@ -5,9 +5,9 @@ use std::rc::Rc;
 
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
-use token::model::gallery::{GalleryFocus, GalleryState};
+use token::model::gallery::{GalleryFocus, GalleryState, Preview};
 use token::theme::{self, Theme, ThemeInfo};
-use token::view::gallery::{GalleryLayout, GalleryRenderer};
+use token::view::gallery::{GalleryLayout, GalleryRenderer, SelectionPlaygroundLayout};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -156,6 +156,31 @@ impl App {
             self.open_themes();
         } else if layout.search.contains(x, y) {
             self.state.focus = GalleryFocus::Filter;
+        } else if layout.viewport.contains(x, y) {
+            let scale = self
+                .window
+                .as_ref()
+                .map_or(self.args.scale, |w| w.scale_factor());
+            for row in &layout.rows {
+                if !matches!(row.specimen.preview, Preview::InteractiveSelection) {
+                    continue;
+                }
+                let controls = SelectionPlaygroundLayout::new(row.canvas_content(), scale);
+                let (canvas_x, canvas_y, _, _) = token::layout::snapshot::snap(row.preview);
+                let (x, y) = (
+                    x - (row.rect.x as usize + canvas_x) as f32,
+                    y - row.rect.y.round() - canvas_y as f32,
+                );
+                if let Some(index) =
+                    token::view::section_navigation::section_at(&controls.segments, x, y)
+                {
+                    self.state.playground_selection = index;
+                    self.state.focus = GalleryFocus::PlaygroundSelection;
+                } else if controls.reset.contains(x, y) {
+                    self.state.playground_selection = 1;
+                    self.state.focus = GalleryFocus::PlaygroundReset;
+                }
+            }
         }
     }
 
@@ -182,11 +207,48 @@ impl App {
         let extend = self.modifiers.shift_key();
         if key == Key::Named(NamedKey::Tab) {
             self.state.theme_select.open = false;
-            self.state.focus = match (self.state.focus, extend) {
-                (GalleryFocus::Filter, false) | (GalleryFocus::Width, true) => GalleryFocus::Theme,
-                (GalleryFocus::Theme, false) | (GalleryFocus::Filter, true) => GalleryFocus::Width,
-                _ => GalleryFocus::Filter,
+            let mut order = vec![
+                GalleryFocus::Filter,
+                GalleryFocus::Theme,
+                GalleryFocus::Width,
+            ];
+            if self
+                .state
+                .specimens()
+                .iter()
+                .any(|s| matches!(s.preview, Preview::InteractiveSelection))
+            {
+                order.extend([
+                    GalleryFocus::PlaygroundSelection,
+                    GalleryFocus::PlaygroundReset,
+                ]);
+            }
+            let current = order
+                .iter()
+                .position(|f| *f == self.state.focus)
+                .unwrap_or(0);
+            let next = if extend {
+                current + order.len() - 1
+            } else {
+                current + 1
             };
+            self.state.focus = order[next % order.len()];
+            if matches!(
+                self.state.focus,
+                GalleryFocus::PlaygroundSelection | GalleryFocus::PlaygroundReset
+            ) {
+                if let Some(layout) = &self.layout {
+                    if let Some(row) = layout
+                        .rows
+                        .iter()
+                        .find(|r| matches!(r.specimen.preview, Preview::InteractiveSelection))
+                    {
+                        self.state.scroll = (self.state.scroll
+                            + (row.rect.y - layout.viewport.y) as f64)
+                            .clamp(0.0, layout.scrollbar.state.max_position() as f64);
+                    }
+                }
+            }
             return;
         }
         if self.state.theme_select.open {
@@ -224,6 +286,34 @@ impl App {
             match key {
                 Key::Named(NamedKey::ArrowLeft | NamedKey::Home) => self.state.compact = true,
                 Key::Named(NamedKey::ArrowRight | NamedKey::End) => self.state.compact = false,
+                _ => {}
+            }
+            return;
+        }
+        if matches!(
+            self.state.focus,
+            GalleryFocus::PlaygroundSelection | GalleryFocus::PlaygroundReset
+        ) {
+            match key {
+                Key::Named(NamedKey::Escape) => self.state.focus = GalleryFocus::Filter,
+                Key::Named(NamedKey::Enter | NamedKey::Space)
+                    if self.state.focus == GalleryFocus::PlaygroundReset =>
+                {
+                    self.state.playground_selection = 1
+                }
+                _ if self.state.focus == GalleryFocus::PlaygroundSelection => match key {
+                    Key::Named(NamedKey::ArrowLeft) => {
+                        self.state.playground_selection =
+                            self.state.playground_selection.saturating_sub(1)
+                    }
+                    Key::Named(NamedKey::ArrowRight) => {
+                        self.state.playground_selection =
+                            (self.state.playground_selection + 1).min(2)
+                    }
+                    Key::Named(NamedKey::Home) => self.state.playground_selection = 0,
+                    Key::Named(NamedKey::End) => self.state.playground_selection = 2,
+                    _ => {}
+                },
                 _ => {}
             }
             return;
@@ -471,8 +561,8 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn theme_navigation_commits_only_on_accept_and_width_selects_directly() {
+
+    fn gallery_app() -> App {
         let themes: Vec<_> = [
             ("default-dark", "Default Dark"),
             ("github-light", "GitHub Light"),
@@ -488,7 +578,7 @@ mod tests {
             theme_names: themes.iter().map(|t| t.name.clone()).collect(),
             ..Default::default()
         };
-        let mut app = App {
+        App {
             args: Args::parse_from(["ui-gallery"]),
             state,
             painter: GalleryRenderer::new().unwrap(),
@@ -503,7 +593,12 @@ mod tests {
             theme_wheel: 0.0,
             modifiers: ModifiersState::empty(),
             error: None,
-        };
+        }
+    }
+
+    #[test]
+    fn theme_navigation_commits_only_on_accept_and_width_selects_directly() {
+        let mut app = gallery_app();
         app.state.query.insert_text("field");
         app.key(Key::Named(NamedKey::Tab), None);
         app.key(Key::Named(NamedKey::ArrowDown), None);
@@ -525,5 +620,129 @@ mod tests {
         assert!(app.state.compact);
         app.key(Key::Named(NamedKey::ArrowRight), None);
         assert!(!app.state.compact);
+    }
+
+    #[test]
+    fn playground_keyboard_navigation_reset_and_filter_scope() {
+        let mut app = gallery_app();
+        app.state.query.insert_text("selection.interactive");
+        for expected in [
+            GalleryFocus::Theme,
+            GalleryFocus::Width,
+            GalleryFocus::PlaygroundSelection,
+        ] {
+            app.key(Key::Named(NamedKey::Tab), None);
+            assert_eq!(app.state.focus, expected);
+        }
+        for (key, expected) in [
+            (NamedKey::ArrowRight, 2),
+            (NamedKey::ArrowRight, 2),
+            (NamedKey::ArrowLeft, 1),
+            (NamedKey::Home, 0),
+            (NamedKey::ArrowLeft, 0),
+            (NamedKey::End, 2),
+        ] {
+            app.key(Key::Named(key), None);
+            assert_eq!(app.state.playground_selection, expected);
+        }
+        app.key(Key::Character("x".into()), Some("x"));
+        assert_eq!(app.state.query.text(), "selection.interactive");
+        app.key(Key::Named(NamedKey::Tab), None);
+        assert_eq!(app.state.focus, GalleryFocus::PlaygroundReset);
+        app.key(Key::Named(NamedKey::Space), None);
+        assert_eq!(app.state.playground_selection, 1);
+        app.modifiers = ModifiersState::SHIFT;
+        app.key(Key::Named(NamedKey::Tab), None);
+        assert_eq!(app.state.focus, GalleryFocus::PlaygroundSelection);
+        app.modifiers = ModifiersState::empty();
+        app.key(Key::Named(NamedKey::Escape), None);
+        assert_eq!(app.state.focus, GalleryFocus::Filter);
+        assert_eq!(app.state.query.text(), "selection.interactive");
+        app.state.category = 1; // Excluded from the current category.
+        app.state.focus = GalleryFocus::Width;
+        app.key(Key::Named(NamedKey::Tab), None);
+        assert_eq!(app.state.focus, GalleryFocus::Filter);
+    }
+
+    #[test]
+    fn playground_fractional_scale_hits_both_sides_of_painted_segment_edge() {
+        let mut app = gallery_app();
+        app.args.scale = 1.3;
+        app.state.scroll = 23.4;
+        app.layout = Some(GalleryLayout::new(1430, 1066, 1.3, &app.state));
+        // Painted row x truncates to 246 (f32 scaling). The right-constrained
+        // canvas x rounds to 564, inset is 31, and the segment is 173px wide.
+        for (x, expected) in [(1013.0, 0), (1014.0, 1)] {
+            app.mouse = (x, 230.0);
+            app.click();
+            assert_eq!(app.state.playground_selection, expected);
+        }
+    }
+
+    #[test]
+    fn playground_pointer_uses_scrolled_geometry_and_rejects_clipped_content() {
+        let mut app = gallery_app();
+        for scale in [1.0, 1.5, 2.0] {
+            for compact in [false, true] {
+                app.args.scale = scale;
+                app.state.compact = compact;
+                app.state.scroll = 18.0 * scale;
+                let layout = GalleryLayout::new(
+                    (1100.0 * scale) as usize,
+                    (820.0 * scale) as usize,
+                    scale,
+                    &app.state,
+                );
+                let row = &layout.rows[0];
+                let controls = SelectionPlaygroundLayout::new(row.content, scale);
+                let origin = (row.rect.x, row.rect.y);
+                app.layout = Some(layout);
+                for index in [2, 0, 0] {
+                    let segment = controls.segments[index];
+                    app.mouse = (
+                        origin.0 + (segment.x + segment.w / 2) as f32,
+                        origin.1 + (segment.y + segment.h / 2) as f32,
+                    );
+                    app.click();
+                    assert_eq!(app.state.playground_selection, index);
+                    assert_eq!(app.state.focus, GalleryFocus::PlaygroundSelection);
+                }
+                app.mouse = (
+                    origin.0 + controls.reset.x + 5.0,
+                    origin.1 + controls.reset.y + 5.0,
+                );
+                app.click();
+                assert_eq!(app.state.playground_selection, 1);
+                assert_eq!(app.state.focus, GalleryFocus::PlaygroundReset);
+
+                app.state.scroll = 70.0 * scale;
+                let layout = GalleryLayout::new(
+                    (1100.0 * scale) as usize,
+                    (820.0 * scale) as usize,
+                    scale,
+                    &app.state,
+                );
+                let row = &layout.rows[0];
+                let controls = SelectionPlaygroundLayout::new(row.content, scale);
+                app.mouse = (
+                    row.rect.x + controls.segments[2].x as f32 + 5.0,
+                    row.rect.y + controls.segments[2].y as f32 + 5.0,
+                );
+                assert!(!layout.viewport.contains(app.mouse.0, app.mouse.1));
+                app.layout = Some(layout);
+                app.click();
+                assert_eq!(
+                    app.state.playground_selection, 1,
+                    "clipped controls must not activate"
+                );
+                app.state.focus = GalleryFocus::Width;
+                app.key(Key::Named(NamedKey::Tab), None);
+                assert_eq!(app.state.focus, GalleryFocus::PlaygroundSelection);
+                assert_eq!(
+                    app.state.scroll, 0.0,
+                    "keyboard focus reveals the playground"
+                );
+            }
+        }
     }
 }

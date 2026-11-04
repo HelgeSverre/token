@@ -960,7 +960,7 @@ pub(crate) fn with_settings_spec<R>(
                             Accessory::Choices {
                                 labels: &preset_labels,
                                 active: Some(form.preset.map_or(0, |index| index + 1)),
-                                presentation: ChoicePresentation::Buttons,
+                                presentation: ChoicePresentation::Select,
                             }
                         } else if let (RowKind::FormAdvanced, Some(form)) =
                             (entry.kind.clone(), &state.form)
