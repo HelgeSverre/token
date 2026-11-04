@@ -131,6 +131,11 @@ All notable changes to Token are documented in this file.
 - Add `token --completions <shell>` to print shell completion scripts for bash,
   zsh, fish, powershell and nu.
 
+- Add portable mode: a `data` directory beside the executable keeps
+  configuration, themes, recent files, logs and session state there instead of
+  the user profile. `TOKEN_CONFIG_DIR` overrides the configuration directory on
+  every platform.
+
 ### Search
 
 - Remember the command palette query after dismissal or navigation, and select
