@@ -1129,6 +1129,7 @@ pub(crate) fn with_settings_spec<R>(
                         FormKind::InlineProvider(_) => Some("Enable inline suggestions"),
                     },
                     select_cursor: form.select_cursor,
+                    select_scroll: form.select_scroll,
                     hovered: model.ui.settings_hover_action,
                     title,
                     description,

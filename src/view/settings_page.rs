@@ -140,46 +140,125 @@ fn select_rect(row: &WidgetRect, sf: f64) -> WidgetRect {
     }
 }
 
+/// The open dropdown of a Settings form row: its anchor, labels, committed
+/// value and keyboard cursor. `None` when no dropdown is open.
+struct OpenSelect<'a> {
+    row: FlatIndex,
+    labels: &'a [&'a str],
+    active: Option<usize>,
+    cursor: usize,
+    scroll: usize,
+    anchor: WidgetRect,
+}
+
+fn open_select<'a>(spec: &'a OverlaySpec, layout: &OverlayLayout) -> Option<OpenSelect<'a>> {
+    let collection = collection(spec)?;
+    let index = collection.open_select?;
+    let Body::List { sections, .. } = &spec.body else {
+        return None;
+    };
+    let rows = flatten_rows(sections);
+    layout
+        .rows
+        .iter()
+        .zip(&layout.settings_items)
+        .find_map(|(rect, (display, _))| match rows.get(*display) {
+            Some(DisplayRow::Row(
+                Row {
+                    accessory: Accessory::Choices { labels, active, .. },
+                    ..
+                },
+                row,
+            )) if row.0 == index => Some(OpenSelect {
+                row: *row,
+                labels,
+                active: *active,
+                cursor: collection.select_cursor,
+                scroll: collection.select_scroll,
+                anchor: select_rect(rect, layout.scale_factor),
+            }),
+            _ => None,
+        })
+}
+
+impl OpenSelect<'_> {
+    /// The same shared select the gallery uses, with Settings' transient
+    /// state borrowed as the popup state. The popup is as wide as its anchor,
+    /// so the layout does not depend on text measurement.
+    fn with_select<R>(
+        &self,
+        scale_factor: f64,
+        hover: Option<usize>,
+        f: impl FnOnce(&crate::view::select::Select<'_>) -> R,
+    ) -> R {
+        let state = crate::model::select::SelectState {
+            open: true,
+            active: self.cursor,
+            scroll: self.scroll,
+        };
+        let select = crate::view::select::Select {
+            anchor: Rect::new(
+                self.anchor.x as f32,
+                self.anchor.y as f32,
+                self.anchor.w as f32,
+                self.anchor.h as f32,
+            ),
+            labels: self.labels,
+            selected: self.active.unwrap_or(usize::MAX),
+            state: &state,
+            focused: true,
+            hover,
+            scale: scale_factor,
+        };
+        f(&select)
+    }
+}
+
+/// The open dropdown's panel, visible row count and option count, for wheel
+/// routing. `None` when no dropdown is open.
+pub(super) fn select_popup_extent(
+    spec: &OverlaySpec,
+    layout: &OverlayLayout,
+) -> Option<(WidgetRect, usize, usize)> {
+    let open = open_select(spec, layout)?;
+    let sf = layout.scale_factor;
+    let mut measure = crate::layout::CellMeasure {
+        char_width: scaled(8.0, sf) as f32,
+        line_height: scaled(16.0, sf) as f32,
+    };
+    let popup = open.with_select(sf, None, |select| {
+        select.layout_popup(layout.window, &mut measure)
+    })?;
+    Some((popup.panel, popup.rows.len(), open.labels.len()))
+}
+
 /// Dropdown options share one layout for painting and pointer selection.
 fn select_options<'a>(
     spec: &'a OverlaySpec,
     layout: &OverlayLayout,
 ) -> Vec<(FlatIndex, usize, &'a str, WidgetRect)> {
-    let Some(index) = collection(spec).and_then(|collection| collection.open_select) else {
-        return Vec::new();
-    };
-    let Body::List { sections, .. } = &spec.body else {
-        return Vec::new();
-    };
-    let rows = flatten_rows(sections);
-    let Some((rect, labels)) =
-        layout
-            .rows
-            .iter()
-            .zip(&layout.settings_items)
-            .find_map(|(rect, (display, _))| match rows.get(*display) {
-                Some(DisplayRow::Row(
-                    Row {
-                        accessory: Accessory::Choices { labels, .. },
-                        ..
-                    },
-                    row,
-                )) if row.0 == index => Some((rect, labels)),
-                _ => None,
-            })
-    else {
+    let Some(open) = open_select(spec, layout) else {
         return Vec::new();
     };
     let sf = layout.scale_factor;
-    let anchor = select_rect(rect, sf);
-    let bottom = layout
-        .footer
-        .map_or(layout.panel.y + layout.panel.h, |footer| footer.y);
-    crate::view::controls::select_option_rects(anchor, labels.len(), layout.panel.y, bottom, sf)
+    let mut measure = crate::layout::CellMeasure {
+        char_width: scaled(8.0, sf) as f32,
+        line_height: scaled(16.0, sf) as f32,
+    };
+    let Some(popup) = open.with_select(sf, None, |select| {
+        select.layout_popup(layout.window, &mut measure)
+    }) else {
+        return Vec::new();
+    };
+    popup
+        .rows
         .into_iter()
-        .zip(labels.iter())
         .enumerate()
-        .map(|(choice, (rect, label))| (FlatIndex(index), choice, *label, rect))
+        .filter_map(|(visible, rect)| {
+            let choice = popup.first + visible;
+            let label = open.labels.get(choice)?;
+            Some((open.row, choice, *label, rect))
+        })
         .collect()
 }
 
@@ -575,9 +654,8 @@ pub(super) fn hit_test(
     {
         return OverlayHit::Close;
     }
-    if !contains(&layout.panel, x, y) {
-        return OverlayHit::Outside;
-    }
+    // An open dropdown owns the pointer: its rows select, anywhere else
+    // closes it. It can extend past the page, so test it before the panel.
     if collection(spec).is_some_and(|collection| collection.open_select.is_some()) {
         for (row, choice, _, rect) in select_options(spec, layout) {
             if contains(&rect, x, y) {
@@ -585,6 +663,9 @@ pub(super) fn hit_test(
             }
         }
         return OverlayHit::SettingsAction(crate::messages::SettingsCollectionAction::CloseSelect);
+    }
+    if !contains(&layout.panel, x, y) {
+        return OverlayHit::Outside;
     }
     if collection(spec).is_some() {
         let manager = manager_rects(&layout.panel, layout.scale_factor);
@@ -1420,29 +1501,20 @@ pub(super) fn render(
         frame.pop_clip();
     }
     render_list_scrollbar(frame, layout, colors);
-    for (row, choice, label, rect) in select_options(spec, layout) {
-        // One highlight: the pointer while it is over the list, else the
-        // keyboard cursor. Both at once would show two selected rows.
-        let hovered = match spec.anchor {
+    if let Some(open) = open_select(spec, layout) {
+        // The popup paints last so it overlays the form; the pointer row is
+        // the hover wash and the keyboard cursor the selected row.
+        let hover = match spec.anchor {
             Anchor::Settings {
                 hovered_choice: Some((r, c)),
                 ..
-            } if r == row.0 => c == choice,
-            _ => collection(spec).is_some_and(|collection| collection.select_cursor == choice),
+            } if r == open.row.0 => Some(c),
+            _ => None,
         };
-        settings_button(
-            frame,
-            painter,
-            theme,
-            rect,
-            label,
-            if hovered {
-                crate::view::button::ButtonState::Hovered
-            } else {
-                crate::view::button::ButtonState::Normal
-            },
-            sf,
-        );
+        let size = (frame.width(), frame.height());
+        open.with_select(sf, hover, |select| {
+            select.render_popup(frame, painter, masks, theme, size);
+        });
     }
     if let (Some(footer), Some(rect)) = (&spec.footer, layout.footer) {
         let actions = footer_actions(spec, layout);
@@ -1541,8 +1613,10 @@ mod tests {
                 crate::view::modal::with_settings_spec(&model, &state, |spec| {
                     let layout = super::super::layout(spec, width, height, scale);
                     let options = select_options(spec, &layout);
-                    assert_eq!(options.len(), count);
+                    assert!(!options.is_empty() && options.len() <= count);
                     assert_eq!(options[0].2, "Custom");
+                    let (_, visible, total) = select_popup_extent(spec, &layout).unwrap();
+                    assert_eq!((visible, total), (options.len(), count));
                     for (row, choice, _, rect) in options {
                         assert_eq!(
                             super::super::hit_test(
@@ -1553,8 +1627,15 @@ mod tests {
                             ),
                             OverlayHit::Choice { row, choice }
                         );
-                        assert!(rect.y + rect.h <= layout.footer.unwrap().y);
+                        assert!(rect.y + rect.h <= height);
                     }
+                });
+                let form = state.form.as_mut().unwrap();
+                form.select_cursor = count - 1;
+                crate::view::modal::with_settings_spec(&model, &state, |spec| {
+                    let layout = super::super::layout(spec, width, height, scale);
+                    let options = select_options(spec, &layout);
+                    assert_eq!(options.last().map(|option| option.1), Some(count - 1));
                 });
             }
         }

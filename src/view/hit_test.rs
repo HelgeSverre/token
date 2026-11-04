@@ -327,6 +327,24 @@ pub fn settings_records_at(model: &AppModel, point: Point) -> Option<crate::layo
     .filter(|viewport| viewport.rect().contains(point.x as f32, point.y as f32))
 }
 
+/// Open form dropdown under the pointer: (visible rows, option count), from
+/// the same measured popup that paint and clicks use.
+pub fn settings_select_popup_at(model: &AppModel, point: Point) -> Option<(usize, usize)> {
+    super::modal::with_modal_overlay_layout(
+        model,
+        model.window_size.0 as usize,
+        model.window_size.1 as usize,
+        model.metrics.scale_factor,
+        super::overlay_surface::settings_select_popup_extent,
+    )
+    .flatten()
+    .filter(|(panel, _, _)| {
+        let (x, y) = (point.x as usize, point.y as usize);
+        x >= panel.x && x < panel.x + panel.w && y >= panel.y && y < panel.y + panel.h
+    })
+    .map(|(_, visible, count)| (visible, count))
+}
+
 impl HitTarget {
     /// Get the appropriate mouse cursor icon for this hit target
     pub fn cursor_icon(&self) -> winit::window::CursorIcon {

@@ -631,7 +631,7 @@ pub const SPECIMENS: &[Specimen] = &[
         id: "select.open-options",
         preview: Preview::SelectOptions,
         category: 3,
-        source: "view/controls.rs · select_option_rects + view/button.rs",
+        source: "view/select.rs · Select::render_popup (shared menu surface)",
         tokens: "overlay recessed wash / accent / button hover",
     },
     Specimen {

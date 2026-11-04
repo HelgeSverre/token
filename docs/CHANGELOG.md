@@ -30,6 +30,11 @@ All notable changes to Token are documented in this file.
   give wrapped form choices enough vertical space so language choices no longer
   overlap the following fields.
 
+- Open Settings dropdowns as a menu attached to the field: left-aligned options,
+  a check on the current value, one highlighted row for the keyboard cursor or
+  pointer, and mouse-wheel scrolling when the list is taller than the window.
+  The closed field shows a drawn chevron instead of a text glyph.
+
 - Improve muted status and inactive-tab labels in bundled dark themes so
   status and tab text meet a 4.5:1 palette contrast floor. Preserve custom theme
   colors, existing backgrounds, syntax colors and active-tab accents.

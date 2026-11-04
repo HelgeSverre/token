@@ -290,6 +290,13 @@ pub enum SettingsMsg {
         delta: isize,
         max: usize,
     },
+    /// Wheel over an open form dropdown: move its window by `rows` and keep
+    /// the keyboard cursor inside the `visible` rows of `count` options.
+    ScrollSelect {
+        rows: isize,
+        visible: usize,
+        count: usize,
+    },
     EndFieldSelection,
     FieldPointer {
         row: usize,

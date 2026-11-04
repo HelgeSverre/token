@@ -63,11 +63,14 @@ pub fn render_select(
         if open { colors.accent } else { colors.hairline }.to_argb_u32(),
     );
     let px = |n: f64| (n * scale).round() as usize;
-    let size = (12.0 * scale) as f32;
+    let size = (13.0 * scale) as f32;
+    // Text, then a chevron box on the trailing edge; the label never runs
+    // under the chevron.
+    let chevron_box = px(28.0);
     let label = painter.truncate_sized(
         label,
         size,
-        rect.w.saturating_sub(px(32.0)) as f32,
+        rect.w.saturating_sub(px(10.0) + chevron_box) as f32,
         super::helpers::EllipsisSide::End,
     );
     frame.push_clip(Rect::new(
@@ -76,25 +79,44 @@ pub fn render_select(
         rect.w as f32,
         rect.h as f32,
     ));
+    let line_height = painter.line_height_for_size(size);
+    let text_y = rect.y + rect.h.saturating_sub(line_height) / 2;
     painter.draw_sized(
         frame,
-        rect.x + px(8.0),
-        rect.y + px(7.0),
+        rect.x + px(10.0),
+        text_y,
         &label,
         size,
         0.0,
         colors.text_primary.to_argb_u32(),
     );
-    painter.draw_sized(
+    draw_chevron_down(
         frame,
-        rect.x + rect.w.saturating_sub(px(20.0)),
-        rect.y + px(7.0),
-        "▾",
-        size,
-        0.0,
-        colors.text_dim.to_argb_u32(),
+        rect.x + rect.w.saturating_sub(chevron_box / 2),
+        rect.y + rect.h / 2,
+        scale,
+        if open {
+            colors.text_primary
+        } else {
+            colors.text_dim
+        }
+        .to_argb_u32(),
     );
     frame.pop_clip();
+}
+
+/// A downward chevron centred on (`cx`, `cy`): two diagonal strokes, four
+/// logical pixels each way, drawn as scaled squares so it stays crisp at any
+/// display scale without a font glyph.
+fn draw_chevron_down(frame: &mut Frame, cx: usize, cy: usize, scale: f64, color: u32) {
+    let half = ((4.0 * scale).round() as usize).max(2);
+    let thick = ((1.5 * scale).round() as usize).max(1);
+    let top = cy.saturating_sub(half.div_ceil(2));
+    for step in 0..=half {
+        let y = top + step;
+        frame.fill_rect_px((cx + step).saturating_sub(half), y, thick, thick, color);
+        frame.fill_rect_px(cx + half - step, y, thick, thick, color);
+    }
 }
 
 pub fn render_field_surface(frame: &mut Frame, theme: &Theme, rect: WidgetRect, focused: bool) {
@@ -171,32 +193,6 @@ pub fn choice_group_rects(row: WidgetRect, labels: &[&str], scale_factor: f64) -
             };
             x += w + gap;
             rect
-        })
-        .collect()
-}
-
-/// The popup rows below a Settings select anchor, clamped to the form body.
-pub fn select_option_rects(
-    anchor: WidgetRect,
-    count: usize,
-    top: usize,
-    bottom: usize,
-    scale_factor: f64,
-) -> Vec<WidgetRect> {
-    if count == 0 {
-        return Vec::new();
-    }
-    let height = scaled(28.0, scale_factor).min(bottom.saturating_sub(top) / count);
-    let total = height * count;
-    let y = (anchor.y + anchor.h)
-        .min(bottom.saturating_sub(total))
-        .max(top);
-    (0..count)
-        .map(|choice| WidgetRect {
-            x: anchor.x,
-            y: y + choice * height,
-            w: anchor.w,
-            h: height,
         })
         .collect()
 }

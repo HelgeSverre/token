@@ -206,6 +206,14 @@ pub fn header_pad_x(scale_factor: f64) -> usize {
 /// one implementation; re-exported here for existing consumers.)
 pub use crate::layout::anchor::WidthRule;
 
+/// The open Settings form dropdown's panel, visible rows and option count.
+pub fn settings_select_popup_extent(
+    spec: &OverlaySpec,
+    layout: &OverlayLayout,
+) -> Option<(crate::view::geometry::WidgetRect, usize, usize)> {
+    settings_page::select_popup_extent(spec, layout)
+}
+
 pub struct SettingsRecord<'a> {
     pub id: &'a str,
     pub detail: String,
@@ -215,6 +223,7 @@ pub struct SettingsRecord<'a> {
 pub struct SettingsCollection<'a> {
     pub enable_label: Option<&'static str>,
     pub select_cursor: usize,
+    pub select_scroll: usize,
     pub hovered: Option<crate::messages::SettingsCollectionAction>,
     pub title: &'static str,
     pub description: &'static str,
@@ -880,6 +889,9 @@ pub struct OverlayLayout {
     /// Visible form rows retain signed origins for partially scrolled text areas.
     pub(crate) settings_items: Vec<(usize, Rect)>,
     pub(crate) settings_positions: Vec<std::ops::Range<usize>>,
+    /// Window the layout was solved for, so nested popups anchor in the same
+    /// space as their owner.
+    pub(crate) window: (usize, usize),
     /// One entry per `Body::Fields` field, in order. Empty otherwise.
     pub fields: Vec<FieldLayout>,
     /// The banner zone of a `Body::Zones` body. `None` unless
@@ -1462,6 +1474,7 @@ pub fn layout_measured(
         settings_records_scrollbar: None,
         settings_items: Vec::new(),
         settings_positions: Vec::new(),
+        window: (window_width, window_height),
         fields,
         zones_banner,
         zones_code,

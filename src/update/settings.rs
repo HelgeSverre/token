@@ -569,6 +569,29 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             form.records_scroll = form.records_scroll.saturating_add_signed(delta).min(max);
             Some(Cmd::Redraw)
         }
+        SettingsMsg::ScrollSelect {
+            rows,
+            visible,
+            count,
+        } => {
+            let form = state_mut(&mut model.ui)?.form.as_mut()?;
+            form.open_select?;
+            let visible = visible.max(1);
+            let scroll = form
+                .select_scroll
+                .saturating_add_signed(rows)
+                .min(count.saturating_sub(visible));
+            if scroll == form.select_scroll {
+                return None;
+            }
+            form.select_scroll = scroll;
+            // The viewport follows the cursor, so a wheel that leaves the
+            // cursor behind would snap straight back: carry it along.
+            form.select_cursor = form
+                .select_cursor
+                .clamp(scroll, (scroll + visible - 1).min(count.saturating_sub(1)));
+            Some(Cmd::Redraw)
+        }
         SettingsMsg::CollectionAction(action) => {
             use crate::messages::SettingsCollectionAction;
             let form = state_mut(&mut model.ui)?.form.as_mut()?;
@@ -586,6 +609,7 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                         _ => return None,
                     };
                     form.open_select = (form.open_select != Some(row)).then_some(row);
+                    form.select_scroll = 0;
                     form.focused = None;
                     state_mut(&mut model.ui)?.selected_index = row;
                     return Some(Cmd::Redraw);

@@ -2,7 +2,6 @@
 use super::button::{render_button, ButtonState, ButtonStyle};
 use super::controls::{
     choice_group_rects, render_checkbox, render_disclosure, render_field_surface, render_select,
-    select_option_rects,
 };
 use super::frame::RoundedRectMaskCache;
 use super::geometry::WidgetRect;
@@ -399,6 +398,7 @@ impl GalleryRenderer {
             selected: state.selected_theme,
             state: &state.theme_select,
             focused: state.focus == crate::model::gallery::GalleryFocus::Theme,
+            hover: None,
             scale,
         };
         for (rect, label) in [
@@ -1510,40 +1510,27 @@ fn paint_specimen(
             ];
             let mut anchor = widget(rect);
             anchor.h = (29.0 * scale) as usize;
-            render_select(frame, painter, theme, anchor, "On focus loss", true, scale);
-            for (index, option) in options
-                .iter()
-                .zip(select_option_rects(
-                    anchor,
-                    options.len(),
-                    anchor.y + anchor.h,
-                    widget(rect).y + widget(rect).h,
-                    scale,
-                ))
-                .enumerate()
-            {
-                render_button(
-                    frame,
-                    painter,
-                    theme,
-                    Rect::new(
-                        option.1.x as f32,
-                        option.1.y as f32,
-                        option.1.w as f32,
-                        option.1.h as f32,
-                    ),
-                    option.0,
-                    ButtonStyle {
-                        state: if index == 1 {
-                            ButtonState::Hovered
-                        } else {
-                            ButtonState::Normal
-                        },
-                        text_size: Some((11.0 * scale) as f32),
-                        ..Default::default()
-                    },
-                );
-            }
+            let state = crate::model::select::SelectState {
+                open: true,
+                active: 1,
+                scroll: 0,
+            };
+            let select = super::select::Select {
+                anchor: Rect::new(
+                    anchor.x as f32,
+                    anchor.y as f32,
+                    anchor.w as f32,
+                    anchor.h as f32,
+                ),
+                labels: &options,
+                selected: 0,
+                state: &state,
+                focused: true,
+                hover: Some(2),
+                scale,
+            };
+            select.render_anchor(frame, painter, theme);
+            select.render_popup(frame, painter, masks, theme, size);
         }
         Preview::ChoiceGroup => {
             let labels = ["Automatic", "On", "Off"];

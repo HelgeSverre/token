@@ -253,6 +253,9 @@ pub(crate) struct SettingsForm {
     pub dirty: bool,
     pub open_select: Option<usize>,
     pub select_cursor: usize,
+    /// First visible option of the open dropdown; the cursor stays inside
+    /// the window it describes.
+    pub select_scroll: usize,
     pub preset: Option<usize>,
     pub preset_id: Option<String>,
 }
@@ -422,6 +425,7 @@ impl SettingsForm {
             dirty: false,
             open_select: None,
             select_cursor: 0,
+            select_scroll: 0,
             preset: None,
             preset_id: value.preset_id,
         };

@@ -3344,6 +3344,23 @@ fn scroll_hovered_region_with_perf(
         // 3 rows without moving selection").
         HoverRegion::Modal => {
             if let Some((x, y)) = mouse_position {
+                if v_delta != 0 {
+                    if let Some((visible, count)) = token::view::hit_test::settings_select_popup_at(
+                        model,
+                        token::view::hit_test::Point::new(x, y),
+                    ) {
+                        return update(
+                            model,
+                            Msg::Ui(UiMsg::Settings(
+                                token::messages::SettingsMsg::ScrollSelect {
+                                    rows: v_delta as isize,
+                                    visible,
+                                    count,
+                                },
+                            )),
+                        );
+                    }
+                }
                 if let Some(viewport) = token::view::hit_test::settings_records_at(
                     model,
                     token::view::hit_test::Point::new(x, y),
