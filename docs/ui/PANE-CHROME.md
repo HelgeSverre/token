@@ -8,7 +8,16 @@
 
 ## Purpose and boundary
 
-**Planned; no shared pane-chrome component exists.** Pane chrome is a small
+**Static presentation implemented; host integration remains planned.**
+`src/view/pane_chrome.rs` supplies measured title/action packing, stable action
+hit targets, optional icon fallbacks, and passive leading/trailing footer runs.
+Six `pane-header.*` / `pane-footer.*` gallery specimens use these helpers.
+Existing dock headers are unchanged. Overflow menus, keyboard/capture routing,
+dock actions and floating placement still require a real host; the static
+specimens do not implement those interactions. The API sketch below remains the
+full target contract, not a description of completed host integration.
+
+Pane chrome is a small
 composition contract for the fixed top and optional bottom bands of a pane:
 the title describes its content; optional actions operate on that content; a
 footer can show compact context at its two edges. It gives docked and floating
@@ -114,6 +123,13 @@ wrappers for every alignment combination, a universal
 `ChromeWidget`, or a substitute [Toolbar](TOOLBAR.md).
 
 ## Geometry and interaction
+
+The initial helper uses a 30-logical-pixel minimum header, 22-pixel action cells,
+and font-derived footer height. A two-slot footer gives each slot at most half
+the inner width; if either cannot retain up to 64 logical pixels (or its full
+width when shorter), the explicit `FooterPriority` keeps one slot. Empty text
+and an unlabelled dot do not create a footer. Separators are one physical pixel.
+These are native trial metrics, not changes to existing dock/tab heights.
 
 The host gives pane chrome the pane border box in physical layout px. Header
 and footer heights are token metrics derived from the scoped font. For a dock,

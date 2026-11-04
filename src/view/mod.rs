@@ -23,6 +23,7 @@ pub mod helpers;
 pub mod hit_test;
 pub mod modal;
 pub mod overlay_surface;
+pub mod pane_chrome;
 pub mod panels;
 pub mod scrollbar;
 pub mod section_navigation;

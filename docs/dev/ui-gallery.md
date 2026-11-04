@@ -7,7 +7,7 @@ Cargo feature. All build artifacts stay under `target/`.
 
 ## Current slice
 
-The catalog currently contains 71 static specimens and one interactive sandbox:
+The catalog currently contains 77 static specimens and one interactive sandbox:
 
 - `selection.interactive`: live Off/Auto/On segmented selection and a reset button.
   Click an option or Tab from the shell into the sandbox; Left/Right and Home/End
@@ -193,12 +193,14 @@ both production and the gallery will actually use it.
 ## Planned performance-study coverage
 
 The [prototype component decision record](../ui/PROTOTYPE-COMPONENTS.md) defines
-new proposed families. They are **not** part of the current 72 specimens and
-should only enter the gallery with production layout/painters:
+new proposed families. Six shared pane-chrome specimens are now part of the
+78-specimen catalog: title-only, optional icon/actions, overflow, hint footer,
+status/footer metadata, and narrow-footer priority. They call the ordinary
+`view::pane_chrome` helpers, but are static: no dock/float/overflow-menu interaction
+is implied. An absent footer is shown in the title-only specimen.
 
-- `pane-header.*`: title-only, optional icon/actions, truncation and overflow.
-- `pane-footer.*`: absent, hint with/without an icon, and status plus trailing
-  metadata. Footer presence must not be inferred from its label.
+Remaining families should enter only with production layout/painters:
+
 - `breadcrumbs.*`: file/path/symbol, optional icons, narrow overflow and
   independent editor-group context.
 - `dockable-panel.*`: docked and floating hosts with the same content, title

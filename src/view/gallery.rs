@@ -141,6 +141,11 @@ pub(super) fn specimen_size(preview: Preview, compact: bool) -> (f32, f32) {
         Preview::SelectOptions => (field_width, 171.0),
         Preview::ChoiceGroup => (field_width, if compact { 74.0 } else { 48.0 }),
         Preview::InteractiveSelection => (popup_width, 70.0),
+        Preview::PaneChrome(
+            crate::model::gallery::PaneChromePreview::Overflow
+            | crate::model::gallery::PaneChromePreview::NarrowFooter,
+        ) => (130.0, 140.0),
+        Preview::PaneChrome(_) => (popup_width, 140.0),
         Preview::Disclosure { .. } => (field_width, 22.0),
         Preview::SearchField => (popup_width, 184.0),
         Preview::ListRow => (popup_width, 176.0),
@@ -762,6 +767,98 @@ fn paint_settings_records(
     super::modal::render_modals(frame, painter, &model, size.0, size.1, masks);
 }
 
+fn paint_pane_chrome(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    theme: &Theme,
+    rect: Rect,
+    scale: f64,
+    preview: crate::model::gallery::PaneChromePreview,
+) {
+    use super::pane_chrome::*;
+    use crate::model::gallery::PaneChromePreview as P;
+    let actions = [
+        PaneAction {
+            id: 10,
+            label: "Dock",
+            style: ButtonStyle {
+                state: ButtonState::Selected,
+                focused: true,
+                ..Default::default()
+            },
+        },
+        PaneAction {
+            id: 20,
+            label: "Close",
+            style: ButtonStyle {
+                state: ButtonState::Disabled,
+                ..Default::default()
+            },
+        },
+    ];
+    let icon = PaneIcon {
+        glyph: '\u{2139}',
+        fallback: 'i',
+    };
+    let header = PaneHeader {
+        title: if matches!(preview, P::Overflow) {
+            "Long pane title and context"
+        } else {
+            "Inspector"
+        },
+        icon: matches!(preview, P::Actions).then_some(icon),
+        actions: if matches!(preview, P::Actions | P::Overflow) {
+            &actions[..]
+        } else {
+            &[]
+        },
+    };
+    let hint = [
+        PaneFooterRun::Icon(icon, FooterEmphasis::Quiet),
+        PaneFooterRun::Text("Read-only preview", FooterEmphasis::Quiet),
+    ];
+    let status = [
+        PaneFooterRun::Dot(FooterEmphasis::Accent),
+        PaneFooterRun::Text("Connected", FooterEmphasis::Normal),
+    ];
+    let trailing = [PaneFooterRun::Text("43 samples", FooterEmphasis::Quiet)];
+    let footer = PaneFooter {
+        leading: match preview {
+            P::HintFooter => &hint,
+            P::StatusFooter | P::NarrowFooter => &status,
+            _ => &[],
+        },
+        trailing: if matches!(preview, P::StatusFooter | P::NarrowFooter) {
+            &trailing
+        } else {
+            &[]
+        },
+        priority: FooterPriority::Leading,
+    };
+    let height = header.height(painter, scale);
+    let layout = PaneLayout::new(rect, height, footer.height(painter, scale));
+    frame.fill_rect(layout.content, theme.sidebar.background.to_argb_u32());
+    let header_layout = header.layout(painter, layout.header, scale);
+    header.render(frame, painter, theme, &header_layout, scale);
+    if let Some(rect) = layout.footer {
+        let layout = footer.layout(painter, rect, scale);
+        footer.render(frame, painter, theme, &layout, scale);
+    }
+    // Context is explicitly a fixture, not simulated performance data.
+    frame.push_clip(layout.content);
+    let mut ui = painter.with_font(FontRole::Ui);
+    ui.draw_sized(
+        frame,
+        (rect.x + 8.0 * scale as f32) as usize,
+        (layout.content.y + 12.0 * scale as f32) as usize,
+        "Static specimen",
+        (11.0 * scale) as f32,
+        0.0,
+        theme.overlay.text_dim.to_argb_u32(),
+    );
+    frame.pop_clip();
+}
+
 fn paint_specimen(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -775,6 +872,9 @@ fn paint_specimen(
     let masks = &mut *context.masks;
     use crate::model::gallery::Preview;
     match spec.preview {
+        Preview::PaneChrome(preview) => {
+            paint_pane_chrome(frame, painter, theme, rect, scale, preview)
+        }
         Preview::InteractiveSelection => {
             let controls = SelectionPlaygroundLayout::new(rect, scale);
             super::segmented_control::SegmentedControl {
