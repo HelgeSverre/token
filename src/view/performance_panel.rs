@@ -312,6 +312,10 @@ pub fn render(
         muted,
     );
     let (sx, sy, sw, _) = snap(layout.stats);
+    // Three columns; at narrow widths the values lose their unit (the frame
+    // time readout above already shows it) so neighbours cannot touch.
+    let cell_w = sw / 3;
+    let gap = model.char_width;
     for (i, (name, value)) in [
         ("Mean", view.frame_mean()),
         ("Median", view.frame_median()),
@@ -320,9 +324,13 @@ pub fn render(
     .into_iter()
     .enumerate()
     {
-        let cell_x = sx + i * sw / 3;
+        let cell_x = sx + i * cell_w;
         label(frame, painter, cell_x, sy, name, muted);
-        painter.draw(frame, cell_x, sy + model.line_height, &format_ms(value), fg);
+        let mut text = format_ms(value);
+        if painter.measure_width(&text) + gap > cell_w as f32 {
+            text = format_ms_compact(value);
+        }
+        painter.draw(frame, cell_x, sy + model.line_height, &text, fg);
     }
     rule(frame, layout.frame, border);
 
@@ -551,6 +559,12 @@ fn ms(duration: std::time::Duration) -> f64 {
 #[cfg(debug_assertions)]
 fn format_ms(duration: Option<std::time::Duration>) -> String {
     duration.map_or_else(|| "—".to_owned(), |d| format!("{:.2} ms", ms(d)))
+}
+
+/// Unit-less, one-decimal milliseconds for cells too narrow for `format_ms`.
+#[cfg(debug_assertions)]
+fn format_ms_compact(duration: Option<std::time::Duration>) -> String {
+    duration.map_or_else(|| "—".to_owned(), |d| format!("{:.1}", ms(d)))
 }
 
 #[cfg(debug_assertions)]

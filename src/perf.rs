@@ -344,7 +344,7 @@ impl PerfStage {
             },
             Self::TextCursors => PerfStageSpec {
                 label: "Text Cursors",
-                short_label: "Cursor",
+                short_label: "Carets",
                 color: 0xFFCBA6F7,
             },
             Self::Gutter => PerfStageSpec {

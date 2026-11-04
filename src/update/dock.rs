@@ -523,10 +523,23 @@ pub(super) fn update_panel_placement(model: &mut AppModel, msg: PanelPlacementMs
             );
         }
     }
-    if !matches!(msg, PanelPlacementMsg::SetFloatingRect { .. }) {
-        model.recalculate_viewports();
+    if matches!(msg, PanelPlacementMsg::SetFloatingRect { .. }) {
+        return Some(Cmd::Redraw);
     }
-    Some(Cmd::Redraw)
+    model.recalculate_viewports();
+    // Moving a panel out of or into a dock can make a sibling the active
+    // panel; give it the same open-time sync a direct toggle would.
+    let mut cmd = with_terminal_sync(model, Cmd::Redraw);
+    let outline_visible = DockPosition::ALL.into_iter().any(|position| {
+        let dock = model.dock_layout.dock(position);
+        dock.is_open && dock.active_panel() == Some(PanelId::OUTLINE)
+    });
+    if outline_visible {
+        if let Some(refresh) = crate::update::outline::refresh_outline_if_stale(model) {
+            cmd = Cmd::Batch(vec![cmd, refresh]);
+        }
+    }
+    Some(cmd)
 }
 
 #[cfg(test)]
@@ -976,5 +989,35 @@ mod tests {
             model.ui.focus,
             FocusTarget::FloatingPanel(PanelId::Performance)
         );
+    }
+
+    #[test]
+    fn floating_the_active_panel_schedules_the_outline_that_becomes_visible() {
+        let mut model = test_model();
+        model.document_mut().language = crate::syntax::LanguageId::Rust;
+        let document_id = model
+            .document()
+            .id
+            .expect("test document should have an id");
+        let revision = model.document().revision;
+        model.dock_layout.right.activate(PanelId::Performance);
+
+        let cmd =
+            update_panel_placement(&mut model, PanelPlacementMsg::Float(PanelId::Performance));
+        assert_eq!(
+            model.dock_layout.right.active_panel(),
+            Some(PanelId::OUTLINE)
+        );
+        let Some(Cmd::Batch(cmds)) = cmd else {
+            panic!("revealing an uncached outline should batch redraw and syntax refresh");
+        };
+        assert!(cmds.iter().any(|cmd| matches!(
+            cmd,
+            Cmd::DebouncedSyntaxParse {
+                document_id: id,
+                revision: rev,
+                delay_ms: 0,
+            } if *id == document_id && *rev == revision
+        )));
     }
 }
