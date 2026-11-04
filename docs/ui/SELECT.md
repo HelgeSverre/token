@@ -11,16 +11,21 @@
 Token's select is a non-editable, single-value popup button, not a general
 component framework. There are two independent implementations:
 
-| Consumer                        | Durable selection owner            | Transient popup owner                      | View                  |
-| ------------------------------- | ---------------------------------- | ------------------------------------------ | --------------------- |
-| Component Gallery theme control | GalleryState.selected_theme        | GalleryState.theme_select                  | view/select.rs Select |
-| Settings collection form choice | SettingsForm.choices[index].active | SettingsForm.open_select and select_cursor | view/settings_page.rs |
+| Consumer                        | Durable selection owner            | Transient popup owner                                     | View                  |
+| ------------------------------- | ---------------------------------- | --------------------------------------------------------- | --------------------- |
+| Component Gallery theme control | GalleryState.selected_theme        | GalleryState.theme_select                                 | view/select.rs Select |
+| Settings collection form choice | SettingsForm.choices[index].active | SettingsForm.open_select, select_cursor and select_scroll | view/select.rs Select |
 
 The shared anchor painter, render_select in [controls.rs:47](../../src/view/controls.rs#L47),
 receives a physical rectangle, label, open flag, scale, theme, and painters. It
 does not own labels, validate selection, hit-test, capture a pointer, mutate a
-value, or paint a popup. The gallery Select view is the only reusable select
-view type currently. Settings intentionally uses a modal-specific option layout.
+value, or paint a popup. Both consumers paint the popup through
+[view/select.rs](../../src/view/select.rs) `Select`, a menu-anchored list on
+the shared overlay surface: as wide as its anchor, the committed value checked,
+the keyboard cursor selected, the pointer row washed, scrolling when the window
+is short. Settings borrows its transient fields into a `SelectState` for each
+paint and hit test (`Select::layout_popup`), so pointer targets come from the
+same measured plan as the paint.
 
 The real flow is Message -> Update -> Command -> Render:
 

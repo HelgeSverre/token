@@ -19,6 +19,27 @@ pub struct Session {
     layout: Option<Node>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     recent_folds: Vec<crate::folding::persistence::RecentFolds>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_panel_layout"
+    )]
+    panel_layout: Option<PanelLayout>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PanelLayout {
+    version: u32,
+    docks: crate::panel::DockLayout,
+    non_docked: crate::panel::NonDockedPanels,
+}
+
+fn deserialize_panel_layout<'de, D>(deserializer: D) -> Result<Option<PanelLayout>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,10 +104,15 @@ impl Session {
             .as_ref()
             .map(|workspace| absolute(&workspace.root, cwd));
         Self {
-            version: 1,
+            version: 2,
             layout: Node::capture(&model.editor_area.layout, model, cwd, workspace.as_deref()),
             workspace,
             recent_folds: model.editor_area.recent_folds.clone(),
+            panel_layout: Some(PanelLayout {
+                version: 1,
+                docks: model.dock_layout.clone(),
+                non_docked: model.non_docked_panels.clone(),
+            }),
         }
     }
 
@@ -97,7 +123,7 @@ impl Session {
     /// Validate before installing any state. Limits bound corrupted/local files,
     /// not ordinary editor buffers; no partial layout is accepted on failure.
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.version != 1 {
+        if self.version != 1 && self.version != 2 {
             return Err("Unsupported session version");
         }
         let mut recent = self.recent_folds.clone();
@@ -149,6 +175,11 @@ impl Session {
     /// independent per-tab editors. Returns the number of restored tabs.
     pub fn install(&self, model: &mut AppModel) -> Result<usize, &'static str> {
         self.validate()?;
+        if let Some(panel_layout) = self.panel_layout.as_ref().filter(|layout| layout.valid()) {
+            let (docks, non_docked) = panel_layout.normalized();
+            model.dock_layout = docks;
+            model.non_docked_panels = non_docked;
+        }
         model
             .editor_area
             .recent_folds
@@ -236,6 +267,65 @@ impl Session {
         }
         model.ui.set_status(status);
         Ok(count)
+    }
+}
+
+impl PanelLayout {
+    fn valid(&self) -> bool {
+        self.version == 1
+            && self
+                .non_docked
+                .by_id
+                .values()
+                .all(|placement| match placement {
+                    crate::panel::NonDockedPanel::Floating { rect, .. } => rect.is_finite(),
+                    crate::panel::NonDockedPanel::Hidden { last } => match last {
+                        crate::panel::LastPresentation::Docked { .. } => true,
+                        crate::panel::LastPresentation::Floating { rect, .. } => rect.is_finite(),
+                    },
+                })
+    }
+
+    fn normalized(&self) -> (crate::panel::DockLayout, crate::panel::NonDockedPanels) {
+        let mut docks = self.docks.clone();
+        let mut seen = HashSet::new();
+        for position in crate::panel::DockPosition::ALL {
+            let dock = docks.dock_mut(position);
+            let active = dock.active_panel();
+            dock.panel_ids
+                .retain(|panel| panel.available_in_current_build() && seen.insert(*panel));
+            dock.active_index = active
+                .and_then(|panel| {
+                    dock.panel_ids
+                        .iter()
+                        .position(|candidate| *candidate == panel)
+                })
+                .or_else(|| (!dock.panel_ids.is_empty()).then_some(0));
+            if dock.panel_ids.is_empty() {
+                dock.is_open = false;
+            }
+        }
+        let mut non_docked = self.non_docked.clone();
+        non_docked
+            .by_id
+            .retain(|panel, _| panel.available_in_current_build());
+        for panel in non_docked.by_id.keys().copied().collect::<Vec<_>>() {
+            for position in crate::panel::DockPosition::ALL {
+                docks.dock_mut(position).remove_panel(panel);
+            }
+            seen.insert(panel);
+        }
+        // A session saved by a build without some panel (for example a release
+        // build and the debug-only Performance panel) must still offer it.
+        let defaults = crate::panel::DockLayout::default();
+        for position in crate::panel::DockPosition::ALL {
+            for panel in defaults.dock(position).panel_ids.iter().copied() {
+                if seen.insert(panel) {
+                    docks.dock_mut(position).register_panel(panel);
+                }
+            }
+        }
+        (docks, non_docked)
     }
 }
 
@@ -582,5 +672,101 @@ impl SavedTab {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod panel_layout_tests {
+    use super::*;
+
+    #[test]
+    fn v1_without_panel_layout_remains_valid_and_uses_defaults() {
+        let value = serde_json::json!({
+            "version": 1,
+            "workspace": null,
+            "layout": null,
+            "recent_folds": []
+        });
+        let session: Session = serde_json::from_value(value).unwrap();
+        assert!(session.panel_layout.is_none());
+        assert!(session.validate().is_ok());
+    }
+
+    #[test]
+    fn malformed_panel_layout_is_recovered_without_rejecting_document_session() {
+        let value = serde_json::json!({
+            "version": 2,
+            "workspace": null,
+            "layout": null,
+            "recent_folds": [],
+            "panel_layout": {
+                "version": 999,
+                "docks": "not a dock layout",
+                "non_docked": {}
+            }
+        });
+        let session: Session = serde_json::from_value(value).unwrap();
+        assert!(session.panel_layout.is_none());
+        assert!(session.validate().is_ok());
+    }
+
+    #[test]
+    fn normalized_layout_re_registers_available_panels_missing_from_a_saved_layout() {
+        let mut docks = crate::panel::DockLayout::default();
+        docks.right.remove_panel(crate::panel::PanelId::Performance);
+        docks.bottom.remove_panel(crate::panel::PanelId::Usages);
+        let layout = PanelLayout {
+            version: 1,
+            docks,
+            non_docked: crate::panel::NonDockedPanels::default(),
+        };
+        let (docks, _) = layout.normalized();
+        for (panel, position) in [
+            (
+                crate::panel::PanelId::Usages,
+                crate::panel::DockPosition::Bottom,
+            ),
+            #[cfg(debug_assertions)]
+            (
+                crate::panel::PanelId::Performance,
+                crate::panel::DockPosition::Right,
+            ),
+        ] {
+            assert_eq!(docks.find_panel(panel), Some(position), "{panel:?}");
+        }
+        // Re-registration appends; the saved order and active panel stay.
+        assert_eq!(docks.right.panel_ids[0], crate::panel::PanelId::OUTLINE);
+        assert_eq!(docks.bottom.panel_ids[0], crate::panel::PanelId::TERMINAL);
+    }
+
+    #[test]
+    fn normalized_layout_does_not_redock_a_hidden_or_floating_panel() {
+        let mut docks = crate::panel::DockLayout::default();
+        docks.right.remove_panel(crate::panel::PanelId::Performance);
+        let mut non_docked = crate::panel::NonDockedPanels::default();
+        non_docked.by_id.insert(
+            crate::panel::PanelId::Performance,
+            crate::panel::NonDockedPanel::Hidden {
+                last: crate::panel::LastPresentation::Docked {
+                    return_slot: crate::panel::DockReturnSlot {
+                        dock: crate::panel::DockPosition::Right,
+                        index: 1,
+                    },
+                },
+            },
+        );
+        let layout = PanelLayout {
+            version: 1,
+            docks,
+            non_docked,
+        };
+        let (docks, non_docked) = layout.normalized();
+        assert_eq!(docks.find_panel(crate::panel::PanelId::Performance), None);
+        assert_eq!(
+            non_docked
+                .by_id
+                .contains_key(&crate::panel::PanelId::Performance),
+            cfg!(debug_assertions)
+        );
     }
 }

@@ -303,6 +303,13 @@ pub(super) fn select_key(model: &mut AppModel, delta: isize, confirm: bool) -> O
     }
 }
 
+/// Close an open form dropdown without changing the draft.
+pub(super) fn close_select(model: &mut AppModel) {
+    if let Some(form) = state_mut(&mut model.ui).and_then(|state| state.form.as_mut()) {
+        form.open_select = None;
+    }
+}
+
 pub(super) fn adjust_form(model: &mut AppModel) -> Option<Cmd> {
     let state = state_mut(&mut model.ui)?;
     if matches!(
@@ -562,6 +569,29 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
             form.records_scroll = form.records_scroll.saturating_add_signed(delta).min(max);
             Some(Cmd::Redraw)
         }
+        SettingsMsg::ScrollSelect {
+            rows,
+            visible,
+            count,
+        } => {
+            let form = state_mut(&mut model.ui)?.form.as_mut()?;
+            form.open_select?;
+            let visible = visible.max(1);
+            let scroll = form
+                .select_scroll
+                .saturating_add_signed(rows)
+                .min(count.saturating_sub(visible));
+            if scroll == form.select_scroll {
+                return None;
+            }
+            form.select_scroll = scroll;
+            // The viewport follows the cursor, so a wheel that leaves the
+            // cursor behind would snap straight back: carry it along.
+            form.select_cursor = form
+                .select_cursor
+                .clamp(scroll, (scroll + visible - 1).min(count.saturating_sub(1)));
+            Some(Cmd::Redraw)
+        }
         SettingsMsg::CollectionAction(action) => {
             use crate::messages::SettingsCollectionAction;
             let form = state_mut(&mut model.ui)?.form.as_mut()?;
@@ -579,6 +609,7 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                         _ => return None,
                     };
                     form.open_select = (form.open_select != Some(row)).then_some(row);
+                    form.select_scroll = 0;
                     form.focused = None;
                     state_mut(&mut model.ui)?.selected_index = row;
                     return Some(Cmd::Redraw);
@@ -765,12 +796,7 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                             .is_some_and(|form| Arc::ptr_eq(&form.session, &session))
                 });
                 if let Some(state) = state_mut(&mut model.ui) {
-                    if matches!(*change, SettingsChange::Remove { .. })
-                        && state
-                            .form
-                            .as_ref()
-                            .is_some_and(|form| Arc::ptr_eq(&form.session, &session))
-                    {
+                    if removed_current {
                         state.form = None;
                     }
                     state.refresh_entries(&model.config);
@@ -791,10 +817,12 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
                         if let Some(form) =
                             state_mut(&mut model.ui).and_then(|state| state.form.as_ref())
                         {
-                            commands.push(Cmd::InspectSettingsExecutable {
-                                session: Arc::clone(&form.session),
-                                command: form.fields[0].input.text(),
-                            });
+                            if let Some(index) = form.executable_field() {
+                                commands.push(Cmd::InspectSettingsExecutable {
+                                    session: Arc::clone(&form.session),
+                                    command: form.fields[index].input.text(),
+                                });
+                            }
                         }
                     }
                     SettingsChange::LanguageServer {
@@ -918,6 +946,47 @@ pub(super) fn update_settings(model: &mut AppModel, msg: SettingsMsg) -> Option<
 mod tooling_tests {
     use super::*;
     use crate::model::ModalId;
+
+    #[test]
+    fn template_dropdown_keyboard_selection_only_changes_the_draft() {
+        use crate::messages::SettingsCollectionAction;
+        let mut model = AppModel::new(1200, 900, 1.0);
+        super::super::update(
+            &mut model,
+            crate::messages::Msg::Ui(crate::messages::UiMsg::ToggleModal(ModalId::Settings)),
+        );
+        open_server(&mut model, None);
+        let original = model.config.clone();
+        let state = state_mut(&mut model.ui).unwrap();
+        let row = state
+            .rows
+            .iter()
+            .position(|&index| matches!(state.entries[index].kind, RowKind::FormPreset))
+            .unwrap();
+        let presets = state.form.as_ref().unwrap().presets();
+        let expected = presets.last().unwrap().id;
+        update_settings(
+            &mut model,
+            SettingsMsg::CollectionAction(SettingsCollectionAction::ToggleSelect(row)),
+        );
+        assert!(select_key(&mut model, -1, false).is_some());
+        assert_eq!(
+            state_mut(&mut model.ui)
+                .unwrap()
+                .form
+                .as_ref()
+                .unwrap()
+                .select_cursor,
+            presets.len()
+        );
+        assert!(select_key(&mut model, 0, true).is_some());
+        let form = state_mut(&mut model.ui).unwrap().form.as_ref().unwrap();
+        assert_eq!(form.preset_id.as_deref(), Some(expected));
+        assert!(form.open_select.is_none());
+        assert!(form.dirty);
+        assert_eq!(model.config.lsp, original.lsp);
+        assert_eq!(model.config.formatters, original.formatters);
+    }
 
     #[test]
     fn guidance_actions_only_copy_open_or_probe_without_applying_the_draft() {

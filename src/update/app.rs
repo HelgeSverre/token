@@ -41,12 +41,14 @@ fn update_app_inner(model: &mut AppModel, msg: AppMsg) -> Option<Cmd> {
             .then_some(Cmd::redraw_editor()),
         AppMsg::Resize(width, height) => {
             model.resize(width, height);
+            super::dock::normalize_floating_panels(model);
 
             Some(super::dock::with_terminal_sync(model, Cmd::Redraw))
         }
 
         AppMsg::ScaleFactorChanged(scale_factor) => {
             model.set_scale_factor(scale_factor);
+            super::dock::normalize_floating_panels(model);
             // Reinitialize renderer (creates new glyph cache) and force redraw
             Some(super::dock::with_terminal_sync(
                 model,
@@ -844,7 +846,10 @@ pub fn execute_command(model: &mut AppModel, cmd_id: CommandId) -> Option<Cmd> {
         CommandId::SetLanguage => update_ui(model, UiMsg::ToggleModal(ModalId::LanguagePicker)),
         CommandId::ShowFileTextSettings => super::file_policy::show_details(model),
         #[cfg(debug_assertions)]
-        CommandId::TogglePerfOverlay => Some(Cmd::TogglePerfOverlay),
+        CommandId::TogglePerformancePanel => super::dock::update_panel_placement(
+            model,
+            crate::messages::PanelPlacementMsg::Open(PanelId::Performance),
+        ),
         #[cfg(debug_assertions)]
         CommandId::ToggleDebugOverlay => {
             if let Some(ref mut overlay) = model.debug_overlay {

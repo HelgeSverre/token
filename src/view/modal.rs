@@ -960,7 +960,7 @@ pub(crate) fn with_settings_spec<R>(
                             Accessory::Choices {
                                 labels: &preset_labels,
                                 active: Some(form.preset.map_or(0, |index| index + 1)),
-                                presentation: ChoicePresentation::Buttons,
+                                presentation: ChoicePresentation::Select,
                             }
                         } else if let (RowKind::FormAdvanced, Some(form)) =
                             (entry.kind.clone(), &state.form)
@@ -1129,6 +1129,7 @@ pub(crate) fn with_settings_spec<R>(
                         FormKind::InlineProvider(_) => Some("Enable inline suggestions"),
                     },
                     select_cursor: form.select_cursor,
+                    select_scroll: form.select_scroll,
                     hovered: model.ui.settings_hover_action,
                     title,
                     description,

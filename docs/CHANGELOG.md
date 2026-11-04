@@ -8,9 +8,32 @@ All notable changes to Token are documented in this file.
 
 ### Interface
 
+- Replace the debug F2 performance overlay with a Performance panel (debug
+  builds only). It opens docked on the right and can float inside the window,
+  be dragged and resized, closed, reopened, and returned to its dock slot, and
+  the layout is restored with the session. Its scrollable body shows frame and
+  stage history with latest and mean timings, an untracked remainder, a stage
+  composition bar, and glyph-cache statistics. Floating panels stay above
+  cursor-line redraws.
+
+- Fix docks overflowing the status bar and window in short or narrow windows.
+  A dock now gives up space once the editor is fully collapsed, and a bottom dock
+  keeps its header.
+
 - Add **File Tree: Toggle Gitignored Files** to the command palette (bindable
   as `ToggleGitignoredFiles`). Gitignored files are shown by default; the
   toggle hides entries matched by `.gitignore` files and `.git/info/exclude`.
+
+- Replace the language-server and formatter "Start from" template button grids
+  with dropdowns, align their edges with text fields, and tighten narrow-form
+  label spacing. Align the selected-row accent with its label and checkbox, and
+  give wrapped form choices enough vertical space so language choices no longer
+  overlap the following fields.
+
+- Open Settings dropdowns as a menu attached to the field: left-aligned options,
+  a check on the current value, one highlighted row for the keyboard cursor or
+  pointer, and mouse-wheel scrolling when the list is taller than the window.
+  The closed field shows a drawn chevron instead of a text glyph.
 
 - Improve muted status and inactive-tab labels in bundled dark themes so
   status and tab text meet a 4.5:1 palette contrast floor. Preserve custom theme
@@ -112,6 +135,11 @@ All notable changes to Token are documented in this file.
 
 - Add `token --completions <shell>` to print shell completion scripts for bash,
   zsh, fish, powershell and nu.
+
+- Add portable mode: a `data` directory beside the executable keeps
+  configuration, themes, recent files, logs and session state there instead of
+  the user profile. `TOKEN_CONFIG_DIR` overrides the configuration directory on
+  every platform.
 
 ### Search
 

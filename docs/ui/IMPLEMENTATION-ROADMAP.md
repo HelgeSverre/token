@@ -126,10 +126,11 @@ The 2026-09-16 [component decision record](PROTOTYPE-COMPONENTS.md) adds concret
 consumers for several previously deferred concepts. These specifications do not
 change the implementation status of the gallery slices above.
 
-- **Shared pane chrome:** implement title/optional actions and optional
-  leading/trailing footer content from [Pane chrome](PANE-CHROME.md). Integrate
+- **Shared pane chrome:** static title/action packing and optional
+  leading/trailing footer helpers plus six gallery states are implemented in
+  `src/view/pane_chrome.rs`. Host integration remains: integrate
   actions alongside existing dock tabs without repeating the active title in a
-  second header. Add production-backed gallery states as each helper lands.
+  second header, and implement overflow menus and keyboard/capture routing.
 - **Performance:** follow the [feature plan](../feature/performance-panel.md)
   for coherent completed-frame data, right-dock content and then generic
   [floating placement](DOCKABLE-PANEL.md). Keep existing instrumentation and

@@ -488,7 +488,14 @@ pub(super) fn render(
                         &chrome,
                     );
                 } else {
-                    super::panels::render_dock(&mut tile, &mut painter, &model, position, &chrome);
+                    super::panels::render_dock(
+                        &mut tile,
+                        &mut painter,
+                        &model,
+                        position,
+                        &chrome,
+                        &crate::perf::PerfStats::default(),
+                    );
                 }
                 chrome.rect(key).unwrap_or_default()
             }

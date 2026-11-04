@@ -267,6 +267,12 @@ impl Color {
         }
     }
 
+    /// Preserve this hue while making it legible against a themed surface.
+    #[cfg(debug_assertions)]
+    pub(crate) fn with_min_contrast(self, background: Self, ratio: f64) -> Self {
+        ensure_min_contrast(self, background, max_contrast_pole(background), ratio)
+    }
+
     /// Parse from "#RRGGBB" or "#RRGGBBAA" hex string
     pub fn from_hex(s: &str) -> Result<Self, String> {
         let s = s.trim_start_matches('#');

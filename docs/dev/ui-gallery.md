@@ -7,7 +7,14 @@ Cargo feature. All build artifacts stay under `target/`.
 
 ## Current slice
 
-The catalog currently contains 70 labelled visual specimens:
+The catalog currently contains 77 static specimens and one interactive sandbox:
+
+- `selection.interactive`: live Off/Auto/On segmented selection and a reset button.
+  Click an option or Tab from the shell into the sandbox; Left/Right and Home/End
+  change the selection. Tab reaches Reset, activated with Enter or Space.
+  Shift+Tab reverses focus, and Escape returns to the filter without clearing it.
+  Focus reveals the sandbox if scrolled out of view. Its state survives filtering
+  and theme/width changes but is never written to editor settings.
 
 - Buttons: normal, hovered, pressed, focused, selected, disabled, long label.
 - Icon button: a glyph-label close action, using the standard button painter.
@@ -49,13 +56,14 @@ The catalog currently contains 70 labelled visual specimens:
   ghost text, a docked Find bar with match tints, and a soft-wrapped selection
   ending with a continuation-row caret. The wrap fixture preserves the same
   source text at wide/narrow widths and tests caret-to-text hit mapping.
-- Settings records: selected language-server records and the production empty
-  collection state, including the narrow two-pane Settings layout.
+- Settings records: selected language-server records, the production empty
+  collection state, and an open template dropdown, including the narrow two-pane
+  Settings layout.
 - Scrollbars: vertical/horizontal, normal/hovered, end position and content fitting,
   shown in small dummy-content viewports so the thumb position has context.
   Splitters: horizontal and vertical boundaries.
 
-These are explicitly **static visual states**, not pretend interactive controls.
+Except for the labelled interactive sandbox, these are **static visual states**.
 Use their stable names when requesting changes, for example
 “`button.selected`: make its fill less saturated”. The gallery shell is
 interactive: type to filter, select a category, choose a theme, change preview
@@ -98,7 +106,7 @@ least five entries. Metadata for full-width Settings and completion/documentatio
 compositions is stacked above the canvas instead of competing for horizontal room.
 
 This remains an increment of the [component inventory](ui-component-inventory.md),
-not coverage of every editor component. Complex pickers, interactive specimen
+not coverage of every editor component. Complex pickers, additional interactive
 sandboxes and live theme editing remain subsequent slices.
 
 Chrome specimens build an isolated `AppModel` and use the real editor/dock/terminal
@@ -185,12 +193,14 @@ both production and the gallery will actually use it.
 ## Planned performance-study coverage
 
 The [prototype component decision record](../ui/PROTOTYPE-COMPONENTS.md) defines
-new proposed families. They are **not** part of the current 70 specimens and
-should only enter the gallery with production layout/painters:
+new proposed families. Six shared pane-chrome specimens are now part of the
+78-specimen catalog: title-only, optional icon/actions, overflow, hint footer,
+status/footer metadata, and narrow-footer priority. They call the ordinary
+`view::pane_chrome` helpers, but are static: no dock/float/overflow-menu interaction
+is implied. An absent footer is shown in the title-only specimen.
 
-- `pane-header.*`: title-only, optional icon/actions, truncation and overflow.
-- `pane-footer.*`: absent, hint with/without an icon, and status plus trailing
-  metadata. Footer presence must not be inferred from its label.
+Remaining families should enter only with production layout/painters:
+
 - `breadcrumbs.*`: file/path/symbol, optional icons, narrow overflow and
   independent editor-group context.
 - `dockable-panel.*`: docked and floating hosts with the same content, title

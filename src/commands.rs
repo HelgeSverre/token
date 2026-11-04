@@ -148,7 +148,7 @@ pub enum CommandId {
 
     // Debug overlays (only available in debug builds)
     #[cfg(debug_assertions)]
-    TogglePerfOverlay,
+    TogglePerformancePanel,
     #[cfg(debug_assertions)]
     ToggleDebugOverlay,
     /// Cycle the cursor-anchored popup shell for manual testing
@@ -745,10 +745,10 @@ pub static COMMANDS: &[CommandDef] = &[
 #[cfg(debug_assertions)]
 pub static DEBUG_COMMANDS: &[CommandDef] = &[
     CommandDef {
-        id: CommandId::TogglePerfOverlay,
+        id: CommandId::TogglePerformancePanel,
         action: None,
         category: CommandCategory::System,
-        label: "Toggle Performance Overlay",
+        label: "Toggle Performance Panel",
     },
     CommandDef {
         id: CommandId::ToggleDebugOverlay,
@@ -1427,11 +1427,7 @@ pub enum Cmd {
         request_id: serde_json::Value,
         result: serde_json::Value,
     },
-
     // === Debug Commands ===
-    /// Toggle performance overlay (debug builds only)
-    #[cfg(debug_assertions)]
-    TogglePerfOverlay,
 }
 
 impl Cmd {
@@ -1558,9 +1554,6 @@ impl Cmd {
             Cmd::LspSetEnabled { .. } => Damage::Areas(vec![]),
             Cmd::LspSetServerEnabled { .. } => Damage::Areas(vec![]),
             Cmd::LspRespondToServer { .. } => Damage::Areas(vec![]),
-            // Debug overlay toggle triggers full redraw
-            #[cfg(debug_assertions)]
-            Cmd::TogglePerfOverlay => Damage::Full,
         }
     }
 

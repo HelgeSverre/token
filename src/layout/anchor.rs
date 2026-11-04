@@ -57,6 +57,8 @@ pub enum AttachPoint {
 pub enum FloatAnchor {
     /// Centered X in the window; Y = `min(64 logical, window_height / 4)`.
     WindowCentered,
+    /// Explicit physical-pixel point in the solved window root.
+    WindowPoint { x: f32, y: f32 },
     /// Token's caret anchor (physical px): `(x, y)` is the caret's top-left
     /// and `line_h` its line height, so flipping above clears the caret's
     /// whole line. Places below the line + gap, flips above when below

@@ -26,9 +26,12 @@ impl SelectLayout {
 pub struct Select<'a> {
     pub anchor: Rect,
     pub labels: &'a [&'a str],
+    /// The committed value, shown with a check in the popup.
     pub selected: usize,
     pub state: &'a SelectState,
     pub focused: bool,
+    /// Option under the pointer, if any; painted as the hover wash.
+    pub hover: Option<usize>,
     pub scale: f64,
 }
 
@@ -53,23 +56,21 @@ impl Select<'_> {
         );
     }
 
-    /// Paint last so the popup overlays the owner's content. Returned geometry
-    /// is the same measured plan used for pointer interaction.
-    pub fn render_popup(
+    /// Build the popup as a menu-anchored list and hand it to `f`. The
+    /// popup is as wide as its anchor, so the measure only affects text.
+    fn with_popup_spec<R>(
         &self,
-        frame: &mut Frame,
-        painter: &mut TextPainter,
-        masks: &mut RoundedRectMaskCache,
-        theme: &Theme,
         size: (usize, usize),
-    ) -> Option<SelectLayout> {
+        f: impl FnOnce(&OverlaySpec, &SelectableListViewport) -> R,
+    ) -> Option<R> {
         if !self.state.open || self.labels.is_empty() {
             return None;
         }
-        let visible =
-            (((size.1 as f32 - self.anchor.y - self.anchor.height - 24.0 * self.scale as f32)
-                / (28.0 * self.scale as f32)) as usize)
-                .clamp(1, 10);
+        // The menu anchor opens below when it fits and above otherwise, so
+        // size the window to the roomier side.
+        let below = size.1 as f32 - self.anchor.y - self.anchor.height;
+        let room = below.max(self.anchor.y) - 24.0 * self.scale as f32;
+        let visible = ((room / (28.0 * self.scale as f32)) as usize).clamp(1, 16);
         let viewport = SelectableListViewport::compute_from(
             self.labels.len(),
             self.state.active,
@@ -98,6 +99,11 @@ impl Select<'_> {
             rows: &rows,
         }];
         let width = self.anchor.width / self.scale as f32;
+        let hover_row = self
+            .hover
+            .and_then(|option| option.checked_sub(viewport.scroll_offset))
+            .filter(|visible_index| *visible_index < viewport.visible_count)
+            .map(FlatIndex);
         let spec = OverlaySpec {
             tabs: None,
             anchor: Anchor::Menu {
@@ -119,24 +125,59 @@ impl Select<'_> {
                 max_visible: visible,
             },
             footer: None,
-            hover_row: None,
+            hover_row,
             docs: None,
         };
-        let layout = overlay_surface::layout_measured(
-            &spec,
-            size.0,
-            size.1,
-            self.scale,
-            &mut PainterMeasure::new(painter),
-        );
-        overlay_surface::render(
-            frame, painter, masks, theme, &spec, size.0, size.1, self.scale, false,
-        );
-        Some(SelectLayout {
-            panel: layout.panel,
-            rows: layout.rows,
-            first: viewport.scroll_offset,
-            scrollbar: layout.scrollbar,
+        Some(f(&spec, &viewport))
+    }
+
+    /// The popup geometry without painting, for hit testing. Pass the same
+    /// window size the paint uses; any `TextMeasure` yields the same rows
+    /// because the popup width is pinned to the anchor.
+    pub fn layout_popup(
+        &self,
+        size: (usize, usize),
+        measure: &mut dyn crate::layout::TextMeasure,
+    ) -> Option<SelectLayout> {
+        self.with_popup_spec(size, |spec, viewport| {
+            let layout =
+                overlay_surface::layout_measured(spec, size.0, size.1, self.scale, measure);
+            SelectLayout {
+                panel: layout.panel,
+                rows: layout.rows,
+                first: viewport.scroll_offset,
+                scrollbar: layout.scrollbar,
+            }
+        })
+    }
+
+    /// Paint last so the popup overlays the owner's content. Returned geometry
+    /// is the same measured plan used for pointer interaction.
+    pub fn render_popup(
+        &self,
+        frame: &mut Frame,
+        painter: &mut TextPainter,
+        masks: &mut RoundedRectMaskCache,
+        theme: &Theme,
+        size: (usize, usize),
+    ) -> Option<SelectLayout> {
+        self.with_popup_spec(size, |spec, viewport| {
+            let layout = overlay_surface::layout_measured(
+                spec,
+                size.0,
+                size.1,
+                self.scale,
+                &mut PainterMeasure::new(painter),
+            );
+            overlay_surface::render(
+                frame, painter, masks, theme, spec, size.0, size.1, self.scale, false,
+            );
+            SelectLayout {
+                panel: layout.panel,
+                rows: layout.rows,
+                first: viewport.scroll_offset,
+                scrollbar: layout.scrollbar,
+            }
         })
     }
 }
