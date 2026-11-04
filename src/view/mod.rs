@@ -23,6 +23,7 @@ pub mod helpers;
 pub mod hit_test;
 pub mod modal;
 pub mod overlay_surface;
+#[cfg(feature = "ui-gallery")]
 pub mod pane_chrome;
 pub mod panels;
 pub mod performance_panel;
@@ -1427,7 +1428,9 @@ impl Renderer {
         // Floating panels sit above editor lines in the full pass. A cursor
         // blink can repaint underneath one without clearing the whole frame,
         // so restore that same host painter after all editor-owned layers.
+        let start = std::time::Instant::now();
         panels::render_floating_panels(frame, painter, model, chrome, perf);
+        perf.record_stage_elapsed(crate::perf::PerfStage::FloatingPanels, start.elapsed());
     }
 
     /// Redraw the focused group's scrollbars on top of whatever was just
@@ -2087,6 +2090,7 @@ impl Renderer {
             {
                 let stats = painter.cache_stats();
                 perf.add_cache_stats(stats.hits, stats.misses);
+                perf.set_cache_entries(painter.glyph_cache_size());
             }
         } else {
             let mut session = RenderSession::new(
@@ -2136,7 +2140,9 @@ impl Renderer {
                     session.render_bottom_dock_phase(perf);
                     perf.record_stage_elapsed(crate::perf::PerfStage::BottomDock, start.elapsed());
                 }
+                let start = std::time::Instant::now();
                 session.render_floating_panels_phase(perf);
+                perf.record_stage_elapsed(crate::perf::PerfStage::FloatingPanels, start.elapsed());
             }
 
             if plan.render_status_bar {

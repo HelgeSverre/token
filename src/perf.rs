@@ -58,7 +58,7 @@ impl CompletedPerfView<'_> {
     }
 
     pub fn frame_median(&self) -> Option<Duration> {
-        percentile(self.samples.iter().map(|sample| sample.frame_time), 50)
+        median(self.samples.iter().map(|sample| sample.frame_time))
     }
 
     pub fn frame_p95(&self) -> Option<Duration> {
@@ -109,6 +109,27 @@ fn mean_duration(values: impl IntoIterator<Item = Duration>) -> Option<(Duration
     })
 }
 
+/// The middle value, or the mean of the two middle values for an even count.
+#[cfg(debug_assertions)]
+fn median(values: impl Iterator<Item = Duration>) -> Option<Duration> {
+    let mut values: Vec<_> = values.collect();
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_unstable();
+    let mid = values.len() / 2;
+    if values.len() % 2 == 1 {
+        return Some(values[mid]);
+    }
+    let low = values[mid - 1].as_nanos();
+    let high = values[mid].as_nanos();
+    let nanos = low + (high - low) / 2;
+    Some(Duration::new(
+        (nanos / 1_000_000_000) as u64,
+        (nanos % 1_000_000_000) as u32,
+    ))
+}
+
 #[cfg(debug_assertions)]
 fn percentile(values: impl Iterator<Item = Duration>, percentile: usize) -> Option<Duration> {
     let mut values: Vec<_> = values.collect();
@@ -143,6 +164,7 @@ pub enum PerfStage {
     Sidebar,
     RightDock,
     BottomDock,
+    FloatingPanels,
     StatusBar,
     Modal,
     DropOverlay,
@@ -201,6 +223,7 @@ impl PerfStage {
             Self::Sidebar => "sidebar",
             Self::RightDock => "right_dock",
             Self::BottomDock => "bottom_dock",
+            Self::FloatingPanels => "floating_panels",
             Self::StatusBar => "status_bar",
             Self::Modal => "modal",
             Self::DropOverlay => "drop_overlay",
@@ -215,7 +238,7 @@ impl PerfStage {
 }
 
 impl PerfStage {
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 30] = [
         Self::BuildPlan,
         Self::Layout,
         Self::Clear,
@@ -236,6 +259,7 @@ impl PerfStage {
         Self::Sidebar,
         Self::RightDock,
         Self::BottomDock,
+        Self::FloatingPanels,
         Self::StatusBar,
         Self::Modal,
         Self::DropOverlay,
@@ -372,6 +396,11 @@ impl PerfStage {
                 label: "Bottom Dock",
                 short_label: "B Dock",
                 color: 0xFF9ECE6A,
+            },
+            Self::FloatingPanels => PerfStageSpec {
+                label: "Floating Panels",
+                short_label: "Float",
+                color: 0xFFE0AF68,
             },
             Self::StatusBar => PerfStageSpec {
                 label: "Status Bar",
@@ -573,11 +602,6 @@ impl PerfStats {
     }
 
     #[inline(always)]
-    pub fn record_render_history(&mut self) {
-        // Completed samples are published atomically by `record_frame_time`.
-    }
-
-    #[inline(always)]
     pub fn time_stage(&mut self, stage: PerfStage) -> TimerGuard<'_> {
         TimerGuard::new(self, stage)
     }
@@ -742,8 +766,6 @@ impl PerfStats {
     }
 
     #[inline(always)]
-    pub fn record_render_history(&mut self) {}
-
     #[inline(always)]
     pub fn time_stage(&mut self, _stage: PerfStage) -> TimerGuard {
         #[cfg(feature = "profile-tracing")]
@@ -803,6 +825,20 @@ mod tests {
         assert_eq!(view.frame_median(), Some(Duration::from_millis(3)));
         assert_eq!(view.frame_p95(), Some(Duration::from_millis(20)));
         assert_eq!(view.lifetime_cache_hit_rate(), None);
+    }
+
+    #[test]
+    fn completed_view_median_averages_the_middle_pair_for_even_counts() {
+        let samples = [9, 1, 5, 3]
+            .into_iter()
+            .map(|ms| sample(ms, ObservationMode::Hidden))
+            .collect();
+        let view = CompletedPerfView {
+            samples: &samples,
+            total_cache_hits: 0,
+            total_cache_misses: 0,
+        };
+        assert_eq!(view.frame_median(), Some(Duration::from_millis(4)));
     }
 
     #[test]

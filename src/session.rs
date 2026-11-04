@@ -313,6 +313,17 @@ impl PanelLayout {
             for position in crate::panel::DockPosition::ALL {
                 docks.dock_mut(position).remove_panel(panel);
             }
+            seen.insert(panel);
+        }
+        // A session saved by a build without some panel (for example a release
+        // build and the debug-only Performance panel) must still offer it.
+        let defaults = crate::panel::DockLayout::default();
+        for position in crate::panel::DockPosition::ALL {
+            for panel in defaults.dock(position).panel_ids.iter().copied() {
+                if seen.insert(panel) {
+                    docks.dock_mut(position).register_panel(panel);
+                }
+            }
         }
         (docks, non_docked)
     }
@@ -697,5 +708,65 @@ mod panel_layout_tests {
         let session: Session = serde_json::from_value(value).unwrap();
         assert!(session.panel_layout.is_none());
         assert!(session.validate().is_ok());
+    }
+
+    #[test]
+    fn normalized_layout_re_registers_available_panels_missing_from_a_saved_layout() {
+        let mut docks = crate::panel::DockLayout::default();
+        docks.right.remove_panel(crate::panel::PanelId::Performance);
+        docks.bottom.remove_panel(crate::panel::PanelId::Usages);
+        let layout = PanelLayout {
+            version: 1,
+            docks,
+            non_docked: crate::panel::NonDockedPanels::default(),
+        };
+        let (docks, _) = layout.normalized();
+        for (panel, position) in [
+            (
+                crate::panel::PanelId::Usages,
+                crate::panel::DockPosition::Bottom,
+            ),
+            #[cfg(debug_assertions)]
+            (
+                crate::panel::PanelId::Performance,
+                crate::panel::DockPosition::Right,
+            ),
+        ] {
+            assert_eq!(docks.find_panel(panel), Some(position), "{panel:?}");
+        }
+        // Re-registration appends; the saved order and active panel stay.
+        assert_eq!(docks.right.panel_ids[0], crate::panel::PanelId::OUTLINE);
+        assert_eq!(docks.bottom.panel_ids[0], crate::panel::PanelId::TERMINAL);
+    }
+
+    #[test]
+    fn normalized_layout_does_not_redock_a_hidden_or_floating_panel() {
+        let mut docks = crate::panel::DockLayout::default();
+        docks.right.remove_panel(crate::panel::PanelId::Performance);
+        let mut non_docked = crate::panel::NonDockedPanels::default();
+        non_docked.by_id.insert(
+            crate::panel::PanelId::Performance,
+            crate::panel::NonDockedPanel::Hidden {
+                last: crate::panel::LastPresentation::Docked {
+                    return_slot: crate::panel::DockReturnSlot {
+                        dock: crate::panel::DockPosition::Right,
+                        index: 1,
+                    },
+                },
+            },
+        );
+        let layout = PanelLayout {
+            version: 1,
+            docks,
+            non_docked,
+        };
+        let (docks, non_docked) = layout.normalized();
+        assert_eq!(docks.find_panel(crate::panel::PanelId::Performance), None);
+        assert_eq!(
+            non_docked
+                .by_id
+                .contains_key(&crate::panel::PanelId::Performance),
+            cfg!(debug_assertions)
+        );
     }
 }

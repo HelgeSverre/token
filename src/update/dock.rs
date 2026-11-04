@@ -459,11 +459,30 @@ pub(super) fn update_panel_placement(model: &mut AppModel, msg: PanelPlacementMs
                         .non_docked_panels
                         .by_id
                         .insert(panel, NonDockedPanel::Floating { rect, return_slot });
+                    if model.ui.focus == FocusTarget::FloatingPanel(panel) {
+                        // Visible and focused: the open command hides the panel again.
+                        return update_panel_placement(model, PanelPlacementMsg::Close(panel));
+                    }
                     model.ui.focus = FocusTarget::FloatingPanel(panel);
                     return Some(Cmd::Redraw);
                 }
                 Some(NonDockedPanel::Hidden { last }) => last,
-                None => return update_dock(model, DockMsg::FocusOrTogglePanel(panel)),
+                None => {
+                    let Some(position) = model.dock_layout.find_panel(panel) else {
+                        // Not registered anywhere (for example a session saved by a
+                        // build without this panel): open it in its default dock.
+                        return update_panel_placement(model, PanelPlacementMsg::OpenInDock(panel));
+                    };
+                    let dock = model.dock_layout.dock(position);
+                    let visible_and_focused = dock.is_open
+                        && dock.active_panel() == Some(panel)
+                        && model.ui.focus == FocusTarget::Dock(position);
+                    if visible_and_focused {
+                        // Hide only this panel; sibling panels keep the dock open.
+                        return update_panel_placement(model, PanelPlacementMsg::Close(panel));
+                    }
+                    return update_dock(model, DockMsg::ActivatePanel(panel));
+                }
             };
             match last {
                 LastPresentation::Docked { return_slot } => {
@@ -850,6 +869,104 @@ mod tests {
                 last: LastPresentation::Floating { .. }
             })
         ));
+        update_panel_placement(&mut model, PanelPlacementMsg::Open(PanelId::Performance));
+        assert!(matches!(
+            model.non_docked_panels.by_id.get(&PanelId::Performance),
+            Some(NonDockedPanel::Floating { .. })
+        ));
+        assert_eq!(
+            model.ui.focus,
+            FocusTarget::FloatingPanel(PanelId::Performance)
+        );
+    }
+
+    #[test]
+    fn open_registers_a_panel_missing_from_every_host_in_its_default_dock() {
+        let mut model = test_model();
+        // A session saved by a build without the panel leaves it unregistered.
+        model.dock_layout.right.remove_panel(PanelId::Performance);
+        assert_eq!(model.dock_layout.find_panel(PanelId::Performance), None);
+
+        update_panel_placement(&mut model, PanelPlacementMsg::Open(PanelId::Performance));
+        assert_eq!(
+            model.dock_layout.find_panel(PanelId::Performance),
+            Some(DockPosition::Right)
+        );
+        assert_eq!(
+            model.dock_layout.right.active_panel(),
+            Some(PanelId::Performance)
+        );
+        assert!(model.dock_layout.right.is_open);
+        assert_eq!(model.ui.focus, FocusTarget::Dock(DockPosition::Right));
+    }
+
+    #[test]
+    fn open_hides_a_visible_focused_panel_without_closing_its_dock() {
+        let mut model = test_model();
+        update_panel_placement(&mut model, PanelPlacementMsg::Open(PanelId::Performance));
+        assert_eq!(
+            model.dock_layout.right.active_panel(),
+            Some(PanelId::Performance)
+        );
+        assert_eq!(model.ui.focus, FocusTarget::Dock(DockPosition::Right));
+
+        update_panel_placement(&mut model, PanelPlacementMsg::Open(PanelId::Performance));
+        assert_eq!(model.dock_layout.find_panel(PanelId::Performance), None);
+        assert!(matches!(
+            model.non_docked_panels.by_id.get(&PanelId::Performance),
+            Some(NonDockedPanel::Hidden {
+                last: LastPresentation::Docked { .. }
+            })
+        ));
+        assert!(
+            model.dock_layout.right.is_open,
+            "sibling panels keep the dock"
+        );
+        assert_eq!(
+            model.dock_layout.right.active_panel(),
+            Some(PanelId::OUTLINE)
+        );
+        assert_eq!(model.ui.focus, FocusTarget::Editor);
+
+        // A third press brings it back to its remembered slot.
+        update_panel_placement(&mut model, PanelPlacementMsg::Open(PanelId::Performance));
+        assert_eq!(
+            model.dock_layout.right.active_panel(),
+            Some(PanelId::Performance)
+        );
+    }
+
+    #[test]
+    fn open_hides_a_focused_floating_panel_and_reopens_it_floating() {
+        let mut model = test_model();
+        update_panel_placement(&mut model, PanelPlacementMsg::Float(PanelId::Performance));
+        assert_eq!(
+            model.ui.focus,
+            FocusTarget::FloatingPanel(PanelId::Performance)
+        );
+
+        update_panel_placement(&mut model, PanelPlacementMsg::Open(PanelId::Performance));
+        assert!(matches!(
+            model.non_docked_panels.by_id.get(&PanelId::Performance),
+            Some(NonDockedPanel::Hidden {
+                last: LastPresentation::Floating { .. }
+            })
+        ));
+        assert_eq!(model.ui.focus, FocusTarget::Editor);
+
+        update_panel_placement(&mut model, PanelPlacementMsg::Open(PanelId::Performance));
+        assert!(matches!(
+            model.non_docked_panels.by_id.get(&PanelId::Performance),
+            Some(NonDockedPanel::Floating { .. })
+        ));
+    }
+
+    #[test]
+    fn open_refocuses_an_unfocused_floating_panel_instead_of_hiding_it() {
+        let mut model = test_model();
+        update_panel_placement(&mut model, PanelPlacementMsg::Float(PanelId::Performance));
+        model.ui.focus = FocusTarget::Editor;
+
         update_panel_placement(&mut model, PanelPlacementMsg::Open(PanelId::Performance));
         assert!(matches!(
             model.non_docked_panels.by_id.get(&PanelId::Performance),

@@ -1085,7 +1085,7 @@ pub fn hit_test_ui(
         return Some(target);
     }
 
-    if !model.non_docked_panels.by_id.is_empty() {
+    if model.non_docked_panels.has_floating() {
         let chrome = crate::layout::chrome::chrome(model);
         let solved = chrome.hit(pt.x as f32, pt.y as f32);
         match solved {

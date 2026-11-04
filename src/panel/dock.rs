@@ -79,6 +79,11 @@ pub struct LogicalRect {
 }
 
 impl LogicalRect {
+    /// Smallest floating panel width that keeps its header actions usable.
+    pub const MIN_WIDTH: f32 = 240.0;
+    /// Smallest floating panel height that keeps one content row visible.
+    pub const MIN_HEIGHT: f32 = 160.0;
+
     pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {
             x,
@@ -103,8 +108,8 @@ impl LogicalRect {
         let my = 8.0_f32.min(((work_height - 1.0) / 2.0).max(0.0));
         let available_width = work_width - 2.0 * mx;
         let available_height = work_height - 2.0 * my;
-        let min_width = 240.0_f32.min(available_width);
-        let min_height = 160.0_f32.min(available_height);
+        let min_width = Self::MIN_WIDTH.min(available_width);
+        let min_height = Self::MIN_HEIGHT.min(available_height);
         let width = self.width.clamp(min_width, available_width);
         let height = self.height.clamp(min_height, available_height);
         Some(Self {
@@ -147,6 +152,16 @@ pub enum NonDockedPanel {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NonDockedPanels {
     pub by_id: HashMap<PanelId, NonDockedPanel>,
+}
+
+impl NonDockedPanels {
+    /// Whether any panel is currently presented as a window-level float.
+    /// Hidden records stay in `by_id` and must not cost layout work.
+    pub fn has_floating(&self) -> bool {
+        self.by_id
+            .values()
+            .any(|placement| matches!(placement, NonDockedPanel::Floating { .. }))
+    }
 }
 
 /// Unique identifier for a panel type

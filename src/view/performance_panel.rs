@@ -347,6 +347,7 @@ pub fn render(
         muted,
     );
     let bar_y = by + model.line_height * 2 + model.metrics.padding_small;
+    let bar_height = (4.0 * model.metrics.scale_factor).round().max(1.0) as usize;
     match view.latest() {
         Some(sample) if !sample.frame_time.is_zero() && sample.untracked.is_some() => {
             let mut cursor = bx;
@@ -359,13 +360,13 @@ pub fn render(
                     cursor,
                     bar_y,
                     end.saturating_sub(cursor),
-                    4,
+                    bar_height,
                     stage_colors[stage.index()],
                 );
                 cursor = end;
             }
             if sample.untracked.is_some_and(|duration| !duration.is_zero()) {
-                frame.fill_rect_px(cursor, bar_y, bx + bw - cursor, 4, muted);
+                frame.fill_rect_px(cursor, bar_y, bx + bw - cursor, bar_height, muted);
             }
         }
         Some(sample) if sample.untracked.is_none() => {
@@ -475,17 +476,16 @@ pub fn render(
         fg,
     );
     let (hits, misses) = view.lifetime_cache_counts();
-    let details = view.latest().map_or_else(
-        || "No lookups yet".to_owned(),
-        |s| {
-            format!(
-                "{} entries   {} hits   {} misses",
-                s.cache_entries, hits, misses
-            )
-        },
-    );
+    let details = match view.latest() {
+        Some(s) if hits + misses > 0 => format!(
+            "{} entries   {} hits   {} misses",
+            s.cache_entries, hits, misses
+        ),
+        _ => "No lookups yet".to_owned(),
+    };
     let details = painter.truncate_to_width(&details, cw as f32);
-    label(frame, painter, cx, cy + 30, &details, muted);
+    let details_y = cy + (30.0 * model.metrics.scale_factor).round() as usize;
+    label(frame, painter, cx, details_y, &details, muted);
     rule(frame, layout.cache, border);
 
     let (nx, ny, nw, _) = snap(layout.note);
@@ -659,7 +659,6 @@ mod tests {
         for _ in 0..8 {
             perf.record_stage_elapsed(PerfStage::TabBar, std::time::Duration::from_micros(300));
             perf.record_frame_time();
-            perf.record_render_history();
         }
         let mut model = AppModel::new(400, 600, 1.0);
         for scroll in [0, 40, 10_000] {

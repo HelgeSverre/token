@@ -1605,7 +1605,7 @@ impl App {
                         }
                     }
                     #[cfg(debug_assertions)]
-                    if event.logical_key == Key::Named(NamedKey::F2) {
+                    if event.logical_key == Key::Named(NamedKey::F2) && !event.repeat {
                         return update(
                             &mut self.model,
                             Msg::DockablePanel(token::messages::PanelPlacementMsg::Open(
@@ -1798,19 +1798,24 @@ impl App {
                         }
                         token::model::ui::FloatingPanelDragKind::Resize(edge) => {
                             use token::model::ui::FloatingResizeEdge as Edge;
+                            use token::panel::LogicalRect;
+                            // Clamp the size first so a drag past the minimum pins
+                            // the opposite edge instead of sliding the panel.
                             if matches!(edge, Edge::Left | Edge::TopLeft | Edge::BottomLeft) {
-                                rect.x += dx;
-                                rect.width -= dx;
+                                let width = (rect.width - dx).max(LogicalRect::MIN_WIDTH);
+                                rect.x += rect.width - width;
+                                rect.width = width;
                             }
                             if matches!(edge, Edge::Right | Edge::TopRight | Edge::BottomRight) {
-                                rect.width += dx;
+                                rect.width = (rect.width + dx).max(LogicalRect::MIN_WIDTH);
                             }
                             if matches!(edge, Edge::Top | Edge::TopLeft | Edge::TopRight) {
-                                rect.y += dy;
-                                rect.height -= dy;
+                                let height = (rect.height - dy).max(LogicalRect::MIN_HEIGHT);
+                                rect.y += rect.height - height;
+                                rect.height = height;
                             }
                             if matches!(edge, Edge::Bottom | Edge::BottomLeft | Edge::BottomRight) {
-                                rect.height += dy;
+                                rect.height = (rect.height + dy).max(LogicalRect::MIN_HEIGHT);
                             }
                         }
                     }
@@ -2305,7 +2310,6 @@ impl App {
         self.perf = perf;
 
         self.perf.record_frame_time();
-        self.perf.record_render_history();
         if !self.deferred_startup_complete
             && self.deferred_startup_at.is_none()
             && self.has_deferred_startup_work()
