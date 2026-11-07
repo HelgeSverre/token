@@ -1021,9 +1021,9 @@ mod tests {
 
     #[test]
     fn cursor_overlay_row_click_activates_a_context_menu_item() {
-        use token::context_menu::MenuItem;
+        use token::context_menu::{ContextMenuState, ContextMenuTarget};
         use token::messages::LayoutMsg;
-        use token::model::{ContextMenuState, CursorOverlayKind, CursorOverlayState};
+        use token::model::{CursorOverlayKind, CursorOverlayState};
 
         let mut model = AppModel::new(800, 600, 1.0);
         // A second tab so "Close" (targeting tab 0) has something to close
@@ -1032,17 +1032,15 @@ mod tests {
         let group_id = model.editor_area.focused_group_id;
         let first_tab = model.editor_area.groups[&group_id].tabs[0].id;
 
-        let items = vec![MenuItem::custom(
-            "Close",
-            true,
-            vec![Msg::Layout(LayoutMsg::CloseTab(first_tab))],
-        )];
         model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::ContextMenu));
-        model.ui.context_menu = Some(ContextMenuState {
-            items,
-            anchor: (0, 0, 0),
-            region: token::context_menu::ContextMenuRegion::EditorTabBar,
-        });
+        model.ui.context_menu = Some(ContextMenuState::new(
+            &model,
+            &ContextMenuTarget::Tab {
+                group_id,
+                tab_id: first_tab,
+            },
+            (0, 0, 0),
+        ));
 
         let result = handle_cursor_overlay_click(&mut model, Some(0));
 
@@ -1065,28 +1063,23 @@ mod tests {
         // (cmd: None) unconditionally, so a mouse click on e.g. "Copy
         // Absolute Path" closed the menu but never ran the
         // `CopyToClipboard` command the keyboard Enter path produces.
-        use token::context_menu::MenuItem;
-        use token::messages::ContextMenuMsg;
-        use token::model::{ContextMenuState, CursorOverlayKind, CursorOverlayState};
+        use token::context_menu::{ContextMenuState, ContextMenuTarget};
+        use token::model::{CursorOverlayKind, CursorOverlayState};
 
         let mut model = AppModel::new(800, 600, 1.0);
         let path = std::path::PathBuf::from("/tmp/x.rs");
-        let items = vec![MenuItem::custom(
-            "Copy Absolute Path",
-            true,
-            vec![Msg::ContextMenu(ContextMenuMsg::CopyPath {
-                path,
-                relative: false,
-            })],
-        )];
         model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::ContextMenu));
-        model.ui.context_menu = Some(ContextMenuState {
-            items,
-            anchor: (0, 0, 0),
-            region: token::context_menu::ContextMenuRegion::Editor,
-        });
+        model.ui.context_menu = Some(ContextMenuState::new(
+            &model,
+            &ContextMenuTarget::FileTreeItem {
+                path,
+                is_dir: false,
+            },
+            (0, 0, 0),
+        ));
 
-        let result = handle_cursor_overlay_click(&mut model, Some(0));
+        // Open, Reveal in Finder, Copy Absolute Path (separators excluded).
+        let result = handle_cursor_overlay_click(&mut model, Some(2));
 
         match result {
             EventResult::Consumed { cmd: Some(cmd), .. } => {
@@ -1398,11 +1391,14 @@ mod tests {
         model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
             token::model::CursorOverlayKind::ContextMenu,
         ));
-        model.ui.context_menu = Some(token::model::ContextMenuState {
-            items: vec![],
-            anchor: (0, 0, 0),
-            region: token::context_menu::ContextMenuRegion::Editor,
-        });
+        model.ui.context_menu = Some(token::context_menu::ContextMenuState::new(
+            &model,
+            &token::context_menu::ContextMenuTarget::Editor {
+                group_id: model.editor_area.focused_group_id,
+                clipboard_has_content: false,
+            },
+            (0, 0, 0),
+        ));
 
         let dismissal =
             dismiss_overlay_for_press(&mut model, &HitTarget::StatusBar, MouseButton::Left);
@@ -1422,11 +1418,14 @@ mod tests {
         model.ui.cursor_overlay = Some(token::model::CursorOverlayState::new(
             token::model::CursorOverlayKind::ContextMenu,
         ));
-        model.ui.context_menu = Some(token::model::ContextMenuState {
-            items: vec![],
-            anchor: (0, 0, 0),
-            region: token::context_menu::ContextMenuRegion::Editor,
-        });
+        model.ui.context_menu = Some(token::context_menu::ContextMenuState::new(
+            &model,
+            &token::context_menu::ContextMenuTarget::Editor {
+                group_id: model.editor_area.focused_group_id,
+                clipboard_has_content: false,
+            },
+            (0, 0, 0),
+        ));
 
         let dismissal =
             dismiss_overlay_for_press(&mut model, &HitTarget::StatusBar, MouseButton::Right);
@@ -1482,22 +1481,6 @@ mod tests {
             dismiss_overlay_for_press(&mut model, &HitTarget::StatusBar, MouseButton::Left);
         assert!(!dismissal.dismissed);
         assert!(!dismissal.swallow);
-    }
-
-    #[test]
-    fn tab_file_path_resolves_the_tabs_document_not_the_focused_one() {
-        let model = AppModel::new(800, 600, 1.0);
-        let group_id = model.editor_area.focused_group_id;
-        let tab_id = model
-            .editor_area
-            .groups
-            .get(&group_id)
-            .unwrap()
-            .active_tab()
-            .unwrap()
-            .id;
-        // An untitled buffer has no path.
-        assert_eq!(tab_file_path(&model, group_id, tab_id), None);
     }
 }
 
@@ -1936,11 +1919,6 @@ fn handle_cursor_overlay_click(model: &mut AppModel, flat_index: Option<usize>) 
             state.reset_documentation();
         }
         state.selected = idx;
-    }
-    if kind == Some(token::model::CursorOverlayKind::Completion) {
-        if let Some(menu) = model.ui.completion.completion_menu.as_mut() {
-            menu.identity.selected = menu.candidate_for_row(idx);
-        }
     }
     // The activation message may return a Cmd (e.g. CopyToClipboard) that
     // must actually run — same as the keyboard Enter path in
@@ -2994,14 +2972,8 @@ fn handle_right_click(model: &mut AppModel, target: &HitTarget, event: &MouseEve
                 );
             }
 
-            let has_selection = model
-                .editor_area
-                .editors
-                .get(editor_id)
-                .is_some_and(|e| !e.active_selection().is_empty());
             ContextMenuTarget::Editor {
                 group_id: *group_id,
-                has_selection,
                 clipboard_has_content: clipboard_has_content(),
             }
         }
@@ -3010,7 +2982,6 @@ fn handle_right_click(model: &mut AppModel, target: &HitTarget, event: &MouseEve
         } => ContextMenuTarget::Tab {
             group_id: *group_id,
             tab_id: *tab_id,
-            file_path: tab_file_path(model, *group_id, *tab_id),
         },
         HitTarget::SidebarItem { path, is_dir, .. } => ContextMenuTarget::FileTreeItem {
             path: path.clone(),
@@ -3038,25 +3009,6 @@ fn handle_right_click(model: &mut AppModel, target: &HitTarget, event: &MouseEve
         // it either).
         None => EventResult::consumed_no_redraw(),
     }
-}
-
-/// The file path backing `tab_id` in `group_id`, if any — `None` covers
-/// both "untitled buffer" and "tab not found" (defensive; the tab that was
-/// just right-clicked should always resolve).
-fn tab_file_path(
-    model: &AppModel,
-    group_id: GroupId,
-    tab_id: token::model::TabId,
-) -> Option<std::path::PathBuf> {
-    let group = model.editor_area.groups.get(&group_id)?;
-    let tab = group.tabs.iter().find(|t| t.id == tab_id)?;
-    let editor = model.editor_area.editors.get(&tab.editor_id)?;
-    let document_id = editor.document_id?;
-    model
-        .editor_area
-        .documents
-        .get(&document_id)
-        .and_then(|d| d.file_path.clone())
 }
 
 /// Horizontal `delta_px` for scrolling the editor tab strip from a wheel event,
@@ -3307,11 +3259,6 @@ fn scroll_hovered_region(
             } else {
                 state.scroll.saturating_add(delta as usize).min(max_scroll)
             };
-            if state.kind == token::model::CursorOverlayKind::Completion {
-                if let Some(menu) = model.ui.completion.completion_menu.as_mut() {
-                    menu.identity.scroll = state.scroll;
-                }
-            }
             Some(Cmd::Redraw)
         }
 

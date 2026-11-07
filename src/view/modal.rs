@@ -10,9 +10,11 @@
 //! hit-test (overlay-surface.md "Hit-testing": one layout, two consumers).
 
 use crate::completion::menu::MenuItemKind;
-use crate::model::ui::{LanguagePickerState, LspServersState, RecentFilesState, ThemePickerState};
+use crate::context_menu::ContextMenuState;
+use crate::model::ui::{LanguagePickerState, LspServersState};
 use crate::model::AppModel;
-use crate::theme::ThemeInfo;
+use crate::recent_files::RecentFilesState;
+use crate::theme::ThemePickerState;
 
 use super::frame::{Frame, RoundedRectMaskCache, TextPainter};
 use super::geometry::WidgetRect;
@@ -577,22 +579,6 @@ fn file_icon_char(path: &std::path::Path) -> char {
 // Recent Files
 // ============================================================================
 
-/// Group `state.filtered_rows` into contiguous (title, entry-index) runs by
-/// `RecentGroup` — the single source of truth for Recent Files section
-/// boundaries, shared by the content spec (real rows) and the shape spec
-/// (hit-testing/caret placement) so they can't drift.
-pub(crate) fn recent_files_groups(state: &RecentFilesState) -> Vec<(&'static str, Vec<usize>)> {
-    let mut groups: Vec<(&'static str, Vec<usize>)> = Vec::new();
-    for &entry_idx in &state.filtered_rows {
-        let title = state.entries[entry_idx].group().title();
-        match groups.last_mut() {
-            Some((last_title, indices)) if *last_title == title => indices.push(entry_idx),
-            _ => groups.push((title, vec![entry_idx])),
-        }
-    }
-    groups
-}
-
 fn render_recent_files_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -603,39 +589,29 @@ fn render_recent_files_modal(
 ) {
     let input_text = state.input();
     let icon_color = model.theme.overlay.text_dim.to_argb_u32();
-    let groups = recent_files_groups(state);
+    let groups = state.groups();
 
     // Per-row time-ago strings live here so `Row::accessory` can borrow them
     // for the render call.
     let time_strings: Vec<Vec<String>> = groups
         .iter()
-        .map(|(_, indices)| {
-            indices
-                .iter()
-                .map(|&i| state.entries[i].time_ago())
-                .collect()
-        })
+        .map(|(_, entries)| entries.iter().map(|entry| entry.time_ago()).collect())
         .collect();
     let display_paths: Vec<Vec<String>> = groups
         .iter()
-        .map(|(_, indices)| {
-            indices
-                .iter()
-                .map(|&i| state.entries[i].display_path())
-                .collect()
-        })
+        .map(|(_, entries)| entries.iter().map(|entry| entry.display_path()).collect())
         .collect();
 
     let row_groups: Vec<Vec<Row>> = groups
         .iter()
         .enumerate()
-        .map(|(gi, (_, indices))| {
-            indices
+        .map(|(gi, (_, entries))| {
+            entries
                 .iter()
                 .enumerate()
-                .map(|(ri, &entry_idx)| Row {
+                .map(|(ri, entry)| Row {
                     icon: RowIcon::Glyph {
-                        ch: file_icon_char(&state.entries[entry_idx].path),
+                        ch: file_icon_char(&entry.path),
                         color: icon_color,
                     },
                     label: &display_paths[gi][ri],
@@ -656,7 +632,7 @@ fn render_recent_files_modal(
         })
         .collect();
 
-    let total_rows = state.filtered_rows.len();
+    let total_rows = state.rows().len();
     let selected_index = state.selected_index.min(total_rows.saturating_sub(1));
 
     let spec = OverlaySpec {
@@ -726,30 +702,6 @@ fn render_recent_files_modal(
 // Theme Picker
 // ============================================================================
 
-/// Group `themes` into contiguous (title, theme-index) runs by source — the
-/// single source of truth for Theme Picker section boundaries. `FlatIndex`
-/// equals the theme's index in `themes` directly (the list is static per
-/// modal-open, no filtering/reordering happens), so no separate
-/// ordering-authority cache is needed the way Recent Files needs one.
-pub(crate) fn theme_picker_groups(
-    themes: &[ThemeInfo],
-) -> Vec<(&'static str, std::ops::Range<usize>)> {
-    use crate::theme::ThemeSource;
-
-    let mut groups: Vec<(&'static str, std::ops::Range<usize>)> = Vec::new();
-    for (i, theme_info) in themes.iter().enumerate() {
-        let title = match theme_info.source {
-            ThemeSource::User => "User Themes",
-            ThemeSource::Builtin => "Built-in Themes",
-        };
-        match groups.last_mut() {
-            Some((last_title, range)) if *last_title == title => range.end = i + 1,
-            _ => groups.push((title, i..i + 1)),
-        }
-    }
-    groups
-}
-
 fn render_theme_picker_modal(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -758,19 +710,16 @@ fn render_theme_picker_modal(
     ctx: &ModalRenderCtx,
     mask_cache: &mut RoundedRectMaskCache,
 ) {
-    let fallback_swatch = crate::theme::ThemeSwatch::fallback();
-    let groups = theme_picker_groups(&state.themes);
+    let groups = state.groups();
 
     let row_groups: Vec<Vec<Row>> = groups
         .iter()
-        .map(|(_, range)| {
-            range
-                .clone()
-                .map(|idx| {
-                    let theme_info = &state.themes[idx];
-                    // `swatches` is parallel to `themes`; guard anyway so a
-                    // stale state never panics rendering.
-                    let swatch = state.swatches.get(idx).unwrap_or(&fallback_swatch);
+        .map(|(_, choices)| {
+            choices
+                .iter()
+                .map(|choice| {
+                    let theme_info = &choice.theme;
+                    let swatch = &choice.swatch;
                     // ✓ marks only the theme that is *set* (config), never
                     // a merely-loaded/previewed one.
                     let is_active = model.config.theme == theme_info.id;
@@ -803,7 +752,7 @@ fn render_theme_picker_modal(
 
     let selected_index = state
         .selected_index
-        .min(state.themes.len().saturating_sub(1));
+        .min(state.choices().len().saturating_sub(1));
 
     let spec = OverlaySpec {
         tabs: None,
@@ -1606,10 +1555,10 @@ pub(crate) fn with_modal_overlay_layout<R>(
             Some(f(&spec, &l))
         }
         ModalState::RecentFiles(state) => {
-            let groups = recent_files_groups(state);
+            let groups = state.groups();
             let row_groups: Vec<Vec<Row>> = groups
                 .iter()
-                .map(|(_, indices)| placeholder_rows(indices.len()))
+                .map(|(_, entries)| placeholder_rows(entries.len()))
                 .collect();
             let sections: Vec<Section> = groups
                 .iter()
@@ -1619,7 +1568,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
                     rows,
                 })
                 .collect();
-            let total = state.filtered_rows.len();
+            let total = state.rows().len();
             let spec = list_shape_spec(
                 PICKER_WIDTH,
                 Some(state.input().chars().count()),
@@ -1636,10 +1585,10 @@ pub(crate) fn with_modal_overlay_layout<R>(
             f(spec, &layout)
         })),
         ModalState::ThemePicker(state) => {
-            let groups = theme_picker_groups(&state.themes);
+            let groups = state.groups();
             let row_groups: Vec<Vec<Row>> = groups
                 .iter()
-                .map(|(_, range)| placeholder_rows(range.len()))
+                .map(|(_, choices)| placeholder_rows(choices.len()))
                 .collect();
             let sections: Vec<Section> = groups
                 .iter()
@@ -1672,7 +1621,7 @@ pub(crate) fn with_modal_overlay_layout<R>(
                     selected: FlatIndex(
                         state
                             .selected_index
-                            .min(state.themes.len().saturating_sub(1)),
+                            .min(state.choices().len().saturating_sub(1)),
                     ),
                     scroll: state.scroll_offset,
                     max_visible: COMMAND_PALETTE_MAX_VISIBLE,
@@ -2290,9 +2239,9 @@ pub fn with_cursor_overlay_spec<R>(
     // has neither).
     if state.kind == crate::model::CursorOverlayKind::ContextMenu {
         let menu = model.ui.context_menu.as_ref()?;
-        let chip_steps = context_menu_chip_steps(&menu.items);
-        let rows = context_menu_rows(&menu.items, &chip_steps);
-        let sections = context_menu_sections(&menu.items, &rows);
+        let chip_steps = context_menu_chip_steps(menu);
+        let rows = context_menu_rows(menu, &chip_steps);
+        let sections = context_menu_sections(menu, &rows);
         let (x, y, h) = menu.anchor;
         let spec = OverlaySpec {
             tabs: None,
@@ -2585,9 +2534,9 @@ pub fn with_cursor_overlay_spec<R>(
 /// "owned buffer computed first, rows borrow into it" split
 /// `reference_row_text` uses.
 fn context_menu_chip_steps(
-    items: &[crate::context_menu::MenuItem],
+    menu: &ContextMenuState,
 ) -> Vec<Option<Vec<Vec<overlay_surface::Chip>>>> {
-    crate::context_menu::selectable_items(items)
+    menu.rows()
         .map(|item| {
             item.shortcut_hint
                 .as_deref()
@@ -2596,18 +2545,17 @@ fn context_menu_chip_steps(
         .collect()
 }
 
-/// One `Row` per non-separator `MenuItem`, in `context_menu::
-/// selectable_items` order — the same "flat rows, addressed by position"
+/// One `Row` per addressable menu item — the same "flat rows, addressed by position"
 /// space `FlatIndex`, keyboard nav, and `ContextMenuMsg::ActivateItem`'s
 /// `index` all share (context-menu.md "Separators"). Keycap chips reuse
 /// the palette's own >4-chip -> `DimText` fallback (`chip_count`); an
 /// unbound item gets `Accessory::None` (no dim filler — "Overlay Context"
 /// > Accessory).
 fn context_menu_rows<'a>(
-    items: &'a [crate::context_menu::MenuItem],
+    menu: &'a ContextMenuState,
     chip_steps: &'a [Option<Vec<Vec<overlay_surface::Chip>>>],
 ) -> Vec<Row<'a>> {
-    crate::context_menu::selectable_items(items)
+    menu.rows()
         .zip(chip_steps)
         .map(|(item, steps)| {
             let accessory = match steps {
@@ -2629,39 +2577,15 @@ fn context_menu_rows<'a>(
         .collect()
 }
 
-/// Maps a flat `MenuItem` list (including separators) onto `OverlaySurface`
-/// `Section` boundaries: each run of non-separator items between
-/// separators becomes its own untitled `Section` (context-menu.md
-/// "Separators" — a centered hairline row). `rows` must be
-/// `context_menu_rows(items)` — the non-separator subset, one-to-one with
-/// `context_menu::selectable_items(items)` in the same order.
-fn context_menu_sections<'a>(
-    items: &[crate::context_menu::MenuItem],
-    rows: &'a [Row<'a>],
-) -> Vec<Section<'a>> {
-    let mut sections = Vec::new();
-    let mut run_start = 0;
-    let mut row_index = 0;
-    for item in items {
-        if item.is_separator {
-            if row_index > run_start {
-                sections.push(Section {
-                    title: None,
-                    rows: &rows[run_start..row_index],
-                });
-            }
-            run_start = row_index;
-        } else {
-            row_index += 1;
-        }
-    }
-    if row_index > run_start {
-        sections.push(Section {
+/// Present the menu's sections as untitled overlay sections. `rows` comes
+/// from `context_menu_rows`, in the menu's address space.
+fn context_menu_sections<'a>(menu: &ContextMenuState, rows: &'a [Row<'a>]) -> Vec<Section<'a>> {
+    menu.sections()
+        .map(|range| Section {
             title: None,
-            rows: &rows[run_start..row_index],
-        });
-    }
-    sections
+            rows: &rows[range],
+        })
+        .collect()
 }
 
 /// Per-row `detail`/`accessory` text for the References/multi-def popup —
@@ -3417,11 +3341,16 @@ mod tests {
             MenuItem::separator(), // adjacent separators: no empty section
             MenuItem::custom("Reveal in File Explorer", true, vec![]),
         ];
-        let chip_steps = context_menu_chip_steps(&items);
-        let rows = context_menu_rows(&items, &chip_steps);
+        let menu = ContextMenuState {
+            items,
+            anchor: (0, 0, 0),
+            region: crate::context_menu::ContextMenuRegion::Editor,
+        };
+        let chip_steps = context_menu_chip_steps(&menu);
+        let rows = context_menu_rows(&menu, &chip_steps);
         assert_eq!(rows.len(), 4, "4 non-separator items");
 
-        let sections = context_menu_sections(&items, &rows);
+        let sections = context_menu_sections(&menu, &rows);
         let lens: Vec<usize> = sections.iter().map(|s| s.rows.len()).collect();
         assert_eq!(
             lens,
@@ -3444,9 +3373,14 @@ mod tests {
             MenuItem::custom("Only Item", true, vec![]),
             MenuItem::separator(),
         ];
-        let chip_steps = context_menu_chip_steps(&items);
-        let rows = context_menu_rows(&items, &chip_steps);
-        let sections = context_menu_sections(&items, &rows);
+        let menu = ContextMenuState {
+            items,
+            anchor: (0, 0, 0),
+            region: crate::context_menu::ContextMenuRegion::Editor,
+        };
+        let chip_steps = context_menu_chip_steps(&menu);
+        let rows = context_menu_rows(&menu, &chip_steps);
+        let sections = context_menu_sections(&menu, &rows);
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].rows.len(), 1);
     }
@@ -3454,7 +3388,7 @@ mod tests {
     #[test]
     fn context_menu_layout_clamps_to_window_and_keeps_separators_unselectable() {
         use crate::context_menu::{ContextMenuRegion, MenuItem};
-        use crate::model::{ContextMenuState, CursorOverlayKind, CursorOverlayState};
+        use crate::model::{CursorOverlayKind, CursorOverlayState};
 
         let mut model = AppModel::new(400, 300, 1.0);
         model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::ContextMenu));
@@ -3571,9 +3505,13 @@ mod tests {
 
         let mut item = MenuItem::custom("Everything", true, vec![]);
         item.shortcut_hint = Some("⌃⌥⇧⌘X".to_owned()); // 5 chips
-        let items = vec![item];
-        let chip_steps = context_menu_chip_steps(&items);
-        let rows = context_menu_rows(&items, &chip_steps);
+        let menu = ContextMenuState {
+            items: vec![item],
+            anchor: (0, 0, 0),
+            region: crate::context_menu::ContextMenuRegion::Editor,
+        };
+        let chip_steps = context_menu_chip_steps(&menu);
+        let rows = context_menu_rows(&menu, &chip_steps);
         assert!(matches!(rows[0].accessory, Accessory::DimText(_)));
     }
 

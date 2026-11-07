@@ -2,9 +2,11 @@
 
 use super::editor_area::{GroupId, SplitDirection};
 use super::status_bar::{SegmentContent, SegmentId, StatusBar, TransientMessage};
+use crate::context_menu::ContextMenuState;
 use crate::editable::{EditConstraints, EditableState, StringBuffer};
 use crate::panel::DockPosition;
-use crate::theme::{list_available_themes, ThemeInfo};
+use crate::recent_files::RecentFilesState;
+use crate::theme::ThemePickerState;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use std::{
@@ -776,47 +778,6 @@ impl FindReplaceState {
     }
 }
 
-/// State for the theme picker modal
-#[derive(Debug, Clone)]
-pub struct ThemePickerState {
-    /// Index of selected theme in list
-    pub selected_index: usize,
-    /// Cached list of available themes (refreshed when modal opens)
-    pub themes: Vec<ThemeInfo>,
-    /// Original theme ID for restore on cancel
-    pub original_theme_id: String,
-    /// Per-theme representative colors, parallel to `themes` (accent dot +
-    /// palette strip in the picker rows).
-    pub swatches: Vec<crate::theme::ThemeSwatch>,
-    /// Scroll offset (in rows) for keeping a long theme list clipped and the
-    /// selection visible instead of overflowing the modal.
-    pub scroll_offset: usize,
-}
-
-impl ThemePickerState {
-    /// Create a new theme picker state with the current theme for restore
-    pub fn new(current_theme_id: String) -> Self {
-        let themes = list_available_themes();
-        // One theme parse per listed theme, same cost class as the live
-        // preview-on-selection the picker already does.
-        let swatches = themes
-            .iter()
-            .map(|info| {
-                crate::theme::load_theme(&info.id)
-                    .map(|t| t.swatch())
-                    .unwrap_or_else(|_| crate::theme::ThemeSwatch::fallback())
-            })
-            .collect();
-        Self {
-            selected_index: 0,
-            themes,
-            swatches,
-            original_theme_id: current_theme_id,
-            scroll_offset: 0,
-        }
-    }
-}
-
 /// State for the Language Servers picker modal (dynamic — one row per
 /// entry in `lsp::server_ids()`, built fresh from `model.lsp` /
 /// `model.config.lsp` at render time each frame instead of cached here,
@@ -934,98 +895,6 @@ impl FileFinderState {
     /// Set the search input text
     pub fn set_input(&mut self, text: &str) {
         self.editable.set_content(text);
-    }
-}
-
-/// State for the recent files modal
-#[derive(Debug, Clone)]
-pub struct RecentFilesState {
-    /// Index into `filtered_rows` (the ordering authority) — `FlatIndex`
-    /// space, not `entries` space.
-    pub selected_index: usize,
-    /// Cached entries for display
-    pub entries: Vec<crate::recent_files::RecentEntry>,
-    /// Editable state for optional filter input
-    pub editable: EditableState<StringBuffer>,
-    /// Scroll offset (in rows) for the visible window, maintained by the
-    /// update layer (minimal-reveal scrolling) as selection moves.
-    pub scroll_offset: usize,
-    /// Ordering authority: indices into `entries`, filtered by the current
-    /// query and grouped Pinned / Today / Yesterday / Earlier
-    /// (overlay-surface.md "Ordering authority") — recomputed by
-    /// `recompute_filtered_rows` whenever the input or entries change. The
-    /// view's spec builder and `ModalMsg::Confirm`/`SelectNext` both index
-    /// through this instead of re-deriving it independently.
-    pub filtered_rows: Vec<usize>,
-}
-
-impl RecentFilesState {
-    /// Create from the current recent files list.
-    ///
-    /// Keeps MRU ordering intact (including the currently open file) but, when
-    /// the current file is at the top, preselects the next item to preserve
-    /// quick-switch behavior on immediate confirm.
-    pub fn new(
-        recent: &crate::recent_files::RecentFiles,
-        current_file: Option<&std::path::Path>,
-    ) -> Self {
-        let entries = recent.entries.clone();
-        let selected_index = match current_file {
-            Some(current)
-                if entries.len() > 1
-                    && entries
-                        .first()
-                        .is_some_and(|entry| entry.path.as_path() == current) =>
-            {
-                1
-            }
-            _ => 0,
-        };
-        let mut state = Self {
-            selected_index,
-            entries,
-            editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
-            scroll_offset: 0,
-            filtered_rows: Vec::new(),
-        };
-        state.recompute_filtered_rows();
-        // Re-map the preselected entry index (computed above in `entries`
-        // space) into `filtered_rows` space now that it's populated.
-        state.selected_index = state
-            .filtered_rows
-            .iter()
-            .position(|&i| i == selected_index)
-            .unwrap_or(0);
-        state
-    }
-
-    /// Get the filter text
-    pub fn input(&self) -> String {
-        self.editable.text()
-    }
-
-    /// Recompute `filtered_rows`: entries matching the current query,
-    /// stable-sorted by group (Pinned first, then Today/Yesterday/Earlier),
-    /// preserving MRU order within each group. The ordering authority for
-    /// the Recent Files modal — see `filtered_rows` doc comment.
-    pub fn recompute_filtered_rows(&mut self) {
-        let filter = self.input().to_lowercase();
-        let mut order: Vec<usize> = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| filter.is_empty() || e.display_path().to_lowercase().contains(&filter))
-            .map(|(i, _)| i)
-            .collect();
-        order.sort_by_key(|&i| self.entries[i].group() as u8);
-        self.filtered_rows = order;
-    }
-
-    /// The entry currently selected in `FlatIndex` space, if any.
-    pub fn selected_entry(&self) -> Option<&crate::recent_files::RecentEntry> {
-        self.filtered_rows
-            .get(self.selected_index)
-            .and_then(|&i| self.entries.get(i))
     }
 }
 
@@ -1200,28 +1069,6 @@ pub struct CodeActionItem {
     pub is_preferred: bool,
     pub edit: Option<Box<lsp_types::WorkspaceEdit>>,
     pub command: Option<lsp_types::Command>,
-}
-
-/// Content for the currently open context menu (`ui.cursor_overlay` ==
-/// `Some(CursorOverlayState { kind: CursorOverlayKind::ContextMenu, .. })`)
-/// — set alongside `cursor_overlay`, cleared together. `items` is the
-/// ordering authority (built once at open time by the region builder in
-/// `context_menu::builders`; view and Enter/click activation both index
-/// this same `Vec`, addressing it by the "non-separator items in order"
-/// scheme `context_menu::selectable_items` defines). `anchor` is the
-/// `Anchor::Cursor` pixel rect the doc's Overlay Context section
-/// describes — `(x, y, h)`, `h: 0` for a raw click point, the real caret
-/// line height for the Shift+F10 trigger — captured at open time since,
-/// unlike every other cursor-overlay kind, a context menu's anchor isn't
-/// re-derivable from live model state (no live "current click position").
-#[derive(Debug, Clone)]
-pub struct ContextMenuState {
-    pub items: Vec<crate::context_menu::MenuItem>,
-    pub anchor: (usize, usize, usize),
-    /// Which region built this menu — automation-facing (`context_menu`
-    /// snapshot) and testing convenience; the view/routing layer doesn't
-    /// need it (both index `items` directly).
-    pub region: crate::context_menu::ContextMenuRegion,
 }
 
 // ============================================================================
@@ -1821,7 +1668,6 @@ impl Default for UiState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::recent_files::{RecentEntry, RecentFiles};
 
     #[test]
     fn find_async_debug_omits_snapshot_text_and_match_payloads() {
@@ -1872,170 +1718,6 @@ mod tests {
         explicit.set_query("foo");
         assert_eq!(explicit.matches(&document).len(), 70_000);
         assert!(explicit.results(&document).lines.get().is_none());
-    }
-
-    fn make_entry(path: &str, workspace: Option<&str>) -> RecentEntry {
-        RecentEntry {
-            path: PathBuf::from(path),
-            opened_at: 0,
-            workspace: workspace.map(PathBuf::from),
-            open_count: 1,
-            pinned: false,
-        }
-    }
-
-    fn make_recent(entries: Vec<RecentEntry>) -> RecentFiles {
-        RecentFiles {
-            version: 1,
-            entries,
-        }
-    }
-
-    #[test]
-    fn test_recent_files_state_includes_current_file() {
-        let recent = make_recent(vec![
-            make_entry("/a.rs", None),
-            make_entry("/b.rs", None),
-            make_entry("/c.rs", None),
-        ]);
-        let state = RecentFilesState::new(&recent, Some(std::path::Path::new("/a.rs")));
-        assert_eq!(state.entries.len(), 3);
-        assert_eq!(state.entries[0].path, PathBuf::from("/a.rs"));
-        assert_eq!(state.entries[1].path, PathBuf::from("/b.rs"));
-        assert_eq!(state.entries[2].path, PathBuf::from("/c.rs"));
-    }
-
-    #[test]
-    fn test_recent_files_state_preselects_previous_file_when_current_is_first() {
-        let recent = make_recent(vec![
-            make_entry("/a.rs", None),
-            make_entry("/b.rs", None),
-            make_entry("/c.rs", None),
-        ]);
-        let state = RecentFilesState::new(&recent, Some(std::path::Path::new("/a.rs")));
-        assert_eq!(state.selected_index, 1);
-    }
-
-    #[test]
-    fn test_recent_files_state_keeps_default_selection_when_current_is_only_entry() {
-        let recent = make_recent(vec![make_entry("/a.rs", None)]);
-        let state = RecentFilesState::new(&recent, Some(std::path::Path::new("/a.rs")));
-        assert_eq!(state.selected_index, 0);
-    }
-
-    #[test]
-    fn test_recent_files_state_keeps_default_selection_when_current_not_first() {
-        let recent = make_recent(vec![
-            make_entry("/b.rs", None),
-            make_entry("/a.rs", None),
-            make_entry("/c.rs", None),
-        ]);
-        let state = RecentFilesState::new(&recent, Some(std::path::Path::new("/a.rs")));
-        assert_eq!(state.selected_index, 0);
-    }
-
-    #[test]
-    fn test_recent_files_state_no_current_file() {
-        let recent = make_recent(vec![make_entry("/a.rs", None), make_entry("/b.rs", None)]);
-        let state = RecentFilesState::new(&recent, None);
-        assert_eq!(state.entries.len(), 2);
-    }
-
-    #[test]
-    fn test_recent_files_state_filter() {
-        let recent = make_recent(vec![
-            make_entry("/project/src/main.rs", Some("/project")),
-            make_entry("/project/Cargo.toml", Some("/project")),
-            make_entry("/other/README.md", None),
-        ]);
-        let mut state = RecentFilesState::new(&recent, None);
-
-        // No filter — all entries
-        state.recompute_filtered_rows();
-        assert_eq!(state.filtered_rows.len(), 3);
-
-        // Filter by "main"
-        state.editable.set_content("main");
-        state.recompute_filtered_rows();
-        assert_eq!(state.filtered_rows.len(), 1);
-        assert_eq!(
-            state.entries[state.filtered_rows[0]].path,
-            PathBuf::from("/project/src/main.rs")
-        );
-    }
-
-    #[test]
-    fn test_recent_files_state_filter_case_insensitive() {
-        let recent = make_recent(vec![make_entry("/project/src/Main.rs", Some("/project"))]);
-        let mut state = RecentFilesState::new(&recent, None);
-        state.editable.set_content("main");
-        state.recompute_filtered_rows();
-        assert_eq!(state.filtered_rows.len(), 1);
-    }
-
-    #[test]
-    fn test_recent_files_state_empty() {
-        let recent = RecentFiles::default();
-        let state = RecentFilesState::new(&recent, None);
-        assert!(state.entries.is_empty());
-        assert_eq!(state.selected_index, 0);
-    }
-
-    #[test]
-    fn test_recent_files_state_initial_selection() {
-        let recent = make_recent(vec![make_entry("/a.rs", None), make_entry("/b.rs", None)]);
-        let state = RecentFilesState::new(&recent, None);
-        assert_eq!(state.selected_index, 0);
-    }
-
-    #[test]
-    fn test_recompute_filtered_rows_puts_pinned_first_preserving_mru_order() {
-        let mut a = make_entry("/a.rs", None);
-        a.pinned = true;
-        let mut c = make_entry("/c.rs", None);
-        c.pinned = true;
-        let recent = make_recent(vec![
-            make_entry("/z.rs", None), // unpinned, MRU-first
-            a,                         // pinned
-            make_entry("/y.rs", None), // unpinned
-            c,                         // pinned
-        ]);
-        let mut state = RecentFilesState::new(&recent, None);
-        state.recompute_filtered_rows();
-
-        // Pinned entries (a, c) sort before unpinned (z, y), each group
-        // keeping its original MRU-relative order — not re-sorted by name.
-        let ordered_paths: Vec<_> = state
-            .filtered_rows
-            .iter()
-            .map(|&i| state.entries[i].path.clone())
-            .collect();
-        assert_eq!(
-            ordered_paths,
-            vec![
-                PathBuf::from("/a.rs"),
-                PathBuf::from("/c.rs"),
-                PathBuf::from("/z.rs"),
-                PathBuf::from("/y.rs"),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_recompute_filtered_rows_respects_query_filter() {
-        let recent = make_recent(vec![
-            make_entry("/project/main.rs", Some("/project")),
-            make_entry("/project/lib.rs", Some("/project")),
-        ]);
-        let mut state = RecentFilesState::new(&recent, None);
-        state.editable.set_content("main");
-        state.recompute_filtered_rows();
-
-        assert_eq!(state.filtered_rows.len(), 1);
-        assert_eq!(
-            state.entries[state.filtered_rows[0]].path,
-            PathBuf::from("/project/main.rs")
-        );
     }
 
     #[test]
@@ -2126,22 +1808,5 @@ mod tests {
         let mut state = FindReplaceState::default();
         state.set_query("cat");
         assert_eq!(state.results(&document).lines(), &[0, 10_001]);
-    }
-
-    #[test]
-    fn theme_picker_swatches_parallel_the_theme_list() {
-        let state = ThemePickerState::new("default-dark".to_string());
-        assert_eq!(
-            state.swatches.len(),
-            state.themes.len(),
-            "every listed theme needs a swatch (fallback on load failure)"
-        );
-        // Bundled themes all load, so at least one swatch must differ from
-        // the neutral fallback.
-        let fallback = crate::theme::ThemeSwatch::fallback();
-        assert!(
-            state.swatches.iter().any(|s| s.accent != fallback.accent),
-            "bundled themes should produce real accent colors"
-        );
     }
 }

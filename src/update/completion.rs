@@ -40,7 +40,7 @@ use crate::messages::CompletionMsg;
 use crate::model::Selection;
 use crate::model::{AppModel, Cursor, CursorOverlayKind, CursorOverlayState};
 use crate::util::text::{char_type, CharType};
-use crate::view::overlay_surface::{SelectableListViewport, MAX_VISIBLE_COMPLETION};
+use crate::view::overlay_surface::MAX_VISIBLE_COMPLETION;
 
 use super::document::word_start_before;
 use super::text_edits::{apply_planned_edits, EditCarets, EditOffsetMap, PlannedEdit};
@@ -533,31 +533,16 @@ fn open_or_refresh(
         is_incomplete: carried_incomplete,
         pending_resolve: None,
         context,
-        selection_changed: selected_candidate.is_some(),
+        selection_changed: false,
     };
-    if let Some(previous) = selected_candidate.as_ref() {
-        state.preserve_id_for(previous);
-    }
-    if state.assign_candidate_ids().is_none() {
+    let Some(overlay) = state.open_overlay(selected_candidate.as_ref()) else {
         model.ui.set_status("Completion candidate limit reached");
         dismiss(model);
         return Some(Cmd::redraw_status_bar());
-    }
-    let selected = selected_candidate
-        .and_then(|item| state.row_for_candidate(item.id))
-        .unwrap_or_else(|| {
-            state.selection_changed = false;
-            state.preferred_index()
-        });
-    state.identity.selected = state.candidate_for_row(selected);
+    };
     let session = state.identity.session;
-    let visible = !state.filtered.is_empty();
     model.ui.completion.completion_menu = Some(state);
-    model.ui.cursor_overlay = visible.then(|| {
-        let mut overlay = CursorOverlayState::new(CursorOverlayKind::Completion);
-        overlay.selected = selected;
-        overlay
-    });
+    model.ui.cursor_overlay = overlay;
     if !capable {
         return Some(Cmd::Redraw);
     }
@@ -685,7 +670,7 @@ pub(crate) fn merge_lsp_completion_for_session(
     } else {
         false
     };
-    let selected_candidate = {
+    {
         let state = model.ui.completion.completion_menu.as_ref()?;
         if state.document_id != document_id
             || state.identity.session != session
@@ -707,24 +692,7 @@ pub(crate) fn merge_lsp_completion_for_session(
         {
             return None;
         }
-        // An accept blocked on its resolve round trip outranks a refresh:
-        // the menu closes the moment the resolution lands, and replacing
-        // the list underneath it would silently swallow the user's Enter.
-        if state.pending_resolve.is_some() {
-            return None;
-        }
-        state
-            .selection_changed
-            .then(|| {
-                model
-                    .ui
-                    .cursor_overlay
-                    .as_ref()
-                    .and_then(|overlay| state.selected_item(overlay.selected))
-                    .cloned()
-            })
-            .flatten()
-    };
+    }
 
     let request_query = {
         let state = model.ui.completion.completion_menu.as_ref()?;
@@ -748,47 +716,12 @@ pub(crate) fn merge_lsp_completion_for_session(
             data.request_query = Some(request_query.clone());
         }
     }
-    let drop_words = model.config.completion.menu.words == WordsMode::Fallback && !items.is_empty();
-    state.items.retain(|item| {
-        item.source != MenuSourceId::Lsp && !(drop_words && item.source == MenuSourceId::Words)
-    });
-    state.items.extend(items);
-    if let Some(previous) = selected_candidate.as_ref() {
-        state.preserve_id_for(previous);
-    }
-    state.assign_candidate_ids()?;
-    state.is_incomplete = is_incomplete;
-    state.filtered = filter_and_sort(&state.items, &state.query);
-    if state.filtered.is_empty() {
-        *cursor_overlay = None;
-        return Some(Cmd::Redraw);
-    }
-
-    // Preserve deliberate navigation; otherwise honor the server's preferred
-    // item. A pending session can acquire its first visible rows here.
-    let total = state.filtered.len();
-    let preferred = state.preferred_index();
-    let overlay = cursor_overlay
-        .get_or_insert_with(|| CursorOverlayState::new(CursorOverlayKind::Completion));
-    {
-        overlay.reset_documentation();
-        overlay.selected = preferred;
-        let preserved = selected_candidate.and_then(|item| state.row_for_candidate(item.id));
-        state.selection_changed = preserved.is_some();
-        if let Some(pos) = preserved {
-            overlay.selected = pos;
-        }
-        overlay.selected = overlay.selected.min(total - 1);
-        overlay.scroll = SelectableListViewport::compute_from(
-            total,
-            overlay.selected,
-            MAX_VISIBLE_COMPLETION,
-            overlay.scroll,
-        )
-        .scroll_offset;
-        state.identity.selected = state.candidate_for_row(overlay.selected);
-        state.identity.scroll = overlay.scroll;
-    }
+    state.merge_lsp(
+        items,
+        is_incomplete,
+        model.config.completion.menu.words,
+        cursor_overlay,
+    )?;
     let mut cmds = vec![Cmd::Redraw];
     cmds.extend(schedule_docs_resolve(model));
     Some(batch_redraw(cmds))
@@ -798,51 +731,13 @@ fn move_selection(model: &mut AppModel, delta: i32) -> Option<Cmd> {
     if model.ui.completion.completion_commit.is_some() {
         return dismiss_with_cleanup(model);
     }
-    if let Some(state) = model.ui.completion.completion_menu.as_mut() {
-        state.selection_changed = true;
-        // Navigation withdraws an earlier Enter accept. Its late resolve may
-        // enrich the row, but must not accept the previous selection.
-        state.pending_resolve = None;
-    }
     model.ui.completion.completion_accept = None;
-    let total = model
+    model
         .ui
         .completion
         .completion_menu
-        .as_ref()
-        .map(|s| s.filtered.len())
-        .unwrap_or(0);
-    let state = model.ui.cursor_overlay.as_mut()?;
-    if total == 0 {
-        return Some(Cmd::Redraw);
-    }
-    // Step reduced modulo `total` so a page-sized jump on a short list
-    // can't underflow (`selected + total - step` with step > total).
-    let step = (delta.unsigned_abs() as usize) % total;
-    let previous_selection = state.selected;
-    state.selected = if delta > 0 {
-        (state.selected + step) % total
-    } else {
-        (state.selected + total - step) % total
-    };
-    if state.selected != previous_selection {
-        state.reset_documentation();
-    }
-    // The popup sizes itself to `min(total, MAX_VISIBLE_COMPLETION)` rows,
-    // so the overlay's own minimal-reveal rule is the authority here.
-    state.scroll = SelectableListViewport::compute_from(
-        total,
-        state.selected,
-        MAX_VISIBLE_COMPLETION,
-        state.scroll,
-    )
-    .scroll_offset;
-    let selected = state.selected;
-    let scroll = state.scroll;
-    if let Some(menu) = model.ui.completion.completion_menu.as_mut() {
-        menu.identity.selected = menu.candidate_for_row(selected);
-        menu.identity.scroll = scroll;
-    }
+        .as_mut()?
+        .move_selection(delta, &mut model.ui.cursor_overlay)?;
     let mut cmds = vec![Cmd::Redraw];
     cmds.extend(schedule_docs_resolve(model));
     Some(batch_redraw(cmds))
@@ -2390,10 +2285,8 @@ mod tests {
         };
         data.text = "valid".into();
         state.items.push(second);
-        state
-            .assign_candidate_ids()
-            .expect("candidate id allocation");
         state.filtered = filter_and_sort(&state.items, "va");
+        state.open_overlay(None).expect("candidate id allocation");
         let state = state.clone();
         update(&mut model, Msg::Completion(CompletionMsg::AcceptMenuItem));
         let first_candidate = model
@@ -3084,8 +2977,8 @@ mod tests {
         );
         update(&mut model, Msg::Completion(CompletionMsg::MenuNext));
         let selected = model.ui.completion.completion_menu.as_ref().unwrap();
-        let candidate = selected.identity.selected.unwrap();
-        let row = selected.row_for_candidate(candidate).unwrap();
+        let row = model.ui.cursor_overlay.unwrap().selected;
+        let candidate = selected.candidate_for_row(row).unwrap();
         let MenuInsert::Lsp(data) = &selected.selected_item(row).unwrap().insert else {
             unreachable!()
         };
@@ -3100,8 +2993,8 @@ mod tests {
         );
 
         let refreshed = model.ui.completion.completion_menu.as_ref().unwrap();
-        assert_eq!(refreshed.identity.selected, Some(candidate));
-        let row = refreshed.row_for_candidate(candidate).unwrap();
+        let row = model.ui.cursor_overlay.unwrap().selected;
+        assert_eq!(refreshed.candidate_for_row(row), Some(candidate));
         let MenuInsert::Lsp(data) = &refreshed.selected_item(row).unwrap().insert else {
             unreachable!()
         };

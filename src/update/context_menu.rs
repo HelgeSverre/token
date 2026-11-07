@@ -1,16 +1,16 @@
 //! `ContextMenuMsg` handlers (context-menu.md).
 //!
-//! Menus are built here (region builders in `context_menu::builders`), not
-//! in `App`. Item hints use the model's active keymap, shared with dispatch. Anything
+//! Menus are built by `context_menu`, not in `App`.
+//! Item hints use the model's active keymap, shared with dispatch. Anything
 //! requiring I/O (clipboard content for `Editor` targets, the caret's pixel
 //! rect for Shift+F10) is already resolved by the caller
 //! (`runtime/mouse.rs::handle_right_click`, `App::open_context_menu_at_caret`)
 //! before the `Open` message reaches here.
 
 use crate::commands::Cmd;
-use crate::context_menu::{self, ContextMenuTarget, MenuAction};
+use crate::context_menu::{ContextMenuState, ContextMenuTarget, MenuAction};
 use crate::messages::ContextMenuMsg;
-use crate::model::{AppModel, ContextMenuState, CursorOverlayKind, CursorOverlayState};
+use crate::model::{AppModel, CursorOverlayKind, CursorOverlayState};
 
 pub(super) fn update_context_menu(model: &mut AppModel, msg: ContextMenuMsg) -> Option<Cmd> {
     match msg {
@@ -35,9 +35,7 @@ fn open_menu(
     if model.ui.has_modal() {
         return None;
     }
-    let region = target.region();
-    let items = context_menu::build_menu(model, &target);
-    let selected = context_menu::first_enabled_index(&items);
+    let menu = ContextMenuState::new(model, &target, anchor);
     // Another cursor overlay already open -> close it first (Phase 2's
     // guard, matching the mouse click-away path at
     // `runtime/mouse.rs::handle_mouse_press`): a sibling left populated
@@ -49,13 +47,9 @@ fn open_menu(
     model.ui.reference_list = None;
     model.ui.code_action_list = None;
     let mut overlay = CursorOverlayState::new(CursorOverlayKind::ContextMenu);
-    overlay.selected = selected;
+    overlay.selected = menu.initial_selection();
     model.ui.cursor_overlay = Some(overlay);
-    model.ui.context_menu = Some(ContextMenuState {
-        items,
-        anchor,
-        region,
-    });
+    model.ui.context_menu = Some(menu);
     Some(Cmd::Redraw)
 }
 
@@ -74,13 +68,11 @@ fn open_menu(
 /// minor cosmetic gap in an already-unusual invocation path.
 pub fn open_editor_menu_at_caret(model: &mut AppModel, clipboard_has_content: bool) -> Option<Cmd> {
     let group_id = model.editor_area.focused_group_id;
-    let has_selection = !model.editor().active_selection().is_empty();
     let rect =
         crate::view::caret::active_text_input_rect(model, model.char_width, model.line_height)?;
     let anchor = (rect.x, rect.y, rect.h);
     let target = ContextMenuTarget::Editor {
         group_id,
-        has_selection,
         clipboard_has_content,
     };
     open_menu(model, target, anchor)
@@ -91,8 +83,7 @@ fn close_menu(model: &mut AppModel) {
     model.ui.context_menu = None;
 }
 
-/// Run the selectable-space item at `index` (see
-/// `context_menu::selectable_items`) and dismiss. A disabled item (or an
+/// Run the menu row at `index` and dismiss. A disabled item (or an
 /// out-of-range index) is a no-op that leaves the menu open — matches the
 /// "disabled items don't activate" testing-strategy rule.
 fn activate_item(model: &mut AppModel, index: usize) -> Option<Cmd> {
@@ -100,9 +91,8 @@ fn activate_item(model: &mut AppModel, index: usize) -> Option<Cmd> {
         .ui
         .context_menu
         .as_ref()
-        .and_then(|state| context_menu::selectable_items(&state.items).nth(index))
-        .filter(|item| item.enabled)
-        .map(|item| item.action.clone());
+        .and_then(|state| state.action(index))
+        .cloned();
 
     let Some(action) = action else {
         return Some(Cmd::Redraw);
@@ -148,15 +138,15 @@ mod tests {
 
     fn model_with_menu(items: Vec<MenuItem>) -> AppModel {
         let mut model = AppModel::new(800, 600, 1.0);
-        let selected = context_menu::first_enabled_index(&items);
-        let mut overlay = CursorOverlayState::new(CursorOverlayKind::ContextMenu);
-        overlay.selected = selected;
-        model.ui.cursor_overlay = Some(overlay);
-        model.ui.context_menu = Some(ContextMenuState {
+        let menu = ContextMenuState {
             items,
             anchor: (10, 20, 0),
             region: crate::context_menu::ContextMenuRegion::Editor,
-        });
+        };
+        let mut overlay = CursorOverlayState::new(CursorOverlayKind::ContextMenu);
+        overlay.selected = menu.initial_selection();
+        model.ui.cursor_overlay = Some(overlay);
+        model.ui.context_menu = Some(menu);
         model
     }
 

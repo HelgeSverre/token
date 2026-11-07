@@ -346,7 +346,7 @@ fn editor_geometry_snapshot(model: &AppModel) -> Option<EditorGeometrySnapshot> 
 
 /// A read-only view of the open context menu, for automation to drive
 /// open→navigate→confirm flows without a rendering backend. `rows` walks
-/// `context_menu::selectable_items(&state.items)` — the menu's own
+/// `ContextMenuState::rows()` — the menu's own
 /// addressing space (separators excluded, same order `FlatIndex`/
 /// `ContextMenuMsg::ActivateItem` use) — so this can never drift from what
 /// the view renders or Enter/click activates.
@@ -375,7 +375,8 @@ fn context_menu_snapshot(model: &AppModel) -> Option<ContextMenuSnapshot> {
     }
     let selected = model.ui.cursor_overlay.map(|o| o.selected).unwrap_or(0);
     let state = model.ui.context_menu.as_ref()?;
-    let rows = token::context_menu::selectable_items(&state.items)
+    let rows = state
+        .rows()
         .map(|item| ContextMenuRowSnapshot {
             label: item.label.clone(),
             enabled: item.enabled,
@@ -876,11 +877,13 @@ fn overlay_snapshot(
             query: String::new(),
             active_tab: None,
             rows: state
-                .themes
-                .iter()
-                .map(|t| OverlayRowSnapshot {
-                    label: t.name.clone(),
-                    section: Some(theme_source_title(t.source).to_owned()),
+                .groups()
+                .into_iter()
+                .flat_map(|(title, choices)| {
+                    choices.iter().map(move |choice| OverlayRowSnapshot {
+                        label: choice.theme.name.clone(),
+                        section: Some(title.to_owned()),
+                    })
                 })
                 .collect(),
             selected: state.selected_index,
@@ -908,18 +911,17 @@ fn overlay_snapshot(
             query: state.input(),
             active_tab: None,
             rows: state
-                .filtered_rows
-                .iter()
-                .map(|&i| {
-                    let entry = &state.entries[i];
-                    OverlayRowSnapshot {
+                .groups()
+                .into_iter()
+                .flat_map(|(title, entries)| {
+                    entries.into_iter().map(move |entry| OverlayRowSnapshot {
                         label: entry
                             .path
                             .file_name()
                             .map(|n| n.to_string_lossy().into_owned())
                             .unwrap_or_default(),
-                        section: Some(recent_group_title(entry).to_owned()),
-                    }
+                        section: Some(title.to_owned()),
+                    })
                 })
                 .collect(),
             selected: state.selected_index,
@@ -956,17 +958,6 @@ fn overlay_snapshot(
             options: Vec::new(),
         }),
     }
-}
-
-fn theme_source_title(source: token::theme::ThemeSource) -> &'static str {
-    match source {
-        token::theme::ThemeSource::User => "User Themes",
-        token::theme::ThemeSource::Builtin => "Built-in Themes",
-    }
-}
-
-fn recent_group_title(entry: &token::recent_files::RecentEntry) -> &'static str {
-    entry.group().title()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1772,9 +1763,10 @@ mod tests {
         RequestError, Target, MAX_DOCUMENT_SIZE, MAX_MESSAGE_SIZE,
     };
     use token::lsp::{LspServerId, ServerState};
-    use token::model::ui::{FindReplaceState, GotoLineState, RecentFilesState, ThemePickerState};
+    use token::model::ui::{FindReplaceState, GotoLineState};
     use token::model::{AppModel, ModalState};
-    use token::recent_files::RecentEntry;
+    use token::recent_files::{RecentEntry, RecentFilesState};
+    use token::theme::ThemePickerState;
     use token::util::ByteSize;
 
     #[test]
@@ -2056,7 +2048,7 @@ mod tests {
     fn theme_picker_overlay_snapshot_reports_rows_and_selection() {
         let mut state = ThemePickerState::new("dark".to_owned());
         state.selected_index = 1;
-        let expected_len = state.themes.len();
+        let expected_len = state.choices().len();
         let modal = ModalState::ThemePicker(state);
         let snapshot = overlay_snapshot(&Default::default(), &modal)
             .expect("theme picker must report an overlay");

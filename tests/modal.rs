@@ -15,8 +15,8 @@ use token::messages::{ModalMsg, Msg, UiMsg};
 use token::model::ui::FindStatus;
 use token::model::{
     CommandPaletteState, FindReplaceState, FocusTarget, GotoLineState, ModalId, ModalState,
-    ThemePickerState,
 };
+use token::theme::ThemePickerState;
 use token::update::update;
 
 // Helper to create a CommandPaletteState with initial text
@@ -454,6 +454,8 @@ fn test_find_replace_delete_backward() {
 
 #[test]
 fn test_theme_picker_select_next() {
+    use token::commands::Cmd;
+
     let mut model = test_model("hello\n", 0, 0);
     model
         .ui
@@ -461,23 +463,42 @@ fn test_theme_picker_select_next() {
             "default-dark".to_string(),
         )));
 
-    let initial_index = if let Some(ModalState::ThemePicker(state)) = &model.ui.active_modal {
-        state.selected_index
-    } else {
-        panic!("Expected theme picker modal");
-    };
+    let (initial_index, expected_id) =
+        if let Some(ModalState::ThemePicker(state)) = &model.ui.active_modal {
+            (
+                state.selected_index,
+                state.choices()[state.selected_index + 1].theme.id.clone(),
+            )
+        } else {
+            panic!("Expected theme picker modal");
+        };
 
-    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)));
+    let preview = update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)));
+    assert!(
+        matches!(preview, Some(Cmd::Batch(commands)) if commands.iter().any(|cmd|
+            matches!(cmd, Cmd::LoadTheme { id, persist: false } if id == &expected_id)
+        ))
+    );
 
     if let Some(ModalState::ThemePicker(state)) = &model.ui.active_modal {
         assert_eq!(state.selected_index, initial_index + 1);
     } else {
         panic!("Expected theme picker modal");
     }
+
+    let confirm = update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Confirm)));
+    assert!(
+        matches!(confirm, Some(Cmd::Batch(commands)) if commands.iter().any(|cmd|
+            matches!(cmd, Cmd::LoadTheme { id, persist: true } if id == &expected_id)
+        ))
+    );
+    assert!(model.ui.active_modal.is_none());
 }
 
 #[test]
 fn test_theme_picker_select_previous() {
+    use token::commands::Cmd;
+
     let mut model = test_model("hello\n", 0, 0);
     let mut picker_state = ThemePickerState::new("default-dark".to_string());
     picker_state.selected_index = 2;
@@ -490,6 +511,14 @@ fn test_theme_picker_select_previous() {
     } else {
         panic!("Expected theme picker modal");
     }
+
+    let cancel = update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::Close)));
+    assert!(
+        matches!(cancel, Some(Cmd::Batch(commands)) if commands.iter().any(|cmd|
+            matches!(cmd, Cmd::LoadTheme { id, persist: false } if id == "default-dark")
+        ))
+    );
+    assert!(model.ui.active_modal.is_none());
 }
 
 #[test]
@@ -499,7 +528,7 @@ fn test_theme_picker_select_next_wraps_at_end() {
     // palette (was: saturate at the last item).
     let mut model = test_model("hello\n", 0, 0);
     let mut picker_state = ThemePickerState::new("default-dark".to_string());
-    let max_index = picker_state.themes.len().saturating_sub(1);
+    let max_index = picker_state.choices().len().saturating_sub(1);
     picker_state.selected_index = max_index;
     model.ui.open_modal(ModalState::ThemePicker(picker_state));
 
@@ -736,25 +765,37 @@ fn test_toggle_pin_moves_entry_into_pinned_section_and_persists() {
         e.path = e.path.canonicalize().unwrap_or_else(|_| e.path.clone());
     }
 
-    let state = token::model::RecentFilesState::new(&model.recent_files, None);
+    let state = token::recent_files::RecentFilesState::new(&model.recent_files, None);
     model.ui.open_modal(ModalState::RecentFiles(state));
 
-    // Select the first (unpinned) entry and pin it.
+    // Pin the second entry so grouping must actually move it.
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::SelectNext)));
     update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::TogglePin)));
 
     if let Some(ModalState::RecentFiles(state)) = &model.ui.active_modal {
         let selected = state.selected_entry().expect("selection after pin toggle");
         assert!(selected.pinned, "the toggled entry should now be pinned");
+        assert_eq!(selected.path, PathBuf::from("/b.rs"));
+        assert_eq!(state.selected_index, 0);
+        assert_eq!(state.groups()[0].0, "Pinned");
     } else {
         panic!("Expected recent files modal");
     }
 
     // The persistent store (not just the modal's cached copy) is updated,
     // since pins persist across restarts.
-    assert!(
-        model.recent_files.entries.iter().any(|e| e.pinned),
-        "pin should be mirrored into the persistent recent-files store"
-    );
+    assert!(!model.recent_files.entries[0].pinned);
+    assert!(model.recent_files.entries[1].pinned);
+
+    // Unpinning restores MRU order without switching the selected file.
+    update(&mut model, Msg::Ui(UiMsg::Modal(ModalMsg::TogglePin)));
+    let Some(ModalState::RecentFiles(state)) = &model.ui.active_modal else {
+        panic!("Expected recent files modal");
+    };
+    assert_eq!(state.selected_index, 1);
+    assert_eq!(state.selected_entry().unwrap().path, PathBuf::from("/b.rs"));
+    assert!(!state.selected_entry().unwrap().pinned);
+    assert!(model.recent_files.entries.iter().all(|entry| !entry.pinned));
 }
 
 // ========================================================================

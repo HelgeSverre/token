@@ -1172,7 +1172,7 @@ mod scroll_tests {
     fn scroll_dismisses_an_open_context_menu() {
         let mut model = model_with_many_lines();
         model.ui.cursor_overlay = Some(CursorOverlayState::new(CursorOverlayKind::ContextMenu));
-        model.ui.context_menu = Some(crate::model::ui::ContextMenuState {
+        model.ui.context_menu = Some(crate::context_menu::ContextMenuState {
             items: Vec::new(),
             anchor: (0, 0, 0),
             region: crate::context_menu::ContextMenuRegion::Editor,

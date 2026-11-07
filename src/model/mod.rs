@@ -57,12 +57,12 @@ pub use status_bar::{
 };
 pub use styled_text::{runs_in_spans, Span, SpanStyle, StyledText};
 pub use ui::{
-    CodeActionItem, CommandMatch, CommandPaletteState, ContextMenuState, CursorOverlayKind,
-    CursorOverlayState, DropState, FileFinderState, FileMatch, FindReplaceField, FindReplaceState,
-    FocusTarget, GotoLineState, HoverCardState, HoverRegion, LanguagePickerState, LspServersState,
-    ModalId, ModalState, OutlinePanelState, ProblemsPanelState, RecentFilesState,
-    RenameSymbolState, ScrollbarDragAxis, ScrollbarDragState, SearchTab, SidebarResizeState,
-    SignatureHelpState, SignatureView, ThemePickerState, UiState, COMMAND_PALETTE_MAX_VISIBLE,
+    CodeActionItem, CommandMatch, CommandPaletteState, CursorOverlayKind, CursorOverlayState,
+    DropState, FileFinderState, FileMatch, FindReplaceField, FindReplaceState, FocusTarget,
+    GotoLineState, HoverCardState, HoverRegion, LanguagePickerState, LspServersState, ModalId,
+    ModalState, OutlinePanelState, ProblemsPanelState, RenameSymbolState, ScrollbarDragAxis,
+    ScrollbarDragState, SearchTab, SidebarResizeState, SignatureHelpState, SignatureView, UiState,
+    COMMAND_PALETTE_MAX_VISIBLE,
 };
 pub use workspace::{FileExtension, FileNode, FileTree, ScanOptions, Workspace};
 

@@ -23,14 +23,12 @@ use token::model::editor::{
     BinaryPlaceholderState, EditorState, Position, Selection, TabContent, ViewMode,
 };
 use token::model::editor_area::{EditorArea, SplitDirection, Tab};
-use token::model::ui::{
-    CommandPaletteState, FindReplaceState, GotoLineState, ModalState, ThemePickerState, UiState,
-};
+use token::model::ui::{CommandPaletteState, FindReplaceState, GotoLineState, ModalState, UiState};
 use token::model::workspace::Workspace;
 use token::model::AppModel;
 use token::model::ScaledMetrics;
 use token::syntax::{LanguageId, ParserState};
-use token::theme::Theme;
+use token::theme::{Theme, ThemePickerState};
 use token::update::{resolve_palette_rows, update};
 use token::view::{Frame, GlyphCache, PreviewRenderMode, Renderer, TextPainter};
 
@@ -1127,8 +1125,8 @@ fn apply_modal(model: &mut AppModel, config: &ModalConfig) -> Result<()> {
                 state.selected_index = idx;
                 // Apply live preview: load the highlighted theme so the editor
                 // background reflects the selected theme (matches runtime behavior)
-                if let Some(theme_info) = state.themes.get(idx) {
-                    if let Ok(preview_theme) = token::theme::load_theme(&theme_info.id) {
+                if let Some(token::commands::Cmd::LoadTheme { id, .. }) = state.preview() {
+                    if let Ok(preview_theme) = token::theme::load_theme(&id) {
                         model.theme = preview_theme;
                     }
                 }

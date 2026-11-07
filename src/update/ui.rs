@@ -9,16 +9,17 @@ use crate::messages::{ModalMsg, UiMsg};
 use crate::model::ui::FindReplaceState;
 use crate::model::{
     AppModel, CommandPaletteState, FileFinderState, GotoLineState, LanguagePickerState,
-    LspServersState, ModalId, ModalState, RecentFilesState, SearchTab, SegmentContent, SegmentId,
-    ThemePickerState, TransientMessage, COMMAND_PALETTE_MAX_VISIBLE,
+    LspServersState, ModalId, ModalState, SearchTab, SegmentContent, SegmentId, TransientMessage,
+    COMMAND_PALETTE_MAX_VISIBLE,
 };
+use crate::recent_files::RecentFilesState;
 use crate::syntax::LanguageId;
+use crate::theme::ThemePickerState;
 use crate::update::layout::update_layout;
 use crate::update::lsp::toggle_lsp_server_enabled;
 use crate::update::navigation::push_history;
 use crate::update::syntax::update_syntax;
 use crate::update::text_edits::{apply_planned_edits, EditCarets, PlannedEdit};
-use crate::view::modal::{recent_files_groups, theme_picker_groups};
 use crate::view::overlay_surface::{resolve_scroll_for_selection, SectionShape};
 
 use super::app::execute_command;
@@ -398,7 +399,7 @@ fn on_modal_input_changed(modal: &mut ModalState, history: &CommandHistory) {
             }
         }
         ModalState::FileFinder(state) => update_file_finder_results(state),
-        ModalState::RecentFiles(state) => resolve_recent_rows(state),
+        ModalState::RecentFiles(state) => state.filter_changed(),
         ModalState::GotoLine(_)
         | ModalState::RenameSymbol(_)
         | ModalState::ThemePicker(_)
@@ -569,12 +570,9 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
             }
             // Restore original theme if closing theme picker without confirming
             if let Some(ModalState::ThemePicker(state)) = &model.ui.active_modal {
-                let id = state.original_theme_id.clone();
+                let restore = state.cancel();
                 model.ui.close_modal();
-                return Some(Cmd::Batch(vec![
-                    Cmd::LoadTheme { id, persist: false },
-                    Cmd::Redraw,
-                ]));
+                return Some(Cmd::Batch(vec![restore, Cmd::Redraw]));
             }
             model.ui.close_modal();
             Some(Cmd::Redraw)
@@ -701,27 +699,7 @@ fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
                 }
             }
             if let Some(ModalState::RecentFiles(ref mut state)) = model.ui.active_modal {
-                if let Some(path) = state.selected_entry().map(|e| e.path.clone()) {
-                    model.recent_files.toggle_pin(&path);
-                    if let Some(e) = state.entries.iter_mut().find(|e| e.path == path) {
-                        e.pinned = !e.pinned;
-                    }
-                    state.recompute_filtered_rows();
-                    // Keep the same entry selected even though the
-                    // Pinned/date grouping just reordered it.
-                    if let Some(new_idx) = state
-                        .filtered_rows
-                        .iter()
-                        .position(|&i| state.entries[i].path == path)
-                    {
-                        state.selected_index = new_idx;
-                        state.scroll_offset = resolve_scroll_for_selection(
-                            &recent_files_shapes(state),
-                            new_idx,
-                            COMMAND_PALETTE_MAX_VISIBLE,
-                            state.scroll_offset,
-                        );
-                    }
+                if state.toggle_selected_pin(&mut model.recent_files) {
                     let recent = model.recent_files.clone();
                     return Some(Cmd::Batch(vec![
                         Cmd::Redraw,
@@ -982,9 +960,12 @@ fn set_modal_selected_index(
                 state.symbols.selected_index = row.min(state.symbols.results.items.len())
             }
         },
-        ModalState::ThemePicker(state) => state.selected_index = row.min(state.themes.len()),
+        ModalState::ThemePicker(state) => state.selected_index = row.min(state.choices().len()),
         ModalState::FileFinder(state) => state.selected_index = row.min(state.results.len()),
-        ModalState::RecentFiles(state) => state.selected_index = row.min(state.filtered_rows.len()),
+        ModalState::RecentFiles(state) => {
+            let total = state.rows().len();
+            state.selected_index = row.min(total);
+        }
         ModalState::LspServers(state) => {
             state.selected_index =
                 row.min(crate::lsp::server_ids(lsp_config).len().saturating_sub(1))
@@ -1070,14 +1051,9 @@ fn confirm_active_modal(model: &mut AppModel) -> Option<Cmd> {
                 Some(Cmd::Redraw)
             }
             ModalState::ThemePicker(state) => {
-                // Apply selected theme and save config
-                if let Some(theme_info) = state.themes.get(state.selected_index) {
-                    let id = theme_info.id.clone();
+                if let Some(apply) = state.confirm() {
                     model.ui.close_modal();
-                    return Some(Cmd::Batch(vec![
-                        Cmd::LoadTheme { id, persist: true },
-                        Cmd::Redraw,
-                    ]));
+                    return Some(Cmd::Batch(vec![apply, Cmd::Redraw]));
                 }
                 model.ui.close_modal();
                 Some(Cmd::Redraw)
@@ -1437,30 +1413,6 @@ fn flat_shapes(total: usize) -> [SectionShape; 1] {
     }]
 }
 
-/// Section shapes for the Recent Files modal's Pinned/Today/Yesterday/
-/// Earlier grouping — the same boundaries `recent_files_groups` renders,
-/// so selection movement and the view agree on where headers fall.
-fn recent_files_shapes(state: &RecentFilesState) -> Vec<SectionShape> {
-    recent_files_groups(state)
-        .iter()
-        .map(|(_, indices)| SectionShape {
-            has_title: true,
-            len: indices.len(),
-        })
-        .collect()
-}
-
-/// Section shapes for the Theme Picker's User/Built-in grouping.
-fn theme_picker_shapes(state: &ThemePickerState) -> Vec<SectionShape> {
-    theme_picker_groups(&state.themes)
-        .iter()
-        .map(|(_, range)| SectionShape {
-            has_title: true,
-            len: range.len(),
-        })
-        .collect()
-}
-
 /// Section shapes for the Language Servers picker: a single, untitled
 /// section (like the Command Palette/File Finder) sized from the same
 /// config-aware registry as painting and activation.
@@ -1570,7 +1522,7 @@ fn move_search_everywhere_selection(state: &mut CommandPaletteState, delta: isiz
 fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
     let settings_geometry = settings_scroll_geometry(model);
     let modal = model.ui.active_modal.as_mut()?;
-    let preview_theme_id = match modal {
+    let preview = match modal {
         ModalState::Settings(state) => {
             state.selected_index = offset_selection(state.selected_index, state.rows.len(), delta);
             if let Some((viewport, positions)) = settings_geometry {
@@ -1585,14 +1537,14 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
             None
         }
         ModalState::ThemePicker(state) => {
-            let shapes = theme_picker_shapes(state);
+            let shapes = state.section_shapes();
             move_list_selection(
                 &mut state.selected_index,
                 &mut state.scroll_offset,
                 &shapes,
                 delta,
             );
-            state.themes.get(state.selected_index).map(|t| t.id.clone())
+            state.preview()
         }
         ModalState::FileFinder(state) => {
             let shapes = flat_shapes(state.results.len());
@@ -1605,7 +1557,7 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
             None
         }
         ModalState::RecentFiles(state) => {
-            let shapes = recent_files_shapes(state);
+            let shapes = state.section_shapes();
             move_list_selection(
                 &mut state.selected_index,
                 &mut state.scroll_offset,
@@ -1646,14 +1598,8 @@ fn modal_select(model: &mut AppModel, delta: isize) -> Option<Cmd> {
         }
         ModalState::GotoLine(_) | ModalState::RenameSymbol(_) => None,
     };
-    if let Some(theme_id) = preview_theme_id {
-        return Some(Cmd::Batch(vec![
-            Cmd::LoadTheme {
-                id: theme_id,
-                persist: false,
-            },
-            Cmd::Redraw,
-        ]));
+    if let Some(preview) = preview {
+        return Some(Cmd::Batch(vec![preview, Cmd::Redraw]));
     }
     Some(Cmd::Redraw)
 }
@@ -1731,7 +1677,7 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
             }
         },
         ModalState::ThemePicker(state) => {
-            let shapes = theme_picker_shapes(state);
+            let shapes = state.section_shapes();
             page_list_selection(
                 &mut state.selected_index,
                 &mut state.scroll_offset,
@@ -1749,7 +1695,7 @@ fn modal_page(model: &mut AppModel, forward: bool) -> Option<Cmd> {
             );
         }
         ModalState::RecentFiles(state) => {
-            let shapes = recent_files_shapes(state);
+            let shapes = state.section_shapes();
             page_list_selection(
                 &mut state.selected_index,
                 &mut state.scroll_offset,
@@ -1838,7 +1784,7 @@ fn modal_scroll_to(model: &mut AppModel, position: Option<usize>, delta: isize) 
             ),
         },
         ModalState::ThemePicker(state) => {
-            let shapes = theme_picker_shapes(state);
+            let shapes = state.section_shapes();
             (&mut state.scroll_offset, shapes)
         }
         ModalState::FileFinder(state) => (
@@ -1846,7 +1792,7 @@ fn modal_scroll_to(model: &mut AppModel, position: Option<usize>, delta: isize) 
             flat_shapes(state.results.len()).to_vec(),
         ),
         ModalState::RecentFiles(state) => {
-            let shapes = recent_files_shapes(state);
+            let shapes = state.section_shapes();
             (&mut state.scroll_offset, shapes)
         }
         ModalState::LspServers(state) => (
@@ -2378,22 +2324,6 @@ pub fn update_file_finder_results(state: &mut FileFinderState) {
     let query = state.input();
     state.results = fuzzy_match_files(&state.all_files, &query, &state.workspace_root);
     // Reset selection to first item
-    state.selected_index = 0;
-    state.scroll_offset = 0;
-}
-
-// ============================================================================
-// Recent Files Ordering Authority
-// ============================================================================
-
-/// The ordering authority for the Recent Files modal (overlay-surface.md
-/// "Ordering authority"): recomputes `state.filtered_rows` (filtered +
-/// Pinned/date-grouped) and resets selection, mirroring
-/// `resolve_palette_rows`. Both the view's spec builder and
-/// `ModalMsg::Confirm`/`SelectNext` read `filtered_rows` instead of
-/// re-deriving it.
-pub fn resolve_recent_rows(state: &mut RecentFilesState) {
-    state.recompute_filtered_rows();
     state.selected_index = 0;
     state.scroll_offset = 0;
 }

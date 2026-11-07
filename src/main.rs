@@ -814,7 +814,7 @@ mod tests {
         let mut recent = token::recent_files::RecentFiles::default();
         recent.add(std::path::PathBuf::from(file!()), None);
         model.recent_files = recent.clone();
-        let state = token::model::RecentFilesState::new(&recent, None);
+        let state = token::recent_files::RecentFilesState::new(&recent, None);
         model.ui.open_modal(ModalState::RecentFiles(state));
 
         handle_key(

@@ -6128,7 +6128,6 @@ fn right_click_on_a_tab_targets_the_clicked_tab_not_the_focused_one() {
             target: token::context_menu::ContextMenuTarget::Tab {
                 group_id,
                 tab_id: clicked_tab,
-                file_path: None,
             },
             anchor: (0, 0, 0),
         }),
@@ -6140,8 +6139,7 @@ fn right_click_on_a_tab_targets_the_clicked_tab_not_the_focused_one() {
         .context_menu
         .as_ref()
         .unwrap()
-        .items
-        .iter()
+        .rows()
         .position(|i| i.label == "Close")
         .unwrap();
     update(

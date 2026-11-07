@@ -12,8 +12,10 @@ use std::path::PathBuf;
 
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 
+use crate::config::WordsMode;
 use crate::lsp::LspServerId;
-use crate::model::{Cursor, DocumentId};
+use crate::model::{Cursor, CursorOverlayKind, CursorOverlayState, DocumentId};
+use crate::view::overlay_surface::{SelectableListViewport, MAX_VISIBLE_COMPLETION};
 
 /// Completion-item kind shared by sources and rows. The view owns badge
 /// glyphs/colors; this semantic type does not depend on rendering.
@@ -173,8 +175,6 @@ pub(crate) struct PendingAcceptance {
 pub struct MenuIdentity {
     pub session: super::session::SessionId,
     next_serial: u64,
-    pub selected: Option<super::session::CandidateId>,
-    pub scroll: usize,
 }
 
 impl Default for MenuIdentity {
@@ -182,8 +182,6 @@ impl Default for MenuIdentity {
         Self {
             session: super::session::SessionId(0),
             next_serial: 0,
-            selected: None,
-            scroll: 0,
         }
     }
 }
@@ -243,7 +241,146 @@ pub struct CompletionMenuState {
 }
 
 impl CompletionMenuState {
-    pub fn assign_candidate_ids(&mut self) -> Option<()> {
+    /// Prepare an opening/refreshed menu. The outer `None` means candidate
+    /// identity exhaustion; an empty list keeps its session without an overlay.
+    pub(crate) fn open_overlay(
+        &mut self,
+        previous: Option<&MenuItem>,
+    ) -> Option<Option<CursorOverlayState>> {
+        if let Some(previous) = previous {
+            self.preserve_id_for(previous);
+        }
+        self.assign_candidate_ids()?;
+        let preserved = previous.and_then(|item| self.row_for_candidate(item.id));
+        self.selection_changed = preserved.is_some();
+        Some((!self.filtered.is_empty()).then(|| {
+            let mut overlay = CursorOverlayState::new(CursorOverlayKind::Completion);
+            overlay.selected = preserved.unwrap_or_else(|| self.preferred_index());
+            overlay
+        }))
+    }
+
+    /// Replace server candidates without overriding deliberate user navigation.
+    /// An acceptance waiting for resolution owns its candidate until it finishes.
+    pub(crate) fn merge_lsp(
+        &mut self,
+        items: Vec<MenuItem>,
+        is_incomplete: bool,
+        words: WordsMode,
+        overlay: &mut Option<CursorOverlayState>,
+    ) -> Option<()> {
+        if self.pending_resolve.is_some() {
+            return None;
+        }
+        let selected = self
+            .selection_changed
+            .then(|| {
+                overlay
+                    .as_ref()
+                    .and_then(|overlay| self.selected_item(overlay.selected))
+                    .cloned()
+            })
+            .flatten();
+        let drop_words = words == WordsMode::Fallback && !items.is_empty();
+        self.items.retain(|item| {
+            item.source != MenuSourceId::Lsp && !(drop_words && item.source == MenuSourceId::Words)
+        });
+        self.items.extend(items);
+        if let Some(previous) = selected.as_ref() {
+            self.preserve_id_for(previous);
+        }
+        self.assign_candidate_ids()?;
+        self.is_incomplete = is_incomplete;
+        self.filtered = filter_and_sort(&self.items, &self.query);
+        if self.filtered.is_empty() {
+            *overlay = None;
+            return Some(());
+        }
+        let preserved = selected.and_then(|item| self.row_for_candidate(item.id));
+        self.selection_changed = preserved.is_some();
+        let overlay =
+            overlay.get_or_insert_with(|| CursorOverlayState::new(CursorOverlayKind::Completion));
+        overlay.reset_documentation();
+        overlay.selected = preserved.unwrap_or_else(|| self.preferred_index());
+        self.reveal_selection(overlay);
+        Some(())
+    }
+
+    /// Directory arrivals preserve the current row and its documentation even
+    /// before keyboard navigation; only a missing candidate resets the docs.
+    pub(crate) fn merge_paths(
+        &mut self,
+        items: Vec<MenuItem>,
+        overlay: &mut Option<CursorOverlayState>,
+    ) -> Option<()> {
+        if self.pending_resolve.is_some() {
+            return None;
+        }
+        let selected = overlay
+            .as_ref()
+            .and_then(|overlay| self.selected_item(overlay.selected))
+            .cloned();
+        self.items.retain(|item| item.source != MenuSourceId::Paths);
+        self.items.extend(items);
+        if let Some(previous) = selected.as_ref() {
+            self.preserve_id_for(previous);
+        }
+        self.assign_candidate_ids()?;
+        self.filtered = filter_and_sort(&self.items, &self.query);
+        *overlay = (!self.filtered.is_empty()).then(|| {
+            let mut overlay =
+                overlay.unwrap_or_else(|| CursorOverlayState::new(CursorOverlayKind::Completion));
+            let preserved = selected.and_then(|item| self.row_for_candidate(item.id));
+            overlay.selected = preserved.unwrap_or_else(|| self.preferred_index());
+            if preserved.is_none() {
+                overlay.reset_documentation();
+            }
+            overlay.scroll = 0;
+            self.reveal_selection(&mut overlay);
+            overlay
+        });
+        Some(())
+    }
+
+    /// Navigation withdraws pending acceptance, wraps by the requested step,
+    /// and resets documentation only when the selected row actually changes.
+    pub(crate) fn move_selection(
+        &mut self,
+        delta: i32,
+        overlay: &mut Option<CursorOverlayState>,
+    ) -> Option<()> {
+        self.selection_changed = true;
+        self.pending_resolve = None;
+        let overlay = overlay.as_mut()?;
+        let total = self.filtered.len();
+        if total == 0 {
+            return Some(());
+        }
+        let step = (delta.unsigned_abs() as usize) % total;
+        let previous = overlay.selected;
+        overlay.selected = if delta > 0 {
+            (overlay.selected + step) % total
+        } else {
+            (overlay.selected + total - step) % total
+        };
+        if overlay.selected != previous {
+            overlay.reset_documentation();
+        }
+        self.reveal_selection(overlay);
+        Some(())
+    }
+
+    fn reveal_selection(&self, overlay: &mut CursorOverlayState) {
+        overlay.scroll = SelectableListViewport::compute_from(
+            self.filtered.len(),
+            overlay.selected,
+            MAX_VISIBLE_COMPLETION,
+            overlay.scroll,
+        )
+        .scroll_offset;
+    }
+
+    fn assign_candidate_ids(&mut self) -> Option<()> {
         for item in &mut self.items {
             if item.id == super::session::CandidateId::UNASSIGNED {
                 self.identity.next_serial = self.identity.next_serial.checked_add(1)?;
@@ -266,7 +403,7 @@ impl CompletionMenuState {
             .position(|(_, index, _)| self.items[*index].id == candidate)
     }
 
-    pub fn preserve_id_for(&mut self, previous: &MenuItem) {
+    fn preserve_id_for(&mut self, previous: &MenuItem) {
         let matches: Vec<_> = self
             .items
             .iter()
@@ -281,7 +418,7 @@ impl CompletionMenuState {
         }
     }
 
-    pub fn preferred_index(&self) -> usize {
+    fn preferred_index(&self) -> usize {
         self.filtered
             .iter()
             .position(|(_, index, _)| self.items[*index].preselect)
