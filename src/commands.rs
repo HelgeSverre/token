@@ -823,6 +823,12 @@ pub enum Damage {
 pub enum DamageArea {
     /// All editor groups, tab bars, gutters, text areas, splitters
     EditorArea,
+    /// One editor group, including its tab bar. Use stable IDs, not focus at paint time.
+    EditorGroup(crate::model::editor_area::GroupId),
+    /// The dock hosting this panel, including its tab title.
+    Panel(crate::panel::PanelId),
+    /// Restore the previous popup footprint and paint the current popup.
+    CursorOverlay,
     /// Bottom status bar only
     StatusBar,
     /// Specific lines for cursor blink optimization (line numbers are document-relative)
@@ -885,12 +891,11 @@ impl Damage {
                                 Option::None
                             }
                         }) {
-                            // Merge line numbers, avoiding duplicates
-                            for &line in lines {
-                                if !existing.contains(&line) {
-                                    existing.push(line);
-                                }
-                            }
+                            // Large multi-cursor selections must not do a linear
+                            // membership scan for every incoming line.
+                            existing.extend_from_slice(lines);
+                            existing.sort_unstable();
+                            existing.dedup();
                             continue;
                         }
                     }
@@ -914,9 +919,37 @@ impl Damage {
             Damage::None => false,
             Damage::Full => true,
             Damage::Areas(areas) => areas.iter().any(|a| {
-                matches!(a, DamageArea::EditorArea) || matches!(a, DamageArea::CursorLines(_))
+                matches!(
+                    a,
+                    DamageArea::EditorArea
+                        | DamageArea::EditorGroup(_)
+                        | DamageArea::CursorLines(_)
+                )
             }),
         }
+    }
+
+    /// Legacy editor-area damage also invalidates sidebar and docks.
+    pub fn includes_chrome(&self) -> bool {
+        self.is_full()
+            || matches!(self, Damage::Areas(areas) if areas.contains(&DamageArea::EditorArea))
+    }
+
+    pub fn includes_group(
+        &self,
+        group: crate::model::editor_area::GroupId,
+        focused: crate::model::editor_area::GroupId,
+    ) -> bool {
+        self.includes_chrome()
+            || matches!(self, Damage::Areas(areas) if areas.iter().any(|area| {
+                matches!(area, DamageArea::EditorGroup(id) if *id == group)
+                    || (group == focused && matches!(area, DamageArea::CursorLines(_)))
+            }))
+    }
+
+    pub fn includes_panel(&self, panel: crate::panel::PanelId) -> bool {
+        self.includes_chrome()
+            || matches!(self, Damage::Areas(areas) if areas.contains(&DamageArea::Panel(panel)))
     }
 
     /// Check if this damage includes the status bar (or is full)
@@ -928,18 +961,23 @@ impl Damage {
         }
     }
 
-    /// Get cursor lines if this is a cursor-lines-only damage
+    /// Cursor-only *editor* damage can coexist with independent chrome damage.
     pub fn cursor_lines_only(&self) -> Option<&[usize]> {
-        match self {
-            Damage::Areas(areas) if areas.len() == 1 => {
-                if let Some(DamageArea::CursorLines(lines)) = areas.first() {
-                    Some(lines)
-                } else {
-                    None
-                }
+        let Damage::Areas(areas) = self else {
+            return None;
+        };
+        let mut cursor_lines = None;
+        for area in areas {
+            match area {
+                DamageArea::EditorArea | DamageArea::EditorGroup(_) => return None,
+                // Raw Areas can contain multiple unmerged line lists. Fall back
+                // to the focused group rather than silently omitting one list.
+                DamageArea::CursorLines(_) if cursor_lines.is_some() => return None,
+                DamageArea::CursorLines(lines) => cursor_lines = Some(lines.as_slice()),
+                _ => {}
             }
-            _ => None,
         }
+        cursor_lines
     }
 
     /// Check if any redraw is needed
@@ -1569,6 +1607,18 @@ impl Cmd {
         Cmd::RedrawAreas(vec![DamageArea::EditorArea, DamageArea::StatusBar])
     }
 
+    pub fn redraw_group(group: crate::model::editor_area::GroupId) -> Self {
+        Cmd::RedrawAreas(vec![DamageArea::EditorGroup(group), DamageArea::StatusBar])
+    }
+
+    pub fn redraw_panel(panel: crate::panel::PanelId) -> Self {
+        Cmd::RedrawAreas(vec![DamageArea::Panel(panel)])
+    }
+
+    pub fn redraw_cursor_overlay() -> Self {
+        Cmd::RedrawAreas(vec![DamageArea::CursorOverlay, DamageArea::StatusBar])
+    }
+
     /// Create a command to redraw just the status bar
     pub fn redraw_status_bar() -> Self {
         Cmd::RedrawAreas(vec![DamageArea::StatusBar])
@@ -1760,13 +1810,26 @@ mod tests {
 
     #[test]
     fn test_damage_cursor_lines_helper() {
-        let damage = Damage::cursor_lines(vec![5, 10]);
+        let mut damage = Damage::cursor_lines(vec![5, 10]);
         assert!(damage.includes_editor());
         if let Some(lines) = damage.cursor_lines_only() {
             assert_eq!(lines.len(), 2);
         } else {
             panic!("Expected cursor_lines_only to return Some");
         }
+        damage.merge(Damage::status_bar());
+        damage.merge(Cmd::redraw_panel(crate::panel::PanelId::Problems).damage());
+        damage.merge(Damage::cursor_lines(vec![10, 19]));
+        assert_eq!(damage.cursor_lines_only(), Some([5, 10, 19].as_slice()));
+        assert!(damage.includes_status_bar());
+        damage.merge(Damage::editor_area());
+        assert!(damage.cursor_lines_only().is_none());
+        let unmerged = Damage::Areas(vec![
+            DamageArea::CursorLines(vec![7]),
+            DamageArea::StatusBar,
+            DamageArea::CursorLines(vec![23]),
+        ]);
+        assert!(unmerged.cursor_lines_only().is_none());
     }
 
     #[test]

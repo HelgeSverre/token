@@ -74,7 +74,7 @@ fn move_cursors(
     };
     model.ensure_cursor_visible_directional(hint);
     model.reset_cursor_blink();
-    Some(Cmd::redraw_editor())
+    Some(Cmd::redraw_group(model.editor_area.focused_group_id))
 }
 
 /// Handle editor messages (cursor movement, viewport scrolling)

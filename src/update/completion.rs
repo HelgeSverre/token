@@ -173,8 +173,8 @@ fn dismiss_with_cleanup(model: &mut AppModel) -> Option<Cmd> {
         return None;
     }
     Some(match cancel {
-        Some(cancel) => Cmd::Batch(vec![Cmd::Redraw, cancel]),
-        None => Cmd::Redraw,
+        Some(cancel) => Cmd::Batch(vec![Cmd::redraw_cursor_overlay(), cancel]),
+        None => Cmd::redraw_cursor_overlay(),
     })
 }
 
@@ -301,7 +301,7 @@ fn trigger_explicit(model: &mut AppModel) -> Option<Cmd> {
     let query_start_offset = word_query_offsets(model, cursor)
         .map(|(start, _)| start)
         .unwrap_or(offset);
-    let mut cmds = vec![Cmd::Redraw];
+    let mut cmds = vec![Cmd::redraw_cursor_overlay()];
     if let Some(schedule) = open_or_refresh(model, cursor, query_start_offset, offset, None, true) {
         cmds.push(schedule);
     }
@@ -405,7 +405,7 @@ fn sync_completion_after_edit(
             let offset = model
                 .document()
                 .cursor_to_offset(cursor.line, cursor.column);
-            let mut cmds = vec![Cmd::Redraw];
+            let mut cmds = vec![Cmd::redraw_cursor_overlay()];
             if let Some(schedule) = open_or_refresh(model, cursor, offset, offset, typed_char, true)
             {
                 cmds.push(schedule);
@@ -429,7 +429,7 @@ fn sync_completion_after_edit(
     if !should_open {
         return None;
     }
-    let mut cmds = vec![Cmd::Redraw];
+    let mut cmds = vec![Cmd::redraw_cursor_overlay()];
     if let Some(schedule) =
         open_or_refresh(model, cursor, query_start_offset, cursor_offset, None, true)
     {
@@ -544,7 +544,7 @@ fn open_or_refresh(
     model.ui.completion.completion_menu = Some(state);
     model.ui.cursor_overlay = overlay;
     if !capable {
-        return Some(Cmd::Redraw);
+        return Some(Cmd::redraw_cursor_overlay());
     }
     let mut cmds = Vec::new();
     if request_lsp {
@@ -556,7 +556,7 @@ fn open_or_refresh(
             trigger_character: trigger_character.map(String::from),
         });
     } else {
-        cmds.push(Cmd::Redraw);
+        cmds.push(Cmd::redraw_cursor_overlay());
     }
     cmds.extend(schedule_docs_resolve(model));
     Some(batch_redraw(cmds))
@@ -722,7 +722,7 @@ pub(crate) fn merge_lsp_completion_for_session(
         model.config.completion.menu.words,
         cursor_overlay,
     )?;
-    let mut cmds = vec![Cmd::Redraw];
+    let mut cmds = vec![Cmd::redraw_cursor_overlay()];
     cmds.extend(schedule_docs_resolve(model));
     Some(batch_redraw(cmds))
 }
@@ -738,7 +738,7 @@ fn move_selection(model: &mut AppModel, delta: i32) -> Option<Cmd> {
         .completion_menu
         .as_mut()?
         .move_selection(delta, &mut model.ui.cursor_overlay)?;
-    let mut cmds = vec![Cmd::Redraw];
+    let mut cmds = vec![Cmd::redraw_cursor_overlay()];
     cmds.extend(schedule_docs_resolve(model));
     Some(batch_redraw(cmds))
 }
@@ -1269,14 +1269,14 @@ pub(crate) fn finish_deferred_accept(
     let insert = {
         let state = model.ui.completion.completion_menu.as_mut()?;
         if state.pending_resolve != Some(candidate) {
-            return Some(Cmd::Redraw);
+            return Some(Cmd::redraw_cursor_overlay());
         }
         state.pending_resolve = None;
         let row = state.row_for_candidate(candidate)?;
         state.selected_item(row)?.insert.clone()
     };
     if model.ui.completion.completion_commit.is_none() && !ordinary_accept {
-        return Some(Cmd::Redraw);
+        return Some(Cmd::redraw_cursor_overlay());
     }
     model.ui.completion.completion_accept = None;
     match &insert {

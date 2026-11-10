@@ -45,16 +45,6 @@ use winit::window::Window;
 
 use crate::commands::{Damage, DamageArea};
 use crate::model::editor_area::{EditorGroup, GroupId, Rect, SplitterBar};
-
-/// Check if the damage contains cursor lines (free function to avoid borrow issues)
-fn has_cursor_lines_damage(damage: &Damage) -> bool {
-    match damage {
-        Damage::None | Damage::Full => false,
-        Damage::Areas(areas) => areas
-            .iter()
-            .any(|a| matches!(a, DamageArea::CursorLines(_))),
-    }
-}
 use crate::model::AppModel;
 
 pub type GlyphCacheKey = (char, u32);
@@ -142,6 +132,99 @@ struct RenderSession<'buffer, 'a> {
 }
 
 impl<'buffer, 'a> RenderSession<'buffer, 'a> {
+    /// Paint into the persistent bitmap; presentation is deliberately separate.
+    fn paint(&mut self, perf: &mut crate::perf::PerfStats, underlay: &mut Vec<frame::SavedRegion>) {
+        let plan = self.plan;
+        let model = self.model;
+        if !underlay.is_empty() {
+            perf.measure_stage(crate::perf::PerfStage::CursorOverlay, || {
+                for region in underlay.drain(..).rev() {
+                    region.restore(&mut self.frame);
+                }
+            });
+        }
+        perf.measure_stage(crate::perf::PerfStage::Clear, || {
+            Renderer::clear_back_buffer(&mut self.frame, model, plan);
+        });
+        if let Some(ref dirty_lines) = plan.cursor_lines_only {
+            Renderer::render_cursor_lines(
+                &mut self.frame,
+                &mut self.painter,
+                model,
+                dirty_lines,
+                &plan.splitters,
+                perf,
+            );
+        } else if plan.render_editor {
+            self.render_editor_area_phase(perf);
+        }
+        if plan.effective_damage.includes_chrome()
+            && plan.chrome.rect(crate::layout::UiKey::Sidebar).is_some()
+        {
+            perf.measure_stage(crate::perf::PerfStage::Sidebar, || {
+                self.render_sidebar_phase()
+            });
+        }
+        for (position, stage) in [
+            (
+                crate::panel::DockPosition::Right,
+                crate::perf::PerfStage::RightDock,
+            ),
+            (
+                crate::panel::DockPosition::Bottom,
+                crate::perf::PerfStage::BottomDock,
+            ),
+        ] {
+            let dock = model.dock_layout.dock(position);
+            if dock
+                .panel_ids
+                .iter()
+                .any(|id| plan.effective_damage.includes_panel(*id))
+                && plan
+                    .chrome
+                    .rect(crate::layout::UiKey::Dock(position))
+                    .is_some()
+            {
+                perf.measure_stage(stage, || self.render_dock_phase(position));
+            }
+        }
+        if plan.render_status_bar {
+            perf.measure_stage(crate::perf::PerfStage::StatusBar, || {
+                self.render_status_bar_phase()
+            });
+        }
+        if plan.show_modal {
+            perf.measure_stage(crate::perf::PerfStage::Modal, || self.render_modal_phase());
+        }
+        if plan.show_cursor_overlay {
+            perf.measure_stage(crate::perf::PerfStage::CursorOverlay, || {
+                self.render_cursor_overlay_phase(underlay)
+            });
+        }
+        if plan.show_drop_overlay {
+            perf.measure_stage(crate::perf::PerfStage::DropOverlay, || {
+                self.render_drop_overlay_phase()
+            });
+        }
+        if plan.show_tab_drag_ghost {
+            self.render_tab_drag_ghost_phase();
+        }
+        #[cfg(debug_assertions)]
+        if plan.show_perf_overlay {
+            let start = std::time::Instant::now();
+            self.render_perf_overlay_phase(perf);
+            perf.record_stage_elapsed(crate::perf::PerfStage::PerfOverlay, start.elapsed());
+        }
+        #[cfg(debug_assertions)]
+        if plan.show_debug_overlay {
+            perf.measure_stage(crate::perf::PerfStage::DebugOverlay, || {
+                self.render_debug_overlay_phase()
+            });
+        }
+        #[cfg(debug_assertions)]
+        self.record_cache_stats(perf);
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn new(
         buffer: &'buffer mut [u32],
@@ -179,6 +262,24 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
     }
 
     fn render_editor_area_phase(&mut self, perf: &mut crate::perf::PerfStats) {
+        if !self.plan.effective_damage.includes_chrome() {
+            for (&id, group) in &self.model.editor_area.groups {
+                let focused = self.model.editor_area.focused_group_id;
+                if self.plan.effective_damage.includes_group(id, focused) {
+                    Renderer::render_editor_group(
+                        &mut self.frame,
+                        &mut self.painter,
+                        self.model,
+                        id,
+                        group.rect,
+                        id == focused,
+                        perf,
+                    );
+                }
+            }
+            Renderer::render_splitters(&mut self.frame, &self.plan.splitters, self.model);
+            return;
+        }
         Renderer::render_editor_area_with_preview_mode(
             &mut self.frame,
             &mut self.painter,
@@ -202,22 +303,12 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
         );
     }
 
-    fn render_right_dock_phase(&mut self) {
+    fn render_dock_phase(&mut self, position: crate::panel::DockPosition) {
         Renderer::render_dock(
             &mut self.frame,
             &mut self.painter,
             self.model,
-            crate::panel::DockPosition::Right,
-            &self.plan.chrome,
-        );
-    }
-
-    fn render_bottom_dock_phase(&mut self) {
-        Renderer::render_dock(
-            &mut self.frame,
-            &mut self.painter,
-            self.model,
-            crate::panel::DockPosition::Bottom,
+            position,
             &self.plan.chrome,
         );
     }
@@ -246,18 +337,19 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
         );
     }
 
-    fn render_cursor_overlay_phase(&mut self) {
+    fn render_cursor_overlay_phase(&mut self, underlay: &mut Vec<frame::SavedRegion>) {
         if !self.plan.show_cursor_overlay {
             return;
         }
 
-        Renderer::render_cursor_overlay(
+        modal::render_cursor_overlay_with_underlay(
             &mut self.frame,
             &mut self.painter,
             self.model,
             self.plan.window_width,
             self.plan.window_height,
             self.overlay_mask_cache,
+            Some(underlay),
         );
     }
 
@@ -825,6 +917,7 @@ pub struct Renderer {
     /// Softbuffer doesn't guarantee buffer contents are preserved between frames,
     /// so we maintain our own buffer and copy to the surface on present.
     back_buffer: Vec<u32>,
+    popup_underlay: Vec<frame::SavedRegion>,
     width: u32,
     height: u32,
     font_size: f32,
@@ -912,6 +1005,7 @@ impl Renderer {
             ui_glyph_cache: HashMap::new(),
             surface,
             back_buffer,
+            popup_underlay: Vec::new(),
             width,
             height,
             font_size,
@@ -995,7 +1089,6 @@ impl Renderer {
     /// - Drop overlay is showing
     /// - Debug overlays are visible (debug builds only)
     fn compute_effective_damage(
-        &self,
         damage: &Damage,
         model: &AppModel,
         show_perf_overlay: bool,
@@ -1008,10 +1101,8 @@ impl Renderer {
             return Damage::Full;
         }
 
-        // Cursor-anchored popups force Full while visible, same as modals
-        // (overlay-surface.md Phase 5); a normal (possibly partial) redraw
-        // resumes once dismissed — no pixel-save mechanism.
-        if model.ui.cursor_overlay.is_some() || model.ui.signature_help.is_some() {
+        // Drag ghosts blend across arbitrary panes without a saved underlay.
+        if model.ui.tab_drag.is_some_and(|drag| drag.active) {
             return Damage::Full;
         }
 
@@ -1037,7 +1128,6 @@ impl Renderer {
 
     #[allow(clippy::too_many_arguments)]
     fn build_render_plan(
-        &self,
         model: &mut AppModel,
         damage: &Damage,
         window_width: usize,
@@ -1053,15 +1143,16 @@ impl Renderer {
         let splitters = model
             .editor_area
             .compute_layout_scaled(editor_area_rect, model.metrics.splitter_width);
-        let inset = model.find_bar_inset();
-        model
-            .editor_area
-            .sync_all_viewports(line_height, char_width, &model.metrics, inset);
-
-        let effective_damage = self.compute_effective_damage(damage, model, show_perf_overlay);
-        let render_editor = effective_damage.is_full()
-            || effective_damage.includes_editor()
-            || has_cursor_lines_damage(&effective_damage);
+        let effective_damage = Self::compute_effective_damage(damage, model, show_perf_overlay);
+        // Blink and chrome-only damage cannot change editor geometry. Reuse
+        // viewports and wrapping prepared by the last editor/layout update.
+        if effective_damage.includes_editor() && effective_damage.cursor_lines_only().is_none() {
+            let inset = model.find_bar_inset();
+            model
+                .editor_area
+                .sync_all_viewports(line_height, char_width, &model.metrics, inset);
+        }
+        let render_editor = effective_damage.includes_editor();
         let render_status_bar =
             effective_damage.is_full() || effective_damage.includes_status_bar();
 
@@ -1105,22 +1196,30 @@ impl Renderer {
         }
     }
 
-    fn clear_back_buffer(&mut self, model: &AppModel, plan: &RenderPlan) {
+    fn clear_back_buffer(frame: &mut Frame, model: &AppModel, plan: &RenderPlan) {
         let bg_color = model.theme.editor.background.to_argb_u32();
-        let mut frame = Frame::new(&mut self.back_buffer, plan.window_width, plan.window_height);
 
         if plan.effective_damage.is_full() {
             frame.clear(bg_color);
             return;
         }
 
-        if plan.render_editor {
+        if plan.effective_damage.includes_chrome() {
             // Only clear the editor area's own sub-rect, not the full
             // content_rect (which also spans the sidebar/dock areas).
             frame.fill_rect(
                 plan.required_rect(crate::layout::UiKey::EditorArea),
                 bg_color,
             );
+        } else if plan.render_editor && !plan.uses_cursor_lines_fast_path() {
+            for (&id, group) in &model.editor_area.groups {
+                if plan
+                    .effective_damage
+                    .includes_group(id, model.editor_area.focused_group_id)
+                {
+                    frame.fill_rect(group.rect, bg_color);
+                }
+            }
         }
 
         if plan.render_status_bar {
@@ -2021,13 +2120,15 @@ impl Renderer {
         preview_snapshots: &PreviewSnapshots,
     ) -> Result<()> {
         // Skip rendering entirely if no damage
-        if matches!(damage, Damage::None) {
+        if !damage.needs_redraw() {
             return Ok(());
         }
 
         perf.reset_frame_stats();
 
-        if self.width != model.window_size.0 || self.height != model.window_size.1 {
+        let resized = self.width != model.window_size.0 || self.height != model.window_size.1;
+        if resized {
+            self.popup_underlay.clear();
             self.width = model.window_size.0;
             self.height = model.window_size.1;
 
@@ -2050,13 +2151,24 @@ impl Renderer {
         let height_usize = self.height as usize;
 
         let show_perf_overlay = perf.should_show_overlay();
+        let effective_damage = if resized {
+            Damage::Full
+        } else {
+            Self::compute_effective_damage(damage, model, show_perf_overlay)
+        };
         let chrome = perf.measure_stage(crate::perf::PerfStage::Layout, || {
-            crate::layout::chrome::chrome(model)
+            if effective_damage.includes_chrome()
+                || matches!(&effective_damage, Damage::Areas(areas) if areas.iter().any(|a| matches!(a, DamageArea::Panel(_)))) {
+                crate::layout::chrome::chrome(model)
+            } else {
+                // Cursor, pane and status updates don't need panel row counts or titles.
+                crate::layout::chrome::shell(model)
+            }
         });
         let plan = perf.measure_stage(crate::perf::PerfStage::BuildPlan, || {
-            self.build_render_plan(
+            Self::build_render_plan(
                 model,
-                damage,
+                &effective_damage,
                 width_usize,
                 height_usize,
                 line_height,
@@ -2068,37 +2180,7 @@ impl Renderer {
 
         // All rendering happens to back_buffer (persistent between frames).
         // At the end, we copy to the surface buffer and present.
-        if !plan.uses_cursor_lines_fast_path() {
-            perf.measure_stage(crate::perf::PerfStage::Clear, || {
-                self.clear_back_buffer(model, &plan);
-            });
-        }
-
-        if let Some(ref dirty_lines) = plan.cursor_lines_only {
-            let mut frame = Frame::new(&mut self.back_buffer, width_usize, height_usize);
-            let mut painter = TextPainter::new(
-                &self.font,
-                &mut self.glyph_cache,
-                font_size,
-                ascent,
-                char_width,
-                line_height,
-            )
-            .with_ui_font(&self.ui_font, &mut self.ui_glyph_cache, FontRole::Code);
-            Self::render_cursor_lines(
-                &mut frame,
-                &mut painter,
-                model,
-                dirty_lines,
-                &plan.splitters,
-                perf,
-            );
-            #[cfg(debug_assertions)]
-            {
-                let stats = painter.cache_stats();
-                perf.add_cache_stats(stats.hits, stats.misses);
-            }
-        } else {
+        {
             let mut session = RenderSession::new(
                 &mut self.back_buffer,
                 width_usize,
@@ -2116,77 +2198,7 @@ impl Renderer {
                 preview_snapshots,
                 &mut self.overlay_mask_cache,
             );
-
-            if plan.render_editor {
-                session.render_editor_area_phase(perf);
-                if plan.chrome.rect(crate::layout::UiKey::Sidebar).is_some() {
-                    perf.measure_stage(crate::perf::PerfStage::Sidebar, || {
-                        session.render_sidebar_phase();
-                    });
-                }
-                if plan
-                    .chrome
-                    .rect(crate::layout::UiKey::Dock(
-                        crate::panel::DockPosition::Right,
-                    ))
-                    .is_some()
-                {
-                    perf.measure_stage(crate::perf::PerfStage::RightDock, || {
-                        session.render_right_dock_phase();
-                    });
-                }
-                if plan
-                    .chrome
-                    .rect(crate::layout::UiKey::Dock(
-                        crate::panel::DockPosition::Bottom,
-                    ))
-                    .is_some()
-                {
-                    perf.measure_stage(crate::perf::PerfStage::BottomDock, || {
-                        session.render_bottom_dock_phase();
-                    });
-                }
-            }
-
-            if plan.render_status_bar {
-                perf.measure_stage(crate::perf::PerfStage::StatusBar, || {
-                    session.render_status_bar_phase();
-                });
-            }
-
-            if plan.show_modal {
-                perf.measure_stage(crate::perf::PerfStage::Modal, || {
-                    session.render_modal_phase();
-                });
-            }
-            if plan.show_cursor_overlay {
-                session.render_cursor_overlay_phase();
-            }
-            if plan.show_drop_overlay {
-                perf.measure_stage(crate::perf::PerfStage::DropOverlay, || {
-                    session.render_drop_overlay_phase();
-                });
-            }
-            if plan.show_tab_drag_ghost {
-                session.render_tab_drag_ghost_phase();
-            }
-
-            #[cfg(debug_assertions)]
-            if plan.show_perf_overlay {
-                let start = std::time::Instant::now();
-                session.render_perf_overlay_phase(perf);
-                perf.record_stage_elapsed(crate::perf::PerfStage::PerfOverlay, start.elapsed());
-            }
-
-            #[cfg(debug_assertions)]
-            if plan.show_debug_overlay {
-                perf.measure_stage(crate::perf::PerfStage::DebugOverlay, || {
-                    session.render_debug_overlay_phase();
-                });
-            }
-
-            #[cfg(debug_assertions)]
-            session.record_cache_stats(perf);
+            session.paint(perf, &mut self.popup_underlay);
         }
 
         // Debug: visualize damage regions with colored outlines
@@ -2255,6 +2267,21 @@ impl Renderer {
             Damage::Areas(areas) => {
                 for area in areas {
                     match area {
+                        DamageArea::CursorOverlay => {}
+                        DamageArea::EditorGroup(id) => {
+                            if let Some(group) = model.editor_area.groups.get(id) {
+                                let (x, y, w, h) = crate::layout::snapshot::snap(group.rect);
+                                Self::draw_rect_outline_blended(frame, x, y, w, h, RED, 3);
+                            }
+                        }
+                        DamageArea::Panel(id) => {
+                            let chrome = crate::layout::chrome::chrome(model);
+                            if let Some(rect) = chrome.rect(crate::layout::UiKey::PanelContent(*id))
+                            {
+                                let (x, y, w, h) = crate::layout::snapshot::snap(rect);
+                                Self::draw_rect_outline_blended(frame, x, y, w, h, BLUE, 3);
+                            }
+                        }
                         DamageArea::EditorArea => {
                             // Red outline around editor area (everything except status bar)
                             let editor_height = status_bar_rect.y.round().max(0.0) as usize;
@@ -2683,6 +2710,235 @@ mod cursor_fast_path_scrollbar_tests {
             metrics.advance_width,
             line_metrics.new_line_size.ceil() as usize,
         )
+    }
+
+    fn paint_damage(
+        model: &mut AppModel,
+        pixels: &mut [u32],
+        underlay: &mut Vec<frame::SavedRegion>,
+        fonts: &fonts::Fonts,
+        damage: &Damage,
+    ) -> RenderPlan {
+        let font_size = 14.0 * model.metrics.scale_factor as f32;
+        let metrics = fonts.editor.horizontal_line_metrics(font_size).unwrap();
+        model.line_height = metrics.new_line_size.ceil() as usize;
+        model.char_width = fonts.editor.metrics('M', font_size).advance_width;
+        let damage = Renderer::compute_effective_damage(damage, model, false);
+        let chrome = if damage.includes_chrome()
+            || matches!(&damage, Damage::Areas(areas) if areas.iter().any(|a| matches!(a, DamageArea::Panel(_))))
+        {
+            crate::layout::chrome::chrome(model)
+        } else {
+            crate::layout::chrome::shell(model)
+        };
+        let (w, h) = (model.window_size.0 as usize, model.window_size.1 as usize);
+        let plan = Renderer::build_render_plan(
+            model,
+            &damage,
+            w,
+            h,
+            model.line_height,
+            model.char_width,
+            false,
+            chrome,
+        );
+        let mut cache = GlyphCache::new();
+        let mut ui_cache = GlyphCache::new();
+        let mut masks = RoundedRectMaskCache::new();
+        let previews = PreviewSnapshots::new();
+        let mut session = RenderSession::new(
+            pixels,
+            w,
+            h,
+            &fonts.editor,
+            &mut cache,
+            &fonts.ui,
+            &mut ui_cache,
+            font_size,
+            metrics.ascent,
+            model.char_width,
+            model.line_height,
+            model,
+            &plan,
+            &previews,
+            &mut masks,
+        );
+        session.paint(&mut crate::perf::PerfStats::default(), underlay);
+        plan
+    }
+
+    fn assert_full_frame(model: &mut AppModel, pixels: &[u32], fonts: &fonts::Fonts, label: &str) {
+        let mut expected = vec![0; pixels.len()];
+        paint_damage(model, &mut expected, &mut Vec::new(), fonts, &Damage::Full);
+        if let Some(i) = pixels.iter().zip(&expected).position(|(a, b)| a != b) {
+            panic!(
+                "{label}: partial differs at ({}, {}): {:08x} != {:08x}",
+                i % model.window_size.0 as usize,
+                i / model.window_size.0 as usize,
+                pixels[i],
+                expected[i]
+            );
+        }
+    }
+
+    #[test]
+    fn composed_damage_matches_full_frames() {
+        use crate::commands::Cmd;
+        use crate::messages::{
+            CompletionMsg, Direction, DocumentMsg, EditorMsg, LayoutMsg, Msg, ProblemsMsg,
+        };
+        use crate::model::SplitDirection;
+        use crate::panel::PanelId;
+        let fonts = fonts::Fonts::load("JetBrains Mono", "Inter").unwrap();
+        for scale in [1.0, 1.5, 2.0] {
+            for direction in [SplitDirection::Horizontal, SplitDirection::Vertical] {
+                let mut model = AppModel::new(960, 720, scale);
+                model.document_mut().buffer = "value values variable\n".repeat(80).into();
+                model.document_mut().file_path = Some("/fixture/example.rs".into());
+                model.config.completion.enabled = false;
+                let first = model.editor_area.focused_group_id;
+                crate::update::update(&mut model, Msg::Layout(LayoutMsg::SplitFocused(direction)));
+                model.editor_area.focused_group_id = first;
+                model.dock_layout.bottom.activate(PanelId::Problems);
+                model.lsp.diagnostics.insert(
+                    "/fixture/example.rs".into(),
+                    vec![
+                        lsp_types::Diagnostic {
+                            message: "Example warning".into(),
+                            ..Default::default()
+                        };
+                        80
+                    ],
+                );
+                let mut pixels = vec![0; 960 * 720];
+                let mut underlay = Vec::new();
+                paint_damage(
+                    &mut model,
+                    &mut pixels,
+                    &mut underlay,
+                    &fonts,
+                    &Damage::Full,
+                );
+
+                // Status, panel selection and blink must all paint in the same frame.
+                model.ui.cursor_visible = false;
+                model.ui.set_status("Independent status update");
+                let mut damage = Damage::cursor_lines(vec![0]);
+                damage.merge(Damage::status_bar());
+                damage.merge(
+                    crate::update::update(&mut model, Msg::Problems(ProblemsMsg::SelectNext))
+                        .unwrap()
+                        .damage(),
+                );
+                let plan = paint_damage(&mut model, &mut pixels, &mut underlay, &fonts, &damage);
+                assert!(plan.uses_cursor_lines_fast_path());
+                assert_full_frame(&mut model, &pixels, &fonts, "cursor + status + panel");
+
+                let command = crate::update::update(
+                    &mut model,
+                    Msg::Editor(EditorMsg::MoveCursor(Direction::Right)),
+                )
+                .unwrap();
+                assert!(!command.damage().includes_chrome());
+                paint_damage(
+                    &mut model,
+                    &mut pixels,
+                    &mut underlay,
+                    &fonts,
+                    &command.damage(),
+                );
+                assert_full_frame(&mut model, &pixels, &fonts, "pane movement");
+
+                // An edit affects every peer of the document, unlike caret movement.
+                let edit =
+                    crate::update::update(&mut model, Msg::Document(DocumentMsg::InsertChar('x')))
+                        .unwrap();
+                assert!(!edit.damage().includes_chrome());
+                assert!(model
+                    .editor_area
+                    .groups
+                    .keys()
+                    .all(|&id| edit.damage().includes_group(id, first)));
+                paint_damage(
+                    &mut model,
+                    &mut pixels,
+                    &mut underlay,
+                    &fonts,
+                    &edit.damage(),
+                );
+                assert_full_frame(&mut model, &pixels, &fonts, "shared document edited");
+
+                // Both signature help and completion move, blink and disappear without
+                // accumulating translucent shadows or leaving their previous footprint.
+                model.ui.signature_help = Some(crate::model::SignatureHelpState {
+                    active: 0,
+                    signatures: vec![crate::model::SignatureView {
+                        label: "fn value(input: &str)".into(),
+                        active_parameter_range: Some((9, 20)),
+                        doc: Some("Documentation over the editor".into()),
+                        parameter_doc: None,
+                    }],
+                });
+                for completion in [false, true] {
+                    if completion {
+                        model.config.completion.enabled = true;
+                        crate::update::update(
+                            &mut model,
+                            Msg::Completion(CompletionMsg::TriggerMenu),
+                        );
+                        let items = crate::completion::lsp::items_to_menu_items(
+                            vec![lsp_types::CompletionItem {
+                                label: "value_documented".into(),
+                                documentation: Some(lsp_types::Documentation::String("Returns the value.\nDetailed documentation in a separate card.".into())),
+                                ..Default::default()
+                            }], &"fixture".into(), std::path::Path::new("/fixture"), None);
+                        let menu = model.ui.completion.completion_menu.as_mut().unwrap();
+                        menu.items = items;
+                        menu.filtered = vec![(0, 0, Vec::new())];
+                        model.ui.cursor_overlay = Some(crate::model::CursorOverlayState::new(
+                            crate::model::CursorOverlayKind::Completion,
+                        ));
+                    }
+                    paint_damage(
+                        &mut model,
+                        &mut pixels,
+                        &mut underlay,
+                        &fonts,
+                        &Cmd::redraw_cursor_overlay().damage(),
+                    );
+                    assert!(!underlay.is_empty());
+                    assert_full_frame(&mut model, &pixels, &fonts, "popup opened");
+                    for visible in [true, false, true] {
+                        model.ui.cursor_visible = visible;
+                        let plan = paint_damage(
+                            &mut model,
+                            &mut pixels,
+                            &mut underlay,
+                            &fonts,
+                            &Damage::cursor_lines(vec![0]),
+                        );
+                        assert!(plan.uses_cursor_lines_fast_path());
+                        assert_full_frame(&mut model, &pixels, &fonts, "popup blink");
+                    }
+                    model.editor_mut().cursors[0].column += 2;
+                    model.editor_mut().collapse_selections_to_cursors();
+                    let damage = Cmd::redraw_group(first).damage();
+                    paint_damage(&mut model, &mut pixels, &mut underlay, &fonts, &damage);
+                    assert_full_frame(&mut model, &pixels, &fonts, "popup moved");
+                }
+                model.ui.cursor_overlay = None;
+                model.ui.signature_help = None;
+                paint_damage(
+                    &mut model,
+                    &mut pixels,
+                    &mut underlay,
+                    &fonts,
+                    &Cmd::redraw_cursor_overlay().damage(),
+                );
+                assert!(underlay.is_empty());
+                assert_full_frame(&mut model, &pixels, &fonts, "popups dismissed");
+            }
+        }
     }
 
     #[test]

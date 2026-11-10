@@ -37,19 +37,35 @@ pub enum ProblemsRow {
 /// then the rest in path order. `severity_counts` stays workspace-wide
 /// for the status bar.
 pub fn problems_rows(model: &AppModel) -> Vec<ProblemsRow> {
+    problems_rows_range(model, 0..usize::MAX)
+}
+
+/// Materialize only a viewport (or one hit-tested row), skipping whole groups
+/// arithmetically. Paths are cloned only for rows the caller actually needs.
+pub fn problems_rows_range(model: &AppModel, range: std::ops::Range<usize>) -> Vec<ProblemsRow> {
     let mut rows = Vec::new();
+    let mut offset = 0;
     for (path, diagnostics) in problem_groups(model) {
+        if offset >= range.end {
+            break;
+        }
         let collapsed = model.problems_panel.collapsed.contains(path);
-        rows.push(ProblemsRow::File {
-            path: path.clone(),
-            count: diagnostics.len(),
-            collapsed,
-        });
+        if range.contains(&offset) {
+            rows.push(ProblemsRow::File {
+                path: path.clone(),
+                count: diagnostics.len(),
+                collapsed,
+            });
+        }
+        offset += 1;
         if !collapsed {
-            rows.extend((0..diagnostics.len()).map(|index| ProblemsRow::Diagnostic {
+            let start = range.start.saturating_sub(offset).min(diagnostics.len());
+            let end = range.end.saturating_sub(offset).min(diagnostics.len());
+            rows.extend((start..end).map(|index| ProblemsRow::Diagnostic {
                 path: path.clone(),
                 index,
             }));
+            offset += diagnostics.len();
         }
     }
     rows
@@ -186,6 +202,7 @@ fn open_diagnostic(model: &mut AppModel, path: &std::path::Path, index: usize) -
 }
 
 pub(super) fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<Cmd> {
+    use crate::panel::PanelId;
     match msg {
         ProblemsMsg::SelectPrevious => {
             if let Some(idx) = model.problems_panel.selected_index {
@@ -196,7 +213,7 @@ pub(super) fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<
                 model.problems_panel.selected_index = Some(0);
             }
             reveal_problems_selection(model);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_panel(PanelId::Problems))
         }
 
         ProblemsMsg::SelectNext => {
@@ -209,13 +226,14 @@ pub(super) fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<
                 model.problems_panel.selected_index = Some(0);
             }
             reveal_problems_selection(model);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_panel(PanelId::Problems))
         }
 
         ProblemsMsg::ToggleGroup => {
             if let Some(idx) = model.problems_panel.selected_index {
-                if let Some(ProblemsRow::File { path, .. }) = problems_rows(model).get(idx) {
-                    let path = path.clone();
+                if let Some(ProblemsRow::File { path, .. }) =
+                    problems_rows_range(model, idx..idx.saturating_add(1)).pop()
+                {
                     if !model.problems_panel.collapsed.remove(&path) {
                         model.problems_panel.collapsed.insert(path);
                     }
@@ -224,26 +242,26 @@ pub(super) fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<
                 }
             }
             reveal_problems_selection(model);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_panel(PanelId::Problems))
         }
 
         ProblemsMsg::OpenSelected => {
             let selected = model
                 .problems_panel
                 .selected_index
-                .and_then(|idx| problems_rows(model).get(idx).cloned());
+                .and_then(|idx| problems_rows_range(model, idx..idx.saturating_add(1)).pop());
             match selected {
                 Some(ProblemsRow::Diagnostic { path, index }) => {
                     open_diagnostic(model, &path, index)
                 }
-                _ => Some(Cmd::Redraw),
+                _ => Some(Cmd::redraw_panel(PanelId::Problems)),
             }
         }
 
         ProblemsMsg::ToggleScope => {
             model.problems_panel.current_file_only = !model.problems_panel.current_file_only;
             clamp_problems_selection(model);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_panel(PanelId::Problems))
         }
 
         ProblemsMsg::Scroll { lines } => {
@@ -255,7 +273,7 @@ pub(super) fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<
             };
 
             clamp_problems_scroll(model);
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_panel(PanelId::Problems))
         }
 
         ProblemsMsg::ClickRow {
@@ -263,7 +281,7 @@ pub(super) fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<
             click_count,
             on_chevron,
         } => {
-            let row = problems_rows(model).get(index).cloned();
+            let row = problems_rows_range(model, index..index.saturating_add(1)).pop();
             model.problems_panel.selected_index = Some(index);
             match row {
                 Some(ProblemsRow::File { path, .. }) if on_chevron => {
@@ -276,7 +294,7 @@ pub(super) fn update_problems(model: &mut AppModel, msg: ProblemsMsg) -> Option<
                 }
                 _ => {}
             }
-            Some(Cmd::Redraw)
+            Some(Cmd::redraw_panel(PanelId::Problems))
         }
     }
 }
@@ -329,6 +347,48 @@ mod tests {
             vec![diagnostic(0, lsp_types::DiagnosticSeverity::ERROR, "b-err")],
         );
         model.document_mut().file_path = Some(PathBuf::from("/proj/a.rs"));
+    }
+
+    #[test]
+    fn ranged_rows_preserve_focus_order_and_collapsed_group_boundaries() {
+        let mut model = model_with_open_problems_panel();
+        populate_two_files(&mut model);
+        model.problems_panel.current_file_only = false;
+        model.document_mut().file_path = Some(PathBuf::from("/proj/b.rs"));
+        let a = PathBuf::from("/proj/a.rs");
+        let b = PathBuf::from("/proj/b.rs");
+        assert_eq!(
+            problems_rows_range(&model, 1..4),
+            vec![
+                ProblemsRow::Diagnostic {
+                    path: b.clone(),
+                    index: 0
+                },
+                ProblemsRow::File {
+                    path: a.clone(),
+                    count: 2,
+                    collapsed: false
+                },
+                ProblemsRow::Diagnostic {
+                    path: a.clone(),
+                    index: 0
+                },
+            ]
+        );
+        model.problems_panel.collapsed.insert(b);
+        assert_eq!(
+            problems_rows_range(&model, 1..3),
+            vec![
+                ProblemsRow::File {
+                    path: a.clone(),
+                    count: 2,
+                    collapsed: false
+                },
+                ProblemsRow::Diagnostic { path: a, index: 0 },
+            ]
+        );
+        assert!(problems_rows_range(&model, 8..10).is_empty());
+        assert!(problems_rows_range(&model, 2..2).is_empty());
     }
 
     #[test]

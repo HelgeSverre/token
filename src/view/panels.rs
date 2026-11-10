@@ -614,7 +614,7 @@ pub fn render_problems_panel(
     row_view: Option<RowListView>,
     text_color: u32,
 ) {
-    use crate::update::problems::{problems_rows, ProblemsRow};
+    use crate::update::problems::{problems_row_count, problems_rows_range, ProblemsRow};
 
     let theme = &model.theme.sidebar;
     let overlay = &model.theme.overlay;
@@ -627,9 +627,9 @@ pub fn render_problems_panel(
     let line_height = painter.line_height();
     let row_height = model.metrics.file_tree_row_height;
     let tree = TreeRowLayout::outline_from_metrics(&model.metrics);
-    let rows = problems_rows(model);
+    let row_count = problems_row_count(model);
 
-    if rows.is_empty() {
+    if row_count == 0 {
         let msg = crate::update::problems::problems_empty_text(model);
         let text_width = painter.measure_width(msg);
         let text_x = content_rect.x + (content_rect.width - text_width) / 2.0;
@@ -651,8 +651,9 @@ pub fn render_problems_panel(
 
     // Paint the drawn range (ceil — the partial bottom row is painted and
     // clipped by the panel scissor, so a clickable sliver is never blank).
-    let drawn = row_view.map(|r| r.drawn_range()).unwrap_or(0..rows.len());
-    let visible = rows.iter().enumerate().skip(drawn.start).take(drawn.len());
+    let drawn = row_view.map(|r| r.drawn_range()).unwrap_or(0..row_count);
+    let rows = problems_rows_range(model, drawn.clone());
+    let visible = (drawn.start..).zip(rows.iter());
 
     for (index, row) in visible {
         let row_y = content_rect.y as usize + (index - scroll_offset) * row_height;

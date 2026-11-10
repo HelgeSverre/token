@@ -581,6 +581,49 @@ fn settings_scrolling() {
 }
 
 fn main() {
+    if std::env::args().any(|arg| arg == "damage") {
+        use token::update::problems::{problems_rows, problems_rows_range};
+        let mut m = model("value\n", false);
+        m.document_mut().file_path = Some("/fixture/example.rs".into());
+        m.dock_layout
+            .bottom
+            .activate(token::panel::PanelId::Problems);
+        for count in [1_000, 100_000] {
+            m.lsp.diagnostics.insert(
+                "/fixture/example.rs".into(),
+                vec![
+                    lsp_types::Diagnostic::new_simple(
+                        lsp_types::Range::default(),
+                        "warning".into()
+                    );
+                    count
+                ],
+            );
+            measure(&format!("problems_all rows={count}"), 100, || {
+                black_box(problems_rows(&m));
+            });
+            measure(&format!("problems_visible rows={count}"), 100, || {
+                let rows = problems_rows_range(&m, count / 2..count / 2 + 30);
+                assert_eq!(rows.len(), 30);
+                black_box(rows);
+            });
+            measure(&format!("chrome_full rows={count}"), 100, || {
+                black_box(token::layout::chrome::chrome(&m));
+            });
+            measure(&format!("chrome_shell rows={count}"), 100, || {
+                black_box(token::layout::chrome::shell(&m));
+            });
+        }
+        for (w, h) in [(1920, 1080), (3840, 2160)] {
+            let source = vec![0xFF123456u32; w * h];
+            let mut destination = vec![0u32; source.len()];
+            measure(&format!("buffer_copy {w}x{h}"), 200, || {
+                destination.copy_from_slice(black_box(&source));
+                black_box(&destination);
+            });
+        }
+        return;
+    }
     if let Some(mode) = std::env::args().find(|arg| {
         matches!(
             arg.as_str(),

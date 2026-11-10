@@ -2712,9 +2712,29 @@ pub fn render_cursor_overlay(
     window_height: usize,
     mask_cache: &mut RoundedRectMaskCache,
 ) {
+    render_cursor_overlay_with_underlay(
+        frame,
+        painter,
+        model,
+        window_width,
+        window_height,
+        mask_cache,
+        None,
+    );
+}
+
+pub(crate) fn render_cursor_overlay_with_underlay(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    model: &AppModel,
+    window_width: usize,
+    window_height: usize,
+    mask_cache: &mut RoundedRectMaskCache,
+    mut underlay: Option<&mut Vec<super::frame::SavedRegion>>,
+) {
     let scale_factor = model.metrics.scale_factor;
     with_signature_help_spec(model, |spec| {
-        overlay_surface::render(
+        overlay_surface::render_with_underlay(
             frame,
             painter,
             mask_cache,
@@ -2724,10 +2744,11 @@ pub fn render_cursor_overlay(
             window_height,
             scale_factor,
             model.ui.cursor_visible,
+            underlay.as_deref_mut(),
         );
     });
     with_cursor_overlay_spec(model, |spec| {
-        overlay_surface::render(
+        overlay_surface::render_with_underlay(
             frame,
             painter,
             mask_cache,
@@ -2737,6 +2758,7 @@ pub fn render_cursor_overlay(
             window_height,
             scale_factor,
             model.ui.cursor_visible,
+            underlay,
         );
     });
 }

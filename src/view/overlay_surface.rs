@@ -1806,6 +1806,33 @@ pub fn render(
     scale_factor: f64,
     cursor_visible: bool,
 ) {
+    render_with_underlay(
+        frame,
+        painter,
+        mask_cache,
+        theme,
+        spec,
+        window_width,
+        window_height,
+        scale_factor,
+        cursor_visible,
+        None,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_with_underlay(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    mask_cache: &mut RoundedRectMaskCache,
+    theme: &crate::theme::Theme,
+    spec: &OverlaySpec,
+    window_width: usize,
+    window_height: usize,
+    scale_factor: f64,
+    cursor_visible: bool,
+    underlay: Option<&mut Vec<super::frame::SavedRegion>>,
+) {
     // Measure through the glyph cache so zone wrapping uses real advances;
     // the borrow ends before painting begins.
     let layout = {
@@ -1818,6 +1845,21 @@ pub fn render(
             &mut measure,
         )
     };
+    if let Some(underlay) = underlay {
+        debug_assert!(matches!(
+            spec.anchor,
+            Anchor::Cursor { .. } | Anchor::Menu { .. }
+        ));
+        let pad = Frame::shadow_extent(scale_factor);
+        for panel in std::iter::once(layout.panel).chain(layout.docs_panel) {
+            underlay.push(frame.save_region(Rect::new(
+                panel.x.saturating_sub(pad) as f32,
+                panel.y.saturating_sub(pad) as f32,
+                (panel.w + 2 * pad) as f32,
+                (panel.h + 2 * pad) as f32,
+            )));
+        }
+    }
     let mut colors = Palette::from_theme(theme);
     // Reading surfaces must separate documentation from the editor beneath.
     // Keep translucency on other overlays as configured by the theme.

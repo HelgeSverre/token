@@ -8,6 +8,14 @@ All notable changes to Token are documented in this file.
 
 ### Interface
 
+- Keep cursor-line, status-bar and Problems-panel redraws independent when
+  combined. Limit cursor movement, text edits and ghost-text changes to affected
+  panes; completion and signature-help popups no longer force full-window
+  repaints on cursor blink. Preserve popup backgrounds and shadows across
+  movement, updates and dismissal.
+- Prepare only visible Problems rows instead of copying the entire diagnostic
+  list on each repaint, and skip dock/tree layout preparation on narrow redraws.
+
 - Add **File Tree: Toggle Gitignored Files** to the command palette (bindable
   as `ToggleGitignoredFiles`). Gitignored files are shown by default; the
   toggle hides entries matched by `.gitignore` files and `.git/info/exclude`.

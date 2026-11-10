@@ -21,7 +21,28 @@ pub(crate) fn edit_effects(
     document_id: Option<DocumentId>,
     line_change: Option<(usize, usize, usize)>,
 ) -> Cmd {
-    let mut cmds = vec![Cmd::redraw_editor()];
+    let redraw = match document_id {
+        Some(id) if !model.editor_area.has_preview_for_document(id) => {
+            use crate::commands::DamageArea;
+            let mut areas = vec![DamageArea::StatusBar];
+            // Include inactive tabs: their modified indicators change too. A
+            // document can be shown in several panes, not just the focused one.
+            for (&group_id, group) in &model.editor_area.groups {
+                if group.tabs.iter().any(|tab| {
+                    model
+                        .editor_area
+                        .editors
+                        .get(&tab.editor_id)
+                        .is_some_and(|editor| editor.document_id == Some(id))
+                }) {
+                    areas.push(DamageArea::EditorGroup(group_id));
+                }
+            }
+            Cmd::RedrawAreas(areas)
+        }
+        _ => Cmd::redraw_editor(),
+    };
+    let mut cmds = vec![redraw];
     if let Some(document_id) = document_id {
         if let Some((line, old_count, new_count)) = line_change {
             if let Some(highlights) = model
