@@ -248,17 +248,20 @@ pub fn render(
     let border = model.theme.sidebar.border.to_argb_u32();
     let stage_colors =
         PerfStage::ALL.map(|stage| stage_color(stage, model.theme.sidebar.background));
+    // Scrolled sections sit above the window's first row once the offset
+    // exceeds the body's own y, so every vertical position here is signed.
+    let lh = model.line_height as isize;
     frame.push_clip(viewport);
     frame.fill_rect(viewport, model.theme.sidebar.background.to_argb_u32());
 
-    let (x, y, width, _) = snap(layout.hero);
+    let (x, y, width, _) = snap_signed(layout.hero);
     label(frame, painter, x, y, "Frame time", muted);
     let latest = view.latest().map(|s| s.frame_time);
     let latest_text = latest.map_or_else(|| "—".to_owned(), |d| format!("{:.2}", ms(d)));
-    let value_width = painter.draw_sized(
+    let value_width = painter.draw_sized_signed(
         frame,
         x,
-        y + (20.0 * model.metrics.scale_factor as f32) as usize,
+        y + (20.0 * model.metrics.scale_factor as f32) as isize,
         &latest_text,
         28.0 * model.metrics.scale_factor as f32,
         0.0,
@@ -268,7 +271,7 @@ pub fn render(
         frame,
         painter,
         x + value_width.ceil() as usize + model.metrics.padding_small,
-        y + (39.0 * model.metrics.scale_factor as f32) as usize,
+        y + (39.0 * model.metrics.scale_factor as f32) as isize,
         "ms",
         muted,
     );
@@ -289,7 +292,7 @@ pub fn render(
         mode.strip_prefix("latest: ").unwrap_or(mode)
     };
     right_label(frame, painter, x + width, y, mode, muted);
-    let (hx, hy, hw, hh) = snap(layout.history);
+    let (hx, hy, hw, hh) = snap_signed(layout.history);
     frame.draw_sparkline(
         hx,
         hy,
@@ -303,7 +306,7 @@ pub fn render(
         frame,
         painter,
         hx,
-        hy + hh.saturating_sub(model.line_height),
+        hy + hh.saturating_sub(model.line_height) as isize,
         &format!(
             "{} of {} rendered frames",
             view.sample_count(),
@@ -311,7 +314,7 @@ pub fn render(
         ),
         muted,
     );
-    let (sx, sy, sw, _) = snap(layout.stats);
+    let (sx, sy, sw, _) = snap_signed(layout.stats);
     // Three columns; at narrow widths the values lose their unit (the frame
     // time readout above already shows it) so neighbours cannot touch.
     let cell_w = sw / 3;
@@ -330,11 +333,11 @@ pub fn render(
         if painter.measure_width(&text) + gap > cell_w as f32 {
             text = format_ms_compact(value);
         }
-        painter.draw(frame, cell_x, sy + model.line_height, &text, fg);
+        painter.draw_signed(frame, cell_x, sy + lh, &text, fg);
     }
     rule(frame, layout.frame, border);
 
-    let (bx, by, bw, _) = snap(layout.stage_heading);
+    let (bx, by, bw, _) = snap_signed(layout.stage_heading);
     label(frame, painter, bx, by, "Render breakdown", fg);
     right_label(
         frame,
@@ -344,17 +347,10 @@ pub fn render(
         &format!("{} frames", view.sample_count()),
         muted,
     );
-    label(frame, painter, bx, by + model.line_height, "STAGE", muted);
+    label(frame, painter, bx, by + lh, "STAGE", muted);
     let compact = bw < (330.0 * model.metrics.scale_factor as f32) as usize;
-    right_label(
-        frame,
-        painter,
-        bx + bw,
-        by + model.line_height,
-        "LATEST",
-        muted,
-    );
-    let bar_y = by + model.line_height * 2 + model.metrics.padding_small;
+    right_label(frame, painter, bx + bw, by + lh, "LATEST", muted);
+    let bar_y = by + lh * 2 + model.metrics.padding_small as isize;
     let bar_height = (4.0 * model.metrics.scale_factor).round().max(1.0) as usize;
     match view.latest() {
         Some(sample) if !sample.frame_time.is_zero() && sample.untracked.is_some() => {
@@ -364,7 +360,8 @@ pub fn render(
             for stage in PerfStage::ALL {
                 tracked_ns += sample.stages[stage.index()].as_nanos();
                 let end = bx + ((tracked_ns * bw as u128 + frame_ns / 2) / frame_ns) as usize;
-                frame.fill_rect_px(
+                fill_signed(
+                    frame,
                     cursor,
                     bar_y,
                     end.saturating_sub(cursor),
@@ -374,7 +371,7 @@ pub fn render(
                 cursor = end;
             }
             if sample.untracked.is_some_and(|duration| !duration.is_zero()) {
-                frame.fill_rect_px(cursor, bar_y, bx + bw - cursor, bar_height, muted);
+                fill_signed(frame, cursor, bar_y, bx + bw - cursor, bar_height, muted);
             }
         }
         Some(sample) if sample.untracked.is_none() => {
@@ -388,7 +385,7 @@ pub fn render(
         Some(_) => label(frame, painter, bx, bar_y, "Zero-duration frame", muted),
         None => label(frame, painter, bx, bar_y, "No completed frames yet", muted),
     }
-    let (rx, ry, rw, _) = snap(layout.stage_rows);
+    let (rx, ry, rw, _) = snap_signed(layout.stage_rows);
     let row_height = breakdown_row_height(model).max(1);
     if stages.is_empty() && !has_untracked {
         label(frame, painter, rx, ry, "No stage samples yet", muted);
@@ -398,9 +395,9 @@ pub fn render(
         .map(BreakdownRow::Stage)
         .chain(has_untracked.then_some(BreakdownRow::Untracked));
     for (i, row) in rows.enumerate() {
-        let row_y = ry + i * row_height;
-        if row_y + row_height < viewport.y.max(0.0) as usize
-            || row_y > (viewport.y + viewport.height).max(0.0) as usize
+        let row_y = ry + (i * row_height) as isize;
+        if row_y + (row_height as isize) < viewport.y as isize
+            || row_y > (viewport.y + viewport.height) as isize
         {
             continue;
         }
@@ -425,12 +422,12 @@ pub fn render(
         };
         let name =
             painter.truncate_to_width(name, (rw * if compact { 55 } else { 46 } / 100) as f32);
-        painter.draw(frame, rx, row_y, &name, color);
+        painter.draw_signed(frame, rx, row_y, &name, color);
         right_label(frame, painter, rx + rw, row_y, &format_duration(latest), fg);
         if !compact {
             frame.draw_sparkline(
                 rx,
-                row_y + model.line_height + model.metrics.padding_small,
+                row_y + lh + model.metrics.padding_small as isize,
                 rw / 3,
                 model
                     .line_height
@@ -456,25 +453,18 @@ pub fn render(
                 )
             },
         );
-        right_label(
-            frame,
-            painter,
-            rx + rw,
-            row_y + model.line_height,
-            &mean_text,
-            muted,
-        );
+        right_label(frame, painter, rx + rw, row_y + lh, &mean_text, muted);
     }
     rule(frame, layout.breakdown, border);
 
-    let (cx, cy, cw, _) = snap(layout.cache_heading);
+    let (cx, cy, cw, _) = snap_signed(layout.cache_heading);
     label(frame, painter, cx, cy, "Glyph cache", fg);
     right_label(frame, painter, cx + cw, cy, "Lifetime rate", muted);
-    let (cx, cy, cw, _) = snap(layout.cache_summary);
+    let (cx, cy, cw, _) = snap_signed(layout.cache_summary);
     let rate = view
         .lifetime_cache_hit_rate()
         .map_or_else(|| "—".to_owned(), |rate| format!("{rate:.1}%"));
-    painter.draw_sized(
+    painter.draw_sized_signed(
         frame,
         cx,
         cy,
@@ -492,11 +482,11 @@ pub fn render(
         _ => "No lookups yet".to_owned(),
     };
     let details = painter.truncate_to_width(&details, cw as f32);
-    let details_y = cy + (30.0 * model.metrics.scale_factor).round() as usize;
+    let details_y = cy + (30.0 * model.metrics.scale_factor).round() as isize;
     label(frame, painter, cx, details_y, &details, muted);
     rule(frame, layout.cache, border);
 
-    let (nx, ny, nw, _) = snap(layout.note);
+    let (nx, ny, nw, _) = snap_signed(layout.note);
     let mixed = view.latest().is_some_and(|latest| {
         view.samples()
             .any(|sample| sample.observation_mode != latest.observation_mode)
@@ -521,7 +511,7 @@ pub fn render(
         frame,
         painter,
         nx + model.metrics.padding_large,
-        ny + model.metrics.padding_large,
+        ny + model.metrics.padding_large as isize,
         &note,
         muted,
     );
@@ -582,10 +572,28 @@ fn format_duration(duration: Option<std::time::Duration>) -> String {
 }
 
 #[cfg(debug_assertions)]
-fn label(frame: &mut Frame, painter: &mut TextPainter, x: usize, y: usize, text: &str, color: u32) {
+fn label(frame: &mut Frame, painter: &mut TextPainter, x: usize, y: isize, text: &str, color: u32) {
     painter
         .with_font(FontRole::Code)
-        .draw(frame, x, y, text, color);
+        .draw_signed(frame, x, y, text, color);
+}
+
+/// Snap a scrolled rect without clamping its top: `snap` pins a negative y to
+/// the frame's first row, which displaces everything scrolled above it.
+#[cfg(debug_assertions)]
+fn snap_signed(rect: Rect) -> (usize, isize, usize, usize) {
+    let (x, _, width, _) = snap(rect);
+    let top = rect.y.round() as isize;
+    let bottom = (rect.y + rect.height).round() as isize;
+    (x, top, width, (bottom - top).max(0) as usize)
+}
+
+#[cfg(debug_assertions)]
+fn fill_signed(frame: &mut Frame, x: usize, y: isize, width: usize, height: usize, color: u32) {
+    frame.fill_rect(
+        Rect::new(x as f32, y as f32, width as f32, height as f32),
+        color,
+    );
 }
 
 #[cfg(debug_assertions)]
@@ -593,19 +601,19 @@ fn right_label(
     frame: &mut Frame,
     painter: &mut TextPainter,
     right: usize,
-    y: usize,
+    y: isize,
     text: &str,
     color: u32,
 ) {
     let mut ui = painter.with_font(FontRole::Code);
     let width = ui.measure_width(text).round().max(0.0) as usize;
-    ui.draw(frame, right.saturating_sub(width), y, text, color);
+    ui.draw_signed(frame, right.saturating_sub(width), y, text, color);
 }
 
 #[cfg(debug_assertions)]
 fn rule(frame: &mut Frame, rect: Rect, color: u32) {
-    let (x, y, width, height) = snap(rect);
-    frame.fill_rect_px(x, y + height.saturating_sub(1), width, 1, color);
+    let (x, y, width, height) = snap_signed(rect);
+    fill_signed(frame, x, y + height as isize - 1, width, 1, color);
 }
 
 #[cfg(all(test, debug_assertions))]
@@ -700,6 +708,67 @@ mod tests {
                         );
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn scrolled_body_paints_the_same_near_the_window_top_as_further_down() {
+        // Sections scrolled above the window's first row used to snap to y=0
+        // and paint over the rows, cache block and note below them.
+        let code = fontdue::Font::from_bytes(
+            include_bytes!("../../assets/JetBrainsMono.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        let ui = fontdue::Font::from_bytes(
+            include_bytes!("../../assets/Inter-Regular.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        let mut perf = PerfStats::default();
+        for frame in 0..12_u64 {
+            for (index, stage) in PerfStage::ALL.into_iter().take(14).enumerate() {
+                let micros = 100 + 37 * index as u64 + 53 * (frame % 5);
+                perf.record_stage_elapsed(stage, std::time::Duration::from_micros(micros));
+            }
+            perf.record_frame_time();
+        }
+        let mut model = AppModel::new(340, 1500, 1.0);
+        const WIDTH: usize = 340;
+        const HEIGHT: usize = 1500;
+        let (near_top, lower) = (30.0, 1200.0);
+        let paint = |model: &AppModel, y: f32| {
+            let viewport = Rect::new(20.0, y, 300.0, 220.0);
+            let (mut code_cache, mut ui_cache) = (GlyphCache::default(), GlyphCache::default());
+            let mut painter = TextPainter::new(&code, &mut code_cache, 14.0, 11.0, 8.0, 18)
+                .with_ui_font(&ui, &mut ui_cache, FontRole::Ui);
+            let mut buffer = vec![0u32; WIDTH * HEIGHT];
+            render(
+                &mut Frame::new(&mut buffer, WIDTH, HEIGHT),
+                &mut painter,
+                model,
+                viewport,
+                &perf,
+            );
+            let top = y as usize * WIDTH;
+            buffer[top..top + 220 * WIDTH].to_vec()
+        };
+        let limit = scroll_limit(&model, Rect::new(20.0, near_top, 300.0, 220.0), &perf);
+        assert!(
+            limit > 200,
+            "fixture must scroll well past its own y: {limit}"
+        );
+        assert!(limit < lower as usize, "the lower copy must stay on screen");
+        for scroll in [0, 20, 31, 140, limit / 2, limit] {
+            model.ui.performance_scroll_px = scroll;
+            let (a, b) = (paint(&model, near_top), paint(&model, lower));
+            if let Some(index) = a.iter().zip(&b).position(|(a, b)| a != b) {
+                panic!(
+                    "scroll={scroll}: differs at ({}, {})",
+                    index % WIDTH,
+                    index / WIDTH
+                );
             }
         }
     }

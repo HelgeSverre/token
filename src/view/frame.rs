@@ -848,7 +848,7 @@ impl<'a> Frame<'a> {
     pub fn draw_sparkline<D: Into<Option<std::time::Duration>>>(
         &mut self,
         x: usize,
-        y: usize,
+        y: isize,
         chart_width: usize,
         chart_height: usize,
         data: impl IntoIterator<Item = D>,
@@ -859,7 +859,12 @@ impl<'a> Frame<'a> {
             return;
         }
 
-        self.fill_rect_px(x, y, chart_width, chart_height, bg_color);
+        // `y` is signed: a scrolled chart can start above the frame's first
+        // row, and the rows that remain must keep their scale and position.
+        self.fill_rect(
+            Rect::new(x as f32, y as f32, chart_width as f32, chart_height as f32),
+            bg_color,
+        );
 
         let samples: Vec<Option<f64>> = data
             .into_iter()
@@ -887,9 +892,9 @@ impl<'a> Frame<'a> {
             let px =
                 x + index * chart_width.saturating_sub(1) / sample_count.saturating_sub(1).max(1);
             let normalized = ((value - bottom) / range).clamp(0.0, 1.0);
-            let py = y + chart_height.saturating_sub(1)
-                - (normalized * chart_height.saturating_sub(1) as f64).round() as usize;
-            (px as isize, py as isize)
+            let py = y + chart_height.saturating_sub(1) as isize
+                - (normalized * chart_height.saturating_sub(1) as f64).round() as isize;
+            (px as isize, py)
         };
         let mut previous: Option<(isize, isize)> = None;
         for (index, value) in samples.iter().enumerate() {
@@ -906,7 +911,9 @@ impl<'a> Frame<'a> {
                 let (mut lx, mut ly) = (last_x, last_y);
                 let mut error = dx + dy;
                 loop {
-                    self.set_pixel(lx as usize, ly as usize, line_color);
+                    if ly >= 0 {
+                        self.set_pixel(lx as usize, ly as usize, line_color);
+                    }
                     if lx == px && ly == py {
                         break;
                     }
@@ -920,7 +927,7 @@ impl<'a> Frame<'a> {
                         ly += sy;
                     }
                 }
-            } else {
+            } else if py >= 0 {
                 self.set_pixel(px as usize, py as usize, line_color);
             }
             previous = Some((px, py));
@@ -1127,6 +1134,12 @@ impl<'a> TextPainter<'a> {
 
     /// Draw text at the specified position
     pub fn draw(&mut self, frame: &mut Frame, x: usize, y: usize, text: &str, color: u32) {
+        self.draw_signed(frame, x, y as isize, text, color);
+    }
+
+    /// `draw` for scrolled content whose top can sit above the frame's first
+    /// row. Glyph rows above the frame are dropped; the rest paint normally.
+    pub fn draw_signed(&mut self, frame: &mut Frame, x: usize, y: isize, text: &str, color: u32) {
         let mut current_x = x as f32;
         let baseline = y as f32 + self.ascent;
 
@@ -1173,6 +1186,21 @@ impl<'a> TextPainter<'a> {
         frame: &mut Frame,
         x: usize,
         y: usize,
+        text: &str,
+        size: f32,
+        tracking: f32,
+        color: u32,
+    ) -> f32 {
+        self.draw_sized_signed(frame, x, y as isize, text, size, tracking, color)
+    }
+
+    /// `draw_sized` for scrolled content; see [`Self::draw_signed`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_sized_signed(
+        &mut self,
+        frame: &mut Frame,
+        x: usize,
+        y: isize,
         text: &str,
         size: f32,
         tracking: f32,
