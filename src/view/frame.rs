@@ -8,6 +8,8 @@ use fontdue::Font;
 
 use super::GlyphCache;
 
+const SHADOW_RINGS: [(usize, u8); 4] = [(1, 0x38), (2, 0x22), (3, 0x14), (4, 0x0A)];
+
 /// Blend a foreground color onto a background color using alpha compositing.
 ///
 /// Both colors are in ARGB format (0xAARRGGBB). The alpha value from the
@@ -87,6 +89,26 @@ struct ClipRect {
     y1: usize,
 }
 
+/// Pixels underneath a transient popup, including its translucent shadow.
+/// Restore in reverse paint order before painting the next frame's damage.
+pub(crate) struct SavedRegion {
+    rect: ClipRect,
+    pixels: Vec<u32>,
+}
+
+impl SavedRegion {
+    pub(crate) fn restore(self, frame: &mut Frame) {
+        let width = self.rect.x1 - self.rect.x0;
+        if width == 0 {
+            return;
+        }
+        for (y, row) in (self.rect.y0..self.rect.y1).zip(self.pixels.chunks_exact(width)) {
+            let start = y * frame.width + self.rect.x0;
+            frame.buffer[start..start + width].copy_from_slice(row);
+        }
+    }
+}
+
 /// A frame buffer wrapper providing safe drawing primitives.
 ///
 /// All coordinates are in pixels. Out-of-bounds operations are safely clipped.
@@ -141,6 +163,21 @@ impl<'a> Frame<'a> {
     #[inline]
     pub fn buffer_mut(&mut self) -> &mut [u32] {
         self.buffer
+    }
+
+    pub(crate) fn save_region(&self, rect: Rect) -> SavedRegion {
+        let rect = self.clip_rect_from(rect);
+        let mut pixels = Vec::with_capacity((rect.x1 - rect.x0) * (rect.y1 - rect.y0));
+        for y in rect.y0..rect.y1 {
+            pixels.extend_from_slice(
+                &self.buffer[y * self.width + rect.x0..y * self.width + rect.x1],
+            );
+        }
+        SavedRegion { rect, pixels }
+    }
+
+    pub(crate) fn shadow_extent(scale_factor: f64) -> usize {
+        SHADOW_RINGS.last().unwrap().0 * (scale_factor.round() as usize).max(1)
     }
 
     /// Convert a `Rect` into a frame-bounded `ClipRect`.
@@ -781,9 +818,8 @@ impl<'a> Frame<'a> {
         // tail. Offsets scale with the display so 2x gets the same logical
         // softness (each base ring strokes `s` consecutive physical
         // offsets).
-        const RINGS: [(usize, u8); 4] = [(1, 0x38), (2, 0x22), (3, 0x14), (4, 0x0A)];
         let s = (scale_factor.round() as usize).max(1);
-        for (base_offset, alpha) in RINGS {
+        for (base_offset, alpha) in SHADOW_RINGS {
             let color = (alpha as u32) << 24;
             for k in 0..s {
                 let offset = base_offset * s - k;

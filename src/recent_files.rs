@@ -1,11 +1,16 @@
-//! Persistent recent files list
+//! Recent file history and its picker
 //!
 //! Tracks files opened in the editor and persists them to disk.
 //! Files are stored in MRU (most recently used) order with a capacity limit.
+//! The picker owns filtering, date/pin grouping and selection preservation.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+
+use crate::editable::{EditConstraints, EditableState, StringBuffer};
+use crate::model::COMMAND_PALETTE_MAX_VISIBLE;
+use crate::view::overlay_surface::{resolve_scroll_for_selection, SectionShape};
 
 /// Maximum number of entries to keep
 const MAX_ENTRIES: usize = 50;
@@ -32,7 +37,7 @@ pub struct RecentEntry {
 /// Which section of the Recent Files modal an entry belongs in
 /// (overlay-surface.md Phase 3: Pinned / Today / Yesterday / Earlier).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RecentGroup {
+enum RecentGroup {
     Pinned,
     Today,
     Yesterday,
@@ -40,7 +45,7 @@ pub enum RecentGroup {
 }
 
 impl RecentGroup {
-    pub fn title(&self) -> &'static str {
+    fn title(&self) -> &'static str {
         match self {
             RecentGroup::Pinned => "Pinned",
             RecentGroup::Today => "Today",
@@ -111,7 +116,7 @@ impl RecentEntry {
     /// Which Recent Files section this entry belongs in: pinned entries
     /// always sort first regardless of recency; the rest are bucketed by
     /// calendar day (UTC — no timezone dependency in this crate).
-    pub fn group(&self) -> RecentGroup {
+    fn group(&self) -> RecentGroup {
         if self.pinned {
             return RecentGroup::Pinned;
         }
@@ -206,7 +211,7 @@ impl RecentFiles {
     }
 
     /// Toggle the pinned flag for an entry, if present.
-    pub fn toggle_pin(&mut self, path: &Path) {
+    fn toggle_pin(&mut self, path: &Path) {
         if let Some(idx) = self.find_index(path) {
             self.entries[idx].pinned = !self.entries[idx].pinned;
         }
@@ -241,9 +246,305 @@ impl RecentFiles {
     }
 }
 
+/// Recent Files modal state. Owns filtering, section ordering and selection
+/// preservation; callers never translate between display rows and MRU entries.
+#[derive(Debug, Clone)]
+pub struct RecentFilesState {
+    pub selected_index: usize,
+    pub editable: EditableState<StringBuffer>,
+    pub scroll_offset: usize,
+    entries: Vec<RecentEntry>,
+    filtered_rows: Vec<usize>,
+}
+
+impl RecentFilesState {
+    /// Keep the current file in MRU order, but preselect the previous file
+    /// when the current file is first so immediate confirmation quick-switches.
+    pub fn new(recent: &RecentFiles, current_file: Option<&Path>) -> Self {
+        let entries = recent.entries.clone();
+        let selected_entry = match current_file {
+            Some(current)
+                if entries.len() > 1
+                    && entries
+                        .first()
+                        .is_some_and(|entry| entry.path.as_path() == current) =>
+            {
+                1
+            }
+            _ => 0,
+        };
+        let mut state = Self {
+            selected_index: 0,
+            entries,
+            editable: EditableState::new(StringBuffer::new(), EditConstraints::single_line()),
+            scroll_offset: 0,
+            filtered_rows: Vec::new(),
+        };
+        state.recompute_filtered_rows();
+        state.selected_index = state
+            .filtered_rows
+            .iter()
+            .position(|&i| i == selected_entry)
+            .unwrap_or(0);
+        state
+    }
+
+    pub fn input(&self) -> String {
+        self.editable.text()
+    }
+
+    /// Refresh after editing the filter, starting selection and scrolling over.
+    pub fn filter_changed(&mut self) {
+        self.recompute_filtered_rows();
+        self.selected_index = 0;
+        self.scroll_offset = 0;
+    }
+
+    fn recompute_filtered_rows(&mut self) {
+        let filter = self.input().to_lowercase();
+        let mut order: Vec<usize> = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| filter.is_empty() || e.display_path().to_lowercase().contains(&filter))
+            .map(|(i, _)| i)
+            .collect();
+        // Stable grouping preserves MRU order within each section.
+        order.sort_by_key(|&i| self.entries[i].group() as u8);
+        self.filtered_rows = order;
+    }
+
+    pub fn rows(&self) -> impl ExactSizeIterator<Item = &RecentEntry> {
+        self.filtered_rows.iter().map(|&i| &self.entries[i])
+    }
+
+    /// Section boundaries shared by rendering, navigation and automation.
+    pub fn groups(&self) -> Vec<(&'static str, Vec<&RecentEntry>)> {
+        let mut groups: Vec<(&'static str, Vec<&RecentEntry>)> = Vec::new();
+        for entry in self.rows() {
+            let title = entry.group().title();
+            match groups.last_mut() {
+                Some((last_title, entries)) if *last_title == title => entries.push(entry),
+                _ => groups.push((title, vec![entry])),
+            }
+        }
+        groups
+    }
+
+    pub(crate) fn section_shapes(&self) -> Vec<SectionShape> {
+        self.groups()
+            .iter()
+            .map(|(_, entries)| SectionShape {
+                has_title: true,
+                len: entries.len(),
+            })
+            .collect()
+    }
+
+    pub fn selected_entry(&self) -> Option<&RecentEntry> {
+        self.filtered_rows
+            .get(self.selected_index)
+            .map(|&i| &self.entries[i])
+    }
+
+    /// Toggle the selected pin in the modal and persistent history, keeping
+    /// the same file selected and visible after regrouping. Returns whether
+    /// there was a selection to persist.
+    pub fn toggle_selected_pin(&mut self, recent: &mut RecentFiles) -> bool {
+        let Some(&entry_idx) = self.filtered_rows.get(self.selected_index) else {
+            return false;
+        };
+        let entry = &mut self.entries[entry_idx];
+        recent.toggle_pin(&entry.path);
+        entry.pinned = !entry.pinned;
+        self.recompute_filtered_rows();
+        self.selected_index = self
+            .filtered_rows
+            .iter()
+            .position(|&i| i == entry_idx)
+            .expect("pinning does not change which entries match the filter");
+        self.scroll_offset = resolve_scroll_for_selection(
+            &self.section_shapes(),
+            self.selected_index,
+            COMMAND_PALETTE_MAX_VISIBLE,
+            self.scroll_offset,
+        );
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_entry(path: &str, workspace: Option<&str>) -> RecentEntry {
+        RecentEntry {
+            path: PathBuf::from(path),
+            opened_at: 0,
+            workspace: workspace.map(PathBuf::from),
+            open_count: 1,
+            pinned: false,
+        }
+    }
+
+    fn make_recent(entries: Vec<RecentEntry>) -> RecentFiles {
+        RecentFiles {
+            version: 1,
+            entries,
+        }
+    }
+
+    #[test]
+    fn test_recent_files_state_includes_current_file() {
+        let recent = make_recent(vec![
+            make_entry("/a.rs", None),
+            make_entry("/b.rs", None),
+            make_entry("/c.rs", None),
+        ]);
+        let state = RecentFilesState::new(&recent, Some(Path::new("/a.rs")));
+        assert_eq!(
+            state
+                .rows()
+                .map(|entry| entry.path.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                PathBuf::from("/a.rs"),
+                PathBuf::from("/b.rs"),
+                PathBuf::from("/c.rs")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_recent_files_state_preselects_previous_file_when_current_is_first() {
+        let recent = make_recent(vec![
+            make_entry("/a.rs", None),
+            make_entry("/b.rs", None),
+            make_entry("/c.rs", None),
+        ]);
+        let state = RecentFilesState::new(&recent, Some(Path::new("/a.rs")));
+        assert_eq!(state.selected_index, 1);
+    }
+
+    #[test]
+    fn test_recent_files_state_keeps_default_selection_when_current_is_only_entry() {
+        let recent = make_recent(vec![make_entry("/a.rs", None)]);
+        let state = RecentFilesState::new(&recent, Some(Path::new("/a.rs")));
+        assert_eq!(state.selected_index, 0);
+    }
+
+    #[test]
+    fn test_recent_files_state_keeps_default_selection_when_current_not_first() {
+        let recent = make_recent(vec![
+            make_entry("/b.rs", None),
+            make_entry("/a.rs", None),
+            make_entry("/c.rs", None),
+        ]);
+        let state = RecentFilesState::new(&recent, Some(Path::new("/a.rs")));
+        assert_eq!(state.selected_index, 0);
+    }
+
+    #[test]
+    fn test_recent_files_state_no_current_file() {
+        let recent = make_recent(vec![make_entry("/a.rs", None), make_entry("/b.rs", None)]);
+        let state = RecentFilesState::new(&recent, None);
+        assert_eq!(state.rows().len(), 2);
+    }
+
+    #[test]
+    fn test_recent_files_state_filter() {
+        let recent = make_recent(vec![
+            make_entry("/project/src/main.rs", Some("/project")),
+            make_entry("/project/Cargo.toml", Some("/project")),
+            make_entry("/other/README.md", None),
+        ]);
+        let mut state = RecentFilesState::new(&recent, None);
+
+        // No filter — all entries
+        assert_eq!(state.rows().len(), 3);
+
+        // Filter by "main"
+        state.selected_index = 2;
+        state.scroll_offset = 1;
+        state.editable.set_content("main");
+        state.filter_changed();
+        assert_eq!(state.rows().len(), 1);
+        assert_eq!(state.selected_index, 0);
+        assert_eq!(state.scroll_offset, 0);
+        assert_eq!(
+            state.selected_entry().unwrap().path,
+            PathBuf::from("/project/src/main.rs")
+        );
+    }
+
+    #[test]
+    fn test_recent_files_state_filter_case_insensitive() {
+        let recent = make_recent(vec![make_entry("/project/src/Main.rs", Some("/project"))]);
+        let mut state = RecentFilesState::new(&recent, None);
+        state.editable.set_content("main");
+        state.filter_changed();
+        assert_eq!(state.rows().len(), 1);
+    }
+
+    #[test]
+    fn test_recent_files_state_empty() {
+        let recent = RecentFiles::default();
+        let state = RecentFilesState::new(&recent, None);
+        assert_eq!(state.rows().len(), 0);
+        assert_eq!(state.selected_index, 0);
+    }
+
+    #[test]
+    fn test_recent_files_state_initial_selection() {
+        let recent = make_recent(vec![make_entry("/a.rs", None), make_entry("/b.rs", None)]);
+        let state = RecentFilesState::new(&recent, None);
+        assert_eq!(state.selected_index, 0);
+    }
+
+    #[test]
+    fn test_recent_files_state_puts_pinned_first_preserving_mru_order() {
+        let mut a = make_entry("/a.rs", None);
+        a.pinned = true;
+        let mut c = make_entry("/c.rs", None);
+        c.pinned = true;
+        let recent = make_recent(vec![
+            make_entry("/z.rs", None), // unpinned, MRU-first
+            a,                         // pinned
+            make_entry("/y.rs", None), // unpinned
+            c,                         // pinned
+        ]);
+        let state = RecentFilesState::new(&recent, None);
+
+        // Pinned entries (a, c) sort before unpinned (z, y), each group
+        // keeping its original MRU-relative order — not re-sorted by name.
+        let ordered_paths: Vec<_> = state.rows().map(|entry| entry.path.clone()).collect();
+        assert_eq!(
+            ordered_paths,
+            vec![
+                PathBuf::from("/a.rs"),
+                PathBuf::from("/c.rs"),
+                PathBuf::from("/z.rs"),
+                PathBuf::from("/y.rs"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_recent_files_state_respects_query_filter() {
+        let recent = make_recent(vec![
+            make_entry("/project/main.rs", Some("/project")),
+            make_entry("/project/lib.rs", Some("/project")),
+        ]);
+        let mut state = RecentFilesState::new(&recent, None);
+        state.editable.set_content("main");
+        state.filter_changed();
+
+        assert_eq!(state.rows().len(), 1);
+        assert_eq!(
+            state.selected_entry().unwrap().path,
+            PathBuf::from("/project/main.rs")
+        );
+    }
 
     #[test]
     fn test_add_and_retrieve() {

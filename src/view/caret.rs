@@ -314,7 +314,7 @@ mod tests {
     fn non_text_modal_has_no_caret_rect() {
         let mut model = AppModel::new(800, 600, 1.0);
         model.ui.active_modal = Some(ModalState::ThemePicker(
-            crate::model::ui::ThemePickerState::new(model.config.theme.clone()),
+            crate::theme::ThemePickerState::new(model.config.theme.clone()),
         ));
 
         assert_eq!(active_text_input_rect(&model, 8.0, 20), None);

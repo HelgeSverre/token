@@ -7,71 +7,45 @@ use std::path::{Path, PathBuf};
 
 use crate::commands::CommandId;
 use crate::messages::{ContextMenuMsg, LayoutMsg, Msg, WorkspaceMsg};
-use crate::model::editor_area::{DocumentId, GroupId};
+use crate::model::editor_area::{GroupId, TabId};
 use crate::model::AppModel;
 
-use super::types::{ContextMenuTarget, MenuItem};
+use super::{ContextMenuTarget, MenuAction, MenuItem};
 
 /// Build the menu for `target` — dispatches to the matching per-region
 /// builder (context-menu.md "V1 Scope").
-pub fn build_menu(model: &AppModel, target: &ContextMenuTarget) -> Vec<MenuItem> {
+pub(super) fn build_menu(model: &AppModel, target: &ContextMenuTarget) -> Vec<MenuItem> {
+    let mut context = crate::keymap::KeyContext::for_command_hints(model);
     let mut items = match target {
-        ContextMenuTarget::Editor { group_id, .. } => build_editor_menu(model, target, *group_id),
-        ContextMenuTarget::Tab {
+        ContextMenuTarget::Editor {
             group_id,
-            tab_id,
-            file_path,
-        } => build_tab_menu(model, *group_id, *tab_id, file_path.as_deref()),
+            clipboard_has_content,
+        } => {
+            let group = model.editor_area.groups.get(group_id);
+            let editor = group
+                .and_then(|group| group.active_editor_id())
+                .and_then(|id| model.editor_area.editors.get(&id));
+            let doc = group.and_then(|group| model.editor_area.document_for_group(group));
+            context.editor_focused = true;
+            context.sidebar_focused = false;
+            context.has_selection = editor.is_some_and(|e| !e.active_selection().is_empty());
+            context.has_multiple_cursors = editor.is_some_and(|e| e.has_multiple_cursors());
+            build_editor_menu(model, doc, context.has_selection, *clipboard_has_content)
+        }
+        ContextMenuTarget::Tab { group_id, tab_id } => build_tab_menu(model, *group_id, *tab_id),
         ContextMenuTarget::FileTreeItem { path, is_dir } => {
+            context.editor_focused = false;
+            context.sidebar_focused = true;
             build_file_tree_menu(model, path, *is_dir)
         }
     };
-    let mut context = crate::keymap::KeyContext::for_command_hints(model);
-    match target {
-        ContextMenuTarget::Editor {
-            group_id,
-            has_selection,
-            ..
-        } => {
-            context.editor_focused = true;
-            context.sidebar_focused = false;
-            context.has_selection = *has_selection;
-            context.has_multiple_cursors = model
-                .editor_area
-                .groups
-                .get(group_id)
-                .and_then(|group| group.active_editor_id())
-                .and_then(|id| model.editor_area.editors.get(&id))
-                .is_some_and(|editor| editor.has_multiple_cursors());
-        }
-        ContextMenuTarget::FileTreeItem { .. } => {
-            context.editor_focused = false;
-            context.sidebar_focused = true;
-        }
-        ContextMenuTarget::Tab { .. } => {}
-    }
     for item in &mut items {
-        if let super::types::MenuAction::Command(id) = item.action {
+        if let MenuAction::Command(id) = item.action {
             item.shortcut_hint =
                 crate::commands::keybinding_for_command(id, &model.ui.keymap, &context);
         }
     }
     items
-}
-
-/// The document backing `group_id`'s active tab, if any — editor-region
-/// enablement (LSP availability, "has a path") reads against this rather
-/// than `model.document()` (the *focused* group), since the click may
-/// have landed in a non-focused split.
-fn active_document_for_group(
-    model: &AppModel,
-    group_id: GroupId,
-) -> Option<&crate::model::Document> {
-    let group = model.editor_area.groups.get(&group_id)?;
-    let tab = group.active_tab()?;
-    let editor = model.editor_area.editors.get(&tab.editor_id)?;
-    let document_id: DocumentId = editor.document_id?;
-    model.editor_area.documents.get(&document_id)
 }
 
 /// Whether an LSP server is registered for `language` and tracked in the
@@ -91,25 +65,17 @@ fn lsp_available_for(model: &AppModel, language: crate::syntax::LanguageId) -> b
 
 fn build_editor_menu(
     model: &AppModel,
-    target: &ContextMenuTarget,
-    group_id: GroupId,
+    doc: Option<&crate::model::Document>,
+    has_selection: bool,
+    clipboard_has_content: bool,
 ) -> Vec<MenuItem> {
-    let ContextMenuTarget::Editor {
-        has_selection,
-        clipboard_has_content,
-        ..
-    } = target
-    else {
-        return Vec::new();
-    };
-    let doc = active_document_for_group(model, group_id);
     let lsp_available = doc.is_some_and(|d| lsp_available_for(model, d.language));
     let has_path = doc.is_some_and(|d| d.file_path.is_some());
 
     vec![
-        MenuItem::from_command(CommandId::Cut, "Cut", *has_selection),
-        MenuItem::from_command(CommandId::Copy, "Copy", *has_selection),
-        MenuItem::from_command(CommandId::Paste, "Paste", *clipboard_has_content),
+        MenuItem::from_command(CommandId::Cut, "Cut", has_selection),
+        MenuItem::from_command(CommandId::Copy, "Copy", has_selection),
+        MenuItem::from_command(CommandId::Paste, "Paste", clipboard_has_content),
         MenuItem::separator(),
         MenuItem::from_command(CommandId::GotoDefinition, "Go to Definition", lsp_available),
         MenuItem::from_command(CommandId::ShowUsages, "Show Usages", lsp_available),
@@ -123,19 +89,16 @@ fn build_editor_menu(
     ]
 }
 
-fn build_tab_menu(
-    model: &AppModel,
-    group_id: GroupId,
-    tab_id: crate::model::editor_area::TabId,
-    file_path: Option<&Path>,
-) -> Vec<MenuItem> {
-    let other_tabs = model
-        .editor_area
-        .groups
-        .get(&group_id)
-        .is_some_and(|g| g.tabs.len() > 1);
+fn build_tab_menu(model: &AppModel, group_id: GroupId, tab_id: TabId) -> Vec<MenuItem> {
+    let group = model.editor_area.groups.get(&group_id);
+    let other_tabs = group.is_some_and(|g| g.tabs.len() > 1);
+    let file_path = group
+        .and_then(|g| g.tabs.iter().find(|tab| tab.id == tab_id))
+        .and_then(|tab| model.editor_area.editors.get(&tab.editor_id))
+        .and_then(|editor| editor.document_id)
+        .and_then(|id| model.editor_area.documents.get(&id))
+        .and_then(|doc| doc.file_path.as_deref());
     let has_path = file_path.is_some();
-    let has_workspace = model.workspace_root().is_some();
 
     let mut items = vec![
         MenuItem::custom(
@@ -165,7 +128,7 @@ fn build_tab_menu(
             file_path.map(Path::to_path_buf).unwrap_or_default(),
         ))],
     ));
-    items.extend(path_action_items(file_path, has_path, has_workspace));
+    items.extend(path_action_items(model, file_path));
     items
 }
 
@@ -185,13 +148,11 @@ fn build_file_tree_menu(model: &AppModel, path: &Path, is_dir: bool) -> Vec<Menu
     // the real workspace state rather than being hardcoded true, so "Copy
     // Relative Path" is correctly disabled if `copy_path` would otherwise
     // silently fall back to the absolute path.
-    let has_workspace = model.workspace_root().is_some();
-
     let mut items = vec![
         MenuItem::custom("Open", true, vec![open_action]),
         MenuItem::separator(),
     ];
-    items.extend(path_action_items(Some(path), true, has_workspace));
+    items.extend(path_action_items(model, Some(path)));
     items.push(MenuItem::separator());
     items.push(MenuItem::custom(
         "Refresh Tree",
@@ -204,11 +165,9 @@ fn build_file_tree_menu(model: &AppModel, path: &Path, is_dir: bool) -> Vec<Menu
 /// The three path-targeted rows shared by the Tab and File Tree menus
 /// (context-menu.md's tables list them identically): Reveal in Finder,
 /// Copy Absolute Path, Copy Relative Path.
-fn path_action_items(
-    file_path: Option<&Path>,
-    has_path: bool,
-    has_workspace: bool,
-) -> Vec<MenuItem> {
+fn path_action_items(model: &AppModel, file_path: Option<&Path>) -> Vec<MenuItem> {
+    let has_path = file_path.is_some();
+    let has_workspace = model.workspace_root().is_some();
     let path: PathBuf = file_path.map(Path::to_path_buf).unwrap_or_default();
     vec![
         MenuItem::custom(
@@ -240,7 +199,7 @@ fn path_action_items(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::editor_area::TabId;
+    use crate::model::{Position, Selection};
 
     #[test]
     fn shortcut_hints_use_live_bindings_and_the_target_selection_context() {
@@ -252,10 +211,14 @@ mod tests {
         model.ui.keymap = Keymap::with_bindings(vec![
             Keybinding::new(stroke, Command::Copy).when_single(Condition::HasSelection)
         ]);
+        model.document_mut().buffer = ropey::Rope::from_str("text");
         for has_selection in [false, true] {
+            model.editor_mut().selections[0] = Selection::from_positions(
+                Position::new(0, 0),
+                Position::new(0, if has_selection { 4 } else { 0 }),
+            );
             let target = ContextMenuTarget::Editor {
                 group_id: model.editor_area.focused_group_id,
-                has_selection,
                 clipboard_has_content: false,
             };
             let items = build_menu(&model, &target);
@@ -271,7 +234,6 @@ mod tests {
         model.ui.keymap = Keymap::new();
         let target = ContextMenuTarget::Editor {
             group_id: model.editor_area.focused_group_id,
-            has_selection: true,
             clipboard_has_content: false,
         };
         assert!(build_menu(&model, &target)
@@ -298,7 +260,6 @@ mod tests {
         let group_id = model.editor_area.focused_group_id;
         let target = ContextMenuTarget::Editor {
             group_id,
-            has_selection: false,
             clipboard_has_content: false,
         };
         let items = build_menu(&model, &target);
@@ -324,11 +285,21 @@ mod tests {
 
     #[test]
     fn editor_menu_enables_cut_copy_paste_when_available() {
-        let model = AppModel::new(800, 600, 1.0);
+        let mut model = AppModel::new(800, 600, 1.0);
+        model.document_mut().buffer = ropey::Rope::from_str("text");
+        model.editor_mut().selections[0] =
+            Selection::from_positions(Position::new(0, 0), Position::new(0, 4));
         let group_id = model.editor_area.focused_group_id;
+        crate::update::update(
+            &mut model,
+            Msg::Layout(LayoutMsg::SplitFocused(
+                crate::model::SplitDirection::Vertical,
+            )),
+        );
+        model.editor_mut().selections[0] = Selection::new(Position::new(0, 0));
+        assert_ne!(model.editor_area.focused_group_id, group_id);
         let target = ContextMenuTarget::Editor {
             group_id,
-            has_selection: true,
             clipboard_has_content: true,
         };
         let items = build_menu(&model, &target);
@@ -349,7 +320,7 @@ mod tests {
             .active_tab()
             .unwrap()
             .id;
-        let items = build_tab_menu(&model, group_id, tab_id, None);
+        let items = build_tab_menu(&model, group_id, tab_id);
         let close_others = items.iter().find(|i| i.label == "Close Others").unwrap();
         assert!(
             !close_others.enabled,
@@ -371,10 +342,22 @@ mod tests {
 
     #[test]
     fn tab_menu_targets_the_clicked_tab_not_the_focused_one() {
-        let model = AppModel::new(800, 600, 1.0);
+        let mut model = AppModel::new(800, 600, 1.0);
         let group_id = model.editor_area.focused_group_id;
-        let clicked_tab = TabId(999);
-        let items = build_tab_menu(&model, group_id, clicked_tab, None);
+        let clicked_tab = model.editor_area.groups[&group_id].active_tab().unwrap().id;
+        let clicked_path = PathBuf::from("/tmp/clicked.rs");
+        model.document_mut().file_path = Some(clicked_path.clone());
+        crate::update::update(&mut model, Msg::Layout(LayoutMsg::NewTab));
+        model.document_mut().file_path = Some(PathBuf::from("/tmp/focused.rs"));
+        let menu = super::super::ContextMenuState::new(
+            &model,
+            &ContextMenuTarget::Tab {
+                group_id,
+                tab_id: clicked_tab,
+            },
+            (0, 0, 0),
+        );
+        let items = &menu.items;
         let close = items.iter().find(|i| i.label == "Close").unwrap();
         match &close.action {
             crate::context_menu::MenuAction::Messages(msgs) => {
@@ -385,6 +368,19 @@ mod tests {
             }
             _ => panic!("expected a Messages action"),
         }
+        let copy = items
+            .iter()
+            .find(|i| i.label == "Copy Absolute Path")
+            .unwrap();
+        assert!(copy.enabled);
+        assert!(matches!(
+            &copy.action,
+            MenuAction::Messages(msgs) if matches!(
+                msgs.as_slice(),
+                [Msg::ContextMenu(ContextMenuMsg::CopyPath { path, relative: false })]
+                    if path == &clicked_path
+            )
+        ));
     }
 
     #[test]

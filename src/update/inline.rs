@@ -107,7 +107,7 @@ pub(crate) fn sync_projection(model: &mut AppModel) -> Option<Cmd> {
             })?;
         Some((id, projection))
     });
-    let mut changed = false;
+    let mut changed = Vec::new();
     let area = &mut model.editor_area;
     for (id, editor) in &mut area.editors {
         let next = desired
@@ -122,11 +122,22 @@ pub(crate) fn sync_projection(model: &mut AppModel) -> Option<Cmd> {
         if !same {
             if let Some(document) = editor.document_id.and_then(|id| area.documents.get(&id)) {
                 editor.set_ghost_text(document, next);
-                changed = true;
+                changed.push(*id);
             }
         }
     }
-    changed.then(Cmd::redraw_editor)
+    if changed.is_empty() {
+        return None;
+    }
+    let mut areas = vec![crate::commands::DamageArea::StatusBar];
+    areas.extend(area.groups.iter().filter_map(|(&id, group)| {
+        group
+            .tabs
+            .iter()
+            .any(|tab| changed.contains(&tab.editor_id))
+            .then_some(crate::commands::DamageArea::EditorGroup(id))
+    }));
+    Some(Cmd::RedrawAreas(areas))
 }
 
 /// Ask the runtime to fire a request after the debounce (or now, when
@@ -508,8 +519,7 @@ pub(crate) fn dismiss(model: &mut AppModel) -> Option<Cmd> {
     }
     let mut commands = vec![
         Cmd::CancelInlineRequest,
-        Cmd::redraw_editor(),
-        Cmd::redraw_status_bar(),
+        Cmd::redraw_group(model.editor_area.focused_group_id),
     ];
     commands.extend(usage);
     Some(Cmd::Batch(commands))

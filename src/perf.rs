@@ -167,6 +167,7 @@ pub enum PerfStage {
     FloatingPanels,
     StatusBar,
     Modal,
+    CursorOverlay,
     DropOverlay,
     DebugOverlay,
     SurfaceAcquire,
@@ -226,6 +227,7 @@ impl PerfStage {
             Self::FloatingPanels => "floating_panels",
             Self::StatusBar => "status_bar",
             Self::Modal => "modal",
+            Self::CursorOverlay => "cursor_overlay",
             Self::DropOverlay => "drop_overlay",
             Self::DebugOverlay => "debug_overlay",
             Self::SurfaceAcquire => "surface_acquire",
@@ -238,7 +240,7 @@ impl PerfStage {
 }
 
 impl PerfStage {
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 31] = [
         Self::BuildPlan,
         Self::Layout,
         Self::Clear,
@@ -262,6 +264,7 @@ impl PerfStage {
         Self::FloatingPanels,
         Self::StatusBar,
         Self::Modal,
+        Self::CursorOverlay,
         Self::DropOverlay,
         Self::DebugOverlay,
         Self::SurfaceAcquire,
@@ -410,6 +413,11 @@ impl PerfStage {
             Self::Modal => PerfStageSpec {
                 label: "Modal",
                 short_label: "Modal",
+                color: 0xFFBB9AF7,
+            },
+            Self::CursorOverlay => PerfStageSpec {
+                label: "Cursor Popup",
+                short_label: "Popup",
                 color: 0xFFBB9AF7,
             },
             Self::DropOverlay => PerfStageSpec {

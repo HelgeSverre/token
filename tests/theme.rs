@@ -1,7 +1,23 @@
 use token::theme::{
-    list_available_themes, load_theme, Color, Theme, ThemeSource, BUILTIN_THEMES,
-    DEFAULT_DARK_YAML, FLEET_DARK_YAML, GITHUB_DARK_YAML, GITHUB_LIGHT_YAML, STUDY_YAML,
+    list_available_themes, load_theme, Color, Theme, ThemePickerState, ThemeSource, ThemeSwatch,
+    BUILTIN_THEMES, DEFAULT_DARK_YAML, FLEET_DARK_YAML, GITHUB_DARK_YAML, GITHUB_LIGHT_YAML,
+    STUDY_YAML,
 };
+
+#[test]
+fn theme_picker_choices_include_swatches() {
+    let state = ThemePickerState::new("default-dark".to_string());
+    // Every choice carries a swatch by construction. Bundled themes load,
+    // so at least one must differ from the neutral fallback.
+    let fallback = ThemeSwatch::fallback();
+    assert!(
+        state
+            .choices()
+            .iter()
+            .any(|choice| choice.swatch.accent != fallback.accent),
+        "bundled themes should produce real accent colors"
+    );
+}
 
 #[test]
 fn button_state_overrides_are_optional_and_validate_colors() {

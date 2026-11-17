@@ -7,8 +7,6 @@ pub struct CompletionInteraction {
     pub menu_visible: bool,
     pub inline_visible: bool,
     pub menu_session_pending: bool,
-    pub can_accept_menu: bool,
-    pub can_accept_inline: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,8 +68,6 @@ pub fn interaction(model: &AppModel) -> CompletionInteraction {
         menu_visible,
         inline_visible,
         menu_session_pending: has_menu && !menu_visible,
-        can_accept_menu: menu_visible,
-        can_accept_inline: inline_visible,
     }
 }
 

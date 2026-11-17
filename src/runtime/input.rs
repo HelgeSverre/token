@@ -510,12 +510,15 @@ pub(crate) fn handle_cursor_overlay_key(
         // unclaimed keys pass through to narrow its filter).
         if !(ctrl || shift || alt || logo) {
             match key {
-                Key::Named(NamedKey::ArrowUp) => {
-                    context_menu_move(model, false);
-                    return Some(Some(Cmd::Redraw));
-                }
-                Key::Named(NamedKey::ArrowDown) => {
-                    context_menu_move(model, true);
+                Key::Named(NamedKey::ArrowUp | NamedKey::ArrowDown) => {
+                    if let (Some(menu), Some(overlay)) =
+                        (&model.ui.context_menu, &mut model.ui.cursor_overlay)
+                    {
+                        overlay.selected = menu.next_selection(
+                            overlay.selected,
+                            matches!(key, Key::Named(NamedKey::ArrowDown)),
+                        );
+                    }
                     return Some(Some(Cmd::Redraw));
                 }
                 Key::Named(NamedKey::Enter) => {
@@ -586,43 +589,8 @@ fn row_count_for(kind: token::model::CursorOverlayKind) -> usize {
         // `model.ui.reference_list`'s length, which this kind-only helper
         // doesn't have access to).
         CursorOverlayKind::References | CursorOverlayKind::CodeActions => 0,
-        // Handled earlier in `handle_cursor_overlay_key` (needs
-        // `model.ui.context_menu`, plus per-item `enabled` skipping —
-        // see `context_menu_move`).
+        // Handled earlier using the context menu's navigation policy.
         CursorOverlayKind::ContextMenu => 0,
-    }
-}
-
-/// Move the context menu's selection to the next/previous *enabled*
-/// selectable item (context-menu.md's "addressable but unselectable"
-/// disabled-row rule — nothing in `overlay_surface::FlatIndex` skips
-/// disabled rows on its own, only separators). A no-op if the menu is
-/// closed or every item is disabled.
-fn context_menu_move(model: &mut AppModel, forward: bool) {
-    let selectable: Vec<bool> = match &model.ui.context_menu {
-        Some(state) => token::context_menu::selectable_items(&state.items)
-            .map(|item| item.enabled)
-            .collect(),
-        None => return,
-    };
-    let len = selectable.len();
-    if len == 0 {
-        return;
-    }
-    let Some(state) = model.ui.cursor_overlay.as_mut() else {
-        return;
-    };
-    let mut idx = state.selected.min(len - 1);
-    for _ in 0..len {
-        idx = if forward {
-            (idx + 1) % len
-        } else {
-            (idx + len - 1) % len
-        };
-        if selectable[idx] {
-            state.selected = idx;
-            return;
-        }
     }
 }
 
@@ -2374,19 +2342,23 @@ mod tests {
         );
     }
 
-    fn menu_model(items: Vec<token::context_menu::MenuItem>) -> AppModel {
+    fn menu_model() -> AppModel {
         let mut model = AppModel::new(800, 600, 1.0);
         model.document_mut().buffer = ropey::Rope::from("");
-        let selected = token::context_menu::first_enabled_index(&items);
+        model.document_mut().file_path = Some("/tmp/menu.txt".into());
+        let menu = token::context_menu::ContextMenuState::new(
+            &model,
+            &token::context_menu::ContextMenuTarget::Editor {
+                group_id: model.editor_area.focused_group_id,
+                clipboard_has_content: false,
+            },
+            (0, 0, 0),
+        );
         let mut overlay =
             token::model::CursorOverlayState::new(token::model::CursorOverlayKind::ContextMenu);
-        overlay.selected = selected;
+        overlay.selected = menu.initial_selection();
         model.ui.cursor_overlay = Some(overlay);
-        model.ui.context_menu = Some(token::model::ContextMenuState {
-            items,
-            anchor: (0, 0, 0),
-            region: token::context_menu::ContextMenuRegion::Editor,
-        });
+        model.ui.context_menu = Some(menu);
         model
     }
 
@@ -2397,11 +2369,7 @@ mod tests {
     /// modified key like Shift+X.
     #[test]
     fn context_menu_dismisses_and_consumes_a_typed_character() {
-        let mut model = menu_model(vec![token::context_menu::MenuItem::custom(
-            "Cut",
-            true,
-            vec![],
-        )]);
+        let mut model = menu_model();
 
         let cmd = handle_key(
             &mut model,
@@ -2419,11 +2387,7 @@ mod tests {
 
     #[test]
     fn context_menu_dismisses_and_consumes_a_modified_key() {
-        let mut model = menu_model(vec![token::context_menu::MenuItem::custom(
-            "Cut",
-            true,
-            vec![],
-        )]);
+        let mut model = menu_model();
 
         let cmd = handle_key(
             &mut model,
@@ -2445,33 +2409,30 @@ mod tests {
 
     #[test]
     fn context_menu_up_down_skip_disabled_rows_and_wrap() {
-        let mut model = menu_model(vec![
-            token::context_menu::MenuItem::custom("Cut", false, vec![]),
-            token::context_menu::MenuItem::custom("Copy", true, vec![]),
-            token::context_menu::MenuItem::custom("Paste", false, vec![]),
-        ]);
-        // Opens on the first enabled row ("Copy", index 1).
-        assert_eq!(model.ui.cursor_overlay.unwrap().selected, 1);
-
-        // Down from "Copy" wraps past the disabled "Paste" back to "Copy"
-        // (the only enabled row) rather than landing on a disabled one.
-        let cmd = handle_key(
-            &mut model,
-            Key::Named(NamedKey::ArrowDown),
-            PhysicalKey::Code(KeyCode::ArrowDown),
-            KeyModifiers::default(),
-            false,
-        );
-        assert!(cmd.is_some());
-        assert_eq!(model.ui.cursor_overlay.unwrap().selected, 1);
+        let mut model = menu_model();
+        // Only Show Hover (5) and Reveal in File Explorer (6) are enabled.
+        assert_eq!(model.ui.cursor_overlay.unwrap().selected, 5);
+        for (key, code, expected) in [
+            (NamedKey::ArrowDown, KeyCode::ArrowDown, 6),
+            (NamedKey::ArrowDown, KeyCode::ArrowDown, 5),
+            (NamedKey::ArrowUp, KeyCode::ArrowUp, 6),
+            (NamedKey::ArrowUp, KeyCode::ArrowUp, 5),
+        ] {
+            let cmd = handle_key(
+                &mut model,
+                Key::Named(key),
+                PhysicalKey::Code(code),
+                KeyModifiers::default(),
+                false,
+            );
+            assert!(cmd.is_some());
+            assert_eq!(model.ui.cursor_overlay.unwrap().selected, expected);
+        }
     }
 
     #[test]
     fn context_menu_enter_on_a_disabled_row_does_not_close_the_menu() {
-        let mut model = menu_model(vec![
-            token::context_menu::MenuItem::custom("Cut", false, vec![]),
-            token::context_menu::MenuItem::custom("Copy", true, vec![]),
-        ]);
+        let mut model = menu_model();
         // Force selection onto the disabled row (nav always skips it, but
         // a stale/edge-case selected index must still be a no-op).
         model.ui.cursor_overlay.as_mut().unwrap().selected = 0;
@@ -2492,11 +2453,7 @@ mod tests {
 
     #[test]
     fn context_menu_escape_dismisses() {
-        let mut model = menu_model(vec![token::context_menu::MenuItem::custom(
-            "Cut",
-            true,
-            vec![],
-        )]);
+        let mut model = menu_model();
         let cmd = handle_key(
             &mut model,
             Key::Named(NamedKey::Escape),

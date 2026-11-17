@@ -159,23 +159,12 @@ pub(super) fn open(model: &mut AppModel, explicit: bool) -> Option<Cmd> {
         is_incomplete: false,
         pending_resolve: None,
     };
-    if menu.assign_candidate_ids().is_none() {
+    let Some(overlay) = menu.open_overlay(None) else {
         model.ui.set_status("Completion candidate limit reached");
         return Some(Cmd::redraw_status_bar());
-    }
-    menu.identity.selected = menu.candidate_for_row(menu.preferred_index());
+    };
     model.ui.completion.completion_menu = Some(menu);
-    model.ui.cursor_overlay = model
-        .ui
-        .completion
-        .completion_menu
-        .as_ref()
-        .filter(|menu| !menu.filtered.is_empty())
-        .map(|menu| {
-            let mut overlay = CursorOverlayState::new(CursorOverlayKind::Completion);
-            overlay.selected = menu.preferred_index();
-            overlay
-        });
+    model.ui.cursor_overlay = overlay;
     model.ui.completion.completion_path = Some(Arc::clone(&request));
     let mut cmds = vec![Cmd::Redraw, Cmd::CancelPathCompletion];
     cmds.extend(cancel);
@@ -302,40 +291,8 @@ pub(super) fn ready(
             })
         })
         .collect();
-    let previous_overlay = model.ui.cursor_overlay;
     let menu = model.ui.completion.completion_menu.as_mut()?;
-    if menu.pending_resolve.is_some() {
-        return None;
-    }
-    let selected = previous_overlay
-        .and_then(|overlay| menu.selected_item(overlay.selected))
-        .cloned();
-    menu.items.retain(|item| item.source != MenuSourceId::Paths);
-    menu.items.extend(items);
-    if let Some(previous) = selected.as_ref() {
-        menu.preserve_id_for(previous);
-    }
-    menu.assign_candidate_ids()?;
-    menu.filtered = filter_and_sort(&menu.items, &menu.query);
-    model.ui.cursor_overlay = (!menu.filtered.is_empty()).then(|| {
-        let mut overlay = previous_overlay
-            .unwrap_or_else(|| CursorOverlayState::new(CursorOverlayKind::Completion));
-        let preserved = selected.and_then(|item| menu.row_for_candidate(item.id));
-        overlay.selected = preserved.unwrap_or_else(|| menu.preferred_index());
-        if preserved.is_none() {
-            overlay.reset_documentation();
-        }
-        overlay.scroll = SelectableListViewport::compute_from(
-            menu.filtered.len(),
-            overlay.selected,
-            MAX_VISIBLE_COMPLETION,
-            0,
-        )
-        .scroll_offset;
-        menu.identity.selected = menu.candidate_for_row(overlay.selected);
-        menu.identity.scroll = overlay.scroll;
-        overlay
-    });
+    menu.merge_paths(items, &mut model.ui.cursor_overlay)?;
     if results.truncated {
         model
             .ui

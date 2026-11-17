@@ -11,6 +11,9 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use crate::commands::Cmd;
+use crate::view::overlay_surface::SectionShape;
+
 // Embed theme YAML files at compile time
 pub const DEFAULT_DARK_YAML: &str = include_str!("../themes/dark.yaml");
 pub const STUDY_YAML: &str = include_str!("../themes/study.yaml");
@@ -136,6 +139,98 @@ impl ThemeSwatch {
         Self {
             accent: 0xFF8A_8E95,
             colors: [0xFF2B_2D30; 4],
+        }
+    }
+}
+
+/// A picker choice always carries its representative colors, including the
+/// fallback when the theme cannot be loaded.
+#[derive(Debug, Clone)]
+pub struct ThemeChoice {
+    pub theme: ThemeInfo,
+    pub swatch: ThemeSwatch,
+}
+
+/// The theme picker owns its catalog snapshot, grouping and preview/commit/
+/// cancellation policy. Loading and saving the chosen theme remain effects.
+#[derive(Debug, Clone)]
+pub struct ThemePickerState {
+    pub selected_index: usize,
+    pub scroll_offset: usize,
+    choices: Vec<ThemeChoice>,
+    original_theme_id: String,
+}
+
+impl ThemePickerState {
+    pub fn new(current_theme_id: String) -> Self {
+        let choices = list_available_themes()
+            .into_iter()
+            .map(|theme| {
+                let swatch = load_theme(&theme.id)
+                    .map(|theme| theme.swatch())
+                    .unwrap_or_else(|_| ThemeSwatch::fallback());
+                ThemeChoice { theme, swatch }
+            })
+            .collect();
+        Self {
+            selected_index: 0,
+            scroll_offset: 0,
+            choices,
+            original_theme_id: current_theme_id,
+        }
+    }
+
+    pub fn choices(&self) -> &[ThemeChoice] {
+        &self.choices
+    }
+
+    /// Shared section boundaries for painting, hit testing and automation.
+    /// Preserve catalog order: user themes precede the bundled themes.
+    pub fn groups(&self) -> Vec<(&'static str, &[ThemeChoice])> {
+        self.choices
+            .chunk_by(|a, b| a.theme.source == b.theme.source)
+            .map(|choices| {
+                let title = match choices[0].theme.source {
+                    ThemeSource::User => "User Themes",
+                    ThemeSource::Builtin => "Built-in Themes",
+                };
+                (title, choices)
+            })
+            .collect()
+    }
+
+    pub(crate) fn section_shapes(&self) -> Vec<SectionShape> {
+        self.groups()
+            .iter()
+            .map(|(_, choices)| SectionShape {
+                has_title: true,
+                len: choices.len(),
+            })
+            .collect()
+    }
+
+    pub fn preview(&self) -> Option<Cmd> {
+        self.choices
+            .get(self.selected_index)
+            .map(|choice| Cmd::LoadTheme {
+                id: choice.theme.id.clone(),
+                persist: false,
+            })
+    }
+
+    pub fn confirm(&self) -> Option<Cmd> {
+        self.choices
+            .get(self.selected_index)
+            .map(|choice| Cmd::LoadTheme {
+                id: choice.theme.id.clone(),
+                persist: true,
+            })
+    }
+
+    pub fn cancel(&self) -> Cmd {
+        Cmd::LoadTheme {
+            id: self.original_theme_id.clone(),
+            persist: false,
         }
     }
 }
