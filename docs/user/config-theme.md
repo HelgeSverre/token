@@ -15,6 +15,11 @@ The active theme is saved in your config file:
 | macOS | `~/.config/token-editor/config.yaml` |
 | Linux | `~/.config/token-editor/config.yaml` |
 | Windows | `%APPDATA%\token-editor\config.yaml` |
+| Portable (any platform) | `data/config.yaml` beside the executable |
+
+A `data` directory next to the executable switches Token to portable mode: all
+configuration, themes, recent files, logs and session state live there. The
+`TOKEN_CONFIG_DIR` environment variable overrides both locations.
 
 ```yaml
 # config.yaml
@@ -30,6 +35,7 @@ Custom themes are stored in:
 | macOS | `~/.config/token-editor/themes/*.yaml` |
 | Linux | `~/.config/token-editor/themes/*.yaml` |
 | Windows | `%APPDATA%\token-editor\themes\*.yaml` |
+| Portable (any platform) | `data/themes/*.yaml` beside the executable |
 
 ---
 

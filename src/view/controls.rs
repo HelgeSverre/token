@@ -2,7 +2,7 @@
 //! Callers own interaction state; shared geometry drives painting and hit testing.
 
 use super::geometry::WidgetRect;
-use super::{Frame, TextPainter};
+use super::{Frame, RoundedRectMaskCache, TextPainter};
 use crate::model::Rect;
 use crate::theme::Theme;
 
@@ -44,6 +44,138 @@ pub fn render_checkbox(
     }
 }
 
+/// Logical size of a Settings switch; hit testing uses the same rectangle.
+pub const SWITCH_WIDTH: f32 = 30.0;
+pub const SWITCH_HEIGHT: f32 = 16.0;
+
+/// An on/off switch. State reads from the knob's side and the track's
+/// lightness, so it does not depend on hue alone.
+pub fn render_switch(
+    frame: &mut Frame,
+    masks: &mut RoundedRectMaskCache,
+    theme: &Theme,
+    rect: WidgetRect,
+    on: bool,
+    scale: f64,
+) {
+    let colors = &theme.overlay;
+    let track = if on {
+        colors.accent
+    } else {
+        colors.keycap_border
+    };
+    frame.fill_rounded_rect(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        rect.h / 2,
+        track.to_argb_u32() | 0xFF00_0000,
+        masks,
+    );
+    let inset = scaled(2.0, scale).min(rect.h / 4);
+    let knob = rect.h.saturating_sub(inset * 2);
+    let x = if on {
+        rect.x + rect.w.saturating_sub(knob + inset)
+    } else {
+        rect.x + inset
+    };
+    frame.fill_rounded_rect(
+        x,
+        rect.y + inset,
+        knob,
+        knob,
+        knob / 2,
+        if on {
+            colors.text_bright
+        } else {
+            colors.text_secondary
+        }
+        .to_argb_u32()
+            | 0xFF00_0000,
+        masks,
+    );
+}
+
+/// One segmented choice: a recessed track with the active segment filled.
+/// `rects` come from [`choice_group_rects`] and must share one line.
+#[allow(clippy::too_many_arguments)]
+pub fn render_choice_segments(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    masks: &mut RoundedRectMaskCache,
+    theme: &Theme,
+    rects: &[WidgetRect],
+    labels: &[&str],
+    active: Option<usize>,
+    hovered: Option<usize>,
+    scale: f64,
+) {
+    let (Some(first), Some(last)) = (rects.first(), rects.last()) else {
+        return;
+    };
+    let colors = &theme.overlay;
+    let pad = scaled(2.0, scale);
+    let border = scaled(1.0, scale);
+    let (x, y) = (first.x.saturating_sub(pad), first.y.saturating_sub(pad));
+    let (w, h) = (last.x + last.w + pad - x, first.h + pad * 2);
+    frame.fill_rounded_rect(
+        x.saturating_sub(border),
+        y.saturating_sub(border),
+        w + border * 2,
+        h + border * 2,
+        scaled(5.0, scale),
+        colors.keycap_border.to_argb_u32() | 0xFF00_0000,
+        masks,
+    );
+    frame.fill_rounded_rect(
+        x,
+        y,
+        w,
+        h,
+        scaled(4.0, scale),
+        colors.recessed_wash.to_argb_u32() | 0xFF00_0000,
+        masks,
+    );
+    let size = (11.0 * scale) as f32;
+    for (index, (rect, label)) in rects.iter().zip(labels).enumerate() {
+        let selected = active == Some(index);
+        if selected || hovered == Some(index) {
+            frame.fill_rounded_rect(
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                scaled(3.0, scale),
+                if selected {
+                    colors.selection_wash
+                } else {
+                    colors.keycap_bg
+                }
+                .to_argb_u32()
+                    | 0xFF00_0000,
+                masks,
+            );
+        }
+        let width = painter.measure_sized(label, size, 0.0).ceil() as usize;
+        let line = painter.line_height_for_size(size);
+        painter.draw_sized(
+            frame,
+            rect.x + rect.w.saturating_sub(width) / 2,
+            rect.y + rect.h.saturating_sub(line) / 2,
+            label,
+            size,
+            0.0,
+            if selected {
+                colors.text_bright
+            } else {
+                colors.text_secondary
+            }
+            .to_argb_u32(),
+        );
+    }
+}
+
 pub fn render_select(
     frame: &mut Frame,
     painter: &mut TextPainter,
@@ -63,11 +195,14 @@ pub fn render_select(
         if open { colors.accent } else { colors.hairline }.to_argb_u32(),
     );
     let px = |n: f64| (n * scale).round() as usize;
-    let size = (12.0 * scale) as f32;
+    let size = (13.0 * scale) as f32;
+    // Text, then a chevron box on the trailing edge; the label never runs
+    // under the chevron.
+    let chevron_box = px(28.0);
     let label = painter.truncate_sized(
         label,
         size,
-        rect.w.saturating_sub(px(32.0)) as f32,
+        rect.w.saturating_sub(px(10.0) + chevron_box) as f32,
         super::helpers::EllipsisSide::End,
     );
     frame.push_clip(Rect::new(
@@ -76,25 +211,44 @@ pub fn render_select(
         rect.w as f32,
         rect.h as f32,
     ));
+    let line_height = painter.line_height_for_size(size);
+    let text_y = rect.y + rect.h.saturating_sub(line_height) / 2;
     painter.draw_sized(
         frame,
-        rect.x + px(8.0),
-        rect.y + px(7.0),
+        rect.x + px(10.0),
+        text_y,
         &label,
         size,
         0.0,
         colors.text_primary.to_argb_u32(),
     );
-    painter.draw_sized(
+    draw_chevron_down(
         frame,
-        rect.x + rect.w.saturating_sub(px(20.0)),
-        rect.y + px(7.0),
-        "▾",
-        size,
-        0.0,
-        colors.text_dim.to_argb_u32(),
+        rect.x + rect.w.saturating_sub(chevron_box / 2),
+        rect.y + rect.h / 2,
+        scale,
+        if open {
+            colors.text_primary
+        } else {
+            colors.text_dim
+        }
+        .to_argb_u32(),
     );
     frame.pop_clip();
+}
+
+/// A downward chevron centred on (`cx`, `cy`): two diagonal strokes, four
+/// logical pixels each way, drawn as scaled squares so it stays crisp at any
+/// display scale without a font glyph.
+fn draw_chevron_down(frame: &mut Frame, cx: usize, cy: usize, scale: f64, color: u32) {
+    let half = ((4.0 * scale).round() as usize).max(2);
+    let thick = ((1.5 * scale).round() as usize).max(1);
+    let top = cy.saturating_sub(half.div_ceil(2));
+    for step in 0..=half {
+        let y = top + step;
+        frame.fill_rect_px((cx + step).saturating_sub(half), y, thick, thick, color);
+        frame.fill_rect_px(cx + half - step, y, thick, thick, color);
+    }
 }
 
 pub fn render_field_surface(frame: &mut Frame, theme: &Theme, rect: WidgetRect, focused: bool) {
@@ -171,32 +325,6 @@ pub fn choice_group_rects(row: WidgetRect, labels: &[&str], scale_factor: f64) -
             };
             x += w + gap;
             rect
-        })
-        .collect()
-}
-
-/// The popup rows below a Settings select anchor, clamped to the form body.
-pub fn select_option_rects(
-    anchor: WidgetRect,
-    count: usize,
-    top: usize,
-    bottom: usize,
-    scale_factor: f64,
-) -> Vec<WidgetRect> {
-    if count == 0 {
-        return Vec::new();
-    }
-    let height = scaled(28.0, scale_factor).min(bottom.saturating_sub(top) / count);
-    let total = height * count;
-    let y = (anchor.y + anchor.h)
-        .min(bottom.saturating_sub(total))
-        .max(top);
-    (0..count)
-        .map(|choice| WidgetRect {
-            x: anchor.x,
-            y: y + choice * height,
-            w: anchor.w,
-            h: height,
         })
         .collect()
 }

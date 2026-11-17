@@ -5,7 +5,7 @@
 //! elements to `view::hit_test::HitTarget` is exhaustive and type-checked.
 
 use crate::model::editor_area::{GroupId, PreviewId, TabId};
-use crate::panel::{DockPosition, PanelId};
+use crate::panel::{DockPosition, PanelActionId, PanelId};
 
 /// Identity for elements the rest of the app needs to find in a solved
 /// [`crate::layout::LayoutSnapshot`] — for rect queries, hit-testing, and
@@ -33,6 +33,7 @@ pub enum UiKey {
     DockHeader(DockPosition),
     /// One panel tab inside a dock header.
     DockTab(DockPosition, PanelId),
+    DockPanelAction(PanelId, PanelActionId),
     /// Terminal session strip, separate from the dock's panel tabs.
     TerminalTabs,
     TerminalTabViewport,
@@ -41,6 +42,11 @@ pub enum UiKey {
     PanelContent(PanelId),
     /// The virtualized row list inside a panel's content area.
     PanelRows(PanelId),
+    FloatingPanel(PanelId),
+    FloatingPanelHeader(PanelId),
+    FloatingPanelAction(PanelId, PanelActionId),
+    FloatingPanelContent(PanelId),
+    FloatingPanelFooter(PanelId),
 
     // --- Floating overlay surfaces ---
     OverlayPanel,

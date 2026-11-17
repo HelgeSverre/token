@@ -21,4 +21,7 @@
 
 mod dock;
 
-pub use dock::{Dock, DockLayout, DockPosition, PanelId};
+pub use dock::{
+    Dock, DockLayout, DockPosition, DockReturnSlot, LastPresentation, LogicalRect, NonDockedPanel,
+    NonDockedPanels, PanelActionId, PanelHost, PanelId,
+};

@@ -34,5 +34,6 @@ pub fn panel_icon(panel_id: PanelId) -> &'static str {
         PanelId::TodoList => "",      // checklist
         PanelId::Problems => "",      // warning/problems
         PanelId::Usages => "",
+        PanelId::Performance => "",
     }
 }

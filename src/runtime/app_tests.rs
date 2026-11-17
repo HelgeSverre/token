@@ -735,14 +735,21 @@ fn spawn_terminal_command_adds_session_to_model() {
         cols: 34,
     });
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // Shell start-up on a loaded CI runner can exceed a few seconds; a failed
+    // spawn clears the pending receiver and leaves its error in the status bar.
+    let deadline = Instant::now() + Duration::from_secs(60);
     let session = loop {
         app.process_terminal_spawn_results();
         if let Some(session) = app.model.terminal.sessions.iter().find(|s| s.id == 42) {
             break session;
         }
+        assert!(
+            app.terminal_spawn_rx.is_some(),
+            "terminal spawn finished without a session: {:?}",
+            app.model.ui.transient_message
+        );
         if Instant::now() >= deadline {
-            panic!("spawned terminal session should be stored in the model");
+            panic!("spawned terminal session should be stored in the model within 60s");
         }
         std::thread::sleep(Duration::from_millis(10));
     };

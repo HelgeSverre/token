@@ -54,6 +54,17 @@ pub enum SearchCollectionPreview {
 pub enum SettingsRecordsPreview {
     Selected,
     Empty,
+    TemplatesOpen,
+}
+
+#[derive(Clone, Copy)]
+pub enum PaneChromePreview {
+    TitleOnly,
+    Actions,
+    Overflow,
+    HintFooter,
+    StatusFooter,
+    NarrowFooter,
 }
 
 #[derive(Clone, Copy)]
@@ -88,6 +99,7 @@ pub enum Preview {
     },
     SelectOptions,
     ChoiceGroup,
+    InteractiveSelection,
     Disclosure {
         expanded: bool,
     },
@@ -99,6 +111,7 @@ pub enum Preview {
     Secondary,
     Recessed,
     Chrome(ChromePreview),
+    PaneChrome(PaneChromePreview),
     Editor(EditorPreview),
     OverlayTabs,
     Scrollbar {
@@ -123,6 +136,55 @@ pub struct Specimen {
 
 pub const SPECIMENS: &[Specimen] = &[
     Specimen {
+        id: "selection.interactive",
+        preview: Preview::InteractiveSelection,
+        category: 3,
+        source: "view/segmented_control.rs + view/button.rs",
+        tokens: "live sandbox / Tab / arrow keys / Home / End / reset",
+    },
+    Specimen {
+        id: "pane-header.title-only",
+        preview: Preview::PaneChrome(PaneChromePreview::TitleOnly),
+        category: 7,
+        source: "view/pane_chrome.rs · PaneHeader / PaneLayout",
+        tokens: "static / code-font title / absent actions and footer",
+    },
+    Specimen {
+        id: "pane-header.actions",
+        preview: Preview::PaneChrome(PaneChromePreview::Actions),
+        category: 7,
+        source: "view/pane_chrome.rs · PaneHeader",
+        tokens: "static / optional icon / selected + focused / disabled action",
+    },
+    Specimen {
+        id: "pane-header.overflow",
+        preview: Preview::PaneChrome(PaneChromePreview::Overflow),
+        category: 7,
+        source: "view/pane_chrome.rs · HeaderLayout",
+        tokens: "static / long title / whole-list overflow affordance",
+    },
+    Specimen {
+        id: "pane-footer.hint",
+        preview: Preview::PaneChrome(PaneChromePreview::HintFooter),
+        category: 7,
+        source: "view/pane_chrome.rs · PaneFooter",
+        tokens: "static / passive hint / optional icon / separator",
+    },
+    Specimen {
+        id: "pane-footer.status",
+        preview: Preview::PaneChrome(PaneChromePreview::StatusFooter),
+        category: 7,
+        source: "view/pane_chrome.rs · PaneFooter",
+        tokens: "static / labelled dot / trailing metadata / independent slots",
+    },
+    Specimen {
+        id: "pane-footer.narrow",
+        preview: Preview::PaneChrome(PaneChromePreview::NarrowFooter),
+        category: 7,
+        source: "view/pane_chrome.rs · FooterLayout",
+        tokens: "static / owner prioritizes leading slot / trailing hidden",
+    },
+    Specimen {
         id: "settings-form.semantic-controls",
         preview: Preview::SettingsForm,
         category: 4,
@@ -142,6 +204,13 @@ pub const SPECIMENS: &[Specimen] = &[
         category: 4,
         source: "view/modal.rs · with_settings_spec + settings_page empty state",
         tokens: "settings collection / no saved entries / add record",
+    },
+    Specimen {
+        id: "settings-records.templates-open",
+        preview: Preview::SettingsRecords(SettingsRecordsPreview::TemplatesOpen),
+        category: 4,
+        source: "view/modal.rs · with_settings_spec + settings_page template dropdown",
+        tokens: "settings collection / template selection / open dropdown",
     },
     Specimen {
         id: "search-everywhere.grouped-results",
@@ -562,7 +631,7 @@ pub const SPECIMENS: &[Specimen] = &[
         id: "select.open-options",
         preview: Preview::SelectOptions,
         category: 3,
-        source: "view/controls.rs · select_option_rects + view/button.rs",
+        source: "view/select.rs · Select::render_popup (shared menu surface)",
         tokens: "overlay recessed wash / accent / button hover",
     },
     Specimen {
@@ -653,14 +722,17 @@ pub struct GalleryState {
     pub selected_theme: usize,
     pub theme_select: crate::model::select::SelectState,
     pub focus: GalleryFocus,
+    pub playground_selection: usize,
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum GalleryFocus {
     #[default]
     Filter,
     Theme,
     Width,
+    PlaygroundSelection,
+    PlaygroundReset,
 }
 
 impl Default for GalleryState {
@@ -674,6 +746,7 @@ impl Default for GalleryState {
             selected_theme: 0,
             theme_select: Default::default(),
             focus: GalleryFocus::Filter,
+            playground_selection: 1,
         }
     }
 }

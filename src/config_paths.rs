@@ -1,19 +1,33 @@
 //! Centralized configuration paths for token-editor
 //!
-//! All config files live under:
-//! - Unix/macOS: `~/.config/token-editor/`
-//! - Windows: `%APPDATA%\token-editor\`
+//! All config files live under one directory, resolved in this order:
+//! 1. `$TOKEN_CONFIG_DIR`, when set and non-empty.
+//! 2. Portable mode: a `data` directory beside the executable.
+//! 3. Unix/macOS: `~/.config/token-editor/`; Windows: `%APPDATA%\token-editor\`.
 //!
 //! This module is the single source of truth for config paths.
 
 use std::{
-    env, fs,
+    env,
+    ffi::OsString,
+    fs,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 const APP_DIR: &str = "token-editor";
+/// Environment variable naming an explicit configuration directory.
+pub const CONFIG_DIR_ENV: &str = "TOKEN_CONFIG_DIR";
+/// Directory beside the executable that switches on portable mode.
+pub const PORTABLE_DIR: &str = "data";
 
-/// Base config directory for token-editor
+/// Base config directory for token-editor.
+///
+/// `$TOKEN_CONFIG_DIR` wins when set. Otherwise a `data` directory next to the
+/// executable makes the install portable: configuration, recent files, logs and
+/// session state all stay beside the binary, as asked for Windows installs
+/// that run from a USB stick or a shared folder. Without either, the platform
+/// location applies:
 ///
 /// Unix/macOS:
 ///   - If XDG_CONFIG_HOME is set: `$XDG_CONFIG_HOME/token-editor`
@@ -22,6 +36,43 @@ const APP_DIR: &str = "token-editor";
 /// Windows:
 ///   - `%APPDATA%\token-editor`
 pub fn config_dir() -> Option<PathBuf> {
+    resolve_config_dir(
+        env::var_os(CONFIG_DIR_ENV),
+        portable_dir(),
+        platform_config_dir(),
+    )
+}
+
+/// Whether configuration currently resolves to the portable `data` directory.
+pub fn is_portable() -> bool {
+    env::var_os(CONFIG_DIR_ENV).is_none_or(|value| value.is_empty()) && portable_dir().is_some()
+}
+
+fn resolve_config_dir(
+    explicit: Option<OsString>,
+    portable: Option<&Path>,
+    platform: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if let Some(explicit) = explicit.filter(|value| !value.is_empty()) {
+        return Some(PathBuf::from(explicit));
+    }
+    portable.map(Path::to_path_buf).or(platform)
+}
+
+/// The `data` directory beside the running executable, if it exists. The
+/// executable does not move while the process runs, so probe once.
+fn portable_dir() -> Option<&'static Path> {
+    static PORTABLE: OnceLock<Option<PathBuf>> = OnceLock::new();
+    PORTABLE
+        .get_or_init(|| {
+            let exe = env::current_exe().ok()?;
+            let dir = exe.parent()?.join(PORTABLE_DIR);
+            dir.is_dir().then_some(dir)
+        })
+        .as_deref()
+}
+
+fn platform_config_dir() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         env::var("APPDATA")
@@ -108,5 +159,58 @@ pub fn ensure_all_config_dirs() {
         Err(e) => {
             tracing::warn!("Failed to ensure config directories: {}", e);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_directory_wins_over_portable_and_platform() {
+        let resolved = resolve_config_dir(
+            Some(OsString::from("/explicit")),
+            Some(Path::new("/exe/data")),
+            Some(PathBuf::from("/home/.config/token-editor")),
+        );
+        assert_eq!(resolved, Some(PathBuf::from("/explicit")));
+    }
+
+    #[test]
+    fn empty_explicit_directory_is_ignored() {
+        let resolved = resolve_config_dir(
+            Some(OsString::new()),
+            Some(Path::new("/exe/data")),
+            Some(PathBuf::from("/home/.config/token-editor")),
+        );
+        assert_eq!(resolved, Some(PathBuf::from("/exe/data")));
+    }
+
+    #[test]
+    fn portable_directory_wins_over_platform() {
+        let resolved = resolve_config_dir(
+            None,
+            Some(Path::new("/exe/data")),
+            Some(PathBuf::from("/home/.config/token-editor")),
+        );
+        assert_eq!(resolved, Some(PathBuf::from("/exe/data")));
+    }
+
+    #[test]
+    fn platform_directory_is_the_fallback() {
+        let resolved = resolve_config_dir(
+            None,
+            None,
+            Some(PathBuf::from("/home/.config/token-editor")),
+        );
+        assert_eq!(resolved, Some(PathBuf::from("/home/.config/token-editor")));
+        assert_eq!(resolve_config_dir(None, None, None), None);
+    }
+
+    #[test]
+    fn test_binary_is_not_portable() {
+        // `cargo test` binaries live in `target/.../deps`, which has no `data`
+        // directory, so the probe must leave ordinary tests on platform paths.
+        assert!(portable_dir().is_none());
     }
 }

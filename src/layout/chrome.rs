@@ -12,6 +12,7 @@
 //! consumers agree by construction and the function stays painter-free —
 //! callable from `update/`.
 
+use crate::layout::anchor::{FloatAnchor, FloatDecl};
 use crate::layout::keys::UiKey;
 use crate::layout::sizing::{Dir, Padding, Sizing, SizingAxes};
 use crate::layout::snapshot::LayoutSnapshot;
@@ -19,7 +20,7 @@ use crate::layout::text::{CellMeasure, TextStyle};
 use crate::layout::tree::{Content, ElementDecl, RowListDecl, UiTree};
 use crate::model::editor_area::Rect;
 use crate::model::AppModel;
-use crate::panel::{DockPosition, PanelId};
+use crate::panel::{DockPosition, NonDockedPanel, PanelHost, PanelId};
 
 /// Solve the complete window shell and dock chrome for the current model
 /// state. Keys present in the snapshot:
@@ -132,7 +133,15 @@ fn solve_chrome(
                                             t,
                                             model,
                                             DockPosition::Right,
-                                            SizingAxes::new(Sizing::Fixed(width), Sizing::GROW),
+                                            // The chosen width yields once the editor is
+                                            // gone, so a narrow window never overflows.
+                                            SizingAxes::new(
+                                                Sizing::Prefer {
+                                                    size: width,
+                                                    min: 0.0,
+                                                },
+                                                Sizing::GROW,
+                                            ),
                                             include_dock_contents,
                                         );
                                     }
@@ -143,7 +152,15 @@ fn solve_chrome(
                                     t,
                                     model,
                                     DockPosition::Bottom,
-                                    SizingAxes::new(Sizing::GROW, Sizing::Fixed(height)),
+                                    // Keeps its header; the rest yields in short
+                                    // windows instead of covering the status bar.
+                                    SizingAxes::new(
+                                        Sizing::GROW,
+                                        Sizing::Prefer {
+                                            size: height,
+                                            min: model.metrics.tab_bar_height as f32,
+                                        },
+                                    ),
                                     include_dock_contents,
                                 );
                             }
@@ -157,6 +174,10 @@ fn solve_chrome(
                 sizing: SizingAxes::new(Sizing::GROW, Sizing::Fixed(status_bar_height)),
                 ..Default::default()
             });
+
+            if include_dock_contents {
+                declare_floating_panels(t, model, sidebar_width.unwrap_or(0.0));
+            }
         },
     );
 
@@ -165,6 +186,86 @@ fn solve_chrome(
         line_height: model.line_height as f32,
     };
     tree.solve(root, model.metrics.scale_factor, &mut measure)
+}
+
+/// Declare each floating panel as a window-level float: a framed column with
+/// a draggable header (title and actions) over a clipped content box. The size
+/// is the panel's chosen extent, capped at the window.
+fn declare_floating_panels(t: &mut UiTree, model: &AppModel, work_x: f32) {
+    let scale = model.metrics.scale_factor as f32;
+    for (&panel, &placement) in &model.non_docked_panels.by_id {
+        let NonDockedPanel::Floating { rect, .. } = placement else {
+            continue;
+        };
+        let width = rect.width * scale;
+        let height = rect.height * scale;
+        t.node(
+            ElementDecl {
+                key: Some(UiKey::FloatingPanel(panel)),
+                dir: Dir::Column,
+                // Capped at the window so a short window never cuts the
+                // panel off below the status bar.
+                sizing: SizingAxes::new(
+                    Sizing::Prefer {
+                        size: width,
+                        min: 0.0,
+                    },
+                    Sizing::Prefer {
+                        size: height,
+                        min: model.metrics.tab_bar_height as f32,
+                    },
+                ),
+                clip: true,
+                float: Some(FloatDecl {
+                    anchor: FloatAnchor::WindowPoint {
+                        x: work_x + rect.x * scale,
+                        y: rect.y * scale,
+                    },
+                    z: 50,
+                    width: None,
+                }),
+                ..Default::default()
+            },
+            |t| {
+                t.node(
+                    ElementDecl {
+                        key: Some(UiKey::FloatingPanelHeader(panel)),
+                        dir: Dir::Row,
+                        sizing: SizingAxes::new(
+                            Sizing::GROW,
+                            Sizing::Fixed(model.metrics.tab_bar_height as f32),
+                        ),
+                        padding: Padding::xy(
+                            model.metrics.padding_large as f32,
+                            model.metrics.padding_medium as f32,
+                        ),
+                        gap: model.metrics.padding_small as f32,
+                        ..Default::default()
+                    },
+                    |t| {
+                        t.text(None, panel.display_name(), TextStyle::sized(0.0));
+                        t.leaf(ElementDecl {
+                            sizing: SizingAxes::grow(),
+                            ..Default::default()
+                        });
+                        for &action in panel.header_actions(PanelHost::Floating) {
+                            t.leaf(ElementDecl {
+                                key: Some(UiKey::FloatingPanelAction(panel, action)),
+                                sizing: SizingAxes::new(Sizing::Fixed(22.0 * scale), Sizing::GROW),
+                                ..Default::default()
+                            });
+                        }
+                    },
+                );
+                t.leaf(ElementDecl {
+                    key: Some(UiKey::FloatingPanelContent(panel)),
+                    sizing: SizingAxes::grow(),
+                    clip: true,
+                    ..Default::default()
+                });
+            },
+        );
+    }
 }
 
 fn visible_dock_size(model: &AppModel, position: DockPosition) -> Option<f32> {
@@ -237,6 +338,25 @@ fn declare_dock(
                         },
                     );
                 }
+                if let Some((panel, actions)) = active_panel
+                    .map(|panel| (panel, panel.header_actions(PanelHost::Docked)))
+                    .filter(|(_, actions)| !actions.is_empty())
+                {
+                    t.leaf(ElementDecl {
+                        sizing: SizingAxes::grow(),
+                        ..Default::default()
+                    });
+                    for &action in actions {
+                        t.leaf(ElementDecl {
+                            key: Some(UiKey::DockPanelAction(panel, action)),
+                            sizing: SizingAxes::new(
+                                Sizing::Fixed(22.0 * model.metrics.scale_factor as f32),
+                                Sizing::GROW,
+                            ),
+                            ..Default::default()
+                        });
+                    }
+                }
             },
         );
 
@@ -283,4 +403,45 @@ fn declare_dock(
             },
         );
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::layout::UiKey;
+    use crate::model::AppModel;
+    use crate::panel::{DockPosition, PanelId};
+
+    #[test]
+    fn short_windows_shrink_docks_instead_of_overflowing() {
+        for scale in [1.0, 2.0] {
+            let mut model = AppModel::new((800.0 * scale) as u32, (260.0 * scale) as u32, scale);
+            model.dock_layout.bottom.size_logical = 500.0;
+            model.dock_layout.bottom.activate(PanelId::Terminal);
+            let chrome = super::chrome(&model);
+            let status = chrome.rect(UiKey::StatusBar).unwrap();
+            let dock = chrome.rect(UiKey::Dock(DockPosition::Bottom)).unwrap();
+            assert!(
+                dock.y + dock.height <= status.y + 0.5,
+                "the bottom dock ends above the status bar at {scale}x"
+            );
+            assert!(
+                dock.height >= model.metrics.tab_bar_height as f32,
+                "keeps its header"
+            );
+        }
+    }
+
+    #[test]
+    fn narrow_windows_shrink_the_right_dock_instead_of_overflowing() {
+        let mut model = AppModel::new(300, 600, 1.0);
+        model.dock_layout.right.size_logical = 900.0;
+        model.dock_layout.right.activate(PanelId::Outline);
+        model.dock_layout.right.is_open = true;
+        let chrome = super::chrome(&model);
+        let dock = chrome.rect(UiKey::Dock(DockPosition::Right)).unwrap();
+        assert!(
+            dock.x + dock.width <= model.window_size.0 as f32 + 0.5,
+            "the right dock stays inside the window"
+        );
+    }
 }

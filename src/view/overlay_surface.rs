@@ -206,15 +206,50 @@ pub fn header_pad_x(scale_factor: f64) -> usize {
 /// one implementation; re-exported here for existing consumers.)
 pub use crate::layout::anchor::WidthRule;
 
+/// The open Settings form dropdown's panel, visible rows and option count.
+pub fn settings_select_popup_extent(
+    spec: &OverlaySpec,
+    layout: &OverlayLayout,
+) -> Option<(crate::view::geometry::WidgetRect, usize, usize)> {
+    settings_page::select_popup_extent(spec, layout)
+}
+
+/// The state mark beside a Settings record. Each state has its own shape, so
+/// the marks stay distinguishable without relying on color.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordMark {
+    /// Filled dot: the process is up.
+    Running,
+    /// Ring: configured and waiting for a matching file.
+    Idle,
+    /// Square: cannot run (not installed, or it failed).
+    Attention,
+    /// Dash: switched off.
+    Off,
+}
+
 pub struct SettingsRecord<'a> {
     pub id: &'a str,
     pub detail: String,
     pub enabled: bool,
+    /// Live state for records that have one (language servers).
+    pub status: Option<(RecordMark, &'static str)>,
+}
+
+/// One cell of a form's health strip: a caption, its current value and an
+/// optional state mark.
+pub struct HealthCell<'a> {
+    pub label: &'static str,
+    pub value: std::borrow::Cow<'a, str>,
+    pub mark: Option<RecordMark>,
 }
 
 pub struct SettingsCollection<'a> {
+    /// At-a-glance state of the open entry, drawn beneath the form's title.
+    pub health: Vec<HealthCell<'a>>,
     pub enable_label: Option<&'static str>,
     pub select_cursor: usize,
+    pub select_scroll: usize,
     pub hovered: Option<crate::messages::SettingsCollectionAction>,
     pub title: &'static str,
     pub description: &'static str,
@@ -226,6 +261,9 @@ pub struct SettingsCollection<'a> {
     pub open_select: Option<usize>,
 }
 
+// One spec is built per frame and never stored in bulk, so the Settings
+// variant's size costs nothing worth an allocation.
+#[allow(clippy::large_enum_variant)]
 pub enum Anchor<'a> {
     /// Preferences page with category navigation and optional subpage breadcrumb.
     Settings {
@@ -233,6 +271,8 @@ pub enum Anchor<'a> {
         subpage: bool,
         hovered_choice: Option<(usize, usize)>,
         actions_row: Option<usize>,
+        /// Rows whose value differs from its default, with the default choice.
+        changed: &'a [(usize, usize)],
         collection: Option<SettingsCollection<'a>>,
     },
     /// Centered X; Y follows the Chrome table's `min(h/4, Y)` class. Dims
@@ -351,6 +391,8 @@ impl MenuItemKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChoicePresentation {
     Buttons,
+    /// A shell command shown verbatim, with one button that copies it.
+    Command,
     Checkbox,
     Disclosure,
     Select,
@@ -880,6 +922,9 @@ pub struct OverlayLayout {
     /// Visible form rows retain signed origins for partially scrolled text areas.
     pub(crate) settings_items: Vec<(usize, Rect)>,
     pub(crate) settings_positions: Vec<std::ops::Range<usize>>,
+    /// Window the layout was solved for, so nested popups anchor in the same
+    /// space as their owner.
+    pub(crate) window: (usize, usize),
     /// One entry per `Body::Fields` field, in order. Empty otherwise.
     pub fields: Vec<FieldLayout>,
     /// The banner zone of a `Body::Zones` body. `None` unless
@@ -1462,6 +1507,7 @@ pub fn layout_measured(
         settings_records_scrollbar: None,
         settings_items: Vec::new(),
         settings_positions: Vec::new(),
+        window: (window_width, window_height),
         fields,
         zones_banner,
         zones_code,
@@ -1615,8 +1661,14 @@ pub fn hit_test(spec: &OverlaySpec, layout: &OverlayLayout, x: usize, y: usize) 
             | UiKey::Dock(_)
             | UiKey::DockHeader(_)
             | UiKey::DockTab(_, _)
+            | UiKey::DockPanelAction(_, _)
             | UiKey::PanelContent(_)
             | UiKey::PanelRows(_)
+            | UiKey::FloatingPanel(_)
+            | UiKey::FloatingPanelHeader(_)
+            | UiKey::FloatingPanelAction(_, _)
+            | UiKey::FloatingPanelContent(_)
+            | UiKey::FloatingPanelFooter(_)
             | UiKey::Sidebar
             | UiKey::EditorArea
             | UiKey::StatusBar,

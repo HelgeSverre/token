@@ -442,6 +442,8 @@ pub struct AppModel {
     pub workspace: Option<Workspace>,
     /// Dock layout state (left/right/bottom panels)
     pub dock_layout: crate::panel::DockLayout,
+    /// Floating/hidden exceptions to the dock layout's panel membership.
+    pub non_docked_panels: crate::panel::NonDockedPanels,
     /// Terminal panel state (PTY sessions). Visibility, height, and
     /// resizing are owned by `dock_layout`.
     pub terminal: crate::terminal::TerminalState,
@@ -542,6 +544,7 @@ impl AppModel {
             metrics,
             workspace: None,
             dock_layout: crate::panel::DockLayout::default(),
+            non_docked_panels: crate::panel::NonDockedPanels::default(),
             terminal: crate::terminal::TerminalState::default(),
             outline_panel: crate::model::ui::OutlinePanelState::default(),
             problems_panel: crate::model::ui::ProblemsPanelState::default(),

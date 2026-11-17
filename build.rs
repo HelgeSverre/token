@@ -4,8 +4,7 @@ fn main() {
     compile_legacy_grammars();
     let version = git_version();
     println!("cargo:rustc-env=TOKEN_VERSION={version}");
-    println!("cargo:rerun-if-changed=.git/HEAD");
-    println!("cargo:rerun-if-changed=.git/refs/");
+    rerun_on_git_dir();
 
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         if let Err(error) = compile_windows_resources() {
@@ -127,6 +126,30 @@ fn windows_version(version: &str) -> u64 {
         .chain(std::iter::repeat(0))
         .take(4)
         .fold(0, |packed, part| (packed << 16) | part)
+}
+
+/// Re-run the build script when HEAD or refs change so `TOKEN_VERSION` stays
+/// current. Git worktrees store a `gitdir:` pointer at `.git` (a file, not a
+/// directory), so the literal `.git/HEAD` path is missing there and Cargo would
+/// otherwise rebuild the crate on every invocation. Resolve the real git dir
+/// and watch that instead.
+fn rerun_on_git_dir() {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--absolute-git-dir"])
+        .output();
+    if let Ok(out) = output {
+        if out.status.success() {
+            let dir = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !dir.is_empty() {
+                println!("cargo:rerun-if-changed={dir}/HEAD");
+                println!("cargo:rerun-if-changed={dir}/refs/");
+                return;
+            }
+        }
+    }
+    // No git available (e.g. source archive): keep the historical paths.
+    println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rerun-if-changed=.git/refs/");
 }
 
 fn git_version() -> String {
