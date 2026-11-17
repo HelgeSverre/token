@@ -1296,6 +1296,7 @@ fn paint_specimen(
                     subpage: true,
                     hovered_choice: None,
                     actions_row: None,
+                    changed: &[],
                     collection: None,
                 },
                 header: None,

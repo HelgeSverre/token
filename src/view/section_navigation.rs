@@ -73,7 +73,7 @@ impl SectionNavigation<'_> {
                     rect.y,
                     rect.w,
                     rect.h,
-                    scaled(2.0, self.scale),
+                    scaled(5.0, self.scale),
                     colors.keycap_bg.to_argb_u32(),
                     masks,
                 );
@@ -95,7 +95,7 @@ impl SectionNavigation<'_> {
                 if selected {
                     colors.text_bright
                 } else {
-                    colors.text_dim
+                    colors.text_secondary
                 }
                 .to_argb_u32(),
             );

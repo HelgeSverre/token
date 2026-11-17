@@ -1357,7 +1357,6 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
         | crate::settings::RowKind::FormAdvanced
         | crate::settings::RowKind::FormPreset
         | crate::settings::RowKind::FormActions
-        | crate::settings::RowKind::FormInfo
         | crate::settings::RowKind::FormToolInfo
         | crate::settings::RowKind::FormInstallCommand(..)
         | crate::settings::RowKind::FormInstallGuide(_)

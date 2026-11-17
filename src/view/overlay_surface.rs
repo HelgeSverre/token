@@ -214,13 +214,39 @@ pub fn settings_select_popup_extent(
     settings_page::select_popup_extent(spec, layout)
 }
 
+/// The state mark beside a Settings record. Each state has its own shape, so
+/// the marks stay distinguishable without relying on color.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordMark {
+    /// Filled dot: the process is up.
+    Running,
+    /// Ring: configured and waiting for a matching file.
+    Idle,
+    /// Square: cannot run (not installed, or it failed).
+    Attention,
+    /// Dash: switched off.
+    Off,
+}
+
 pub struct SettingsRecord<'a> {
     pub id: &'a str,
     pub detail: String,
     pub enabled: bool,
+    /// Live state for records that have one (language servers).
+    pub status: Option<(RecordMark, &'static str)>,
+}
+
+/// One cell of a form's health strip: a caption, its current value and an
+/// optional state mark.
+pub struct HealthCell<'a> {
+    pub label: &'static str,
+    pub value: std::borrow::Cow<'a, str>,
+    pub mark: Option<RecordMark>,
 }
 
 pub struct SettingsCollection<'a> {
+    /// At-a-glance state of the open entry, drawn beneath the form's title.
+    pub health: Vec<HealthCell<'a>>,
     pub enable_label: Option<&'static str>,
     pub select_cursor: usize,
     pub select_scroll: usize,
@@ -235,6 +261,9 @@ pub struct SettingsCollection<'a> {
     pub open_select: Option<usize>,
 }
 
+// One spec is built per frame and never stored in bulk, so the Settings
+// variant's size costs nothing worth an allocation.
+#[allow(clippy::large_enum_variant)]
 pub enum Anchor<'a> {
     /// Preferences page with category navigation and optional subpage breadcrumb.
     Settings {
@@ -242,6 +271,8 @@ pub enum Anchor<'a> {
         subpage: bool,
         hovered_choice: Option<(usize, usize)>,
         actions_row: Option<usize>,
+        /// Rows whose value differs from its default, with the default choice.
+        changed: &'a [(usize, usize)],
         collection: Option<SettingsCollection<'a>>,
     },
     /// Centered X; Y follows the Chrome table's `min(h/4, Y)` class. Dims
@@ -360,6 +391,8 @@ impl MenuItemKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChoicePresentation {
     Buttons,
+    /// A shell command shown verbatim, with one button that copies it.
+    Command,
     Checkbox,
     Disclosure,
     Select,

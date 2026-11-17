@@ -23,7 +23,6 @@ pub(crate) enum RowKind {
     FormAdvanced,
     FormPreset,
     FormActions,
-    FormInfo,
     FormToolInfo,
     FormInstallCommand(usize, usize),
     FormInstallGuide(usize),
@@ -72,6 +71,45 @@ impl SettingRow {
         }
     }
 
+    /// The default choice of a catalog setting whose value differs from it.
+    /// Choosing that index is what Reset does.
+    pub(crate) fn changed_from(
+        &self,
+        config: &EditorConfig,
+        defaults: &EditorConfig,
+    ) -> Option<usize> {
+        let RowKind::Preset(setting) = &self.kind else {
+            return None;
+        };
+        let descriptor = setting.descriptor();
+        let default = descriptor.active(defaults)?;
+        (descriptor.active(config) != Some(default)).then_some(default)
+    }
+
+    /// The config key behind a catalog setting, with its default when changed.
+    pub(crate) fn config_note(
+        &self,
+        config: &EditorConfig,
+        defaults: &EditorConfig,
+    ) -> Option<String> {
+        let RowKind::Preset(setting) = &self.kind else {
+            return None;
+        };
+        let descriptor = setting.descriptor();
+        // A picker's footer shows its current value, which no row control does.
+        if matches!(descriptor.control, catalog::Control::Picker { .. }) {
+            return None;
+        }
+        Some(match self.changed_from(config, defaults) {
+            Some(default) => format!(
+                "{} · changed · default {}",
+                descriptor.key,
+                descriptor.labels().get(default).copied().unwrap_or("unset")
+            ),
+            None => descriptor.key.to_owned(),
+        })
+    }
+
     pub(crate) fn picker<'a>(&self, config: &'a EditorConfig) -> Option<PickerValue<'a>> {
         match self.kind {
             RowKind::Preset(setting) => match setting.descriptor().control {
@@ -110,13 +148,13 @@ impl SettingRow {
             RowKind::AddServer => &["Add language server…"],
             RowKind::AddProvider => &["Add AI provider…"],
             RowKind::Provider(_) => &["Configure…"],
-            RowKind::FormField(_) | RowKind::FormChoice(_) | RowKind::FormInfo => &[],
+            RowKind::FormField(_) | RowKind::FormChoice(_) => &[],
             RowKind::FormEnabled => BOOL_LABELS,
             RowKind::FormAdvanced => &["Show"],
             RowKind::FormPreset | RowKind::FormToolInfo => &[],
-            RowKind::FormInstallCommand(..) => &["Copy command"],
+            RowKind::FormInstallCommand(..) => &["Copy"],
             RowKind::FormInstallGuide(_) => &["Open installation guide"],
-            RowKind::FormRecheck => &["Check executable again"],
+            RowKind::FormRecheck => &["Check again"],
             // Form-owned actions depend on the draft's kind and confirmation state.
             RowKind::FormActions => &[],
             RowKind::KeymapBase => crate::keymap::preferences::BaseKeymap::LABELS,
@@ -136,6 +174,7 @@ impl SettingRow {
                 ChoicePresentation::Checkbox
             }
             RowKind::FormAdvanced => ChoicePresentation::Disclosure,
+            RowKind::FormInstallCommand(..) => ChoicePresentation::Command,
             RowKind::FormChoice(_) => ChoicePresentation::Select,
             RowKind::Preset(setting) => match setting.descriptor().control {
                 catalog::Control::Toggle { .. } => ChoicePresentation::Checkbox,
@@ -155,7 +194,6 @@ impl SettingRow {
             | RowKind::FormAdvanced
             | RowKind::FormPreset
             | RowKind::FormActions
-            | RowKind::FormInfo
             | RowKind::FormToolInfo
             | RowKind::FormInstallCommand(..)
             | RowKind::FormInstallGuide(_)

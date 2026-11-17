@@ -2,7 +2,7 @@
 //! Callers own interaction state; shared geometry drives painting and hit testing.
 
 use super::geometry::WidgetRect;
-use super::{Frame, TextPainter};
+use super::{Frame, RoundedRectMaskCache, TextPainter};
 use crate::model::Rect;
 use crate::theme::Theme;
 
@@ -40,6 +40,138 @@ pub fn render_checkbox(
             size,
             0.0,
             colors.text_bright.to_argb_u32(),
+        );
+    }
+}
+
+/// Logical size of a Settings switch; hit testing uses the same rectangle.
+pub const SWITCH_WIDTH: f32 = 30.0;
+pub const SWITCH_HEIGHT: f32 = 16.0;
+
+/// An on/off switch. State reads from the knob's side and the track's
+/// lightness, so it does not depend on hue alone.
+pub fn render_switch(
+    frame: &mut Frame,
+    masks: &mut RoundedRectMaskCache,
+    theme: &Theme,
+    rect: WidgetRect,
+    on: bool,
+    scale: f64,
+) {
+    let colors = &theme.overlay;
+    let track = if on {
+        colors.accent
+    } else {
+        colors.keycap_border
+    };
+    frame.fill_rounded_rect(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        rect.h / 2,
+        track.to_argb_u32() | 0xFF00_0000,
+        masks,
+    );
+    let inset = scaled(2.0, scale).min(rect.h / 4);
+    let knob = rect.h.saturating_sub(inset * 2);
+    let x = if on {
+        rect.x + rect.w.saturating_sub(knob + inset)
+    } else {
+        rect.x + inset
+    };
+    frame.fill_rounded_rect(
+        x,
+        rect.y + inset,
+        knob,
+        knob,
+        knob / 2,
+        if on {
+            colors.text_bright
+        } else {
+            colors.text_secondary
+        }
+        .to_argb_u32()
+            | 0xFF00_0000,
+        masks,
+    );
+}
+
+/// One segmented choice: a recessed track with the active segment filled.
+/// `rects` come from [`choice_group_rects`] and must share one line.
+#[allow(clippy::too_many_arguments)]
+pub fn render_choice_segments(
+    frame: &mut Frame,
+    painter: &mut TextPainter,
+    masks: &mut RoundedRectMaskCache,
+    theme: &Theme,
+    rects: &[WidgetRect],
+    labels: &[&str],
+    active: Option<usize>,
+    hovered: Option<usize>,
+    scale: f64,
+) {
+    let (Some(first), Some(last)) = (rects.first(), rects.last()) else {
+        return;
+    };
+    let colors = &theme.overlay;
+    let pad = scaled(2.0, scale);
+    let border = scaled(1.0, scale);
+    let (x, y) = (first.x.saturating_sub(pad), first.y.saturating_sub(pad));
+    let (w, h) = (last.x + last.w + pad - x, first.h + pad * 2);
+    frame.fill_rounded_rect(
+        x.saturating_sub(border),
+        y.saturating_sub(border),
+        w + border * 2,
+        h + border * 2,
+        scaled(5.0, scale),
+        colors.keycap_border.to_argb_u32() | 0xFF00_0000,
+        masks,
+    );
+    frame.fill_rounded_rect(
+        x,
+        y,
+        w,
+        h,
+        scaled(4.0, scale),
+        colors.recessed_wash.to_argb_u32() | 0xFF00_0000,
+        masks,
+    );
+    let size = (11.0 * scale) as f32;
+    for (index, (rect, label)) in rects.iter().zip(labels).enumerate() {
+        let selected = active == Some(index);
+        if selected || hovered == Some(index) {
+            frame.fill_rounded_rect(
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                scaled(3.0, scale),
+                if selected {
+                    colors.selection_wash
+                } else {
+                    colors.keycap_bg
+                }
+                .to_argb_u32()
+                    | 0xFF00_0000,
+                masks,
+            );
+        }
+        let width = painter.measure_sized(label, size, 0.0).ceil() as usize;
+        let line = painter.line_height_for_size(size);
+        painter.draw_sized(
+            frame,
+            rect.x + rect.w.saturating_sub(width) / 2,
+            rect.y + rect.h.saturating_sub(line) / 2,
+            label,
+            size,
+            0.0,
+            if selected {
+                colors.text_bright
+            } else {
+                colors.text_secondary
+            }
+            .to_argb_u32(),
         );
     }
 }
