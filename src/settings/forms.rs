@@ -253,6 +253,9 @@ pub(crate) struct SettingsForm {
     pub dirty: bool,
     pub open_select: Option<usize>,
     pub select_cursor: usize,
+    /// First visible option of the open dropdown; the cursor stays inside
+    /// the window it describes.
+    pub select_scroll: usize,
     pub preset: Option<usize>,
     pub preset_id: Option<String>,
 }
@@ -346,7 +349,14 @@ impl SettingsForm {
     pub fn changed(&mut self) {
         self.dirty = true;
         self.remove_pending = false;
-        self.status = "Draft · changes have not been applied".into();
+        self.status = match &self.kind {
+            FormKind::Formatter(Some(id))
+            | FormKind::LanguageServer(Some(id))
+            | FormKind::InlineProvider(Some(id)) => {
+                format!("Unsaved changes to {id} · Save applies them")
+            }
+            _ => "Unsaved draft · Save adds this entry".into(),
+        };
         if self.focused.is_some() && self.focused == self.executable_field() {
             self.executable_status = "Executable changed · checked again when applied".into();
         }
@@ -422,6 +432,7 @@ impl SettingsForm {
             dirty: false,
             open_select: None,
             select_cursor: 0,
+            select_scroll: 0,
             preset: None,
             preset_id: value.preset_id,
         };
@@ -477,25 +488,12 @@ impl SettingsForm {
                 })
                 .collect::<Vec<_>>()
         };
-        rows.extend(fields(&[6, 0, 4, 1]));
+        rows.extend(fields(&[6, 0]));
+        rows.push(self.recheck_entry());
+        rows.extend(fields(&[4, 1]));
         rows.push(SettingRow { kind: RowKind::FormAdvanced, section, name: "Advanced".into(), description: "Project root discovery, initialization options and server-specific settings".into() });
         if self.advanced {
             rows.extend(fields(&[5, 2, 3]));
-        }
-        rows.push(SettingRow {
-            kind: RowKind::FormInfo,
-            section,
-            name: "Resolved executable".into(),
-            description: "The application's PATH may differ from an interactive shell".into(),
-        });
-        if let Some(id) = server {
-            rows.push(SettingRow {
-                kind: RowKind::ServerStatus(id.into()),
-                section,
-                name: "Live server status".into(),
-                description: "Current process state; open a matching document to start the server"
-                    .into(),
-            });
         }
         rows.extend(self.installation_entries());
         rows.push(SettingRow {

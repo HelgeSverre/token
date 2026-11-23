@@ -143,13 +143,19 @@ For the complete keybinding reference, see [docs/KEYBINDINGS.md](docs/KEYBINDING
 
 ## Configuration
 
-Configuration files are stored in `~/.config/token-editor/`:
+Configuration files are stored in `~/.config/token-editor/` on macOS and Linux
+and in `%APPDATA%\token-editor\` on Windows:
 
 | File                 | Purpose                                    |
 | -------------------- | ------------------------------------------ |
 | `keymap.yaml`        | Custom keybindings                         |
 | `config.yaml`        | Editor and UI preferences, including fonts |
 | `themes/<name>.yaml` | Custom themes                              |
+
+**Portable mode:** create a `data` directory next to the `token` executable
+(`token.exe` on Windows) and every file above, plus recent files, logs and
+session state, is kept there instead. Set `TOKEN_CONFIG_DIR` to point at any
+other directory; it takes precedence over both locations.
 
 See the documentation for details:
 

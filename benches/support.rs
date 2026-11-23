@@ -38,6 +38,7 @@ pub fn make_model(lines: usize) -> AppModel {
         metrics: token::model::ScaledMetrics::default(),
         workspace: None,
         dock_layout: token::panel::DockLayout::default(),
+        non_docked_panels: token::panel::NonDockedPanels::default(),
         terminal: token::terminal::TerminalState::default(),
         outline_panel: token::model::OutlinePanelState::default(),
         problems_panel: token::model::ProblemsPanelState::default(),

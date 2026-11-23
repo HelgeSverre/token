@@ -101,6 +101,11 @@ pub(crate) struct Node {
     pub(crate) children: Vec<u32>,
 }
 
+/// Identity within one freshly declared tree. Use this for paint-only boxes;
+/// [`UiKey`] is reserved for geometry shared with hit testing or update code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LayoutNodeId(pub(crate) u32);
+
 /// Vec-backed tree builder. Parents always precede their descendants in
 /// declaration order, which the solver's bottom-up (reverse) and top-down
 /// (forward) passes rely on.
@@ -115,7 +120,7 @@ impl UiTree {
         Self::default()
     }
 
-    fn push_node(&mut self, decl: ElementDecl) -> u32 {
+    fn push_node(&mut self, decl: ElementDecl) -> LayoutNodeId {
         let index = self.nodes.len() as u32;
         let parent = self.open_stack.last().copied();
         self.nodes.push(Node {
@@ -126,20 +131,31 @@ impl UiTree {
         if let Some(p) = parent {
             self.nodes[p as usize].children.push(index);
         }
-        index
+        LayoutNodeId(index)
     }
 
     /// Declare a container element; `children` declares its children.
-    pub fn node(&mut self, decl: ElementDecl, children: impl FnOnce(&mut UiTree)) {
-        let index = self.push_node(decl);
-        self.open_stack.push(index);
-        children(self);
+    pub fn node(&mut self, decl: ElementDecl, children: impl FnOnce(&mut UiTree)) -> LayoutNodeId {
+        self.node_with(decl, children).0
+    }
+
+    /// Declare a container and return its local identity together with any
+    /// private child identities the caller chooses to keep for painting.
+    pub fn node_with<T>(
+        &mut self,
+        decl: ElementDecl,
+        children: impl FnOnce(&mut UiTree) -> T,
+    ) -> (LayoutNodeId, T) {
+        let id = self.push_node(decl);
+        self.open_stack.push(id.0);
+        let content = children(self);
         self.open_stack.pop();
+        (id, content)
     }
 
     /// Declare a childless element.
-    pub fn leaf(&mut self, decl: ElementDecl) {
-        self.push_node(decl);
+    pub fn leaf(&mut self, decl: ElementDecl) -> LayoutNodeId {
+        self.push_node(decl)
     }
 
     /// Convenience: declare an unwrapped text leaf sized to fit.
@@ -170,5 +186,52 @@ impl UiTree {
             "UiTree::solve with unbalanced node() nesting"
         );
         algorithm::solve(self.nodes, root, scale_factor, measure)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layout::{CellMeasure, SizingAxes};
+
+    #[test]
+    fn local_handles_follow_solved_child_geometry_without_global_keys() {
+        let mut tree = UiTree::new();
+        let (_, (first, second)) = tree.node_with(
+            ElementDecl {
+                dir: Dir::Row,
+                sizing: SizingAxes::grow(),
+                ..Default::default()
+            },
+            |tree| {
+                (
+                    tree.leaf(ElementDecl {
+                        sizing: SizingAxes::fixed(30.0, 20.0),
+                        ..Default::default()
+                    }),
+                    tree.leaf(ElementDecl {
+                        sizing: SizingAxes::grow(),
+                        ..Default::default()
+                    }),
+                )
+            },
+        );
+        let solved = tree.solve(
+            Rect::new(10.0, 5.0, 100.0, 20.0),
+            1.0,
+            &mut CellMeasure {
+                char_width: 8.0,
+                line_height: 16.0,
+            },
+        );
+        assert_eq!(
+            solved.local_rect(first).map(crate::layout::snapshot::snap),
+            Some((10, 5, 30, 20))
+        );
+        assert_eq!(
+            solved.local_rect(second).map(crate::layout::snapshot::snap),
+            Some((40, 5, 70, 20))
+        );
+        assert!(solved.by_key.is_empty());
     }
 }

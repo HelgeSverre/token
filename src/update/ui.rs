@@ -518,11 +518,19 @@ fn edit_ui_input(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
 fn update_modal(model: &mut AppModel, msg: ModalMsg) -> Option<Cmd> {
     if matches!(&model.ui.active_modal, Some(ModalState::Settings(state)) if state.form.as_ref().is_some_and(|form| form.open_select.is_some()))
     {
-        match msg {
-            ModalMsg::SelectPrevious => return super::settings::select_key(model, -1, false),
-            ModalMsg::SelectNext => return super::settings::select_key(model, 1, false),
-            ModalMsg::Confirm => return super::settings::select_key(model, 0, true),
-            _ => {}
+        let delta = match msg {
+            ModalMsg::SelectPrevious => Some((-1, false)),
+            ModalMsg::SelectNext => Some((1, false)),
+            ModalMsg::Confirm => Some((0, true)),
+            _ => None,
+        };
+        if let Some((delta, confirm)) = delta {
+            if let Some(cmd) = super::settings::select_key(model, delta, confirm) {
+                return Some(cmd);
+            }
+            // The anchored row no longer exists: close the stale list and let
+            // the key act on the form as usual.
+            super::settings::close_select(model);
         }
     }
     // Changing the modal's query/category/selection invalidates captured geometry.
@@ -1349,7 +1357,6 @@ fn change_setting(model: &mut AppModel, explicit: Option<usize>, delta: isize) -
         | crate::settings::RowKind::FormAdvanced
         | crate::settings::RowKind::FormPreset
         | crate::settings::RowKind::FormActions
-        | crate::settings::RowKind::FormInfo
         | crate::settings::RowKind::FormToolInfo
         | crate::settings::RowKind::FormInstallCommand(..)
         | crate::settings::RowKind::FormInstallGuide(_)

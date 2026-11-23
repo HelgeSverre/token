@@ -119,14 +119,21 @@ impl SettingsForm {
         } else if let Some(id) = &self.preset_id {
             rows.push(SettingRow { kind: RowKind::FormToolInfo, section, name: format!("Based on {id}").into(), description: "Installation guidance is unavailable for this preset; the saved configuration is still used.".into() });
         }
-        rows.push(SettingRow {
-            kind: RowKind::FormRecheck,
-            section,
-            name: "Executable availability".into(),
-            description: "After installation, check the executable on the application's PATH"
-                .into(),
-        });
         rows
+    }
+
+    /// Where the executable resolves, shown beneath its field; activating it
+    /// runs the lookup again, for example after installing the tool.
+    pub(super) fn recheck_entry(&self) -> SettingRow {
+        SettingRow {
+            kind: RowKind::FormRecheck,
+            section: match self.kind {
+                FormKind::Formatter(_) => "Formatting",
+                _ => "Server configuration",
+            },
+            name: "Resolved executable".into(),
+            description: "The application's PATH may differ from an interactive shell".into(),
+        }
     }
 }
 

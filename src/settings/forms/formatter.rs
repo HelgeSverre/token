@@ -86,23 +86,17 @@ impl SettingsForm {
             name: self.choices[0].label.into(),
             description: self.choices[0].help.into(),
         });
-        rows.extend(
-            self.fields
-                .iter()
-                .enumerate()
-                .map(|(index, field)| SettingRow {
-                    kind: RowKind::FormField(index),
-                    section,
-                    name: field.label.into(),
-                    description: field.help.into(),
-                }),
-        );
-        rows.push(SettingRow {
-            kind: RowKind::FormInfo,
-            section,
-            name: "Resolved executable".into(),
-            description: "Install the formatter separately or choose its executable".into(),
-        });
+        for (index, field) in self.fields.iter().enumerate() {
+            rows.push(SettingRow {
+                kind: RowKind::FormField(index),
+                section,
+                name: field.label.into(),
+                description: field.help.into(),
+            });
+            if Some(index) == self.executable_field() {
+                rows.push(self.recheck_entry());
+            }
+        }
         rows.extend(self.installation_entries());
         rows.push(SettingRow {
             kind: RowKind::FormActions,

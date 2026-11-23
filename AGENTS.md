@@ -86,8 +86,8 @@ feature docs can describe intent but may lag implementation.
 - Gate text-only fast paths with `EditorState::is_plain_text_mode()` so image,
   CSV, binary, and other special tabs cannot enter text rendering paths.
 - Do not make performance claims from `just workspace`: it is a debug build. The
-  F2 overlay also forces full redraw while visible, so use it for stage diagnosis,
-  not release-equivalent frame rates.
+  F2 Performance panel is debug-only and adds paint work of its own, so use it
+  for stage diagnosis, not release-equivalent frame rates.
 - Extend the shared stages in `src/perf.rs` when instrumenting rendering; do not
   add one-off timers or a second overlay-specific stage list.
 

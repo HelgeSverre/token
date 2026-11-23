@@ -800,6 +800,110 @@ fn render_theme_picker_modal(
 // Settings
 // ============================================================================
 
+/// One word and mark for a language server's row in the Settings list.
+fn server_record_status(model: &AppModel, id: &str) -> (overlay_surface::RecordMark, &'static str) {
+    use crate::lsp::ServerState;
+    use overlay_surface::RecordMark;
+    let enabled = model.config.lsp.enabled
+        && model
+            .config
+            .lsp
+            .servers
+            .get(id)
+            .is_none_or(|server| server.enabled != Some(false));
+    if !enabled {
+        return (RecordMark::Off, "Off");
+    }
+    match model.lsp.servers.get(&crate::lsp::LspServerId::from(id)) {
+        None | Some(ServerState::ShuttingDown) => (RecordMark::Idle, "Idle"),
+        Some(ServerState::Starting) => (RecordMark::Running, "Starting"),
+        Some(ServerState::Indexing) => (RecordMark::Running, "Indexing"),
+        Some(ServerState::Ready) => (RecordMark::Running, "Running"),
+        Some(ServerState::Restarting { .. }) => (RecordMark::Attention, "Restarting"),
+        Some(ServerState::Failed) => (RecordMark::Attention, "Failed"),
+        Some(ServerState::Missing) => (RecordMark::Attention, "Not installed"),
+    }
+}
+
+/// The three facts that decide whether a language server works: its
+/// executable resolves, the process state, and which languages it serves.
+fn server_health<'a>(
+    model: &AppModel,
+    form: &'a crate::settings::forms::SettingsForm,
+    id: Option<&str>,
+) -> Vec<overlay_surface::HealthCell<'a>> {
+    use overlay_surface::{HealthCell, RecordMark};
+    use std::borrow::Cow;
+    // The lookup reports "Found: <path>" or a sentence starting "Not found".
+    let lookup = form.executable_status.as_str();
+    let executable = if lookup.starts_with("Found: ") {
+        (RecordMark::Running, Cow::Borrowed("Found"))
+    } else if lookup.starts_with("Not found") {
+        (RecordMark::Attention, Cow::Borrowed("Not found"))
+    } else {
+        let short = lookup.split(" · ").next().unwrap_or(lookup);
+        (RecordMark::Idle, Cow::Borrowed(short))
+    };
+    let languages_text = form.fields[4].input.text();
+    let languages: Vec<&str> = languages_text
+        .split(',')
+        .map(str::trim)
+        .filter(|language| !language.is_empty())
+        .collect();
+    let server = match id {
+        None => (RecordMark::Off, Cow::Borrowed("Not saved yet")),
+        Some(id) => {
+            let (mark, word) = server_record_status(model, id);
+            match (mark, languages.first()) {
+                (RecordMark::Idle, Some(language)) => (
+                    mark,
+                    Cow::Owned(format!("Idle · starts with the next {language} file")),
+                ),
+                _ => (mark, Cow::Borrowed(word)),
+            }
+        }
+    };
+    // Only one enabled server may serve a language; name the first rival.
+    let rival = crate::lsp::server_ids(&model.config.lsp)
+        .into_iter()
+        .filter(|other| Some(*other) != id)
+        .filter(|other| model.config.lsp.servers[*other].enabled != Some(false))
+        .find(|other| {
+            crate::lsp::configured_languages(other, &model.config.lsp)
+                .iter()
+                .any(|theirs| {
+                    languages
+                        .iter()
+                        .any(|ours| ours.eq_ignore_ascii_case(theirs.display_name()))
+                })
+        });
+    let list = languages.join(", ");
+    let handles = match (languages.len(), rival) {
+        (0, _) => (RecordMark::Attention, Cow::Borrowed("No languages")),
+        (_, Some(rival)) => (
+            RecordMark::Attention,
+            Cow::Owned(format!("{list} · also claimed by {rival}")),
+        ),
+        (1, None) => (
+            RecordMark::Running,
+            Cow::Owned(format!("{list} · no other server claims it")),
+        ),
+        (_, None) => (RecordMark::Running, Cow::Owned(list)),
+    };
+    [
+        ("EXECUTABLE", executable),
+        ("SERVER", server),
+        ("HANDLES", handles),
+    ]
+    .into_iter()
+    .map(|(label, (mark, value))| HealthCell {
+        label,
+        value,
+        mark: Some(mark),
+    })
+    .collect()
+}
+
 /// Both rendering and hit testing build the actual same settings spec, including
 /// the choice count on each row. No placeholder can lose its chip hit targets.
 pub(crate) fn with_settings_spec<R>(
@@ -839,7 +943,9 @@ pub(crate) fn with_settings_spec<R>(
         .rows
         .iter()
         .map(|&id| {
-            if let (RowKind::FormInfo, Some(form)) = (state.entries[id].kind.clone(), &state.form) {
+            if let (RowKind::FormRecheck, Some(form)) =
+                (state.entries[id].kind.clone(), &state.form)
+            {
                 return std::borrow::Cow::Borrowed(form.executable_status.as_str());
             }
             if let Some(picker) = state.entries[id].picker(&model.config) {
@@ -879,7 +985,9 @@ pub(crate) fn with_settings_spec<R>(
                         label: &entry.name,
                         detail: if matches!(
                             entry.kind,
-                            RowKind::ServerCommand(_) | RowKind::FormInfo | RowKind::FormToolInfo
+                            RowKind::ServerCommand(_)
+                                | RowKind::FormRecheck
+                                | RowKind::FormToolInfo
                         ) || entry.picker(&model.config).is_some()
                         {
                             None
@@ -898,10 +1006,15 @@ pub(crate) fn with_settings_spec<R>(
                                 line_height: model.line_height,
                                 char_width: model.char_width,
                             }
-                        } else if matches!(entry.kind, RowKind::FormInfo | RowKind::FormToolInfo) {
+                        } else if matches!(entry.kind, RowKind::FormToolInfo) {
                             Accessory::SettingValue {
                                 text: &details[index],
                                 action: None,
+                            }
+                        } else if matches!(entry.kind, RowKind::FormRecheck) {
+                            Accessory::SettingValue {
+                                text: &details[index],
+                                action: Some("Check again"),
                             }
                         } else if let (RowKind::FormPreset, Some(form)) =
                             (entry.kind.clone(), &state.form)
@@ -909,7 +1022,7 @@ pub(crate) fn with_settings_spec<R>(
                             Accessory::Choices {
                                 labels: &preset_labels,
                                 active: Some(form.preset.map_or(0, |index| index + 1)),
-                                presentation: ChoicePresentation::Buttons,
+                                presentation: ChoicePresentation::Select,
                             }
                         } else if let (RowKind::FormAdvanced, Some(form)) =
                             (entry.kind.clone(), &state.form)
@@ -1004,6 +1117,27 @@ pub(crate) fn with_settings_spec<R>(
                 .map_or_else(|| state.editable.text(), |form| form.title())
         });
     let selected_detail = state.selected_index.min(details.len().saturating_sub(1));
+    let plain_page = state.form.is_none() && !keymap_tab;
+    let defaults = crate::config::EditorConfig::default();
+    let changed: Vec<(usize, usize)> = if plain_page {
+        state
+            .rows
+            .iter()
+            .enumerate()
+            .filter_map(|(index, &id)| {
+                Some((
+                    index,
+                    state.entries[id].changed_from(&model.config, &defaults)?,
+                ))
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let selected_note = plain_page
+        .then(|| state.rows.get(state.selected_index))
+        .flatten()
+        .and_then(|&id| state.entries[id].config_note(&model.config, &defaults));
     let spec = OverlaySpec {
         tabs: Some(tabs),
         anchor: Anchor::Settings {
@@ -1024,6 +1158,7 @@ pub(crate) fn with_settings_spec<R>(
                                     id,
                                     detail: value.command.clone(),
                                     enabled: value.enabled,
+                                    status: None,
                                 })
                             })
                             .collect(),
@@ -1042,6 +1177,7 @@ pub(crate) fn with_settings_spec<R>(
                                     .collect::<Vec<_>>()
                                     .join(", "),
                                 enabled: model.config.lsp.servers[id].enabled != Some(false),
+                                status: Some(server_record_status(model, id)),
                             })
                             .collect(),
                     ),
@@ -1066,18 +1202,24 @@ pub(crate) fn with_settings_spec<R>(
                                         .clone()
                                         .unwrap_or_else(|| "No model selected".into()),
                                     enabled: model.config.completion.inline.provider == id,
+                                    status: None,
                                 })
                                 .collect(),
                         )
                     }
                 };
                 SettingsCollection {
+                    health: match &form.kind {
+                        FormKind::LanguageServer(id) => server_health(model, form, id.as_deref()),
+                        _ => Vec::new(),
+                    },
                     enable_label: match form.kind {
                         FormKind::Formatter(_) => None,
                         FormKind::LanguageServer(_) => Some("Enable language servers"),
                         FormKind::InlineProvider(_) => Some("Enable inline suggestions"),
                     },
                     select_cursor: form.select_cursor,
+                    select_scroll: form.select_scroll,
                     hovered: model.ui.settings_hover_action,
                     title,
                     description,
@@ -1100,6 +1242,7 @@ pub(crate) fn with_settings_spec<R>(
                     .position(|&id| matches!(state.entries[id].kind, RowKind::FormActions))
             }),
             subpage: state.form.is_some(),
+            changed: &changed,
             hovered_choice: model.ui.modal_hover_choice,
             width: WidthRule {
                 pct: 0.95,
@@ -1140,6 +1283,8 @@ pub(crate) fn with_settings_spec<R>(
                 &form.status
             } else if keymap_tab {
                 &state.keymap.status
+            } else if let Some(note) = &selected_note {
+                note
             } else {
                 details
                     .get(selected_detail)

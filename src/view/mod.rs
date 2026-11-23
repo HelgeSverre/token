@@ -23,7 +23,10 @@ pub mod helpers;
 pub mod hit_test;
 pub mod modal;
 pub mod overlay_surface;
+#[cfg(feature = "ui-gallery")]
+pub mod pane_chrome;
 pub mod panels;
+pub mod performance_panel;
 pub mod scrollbar;
 pub mod section_navigation;
 pub mod segmented_control;
@@ -104,8 +107,6 @@ struct RenderPlan {
     show_drop_overlay: bool,
     show_tab_drag_ghost: bool,
     #[cfg(debug_assertions)]
-    show_perf_overlay: bool,
-    #[cfg(debug_assertions)]
     show_debug_overlay: bool,
 }
 
@@ -176,17 +177,35 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
             ),
         ] {
             let dock = model.dock_layout.dock(position);
-            if dock
-                .panel_ids
-                .iter()
-                .any(|id| plan.effective_damage.includes_panel(*id))
+            // The Performance panel shows this frame's own measurements, so
+            // its dock repaints with every frame that is not a bare blink.
+            let live_stats = plan.cursor_lines_only.is_none()
+                && model
+                    .dock_layout
+                    .active_panel_position(crate::panel::PanelId::Performance)
+                    == Some(position);
+            if (live_stats
+                || dock
+                    .panel_ids
+                    .iter()
+                    .any(|id| plan.effective_damage.includes_panel(*id)))
                 && plan
                     .chrome
                     .rect(crate::layout::UiKey::Dock(position))
                     .is_some()
             {
-                perf.measure_stage(stage, || self.render_dock_phase(position));
+                let start = std::time::Instant::now();
+                self.render_dock_phase(position, perf);
+                perf.record_stage_elapsed(stage, start.elapsed());
             }
+        }
+        // Floating panels sit above the editor, sidebar and docks. Any
+        // partial repaint of those layers can draw underneath one without
+        // clearing the frame, so restore them after every such pass.
+        if Renderer::has_floating_panels(model) {
+            let start = std::time::Instant::now();
+            self.render_floating_panels_phase(perf);
+            perf.record_stage_elapsed(crate::perf::PerfStage::FloatingPanels, start.elapsed());
         }
         if plan.render_status_bar {
             perf.measure_stage(crate::perf::PerfStage::StatusBar, || {
@@ -208,12 +227,6 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
         }
         if plan.show_tab_drag_ghost {
             self.render_tab_drag_ghost_phase();
-        }
-        #[cfg(debug_assertions)]
-        if plan.show_perf_overlay {
-            let start = std::time::Instant::now();
-            self.render_perf_overlay_phase(perf);
-            perf.record_stage_elapsed(crate::perf::PerfStage::PerfOverlay, start.elapsed());
         }
         #[cfg(debug_assertions)]
         if plan.show_debug_overlay {
@@ -303,13 +316,28 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
         );
     }
 
-    fn render_dock_phase(&mut self, position: crate::panel::DockPosition) {
+    fn render_dock_phase(
+        &mut self,
+        position: crate::panel::DockPosition,
+        perf: &crate::perf::PerfStats,
+    ) {
         Renderer::render_dock(
             &mut self.frame,
             &mut self.painter,
             self.model,
             position,
             &self.plan.chrome,
+            perf,
+        );
+    }
+
+    fn render_floating_panels_phase(&mut self, perf: &crate::perf::PerfStats) {
+        panels::render_floating_panels(
+            &mut self.frame,
+            &mut self.painter,
+            self.model,
+            &self.plan.chrome,
+            perf,
         );
     }
 
@@ -377,20 +405,6 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
     }
 
     #[cfg(debug_assertions)]
-    fn render_perf_overlay_phase(&mut self, perf: &crate::perf::PerfStats) {
-        if !self.plan.show_perf_overlay {
-            return;
-        }
-
-        crate::perf::render_perf_overlay(
-            &mut self.frame,
-            &mut self.painter,
-            perf,
-            &self.model.theme,
-        );
-    }
-
-    #[cfg(debug_assertions)]
     fn render_debug_overlay_phase(&mut self) {
         if !self.plan.show_debug_overlay {
             return;
@@ -433,6 +447,7 @@ impl<'buffer, 'a> RenderSession<'buffer, 'a> {
     fn record_cache_stats(&self, perf: &mut crate::perf::PerfStats) {
         let stats = self.painter.cache_stats();
         perf.add_cache_stats(stats.hits, stats.misses);
+        perf.set_cache_entries(self.painter.glyph_cache_size());
     }
 }
 
@@ -1088,14 +1103,7 @@ impl Renderer {
     /// - Modal is active (background dim accumulation)
     /// - Drop overlay is showing
     /// - Debug overlays are visible (debug builds only)
-    fn compute_effective_damage(
-        damage: &Damage,
-        model: &AppModel,
-        show_perf_overlay: bool,
-    ) -> Damage {
-        #[cfg(not(debug_assertions))]
-        let _ = show_perf_overlay;
-
+    fn compute_effective_damage(damage: &Damage, model: &AppModel) -> Damage {
         // Force full redraw for complex overlays
         if model.ui.active_modal.is_some() {
             return Damage::Full;
@@ -1113,9 +1121,6 @@ impl Renderer {
         // Debug builds: force full for perf/debug overlays
         #[cfg(debug_assertions)]
         {
-            if show_perf_overlay {
-                return Damage::Full;
-            }
             if let Some(ref overlay) = model.debug_overlay {
                 if overlay.visible {
                     return Damage::Full;
@@ -1134,7 +1139,6 @@ impl Renderer {
         window_height: usize,
         line_height: usize,
         char_width: f32,
-        show_perf_overlay: bool,
         chrome: crate::layout::LayoutSnapshot,
     ) -> RenderPlan {
         let editor_area_rect = chrome
@@ -1143,7 +1147,7 @@ impl Renderer {
         let splitters = model
             .editor_area
             .compute_layout_scaled(editor_area_rect, model.metrics.splitter_width);
-        let effective_damage = Self::compute_effective_damage(damage, model, show_perf_overlay);
+        let effective_damage = Self::compute_effective_damage(damage, model);
         // Blink and chrome-only damage cannot change editor geometry. Reuse
         // viewports and wrapping prepared by the last editor/layout update.
         if effective_damage.includes_editor() && effective_damage.cursor_lines_only().is_none() {
@@ -1185,8 +1189,6 @@ impl Renderer {
                 || model.ui.signature_help.is_some(),
             show_drop_overlay: model.ui.drop_state.is_hovering,
             show_tab_drag_ghost: model.ui.tab_drag.is_some_and(|d| d.active),
-            #[cfg(debug_assertions)]
-            show_perf_overlay,
             #[cfg(debug_assertions)]
             show_debug_overlay: model
                 .debug_overlay
@@ -1539,6 +1541,34 @@ impl Renderer {
         }
     }
 
+    /// Solve the layout a frame needs: panel geometry only when a panel paints.
+    fn solve_frame_chrome(model: &AppModel, damage: &Damage) -> crate::layout::LayoutSnapshot {
+        // Floating panels and a docked Performance panel repaint on narrow
+        // redraws too, so they need panel geometry in the snapshot.
+        let live_panels = Self::has_floating_panels(model)
+            || model
+                .dock_layout
+                .active_panel_position(crate::panel::PanelId::Performance)
+                .is_some();
+        if live_panels
+            || damage.includes_chrome()
+            || matches!(damage, Damage::Areas(areas) if areas.iter().any(|a| matches!(a, DamageArea::Panel(_))))
+        {
+            crate::layout::chrome::chrome(model)
+        } else {
+            // Cursor, pane and status updates don't need panel row counts or titles.
+            crate::layout::chrome::shell(model)
+        }
+    }
+
+    fn has_floating_panels(model: &AppModel) -> bool {
+        model
+            .non_docked_panels
+            .by_id
+            .values()
+            .any(|placement| matches!(placement, crate::panel::NonDockedPanel::Floating { .. }))
+    }
+
     /// Redraw the focused group's scrollbars on top of whatever was just
     /// drawn. Used after the cursor-lines-only fast path, which fills dirty
     /// lines across the full group width and would otherwise erase the
@@ -1631,8 +1661,9 @@ impl Renderer {
         model: &AppModel,
         position: crate::panel::DockPosition,
         chrome: &crate::layout::LayoutSnapshot,
+        perf: &crate::perf::PerfStats,
     ) {
-        panels::render_dock(frame, painter, model, position, chrome);
+        panels::render_dock(frame, painter, model, position, chrome, perf);
     }
 
     /// Render CSV grid view
@@ -2150,20 +2181,13 @@ impl Renderer {
         let width_usize = self.width as usize;
         let height_usize = self.height as usize;
 
-        let show_perf_overlay = perf.should_show_overlay();
         let effective_damage = if resized {
             Damage::Full
         } else {
-            Self::compute_effective_damage(damage, model, show_perf_overlay)
+            Self::compute_effective_damage(damage, model)
         };
         let chrome = perf.measure_stage(crate::perf::PerfStage::Layout, || {
-            if effective_damage.includes_chrome()
-                || matches!(&effective_damage, Damage::Areas(areas) if areas.iter().any(|a| matches!(a, DamageArea::Panel(_)))) {
-                crate::layout::chrome::chrome(model)
-            } else {
-                // Cursor, pane and status updates don't need panel row counts or titles.
-                crate::layout::chrome::shell(model)
-            }
+            Self::solve_frame_chrome(model, &effective_damage)
         });
         let plan = perf.measure_stage(crate::perf::PerfStage::BuildPlan, || {
             Self::build_render_plan(
@@ -2173,7 +2197,6 @@ impl Renderer {
                 height_usize,
                 line_height,
                 char_width,
-                show_perf_overlay,
                 chrome,
             )
         });
@@ -2723,14 +2746,8 @@ mod cursor_fast_path_scrollbar_tests {
         let metrics = fonts.editor.horizontal_line_metrics(font_size).unwrap();
         model.line_height = metrics.new_line_size.ceil() as usize;
         model.char_width = fonts.editor.metrics('M', font_size).advance_width;
-        let damage = Renderer::compute_effective_damage(damage, model, false);
-        let chrome = if damage.includes_chrome()
-            || matches!(&damage, Damage::Areas(areas) if areas.iter().any(|a| matches!(a, DamageArea::Panel(_))))
-        {
-            crate::layout::chrome::chrome(model)
-        } else {
-            crate::layout::chrome::shell(model)
-        };
+        let damage = Renderer::compute_effective_damage(damage, model);
+        let chrome = Renderer::solve_frame_chrome(model, &damage);
         let (w, h) = (model.window_size.0 as usize, model.window_size.1 as usize);
         let plan = Renderer::build_render_plan(
             model,
@@ -2739,7 +2756,6 @@ mod cursor_fast_path_scrollbar_tests {
             h,
             model.line_height,
             model.char_width,
-            false,
             chrome,
         );
         let mut cache = GlyphCache::new();
@@ -2938,6 +2954,77 @@ mod cursor_fast_path_scrollbar_tests {
                 assert!(underlay.is_empty());
                 assert_full_frame(&mut model, &pixels, &fonts, "popups dismissed");
             }
+        }
+    }
+
+    #[test]
+    fn narrow_damage_keeps_performance_panel_above_and_beside_the_editor() {
+        use crate::messages::{Direction, DocumentMsg, EditorMsg, Msg, PanelPlacementMsg};
+        use crate::panel::PanelId;
+        let fonts = fonts::Fonts::load("JetBrains Mono", "Inter").unwrap();
+        for floating in [false, true] {
+            let mut model = AppModel::new(960, 720, 1.0);
+            model.document_mut().buffer = "value values variable\n".repeat(80).into();
+            model.config.completion.enabled = false;
+            let open = PanelPlacementMsg::Open(PanelId::Performance);
+            crate::update::update(&mut model, Msg::DockablePanel(open));
+            if floating {
+                let float = PanelPlacementMsg::Float(PanelId::Performance);
+                crate::update::update(&mut model, Msg::DockablePanel(float));
+                assert!(Renderer::has_floating_panels(&model));
+            } else {
+                assert!(model
+                    .dock_layout
+                    .active_panel_position(PanelId::Performance)
+                    .is_some());
+            }
+            let label = if floating { "floating" } else { "docked" };
+            let mut pixels = vec![0; 960 * 720];
+            let mut underlay = Vec::new();
+            paint_damage(
+                &mut model,
+                &mut pixels,
+                &mut underlay,
+                &fonts,
+                &Damage::Full,
+            );
+
+            // A blink repaints editor rows that a floating panel covers.
+            for visible in [false, true] {
+                model.ui.cursor_visible = visible;
+                let damage = Damage::cursor_lines((0..40).collect());
+                let plan = paint_damage(&mut model, &mut pixels, &mut underlay, &fonts, &damage);
+                assert!(plan.uses_cursor_lines_fast_path());
+                assert_full_frame(&mut model, &pixels, &fonts, &format!("{label}: blink"));
+            }
+
+            let moved = crate::update::update(
+                &mut model,
+                Msg::Editor(EditorMsg::MoveCursor(Direction::Down)),
+            )
+            .unwrap();
+            assert!(!moved.damage().includes_chrome());
+            paint_damage(
+                &mut model,
+                &mut pixels,
+                &mut underlay,
+                &fonts,
+                &moved.damage(),
+            );
+            assert_full_frame(&mut model, &pixels, &fonts, &format!("{label}: movement"));
+
+            let edit =
+                crate::update::update(&mut model, Msg::Document(DocumentMsg::InsertChar('x')))
+                    .unwrap();
+            assert!(!edit.damage().includes_chrome());
+            paint_damage(
+                &mut model,
+                &mut pixels,
+                &mut underlay,
+                &fonts,
+                &edit.damage(),
+            );
+            assert_full_frame(&mut model, &pixels, &fonts, &format!("{label}: edit"));
         }
     }
 

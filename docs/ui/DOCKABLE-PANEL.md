@@ -1,5 +1,9 @@
 # Dockable panel
 
+**Implemented for the debug-only Performance singleton.** Performance can be
+docked, floated inside the Token window, resized, closed, reopened, and
+returned to its remembered dock slot. Explorer and Terminal remain dock-only.
+
 <!-- token-ui-mockup:begin DOCKABLE-PANEL -->
 [![Visual target under review: Dockable panel](mockups/renders/DOCKABLE-PANEL-emphasised.png)](mockups/DOCKABLE-PANEL.html?view=emphasised)
 

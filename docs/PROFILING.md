@@ -82,7 +82,7 @@ See [Chrome Trace Export (Perfetto)](#chrome-trace-export-perfetto) below for fu
 
 ### Step 5: Debug Overlay (F2)
 
-In debug builds, press F2 (or run **Toggle Performance Overlay** from the command palette) for a live performance overlay showing frame time, per-stage breakdown, glyph cache stats, and sparklines. Note: the overlay forces full redraws while visible, so it perturbs its own measurements.
+In debug builds, press F2 (or run **Toggle Performance Panel** from the command palette) to open or focus the Performance panel. It shows completed-frame timing, per-stage breakdown, and glyph-cache statistics in the right dock, and can also float inside the Token window. The panel reports debug-build diagnostics, not release-equivalent frame rates.
 
 ```bash
 just dev
@@ -184,7 +184,7 @@ samply record ./target/profiling/token samples/large.txt
 
 ### Profiling Debug Builds
 
-Chrome tracing also works in debug builds. This is useful for correlating stage timings with the F2 overlay:
+Chrome tracing also works in debug builds. This is useful for correlating stage timings with the F2 Performance panel:
 
 ```bash
 cargo build --features profile-chrome
@@ -209,7 +209,7 @@ In release builds without the feature, `PerfStats` is a zero-size struct and all
 
 ### Limitations
 
-4 text sub-stages (`TextBackground`, `TextDecorations`, `TextGlyphs`, `TextCursors`) use manual `record_stage_elapsed` calls in `editor_text.rs` rather than `measure_stage`. These record timing to the F2 overlay but don't emit tracing spans. They can be migrated later.
+4 text sub-stages (`TextBackground`, `TextDecorations`, `TextGlyphs`, `TextCursors`) use manual `record_stage_elapsed` calls in `editor_text.rs` rather than `measure_stage`. These record timing for the F2 Performance panel but don't emit tracing spans. They can be migrated later.
 
 ### Future: Tracy Support
 
